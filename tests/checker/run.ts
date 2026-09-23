@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "../../compiler/parse.ts";
+import { load } from "../../compiler/load.ts";
 
 let failures = 0;
 const dir = new URL(".", import.meta.url).pathname;
@@ -15,7 +16,7 @@ for (const f of readdirSync(dir).filter((f) => f.endsWith(".intent") && f !== "b
 }
 const apps = join(dir, "../../apps");
 for (const f of readdirSync(apps).filter((f) => f.endsWith(".intent"))) {
-  const errs = parse(readFileSync(join(apps, f), "utf8")).diagnostics.filter((d) => d.level === "error");
+  const errs = load(join(apps, f)).diagnostics.filter((d) => d.level === "error");
   if (errs.length) (failures++, console.log(`apps/${f}: ${errs.length} error(s)`));
 }
 console.log(failures ? `${failures} failure(s)` : "checker tests pass");

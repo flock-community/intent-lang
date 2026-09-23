@@ -1,0 +1,51 @@
+app PagerDemo
+  "Proves std.list.Pager: twelve numbers, five per page."
+
+import std.list
+
+record Number
+  label: Text
+
+state
+  numbers: List Number = table
+    label
+    "one"
+    "two"
+    "three"
+    "four"
+    "five"
+    "six"
+    "seven"
+    "eight"
+    "nine"
+    "ten"
+    "eleven"
+    "twelve"
+
+screen
+  list shown of Number = {pager.visible}
+    text label
+  use pager = Pager
+    items = numbers
+    size = 5
+
+always
+  see shown has at most 5 rows
+
+example "the first page"
+  see shown has 5 rows
+  see label on row 1 = "one"
+  see pager.pageInfo = "Page 1 of 3"
+  see pager.previous is disabled
+  see pager.next is enabled
+
+example "paging to the end and back"
+  click pager.next
+  see label on row 1 = "six"
+  click pager.next
+  see shown has 2 rows
+  see label on row 2 = "twelve"
+  see pager.pageInfo = "Page 3 of 3"
+  see pager.next is disabled
+  click pager.previous
+  see pager.pageInfo = "Page 2 of 3"

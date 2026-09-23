@@ -1,0 +1,330 @@
+app Inventory
+  "The parts warehouse of a small bike shop: see every part and its stock, spot what needs reordering, receive and pick stock, and keep a short history of movements."
+
+import ui.admin
+import std.list
+import std.feedback
+
+choice Category: Brakes | Cables | Drivetrain | Lighting | Tyres
+choice CategoryFilter: AllCategories "All categories" | OnlyBrakes "Brakes" | OnlyCables "Cables" | OnlyDrivetrain "Drivetrain" | OnlyLighting "Lighting" | OnlyTyres "Tyres"
+choice SortOrder: ByName "Name" | ByStock "Stock (lowest first)"
+choice Direction: In | Out
+
+record Part
+  name: Text
+  sku: Text
+  category: Category
+  stock: Int = 0
+  reorderLevel: Int = 0
+
+record Movement
+  part: Text              # the name of the part that moved
+  quantity: Int
+  direction: Direction
+
+component LowBadge as badge "Tinted in the danger colour: danger text on a light danger background."
+component DirectionBadge as badge "Tinted per value: In in success, Out in warning."
+
+state
+  parts: List Part = table
+    name                 | sku       | category   | stock | reorderLevel
+    "Brake pads (disc)"  | "BRK-001" | Brakes     | 24    | 10
+    "Brake cable"        | "CBL-002" | Cables     | 4     | 8
+    "Chain 11-speed"     | "DRV-003" | Drivetrain | 12    | 6
+    "Cassette 11-32"     | "DRV-004" | Drivetrain | 3     | 3
+    "Inner tube 700x28"  | "TYR-005" | Tyres      | 40    | 15
+    "Tyre 700x28"        | "TYR-006" | Tyres      | 9     | 6
+    "Front light"        | "LGT-007" | Lighting   | 0     | 4
+    "Rear light"         | "LGT-008" | Lighting   | 7     | 4
+    "Shift cable"        | "CBL-009" | Cables     | 18    | 8
+    "Brake rotor 160mm"  | "BRK-010" | Brakes     | 5     | 4
+    "Chainring 44T"      | "DRV-011" | Drivetrain | 2     | 2
+    "Tyre levers"        | "TYR-012" | Tyres      | 30    | 10
+    "Brake fluid"        | "BRK-013" | Brakes     | 6     | 3
+    "Cable housing"      | "CBL-014" | Cables     | 11    | 5
+  history: List Movement = []     # newest first, at most 8
+  search: Text = ""
+  category: CategoryFilter = AllCategories
+  sortBy: SortOrder = ByName
+  partChoice: Text = "Brake pads (disc)"
+  amount: Text = ""
+
+derive
+  matching = the parts whose name or sku contains search, trimmed, ignoring case (a blank search matches every part), and whose category matches category (AllCategories matches every part, OnlyBrakes matches Brakes, and so on); when sortBy is ByName they are sorted by name, A to Z; when sortBy is ByStock they are sorted by stock, lowest first, and parts with equal stock by name, A to Z
+  lowCount = the number of parts whose stock is at most their reorderLevel
+  partTotal = the number of parts
+  partsByName = the parts sorted by name, A to Z
+  quantity = amount read as a whole number (Fmt.parseInt); "not a number" when it is not a whole number
+
+screen
+  section top as header
+    section titleBlock
+      heading "Bike shop warehouse"
+      text subtitle = "Parts, stock levels and movements" as caption
+  section stats as grid
+    section lowStat as StatCard
+      look "The number is in the danger colour when it is above 0."
+      text lowLabel = "At or below reorder level"
+      text lowValue = "{lowCount}"
+    section totalStat as StatCard
+      text totalLabel = "Parts"
+      text totalValue = "{partTotal}"
+  section stockCard as card
+    section filters as toolbar
+      field search "Search name or SKU" as search
+      select category "Category" as dropdown
+      select sortBy "Sort by" as segmented
+    list shown of Part = {pager.visible} as table
+      visible when matching is not empty
+      look "Column headers: Part, SKU, Category, In stock, Reorder at, and an empty last header. A row whose stock is at or below its reorder level has a light danger background and its stock number in semibold danger colour."
+      text name
+      text sku as code
+      text category
+      text stock
+      text reorderLevel
+      text lowFlag = "Reorder" as LowBadge
+        visible when that part's stock is at most its reorderLevel
+    section noMatches as EmptyState
+      visible when matching is empty
+      text emptyTitle = "No parts found"
+      text emptyHint = "Try another search or category."
+    section paging
+      visible when matching is not empty
+      use pager = Pager
+        items = matching
+        size = 6
+  section moveCard "Move stock" as card
+    section moveForm as form
+      select partChoice "Part" from partsByName.name
+      field amount "Quantity"
+      button receive "Receive" as primary
+      button pick "Pick for order" as secondary
+  section historyCard "Recent movements" as card
+    list history of Movement as table
+      visible when history is not empty
+      look "Column headers: Part, Direction, Quantity."
+      text part
+      text direction as DirectionBadge
+      text quantity
+    text noHistory = "No movements yet." as caption
+      visible when history is empty
+  use toast = Toast
+
+on type search
+  - set pager.page to 1
+
+on choose category
+  - set pager.page to 1
+
+on choose sortBy
+  - set pager.page to 1
+
+on click receive
+  - if quantity is not a number or is not above 0, set toast.message to "Enter a whole number above 0" and skip all remaining steps (parts, history and amount stay unchanged)
+  - increase the stock of the part in parts whose name is partChoice by quantity
+  - put a new Movement with part = partChoice, quantity = quantity and direction = In at the front of history, then keep only the first 8 items of history
+  - set toast.message to "Received {quantity} × {partChoice}"
+  - clear amount
+
+on click pick
+  - if quantity is not a number or is not above 0, set toast.message to "Enter a whole number above 0" and skip all remaining steps (parts, history and amount stay unchanged)
+  - if quantity is above the stock of the part in parts whose name is partChoice, set toast.message to "Cannot pick {quantity} × {partChoice}: only {that stock} in stock" and skip all remaining steps (stock never goes below 0; parts, history and amount stay unchanged)
+  - decrease the stock of the part in parts whose name is partChoice by quantity
+  - put a new Movement with part = partChoice, quantity = quantity and direction = Out at the front of history, then keep only the first 8 items of history
+  - set toast.message to "Picked {quantity} × {partChoice}"
+  - clear amount
+
+rules
+  - The stock of a part in parts is never below 0; a pick that would take it below 0 is refused and changes neither parts nor history.
+  - history holds at most 8 movements, newest first; only successful receive and pick actions add to history.
+  - lowCount counts every part in parts, regardless of search, category or the page shown.
+
+always
+  see shown has at most 6 rows
+  see history has at most 8 rows
+
+example "start: first page sorted by name, four parts low"
+  see lowValue = "4"
+  see totalValue = "14"
+  see shown has 6 rows
+  see name on row 1 = "Brake cable"
+  see name on row 6 = "Cassette 11-32"
+  see pager.pageInfo = "Page 1 of 3"
+  see history is hidden
+  see noHistory = "No movements yet."
+  see noMatches is hidden
+  see history is hidden
+  see toast.message is hidden
+  snapshot "start"
+
+example "low parts are flagged, others are not"
+  see lowFlag on row 1 = "Reorder"
+  see lowFlag on row 2 is hidden
+  see lowFlag on row 6 = "Reorder"
+  click pager.next
+  see name on row 2 = "Chainring 44T"
+  see lowFlag on row 2 = "Reorder"
+  see name on row 3 = "Front light"
+  see lowFlag on row 3 = "Reorder"
+  see lowFlag on row 1 is hidden
+
+example "receive adds stock, records it and confirms"
+  choose "Brake cable" in partChoice
+  type "6" into amount
+  click receive
+  see stock on row with "Brake cable" = 10
+  see lowFlag on row 1 is hidden
+  see lowValue = "3"
+  see history has 1 rows
+  see part on row 1 of history = "Brake cable"
+  see direction on row 1 = In
+  see quantity on row 1 = 6
+  see toast.message = "Received 6 × Brake cable"
+  see amount = ""
+  snapshot "after receive"
+
+example "pick removes stock and can make a part low"
+  choose "Brake fluid" in partChoice
+  type "3" into amount
+  click pick
+  see stock on row 2 = 3
+  see lowFlag on row 2 = "Reorder"
+  see lowValue = "5"
+  see direction on row 1 = Out
+  see toast.message = "Picked 3 × Brake fluid"
+
+example "picking more than is in stock is refused"
+  choose "Cassette 11-32" in partChoice
+  type "5" into amount
+  click pick
+  see stock on row 6 = 3
+  see history is hidden
+  see toast.message = "Cannot pick 5 × Cassette 11-32: only 3 in stock"
+  see amount = "5"
+  snapshot "pick refused"
+
+example "picking exactly the stock leaves zero"
+  choose "Cassette 11-32" in partChoice
+  type "3" into amount
+  click pick
+  see stock on row 6 = 0
+  see history has 1 rows
+  see toast.message = "Picked 3 × Cassette 11-32"
+
+example "a quantity that is not a positive whole number is refused"
+  type "abc" into amount
+  click receive
+  see toast.message = "Enter a whole number above 0"
+  see history is hidden
+  type "0" into amount
+  click pick
+  see toast.message = "Enter a whole number above 0"
+  see history is hidden
+  see amount = "0"
+  see stock on row with "Brake pads (disc)" = 24
+
+example "dismissing the message"
+  type "1" into amount
+  click receive
+  see toast.message = "Received 1 × Brake pads (disc)"
+  click toast.dismiss
+  see toast.message is hidden
+
+example "search by name ignores case"
+  type "brake" into search
+  see shown has 4 rows
+  see name on row 1 = "Brake cable"
+  see name on row 4 = "Brake rotor 160mm"
+  see pager.pageInfo = "Page 1 of 1"
+  see lowValue = "4"
+
+example "search by SKU"
+  type "CBL" into search
+  see shown has 3 rows
+  see name on row 1 = "Brake cable"
+  see name on row 2 = "Cable housing"
+  see name on row 3 = "Shift cable"
+
+example "search with no match shows the empty state"
+  type "saddle" into search
+  see shown is hidden
+  see pager.pageInfo is hidden
+  see pager.next is hidden
+  see emptyTitle = "No parts found"
+  snapshot "no matches"
+
+example "filter by category"
+  choose OnlyDrivetrain in category
+  see shown has 3 rows
+  see name on row 1 = "Cassette 11-32"
+  see category on row 1 of shown = Drivetrain
+  see reorderLevel on row 1 = 3
+  see name on row 2 = "Chain 11-speed"
+  see name on row 3 = "Chainring 44T"
+  choose AllCategories in category
+  see shown has 6 rows
+
+example "search and filter together"
+  choose OnlyCables in category
+  type "cable" into search
+  see shown has 3 rows
+  type "shift" into search
+  see shown has 1 rows
+  see sku on row 1 = "CBL-009"
+
+example "search ignores surrounding spaces"
+  type " cable " into search
+  see shown has 3 rows
+
+example "sort by stock, lowest first"
+  choose ByStock in sortBy
+  see name on row 1 = "Front light"
+  see stock on row 1 = 0
+  see name on row 2 = "Chainring 44T"
+  see name on row 3 = "Cassette 11-32"
+  see name on row 4 = "Brake cable"
+  see name on row 6 = "Brake fluid"
+  click pager.next
+  click pager.next
+  see name on row 2 = "Inner tube 700x28"
+  snapshot "sorted by stock"
+
+example "paging, and filters return to page 1"
+  click pager.next
+  see name on row 1 = "Chain 11-speed"
+  see pager.pageInfo = "Page 2 of 3"
+  click pager.next
+  see shown has 2 rows
+  see name on row 2 = "Tyre levers"
+  see pager.next is disabled
+  choose OnlyTyres in category
+  see pager.pageInfo = "Page 1 of 1"
+  see shown has 3 rows
+
+example "history keeps the last 8 movements, newest first"
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  type "1" into amount
+  click receive
+  choose "Shift cable" in partChoice
+  type "2" into amount
+  click pick
+  see history has 8 rows
+  see part on row 1 of history = "Shift cable"
+  see direction on row 1 = Out
+  see quantity on row 1 = 2
+  see part on row 8 of history = "Brake pads (disc)"
+  see stock on row with "Brake pads (disc)" = 32
+  snapshot "full history"

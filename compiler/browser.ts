@@ -224,7 +224,7 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
       await settle();
       const { node, errors } = await page.evaluate(pageExtract, { shapes, title: app.name });
       const screen = await page.evaluate(() => (window as any).__screen);
-      return { dom: node, screen, errors: [...errors, ...pageErrors.splice(0).map((m) => `page error: ${m}`)] };
+      return { dom: dropEmptySections(node), screen: dropEmptySections(screen), errors: [...errors, ...pageErrors.splice(0).map((m) => `page error: ${m}`)] };
     },
     async act(a, dom) {
       if (a.on === "tick") return "ticks are not supported in the styled profile";
@@ -266,6 +266,15 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
       await ctx.close();
     },
   };
+}
+
+/** A section with nothing visible in it is the same as no section: a page need not render it. */
+export function dropEmptySections(obs: Obs): Obs {
+  const clean = (nodes: any[]): any[] =>
+    nodes
+      .map((n) => (n.k === "section" ? { ...n, c: clean(n.c) } : n.k === "list" ? { ...n, rows: n.rows.map((r: any) => ({ ...r, c: clean(r.c) })) } : n))
+      .filter((n) => !(n.k === "section" && !n.c.some((c: any) => c.k !== "heading")));
+  return { ...obs, c: clean(obs.c) };
 }
 
 function findList(obs: Obs, name: string): any {

@@ -31,10 +31,11 @@ Anything a user sees or hits must lead back to the spec line that caused it:
   example in the spec. The fix is a spec change (often a new example that reproduces the
   bug), never a hand-patch of generated code.
 
-Already in place: `data-el` = spec element names, checker and `SPEC CONFLICT` messages with
-line numbers, `always` violations and divergence reports as ready-to-paste example steps.
-Still missing: a source map emitted at build time (element/endpoint → spec file:line →
-generated code), and bug reports that turn into failing examples automatically.
+Already in place: `data-el` = spec element names (qualified for component instances, e.g.
+`pager.next`), `sourcemap.json` per build (element/handler/state/derive → spec file:line,
+component, bundle), checker and `SPEC CONFLICT` messages with file:line, `always` violations
+and divergence reports as ready-to-paste example steps. Still missing: the UI to point at an
+element, and bug reports that turn into failing examples automatically.
 
 ## Reuse: spec bundles
 
@@ -50,9 +51,12 @@ thread, toast), a design system, an API resource.
 - Things that are now hard-coded in the harness belong in bundles: the Kit becomes
   `std.design.web`, `Fmt` becomes `std.fmt`, and the presentations become `std.ui`.
 
-## Direction (agreed, not yet started)
+## Direction
 
-1. A module system and the first `std` bundles, with behaviour components.
+1. ~~A module system and the first `std` bundles, with behaviour components.~~ Done in v10:
+   `bundle`/`import`/`intent.lock`, `use x = Component`, the source map. Next here: type
+   parameters and slots (a component that renders the app's rows), the Kit as a spec bundle,
+   and a registry for community bundles.
 2. An API profile, splitting the language into a generic core (records, choices, derive,
    rules, `always`, examples, modules), a UI profile and an API profile.
 3. Kotlin as a second backend target for the API profile (TypeScript/Node first).
@@ -74,6 +78,14 @@ thread, toast), a design system, an API resource.
 - **The language is a work in progress.** A missing construct is `NOT_YET`, a candidate for
   the next version, not a prohibition. Every addition goes in the changelog in
   `docs/LANGUAGE.md`.
+
+## The spec-writing skill
+
+`skills/intent-spec/SKILL.md` (linked from `.claude/skills/` so Claude Code finds it) teaches LLMs to use the language well: interviewing,
+reuse first, writing, checking, building, changing an app, tracing from the UI to the spec,
+and writing bundles. **Every language change updates it too:** its version line, the
+affected section, and lessons from authors who struggled. Feedback from held-out authors
+goes there first.
 
 ## Where things are
 

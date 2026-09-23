@@ -1,7 +1,7 @@
 // The stability pipeline: build every spec N times per target, then check that all builds
 // are the same app (examples + differential traces). Writes report.md / report.json.
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { App } from "./ast.ts";
 import { buildOnce, type BuildResult } from "./build.ts";
 import { runJobsIsolated, type Action, type ExploreResult, type TraceResult, type Violation } from "./exec.ts";
@@ -10,7 +10,8 @@ import { ROOT, type Target } from "./gen.ts";
 import { runStyledTraces } from "./look.ts";
 import { closeBrowser } from "./browser.ts";
 import { compareVisuals, contactSheet, type VisualReport } from "./visual.ts";
-import { parse } from "./parse.ts";
+import { load as loadSpec } from "./load.ts";
+import { printApp } from "./print.ts";
 
 export interface ConvergeOptions {
   builds: number;
@@ -68,8 +69,8 @@ export async function converge(files: string[], o: ConvergeOptions): Promise<App
 
   const perApp = await Promise.all(
     files.map(async (file) => {
-      const src = readFileSync(file, "utf8");
-      const { app } = parse(src);
+      const { app } = loadSpec(resolve(file));
+      const src = app ? printApp(app) : "";
       if (!app) throw new Error(`${file} does not pass the checker`);
       const name = basename(file, ".intent");
       const jobs: Promise<BuildResult & { id: string }>[] = [];
@@ -93,7 +94,7 @@ export async function converge(files: string[], o: ConvergeOptions): Promise<App
 export async function reanalyse(files: string[], o: ConvergeOptions): Promise<AppReport[]> {
   const reports: AppReport[] = [];
   for (const file of files) {
-    const { app } = parse(readFileSync(file, "utf8"));
+    const { app } = loadSpec(resolve(file));
     const name = basename(file, ".intent");
     const dir = join(o.out, name);
     const results = readdirSync(dir)

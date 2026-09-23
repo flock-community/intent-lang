@@ -1,0 +1,33 @@
+apps/13-crm.intent: ok — 0 error(s), 0 warning(s)
+13-crm ts-3: attempt 1: ok
+13-crm ts-1: attempt 1: ok
+13-crm ts-2: attempt 1: ok
+13-crm elm-3: attempt 1: ok
+13-crm elm-1: attempt 1: ok
+13-crm elm-2: attempt 1: ok
+13-crm ts-3: look attempt 1: ok (29 screens match)
+13-crm ts-2: look attempt 1: ok (29 screens match)
+13-crm ts-1: look attempt 1: 7 browser problem(s)
+13-crm elm-1: look attempt 1: ok (29 screens match)
+13-crm elm-2: look attempt 1: ok (29 screens match)
+13-crm elm-3: look attempt 1: ok (29 screens match)
+13-crm ts-1: look attempt 2: ok (29 screens match)
+# Convergence report — v10b-search
+
+3 builds per target (elm, ts), 30 random sessions × 20 actions per app.
+
+| App | Builds OK | First-try OK | `always` held | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Crm | 6/6 | 5/6 | 6/6 | 100% | 100% | 100% | 100% | 62% / 65% | $4.20 |
+
+*Same app* = share of random sessions in which every build showed identical screens after every action.
+
+### Looks (styled builds)
+
+| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Boxes within 8px: Elm / TS / Elm↔TS | Median box offset (px) |
+|---|---|---|---|---|
+| Crm | 6/6 | 0.0% / 0.0% / 0.0% | 100% / 98% / 99% | 0 / 0 / 0 |
+
+*Page = logic*: builds whose page showed exactly the logic's screen in every session. *Pixels differ*: average share of differing pixels between two builds' screenshots of the same state. *Boxes within 8px*: share of elements whose box is within 8px on every edge.
+
+full report: /Users/sjors/Develop/Personal/intentlang/runs/r13-crm/report.md

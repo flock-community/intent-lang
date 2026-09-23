@@ -1,7 +1,9 @@
 // intent CLI: check | build | converge
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { parse, formatDiagnostics } from "./parse.ts";
+import { formatDiagnostics } from "./parse.ts";
+import { load as loadSpec, writeLock } from "./load.ts";
+import { printApp } from "./print.ts";
 import { buildOnce } from "./build.ts";
 import type { Target } from "./gen.ts";
 import { converge, reanalyse } from "./converge.ts";
@@ -17,25 +19,36 @@ for (let i = 0; i < rest.length; i++) {
 }
 
 function load(file: string) {
-  const src = readFileSync(file, "utf8");
-  const { app, diagnostics } = parse(src);
+  const { app, diagnostics, sources } = loadSpec(resolve(file));
   const errors = diagnostics.filter((d) => d.level === "error").length;
-  if (diagnostics.length) console.log(formatDiagnostics(file, src, diagnostics));
+  if (diagnostics.length) console.log(formatDiagnostics(file, sources[0].text, diagnostics, sources));
   console.log(`${file}: ${errors ? "FAIL" : "ok"} — ${errors} error(s), ${diagnostics.length - errors} warning(s)`);
-  return { app, src };
+  // The compiler reads the canonical, expanded form of the spec.
+  return { app, src: app ? printApp(app) : "" };
 }
 
 switch (cmd) {
   case "check": {
     if (flags.json) {
       // Machine-readable diagnostics, for editors and CI.
-      const out = args.map((file) => ({ file, diagnostics: parse(readFileSync(file, "utf8")).diagnostics }));
+      const out = args.map((file) => ({ file, diagnostics: loadSpec(resolve(file)).diagnostics }));
       console.log(JSON.stringify(out, null, 2));
       process.exit(out.some((f) => f.diagnostics.some((d) => d.level === "error")) ? 1 : 0);
     }
     let ok = true;
     for (const f of args) if (!load(f).app) ok = false;
     process.exit(ok ? 0 : 1);
+  }
+  case "lock": {
+    const rows = writeLock(args.map((f) => resolve(f)));
+    for (const r of rows) console.log(`locked ${r.name} sha256:${r.sha}  ${r.file}`);
+    process.exit(0);
+  }
+  case "expand": {
+    const { app, src } = load(args[0]);
+    if (!app) process.exit(1);
+    console.log(src);
+    process.exit(0);
   }
   case "review": {
     for (const f of args) {
@@ -82,6 +95,8 @@ switch (cmd) {
   default:
     console.log(`usage:
   intent check <file.intent>... [--json]   syntax and consistency check
+  intent lock <file.intent>...             pin the bundles these specs import (intent.lock)
+  intent expand <file.intent>              print the canonical, expanded spec the compiler reads
   intent review <file.intent>              list what the spec leaves to defaults (one LLM call)
   intent build <file.intent> [--target elm,ts] [--out dir]
   intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N] [--out dir] [--tag name]

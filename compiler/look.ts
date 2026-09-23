@@ -11,6 +11,7 @@ import { SYSTEM } from "./prompt.ts";
 import { designSummary, ELM_LOOK_SKELETON, scaffoldStyled, TS_LOOK_SKELETON } from "./styled.ts";
 import { compileStyled } from "./toolchain.ts";
 import { KIT_GUIDE } from "./kit.ts";
+import { where as whereIn } from "./load.ts";
 
 export const DOM_CONTRACT = `The harness finds and drives every element through data attributes. It checks, in a real browser, that the page shows exactly what the Screen says. Rules:
 1. Every element of the spec's screen except headings gets data-el="<its name>" on exactly one DOM element, only while it is visible. When its Screen field is Nothing/null it is not in the DOM at all.
@@ -21,7 +22,7 @@ export const DOM_CONTRACT = `The harness finds and drives every element through 
 6. select: either data-el on a native <select> whose option values are the choice values (option text = labels), or data-el on a container holding one element per option with data-option="<Value>" (the value name, not the label) and aria-selected="true" (tabs, chips), aria-pressed="true" (segmented) or aria-current="page" (nav) on the chosen one. Clicking an option sends the Chosen event. Options appear in the order of the choice.
 7. progress: data-el on a <progress max="100" value="…"> or on an element with role="progressbar" and aria-valuenow.
 8. list: data-el on the list container; each row is one element with data-row (rows are never nested). Row elements go inside their row.
-9. section: data-el on the section's container; its elements are inside it. A section title (\`section x "Title"\`) and field labels are shown as written.
+9. section: data-el on the section's container; its elements are inside it. A section with nothing visible in it may be left out. A section title (\`section x "Title"\`) and field labels are shown as written.
 10. Nothing else may carry data-el, data-row or data-option.`;
 
 const STYLE_RULES = `Styling rules:
@@ -102,7 +103,6 @@ export interface LookResult {
 export async function checkLook(dir: string, app: App, shotsDir?: string): Promise<{ problems: string[]; checked: number }> {
   const problems: string[] = [];
   let checked = 0;
-  const lines = readFileSync(join(dir, ".spec.intent"), "utf8").split("\n");
   const examples: (Example | undefined)[] = [undefined, ...app.examples]; // undefined = the initial screen only
   for (const ex of examples) {
     const s = await openStyled(dir, app);
@@ -122,7 +122,8 @@ export async function checkLook(dir: string, app: App, shotsDir?: string): Promi
       }
       if (!ex) continue;
       for (const step of ex.steps) {
-        const where = `example "${ex.name}", after line ${step.line} \`${lines[step.line - 1]?.trim()}\``;
+        const src = whereIn(app, step.line);
+        const where = `example "${ex.name}", after ${src.file}:${src.line} \`${src.text}\``;
         if (step.do === "snapshot") {
           if (shotsDir) {
             const state = step.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();

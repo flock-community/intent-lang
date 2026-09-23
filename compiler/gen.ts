@@ -10,6 +10,10 @@ export type Target = "elm" | "ts";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+// Names of component instances are qualified (`pager.next`): a record field uses the last part,
+// a type or event tag joins all parts (`PagerNext`).
+const ident = (name: string) => name.slice(name.lastIndexOf(".") + 1);
+const typeName = (name: string) => name.split(".").map(cap).join("");
 const lowerFirst = (s: string) => s[0].toLowerCase() + s.slice(1);
 const q = (s: string) => JSON.stringify(s);
 
@@ -27,7 +31,7 @@ export function events(app: App): EventDef[] {
   const walk = (els: Element[], list?: Element) => {
     for (const el of els) {
       if (el.kind === "heading") continue;
-      const prefix = list ? cap(list.name) + cap(el.name) : cap(el.name);
+      const prefix = list ? typeName(list.name) + typeName(el.name) : typeName(el.name);
       const target = list ? `${list.name}.${el.name}` : el.name;
       if (el.kind === "button") out.push({ tag: prefix + "Clicked", on: "click", target, payload: list ? "key" : undefined });
       if (el.kind === "checkbox") out.push({ tag: prefix + "Toggled", on: "toggle", target, payload: list ? "key" : undefined });
@@ -146,13 +150,13 @@ import Ui
       case "checkbox": t = "Bool"; break;
       case "progress": t = "Int"; break;
       case "select": t = el.from ? "Pick" : selectChoice(app, el); break;
-      case "list": t = `List ${cap(el.name)}Row`; aliases.push(elmRecord(`${cap(el.name)}Row`, [["key", "String"], ...rowFields(el.children)])); break;
-      case "section": t = `${cap(el.name)}Section`; aliases.push(elmRecord(`${cap(el.name)}Section`, rowFields(el.children))); break;
+      case "list": t = `List ${typeName(el.name)}Row`; aliases.push(elmRecord(`${typeName(el.name)}Row`, [["key", "String"], ...rowFields(el.children)])); break;
+      case "section": t = `${typeName(el.name)}Section`; aliases.push(elmRecord(`${typeName(el.name)}Section`, rowFields(el.children))); break;
       default: t = "";
     }
     return el.visibleWhen ? `Maybe ${t.includes(" ") ? `(${t})` : t}` : t;
   };
-  const rowFields = (els: Element[]): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [e.name, fieldType(e)]);
+  const rowFields = (els: Element[]): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [ident(e.name), fieldType(e)]);
   const screenFields = rowFields(app.screen);
   out.push(`{-| What \`view\` returns: one field per dynamic element on the screen. -}\n` + elmRecord("Screen", screenFields) + "\n");
   for (const a of aliases) out.push(a + "\n");
@@ -161,7 +165,7 @@ import Ui
   const items = (els: Element[], acc: string, d: number): string[] =>
     els.map((el) => {
       if (el.kind === "heading") return `Just (Ui.NHeading ${q(el.label ?? "")})`;
-      const v = `${acc}.${el.name}`;
+      const v = `${acc}.${ident(el.name)}`;
       if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${node(el, `v${d}`, d + 1)}) ${v}`;
       return `Just (${node(el, v, d + 1)})`;
     });
@@ -337,13 +341,13 @@ import type { Node, Wire } from "./ui.ts";
       case "checkbox": t = "boolean"; break;
       case "progress": t = "number"; break;
       case "select": t = el.from ? "Pick" : selectChoice(app, el); break;
-      case "list": t = `${cap(el.name)}Row[]`; aliases.push(`export type ${cap(el.name)}Row = { key: string; ${rowFields(el.children)} };\n`); break;
-      case "section": t = `${cap(el.name)}Section`; aliases.push(`export type ${cap(el.name)}Section = { ${rowFields(el.children)} };\n`); break;
+      case "list": t = `${typeName(el.name)}Row[]`; aliases.push(`export type ${typeName(el.name)}Row = { key: string; ${rowFields(el.children)} };\n`); break;
+      case "section": t = `${typeName(el.name)}Section`; aliases.push(`export type ${typeName(el.name)}Section = { ${rowFields(el.children)} };\n`); break;
       default: t = "";
     }
     return el.visibleWhen ? `${t} | null` : t;
   };
-  const rowFields = (els: Element[]): string => els.filter((e) => e.kind !== "heading").map((e) => `${e.name}: ${fieldType(e)}`).join("; ");
+  const rowFields = (els: Element[]): string => els.filter((e) => e.kind !== "heading").map((e) => `${ident(e.name)}: ${fieldType(e)}`).join("; ");
   const screen = rowFields(app.screen);
   out.push(`/** What \`view\` returns: one field per dynamic element on the screen. */\nexport type Screen = { ${screen} };\n\n`);
   for (const a of aliases) out.push(a + "\n");
@@ -351,7 +355,7 @@ import type { Node, Wire } from "./ui.ts";
   const items = (els: Element[], acc: string): string[] =>
     els.map((el) => {
       if (el.kind === "heading") return `{ k: "heading", v: ${q(el.label ?? "")} }`;
-      const v = `${acc}.${el.name}`;
+      const v = `${acc}.${ident(el.name)}`;
       if (el.visibleWhen) return `${v} === null ? null : ${node(el, v)}`;
       return node(el, v);
     });

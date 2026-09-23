@@ -62,7 +62,7 @@ export function kit(app: App): Record<string, string> {
     buttonIcon: "inline-flex h-8 w-8 items-center justify-center rounded-control text-current opacity-80 hover:opacity-100",
     // fields
     input,
-    search: input,
+    search: input.replace("block w-full", "block w-80"),
     textarea: `${input} min-h-24`,
     dropdown: "rounded-control border border-neutral-300 bg-white py-2 pl-3 pr-8 text-sm text-neutral-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30",
     // selects
@@ -135,6 +135,7 @@ export const KIT_GUIDE = `The Kit (generated from the design block) holds the ex
 - Cards: a \`card\` is a Kit.card element. Its title (if any) and plain elements go in a Kit.cardBody. A \`toolbar\`, a \`list … as table\`, a \`list … as menu\` and a \`footer\` inside a card are its direct children, flush with the card's edges (they carry their own padding: toolbar and footer recipes, th/td). Several plain elements in a row share one Kit.cardBody.
 - Page structure: the root is Kit.page; with a sidebar, Kit.shell holds Kit.sidebar and Kit.content. A \`grid\` with N children uses grid2/grid3/grid4. Labels above fields use Kit.label inside Kit.formField. Dialogs are Kit.backdrop > Kit.dialog; their buttons sit in Kit.actions at the bottom.
 - Layout follows §9 (Look): spec order; consecutive buttons form one Kit.actions row; a \`footer\` section inside a sidebar is Kit.sidebarFooter (pinned to the bottom).
+- A \`search\` field has no visible label: its label is the placeholder (and aria-label), with Kit.search. Every other field has its label above it (Kit.formField > Kit.label + Kit.input).
 - Elements without \`as\` use the closest plain recipe: text → body, heading → heading, button → buttonSecondary, field → input, select → dropdown, checkbox → checkbox, list → menu, section → a plain div with the parent's gap.
 - A component declared \`as <presentation>\` starts from that presentation's recipe (a card component is Kit.card + Kit.cardBody, a badge component is Kit.badge, a row component is Kit.row) and changes only what its look sentence names (e.g. a colour per value). Its children stack with the recipe's own gap; do not add margins between them.
 - For declared components, build from Kit recipes and follow the component's look; add only the layout utilities you need (flex, grid, gap, width, margin, text alignment).

@@ -23,6 +23,7 @@ export interface Field {
   type: Type;
   default?: Literal;
   line: number;
+  note?: string;
 }
 
 export interface RecordDecl {
@@ -38,7 +39,7 @@ export interface ChoiceDecl {
   line: number;
 }
 
-export type ElementKind = "heading" | "text" | "field" | "button" | "checkbox" | "select" | "list" | "section" | "progress";
+export type ElementKind = "heading" | "text" | "field" | "button" | "checkbox" | "select" | "list" | "section" | "progress" | "use";
 
 export interface Element {
   kind: ElementKind;
@@ -51,8 +52,11 @@ export interface Element {
   from?: { list: string; field: string }; // dynamic select options
   as?: string; // presentation: a built-in (dialog, table, tabs, badge, …) or a declared component
   look?: string; // styling intent in words
+  component?: string; // `use name = Component`: the component to instantiate
+  bindings?: { name: string; value: string; line: number }[]; // its parameter values
   children: Element[];
   line: number;
+  note?: string;
 }
 
 export type Verb = "click" | "toggle" | "type" | "choose" | "tick";
@@ -62,6 +66,7 @@ export interface Handler {
   target: string; // "" for tick
   steps: string[];
   line: number;
+  note?: string;
 }
 
 export interface RowRef {
@@ -81,7 +86,7 @@ export type Step =
 
 export type Check =
   | { is: "eq"; value: string } // canonical string of the expected value
-  | { is: "rows"; count: number; cmp?: "atMost" | "atLeast" }
+  | { is: "rows"; count: number; cmp?: "atMost" | "atLeast"; countParam?: string }
   | { is: "disabled" | "enabled" | "hidden" | "shown" | "checked" | "unchecked" };
 
 export interface Example {
@@ -98,15 +103,36 @@ export interface Design {
   density?: string;
 }
 
+export interface Param {
+  name: string;
+  doc?: string;
+  default?: string;
+  line: number;
+}
+
 export interface Component {
   name: string;
   base?: string; // the built-in presentation it starts from
   look: string;
   line: number;
+  params?: Param[]; // behaviour components: parameters bound by `use`
+  body?: App; // behaviour components: their state, derive, screen, handlers, rules and always
+  from?: string; // the bundle it was imported from
+}
+
+export interface Import {
+  bundle: string; // e.g. std.list
+  name?: string; // a single imported name, e.g. Pager
+  alias?: string;
+  line: number;
 }
 
 export interface App {
+  kind?: "app" | "bundle";
   name: string;
+  imports?: Import[];
+  // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
+  sources?: { file: string; text: string }[];
   design?: Design;
   components: Component[];
   purpose: string[];
@@ -114,7 +140,7 @@ export interface App {
   choices: ChoiceDecl[];
   state: Field[];
   clockMs?: number;
-  derive: { name: string; sentence: string; line: number }[];
+  derive: { name: string; sentence: string; line: number; note?: string }[];
   screen: Element[];
   handlers: Handler[];
   rules: string[];
@@ -122,10 +148,14 @@ export interface App {
   always: Step[]; // invariants: `see` steps that must hold after every action
 }
 
+/** Lines from imported files are offset by their file index × LINE_BASE (see App.sources). */
+export const LINE_BASE = 100000;
+
 export interface Diagnostic {
   level: "error" | "warning";
   code: string;
   line: number;
   col: number;
   message: string;
+  file?: string;
 }

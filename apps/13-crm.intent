@@ -1,0 +1,254 @@
+app Crm
+  "A small CRM: keep track of customers and the deals in progress."
+
+import ui.admin
+import std.list
+import std.feedback
+
+component StageBadge as badge "Tinted per value: Lead in info, Proposal in warning, Won in success, Lost in neutral."
+
+choice Page: Contacts | Deals
+choice Stage: Lead | Proposal | Won | Lost
+choice StageFilter: AllStages "All" | OnlyLead "Lead" | OnlyProposal "Proposal" | OnlyWon "Won" | OnlyLost "Lost"
+
+record Contact
+  id: Int
+  name: Text
+  company: Text
+  email: Text
+
+record Deal
+  id: Int
+  title: Text
+  contact: Text          # the name of the contact
+  value: Decimal
+  stage: Stage
+
+state
+  page: Page = Contacts
+  contacts: List Contact = table
+    id | name           | company     | email
+    1  | "Ada Visser"   | "Northwind" | "ada@northwind.nl"
+    2  | "Bram de Jong" | "Acme"      | "bram@acme.com"
+    3  | "Carla Smit"   | "Globex"    | "carla@globex.io"
+    4  | "Daan Mulder"  | "Initech"   | "daan@initech.nl"
+    5  | "Eva Jansen"   | "Acme"      | "eva@acme.com"
+    6  | "Femke Bos"    | "Umbrella"  | "femke@umbrella.org"
+    7  | "Gijs Kok"     | "Northwind" | "gijs@northwind.nl"
+  deals: List Deal = table
+    id | title              | contact        | value | stage
+    1  | "Website redesign" | "Ada Visser"   | 12000 | Proposal
+    2  | "Support contract" | "Bram de Jong" | 4800  | Won
+    3  | "Data migration"   | "Carla Smit"   | 7500  | Lead
+    4  | "Training days"    | "Eva Jansen"   | 2400  | Lost
+    5  | "Mobile app"       | "Daan Mulder"  | 18000 | Lead
+    6  | "Security audit"   | "Gijs Kok"     | 6000  | Proposal
+    7  | "License renewal"  | "Bram de Jong" | 3000  | Won
+    8  | "Analytics setup"  | "Femke Bos"    | 5200  | Lead
+    9  | "Cloud hosting"    | "Ada Visser"   | 9600  | Won
+  search: Text = ""
+  stageFilter: StageFilter = AllStages
+  showNew: Bool = false
+  newName: Text = ""
+  newCompany: Text = ""
+  newEmail: Text = ""
+
+derive
+  foundContacts = the contacts whose name or company contains search (trimmed, ignoring case), sorted by name from A to Z
+  filteredDeals = the deals whose stage fits stageFilter (AllStages fits every stage), highest value first, and for equal values the lowest id first
+  pipelineValue = the sum of value over the deals in stage Lead or Proposal
+  wonValue = the sum of value over the Won deals
+  winRate = the number of Won deals × 100 divided by the number of Won and Lost deals together, rounded down; 0 when there are none
+  emailValid = newEmail trimmed contains exactly one "@" with at least one character before it, and after the "@" a "." with at least one character on both sides of that "."
+
+screen
+  section sidebar as sidebar
+    heading "Pipeline" as title
+    select page as nav
+    section account as footer
+      text userInitials = "JW" as avatar
+      text userName = "Jo de Wit" as caption
+  section content as main
+    section header as header
+      text pageTitle = the label of page as title
+      button newContact "New contact" as primary
+        visible when page is Contacts
+    section stats as grid
+      section pipelineStat as StatCard
+        text pipelineLabel = "Pipeline"
+        text pipelineAmount = pipelineValue as money
+      section wonStat as StatCard
+        text wonLabel = "Won"
+        text wonAmount = wonValue as money
+      section rateStat as StatCard
+        text rateLabel = "Win rate"
+        text rateValue = "{winRate}%"
+    section contactsCard as card
+      visible when page is Contacts
+      section contactFilters as toolbar
+        field search "Search contacts" as search
+      list shownContacts of Contact = {contactPager.visible} as table
+        text name
+        text company
+        text email
+        text dealCount = the number of deals whose contact is this contact's name
+      section noContacts as EmptyState
+        visible when shownContacts is empty
+        text noContactsTitle = "No contacts found"
+        text noContactsHint = "Try another search."
+      use contactPager = Pager
+        items = foundContacts
+        size = 4
+    section dealsCard as card
+      visible when page is Deals
+      section dealFilters as toolbar
+        select stageFilter as chips
+      list shownDeals of Deal = {dealPager.visible} as table
+        text title
+        text contact
+        text value = value as money
+        text stage as StageBadge
+        button advance "Advance" as secondary
+          enabled when the deal is in stage Lead or Proposal
+        button lose "Mark lost" as ghost
+          enabled when the deal is in stage Lead or Proposal
+      use dealPager = Pager
+        items = filteredDeals
+        size = 5
+  section newDialog "New contact" as dialog
+    visible when showNew
+    field newName "Name"
+    field newCompany "Company"
+    field newEmail "Email"
+    text emailProblem = "Enter a valid email address" as caption
+      visible when newEmail is not blank and not emailValid
+    button create "Add contact" as primary
+      enabled when newName is not blank and emailValid
+    button cancel "Cancel" as secondary
+  use toast = Toast
+
+on type search
+  - set {contactPager.page} to 1
+
+on choose stageFilter
+  - set {dealPager.page} to 1
+
+on click newContact
+  - set showNew to true
+  - clear newName, newCompany and newEmail
+
+on click create
+  - add a Contact to the end of contacts with id = the highest id + 1, and name, company and email = newName, newCompany and newEmail, each trimmed
+  - set showNew to false
+  - set {toast.message} to "Added <the new name>"
+  - clear search and set {contactPager.page} to 1
+
+on click cancel
+  - set showNew to false
+
+on click advance
+  - a Lead deal moves to Proposal; a Proposal deal moves to Won
+  - set {toast.message} to "<title> moved to <its new stage>"
+
+on click lose
+  - set the stage of that deal to Lost
+  - set {toast.message} to "<title> marked as lost"
+
+always
+  see shownContacts has at most 4 rows
+  see shownDeals has at most 5 rows
+
+example "contacts at a glance"
+  see pageTitle = "Contacts"
+  see shownContacts has 4 rows
+  see name on row 1 = "Ada Visser"
+  see company on row 2 = "Acme"
+  see dealCount on row 1 = "2"
+  see dealCount on row 3 = "1"
+  see contactPager.pageInfo = "Page 1 of 2"
+  see pipelineAmount = "48700.00"
+  see wonAmount = "17400.00"
+  see rateValue = "75%"
+  see dealsCard is hidden
+  snapshot "contacts"
+
+example "searching and paging contacts"
+  type "acme" into search
+  see shownContacts has 2 rows
+  see name on row 2 = "Eva Jansen"
+  type "zzz" into search
+  see shownContacts has 0 rows
+  see noContactsTitle = "No contacts found"
+  see noContactsHint = "Try another search."
+  snapshot "no contacts"
+  type "" into search
+  click contactPager.next
+  see contactPager.pageInfo = "Page 2 of 2"
+  see shownContacts has 3 rows
+  see name on row 3 = "Gijs Kok"
+  type "a" into search
+  see contactPager.pageInfo = "Page 1 of 2"
+
+example "deals by value"
+  choose Deals in page
+  see pageTitle = "Deals"
+  see newContact is hidden
+  see shownDeals has 5 rows
+  see title on row 1 = "Mobile app"
+  see value on row 1 = "18000.00"
+  see stage on row 1 = "Lead"
+  see contact on row 2 = "Ada Visser"
+  see dealPager.pageInfo = "Page 1 of 2"
+  choose OnlyLead in stageFilter
+  see shownDeals has 3 rows
+  see title on row 3 = "Analytics setup"
+  see dealPager.next is disabled
+  snapshot "deals"
+
+example "moving a deal forward"
+  choose Deals in page
+  click advance on row with "Mobile app"
+  see stage on row 1 = "Proposal"
+  see toast.message = "Mobile app moved to Proposal"
+  click advance on row 1
+  see stage on row 1 = "Won"
+  see advance on row 1 is disabled
+  see lose on row 1 is disabled
+  see wonAmount = "35400.00"
+  see pipelineAmount = "30700.00"
+  see rateValue = "80%"
+  click toast.dismiss
+  see toast.message is hidden
+
+example "losing a deal"
+  choose Deals in page
+  click lose on row with "Website redesign"
+  see stage on row 2 = "Lost"
+  see toast.message = "Website redesign marked as lost"
+  see rateValue = "60%"
+  see pipelineAmount = "36700.00"
+
+example "adding a contact"
+  click newContact
+  see newDialog is shown
+  see create is disabled
+  type "Hanna Vos" into newName
+  type "hanna@" into newEmail
+  see emailProblem = "Enter a valid email address"
+  see create is disabled
+  type " hanna@vos.nl " into newEmail
+  see emailProblem is hidden
+  see create is enabled
+  type "Vos BV" into newCompany
+  snapshot "new contact"
+  click create
+  see newDialog is hidden
+  see toast.message = "Added Hanna Vos"
+  click contactPager.next
+  see name on row 4 = "Hanna Vos"
+  see email on row 4 = "hanna@vos.nl"
+  see dealCount on row 4 = "0"
+  click newContact
+  see newName = ""
+  click cancel
+  see newDialog is hidden

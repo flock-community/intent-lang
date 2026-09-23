@@ -1,11 +1,14 @@
 // Parser + checker for .intent files. Deterministic: same text in, same IR and diagnostics out.
-import type { App, Check, ChoiceDecl, Diagnostic, Element, ElementKind, Example, Field, Handler, Literal, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import { expandUses } from "./expand.ts";
+import { LINE_BASE } from "./ast.ts";
+import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Example, Field, Handler, Literal, Param, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
   indent: number;
   line: number;
   children: Line[];
+  note?: string; // an end-of-line `# comment`: kept as a note for readers (and the compiler)
 }
 
 const LOWER = "[a-z][A-Za-z0-9]*";
@@ -29,124 +32,210 @@ export const RESERVED = new Set([
 // Task is a very natural record name; allow it (Elm's Task module is not imported by generated code).
 RESERVED.delete("Task");
 
-export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
+type Err = (l: number, c: string, m: string, col?: number) => void;
+
+interface Ctx {
+  err: Err;
+  warn: Err;
+  pendingWaits: { step: { do: "tick"; times: number; line: number }; ms: number }[];
+  clockLine: number;
+}
+
+const QN = `${LOWER}(?:\\.${LOWER})*`; // a (possibly qualified) element or state name: pager.next
+const BUNDLE_NAME = `${LOWER}(?:\\.${LOWER})*`;
+
+export const emptyApp = (): App => ({ name: "", components: [], purpose: [], records: [], choices: [], state: [], derive: [], screen: [], handlers: [], rules: [], examples: [], always: [] });
+
+/**
+ * Syntax only: the file's own declarations, imports and components, without resolving imports
+ * and without semantic checks. `load.ts` resolves imports and expands components, then checks.
+ */
+export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[]; clockLine: number } {
   const diags: Diagnostic[] = [];
-  const err = (line: number, code: string, message: string, col = 1) => diags.push({ level: "error", code, line, col, message });
-  const warn = (line: number, code: string, message: string, col = 1) => diags.push({ level: "warning", code, line, col, message });
-
+  const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
+  const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
   const roots = buildLineTree(src, err);
+  const app = emptyApp();
+  app.imports = [];
+  const ctx: Ctx = { err, warn, pendingWaits: [], clockLine: 0 };
 
-  const app: App = { name: "", components: [], purpose: [], records: [], choices: [], state: [], derive: [], screen: [], handlers: [], rules: [], examples: [], always: [] };
-  let clockLine = 0;
-  const pendingWaits: { step: { do: "tick"; times: number; line: number }; ms: number }[] = [];
-
-  for (const [i, node] of roots.entries()) {
+  roots.forEach((node, i) => {
     const t = node.text;
     let m: RegExpMatchArray | null;
-    if ((m = t.match(new RegExp(`^app\\s+(${UPPER})$`)))) {
-      if (i !== 0) err(node.line, "SYNTAX", "`app` must be the first block");
-      if (app.name) err(node.line, "DUPLICATE", "only one `app` per file");
-      app.name = m[1];
+    if ((m = t.match(new RegExp(`^(app|bundle)\\s+(\\S+)$`)))) {
+      if (i !== 0) err(node.line, "SYNTAX", `\`${m[1]}\` must be the first block`);
+      if (app.name) err(node.line, "DUPLICATE", "only one `app` or `bundle` per file");
+      const ok = m[1] === "app" ? new RegExp(`^${UPPER}$`).test(m[2]) : new RegExp(`^${BUNDLE_NAME}$`).test(m[2]);
+      if (!ok) err(node.line, "SYNTAX", m[1] === "app" ? "an app name is UpperCamel: `app Helpdesk`" : "a bundle name is lower case with dots: `bundle std.list`");
+      app.kind = m[1] as "app" | "bundle";
+      app.name = m[2];
       for (const c of node.children) {
-        const s = parseString(c.text);
-        if (s === undefined || c.children.length) err(c.line, "SYNTAX", "the purpose of an app is one or more strings", c.indent + 1);
-        else app.purpose.push(s);
+        const str = parseString(c.text);
+        if (str === undefined || c.children.length) err(c.line, "SYNTAX", `the purpose of an ${m[1]} is one or more strings`, c.indent + 1);
+        else app.purpose.push(str);
       }
-    } else if ((m = t.match(new RegExp(`^record\\s+(${UPPER})$`)))) {
-      const rec: RecordDecl = { name: m[1], fields: [], line: node.line };
-      for (const c of node.children) {
-        const f = parseField(c, err, false);
-        if (f) rec.fields.push(f);
-      }
-      if (!rec.fields.length) err(node.line, "SYNTAX", `record ${rec.name} has no fields`);
-      app.records.push(rec);
-    } else if ((m = t.match(new RegExp(`^choice\\s+(${UPPER})\\s*(?::\\s*(.*))?$`)))) {
-      // Values, each optionally with a display label: `choice Filter: All "Everything" | Open`.
-      const values: string[] = [];
-      const labels: Record<string, string> = {};
-      const addValue = (raw: string, line: number, col = 1) => {
-        const vm = raw.trim().match(new RegExp(`^(${UPPER})(?:\\s+(${STR}))?$`));
-        if (!vm) return err(line, "SYNTAX", `choice value \`${raw.trim()}\` must be an UpperCamel name, optionally followed by a "label"`, col);
-        values.push(vm[1]);
-        labels[vm[1]] = vm[2] !== undefined ? parseString(vm[2])! : vm[1];
-      };
-      if (m[2] !== undefined && m[2].trim()) for (const v of splitCells(m[2])) addValue(v, node.line);
-      for (const c of node.children) addValue(c.text, c.line, c.indent + 1);
-      if (values.length < 2) err(node.line, "SYNTAX", `choice ${m[1]} needs at least two values, e.g. \`choice ${m[1]}: A | B\``);
-      app.choices.push({ name: m[1], values, labels, line: node.line });
-    } else if (t === "design") {
-      app.design = parseDesign(node, err);
-    } else if ((m = t.match(new RegExp(`^component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
-      const base = m[2];
-      m = [m[0], m[1], m[3]] as unknown as RegExpMatchArray;
-      const looks = [m[2] ? parseString(m[2])! : "", ...node.children.map((c) => parseString(c.text) ?? (err(c.line, "SYNTAX", "a component's look is one or more strings", c.indent + 1), ""))];
-      const look = looks.filter(Boolean).join(" ");
-      if (!look) err(node.line, "SYNTAX", `component ${m[1]} needs a look: \`component ${m[1]} "…"\``);
-      if (base && !Object.values(PRESENTATIONS).some((ps) => ps.includes(base))) err(node.line, "UNKNOWN_NAME", `\`${base}\` is not a built-in presentation`);
-      app.components.push({ name: m[1], base, look, line: node.line });
-    } else if (t === "state") {
-      for (const c of node.children) {
-        const f = parseField(c, err, true);
-        if (f) app.state.push(f);
-      }
-    } else if ((m = t.match(/^clock\s+every\s+(\S+)$/))) {
-      const ms = parseDuration(m[1]);
-      if (ms === undefined || ms <= 0) err(node.line, "SYNTAX", "expected a duration such as `1s`, `250ms` or `2m`");
-      else app.clockMs = ms;
-      clockLine = node.line;
-    } else if (t === "derive") {
-      for (const c of node.children) {
-        const dm = c.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
-        if (!dm) err(c.line, "SYNTAX", "a derived value looks like `name = sentence`", c.indent + 1);
-        else app.derive.push({ name: dm[1], sentence: dm[2] + flattenChildren(c), line: c.line });
-      }
-    } else if (t === "screen") {
-      app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
-    } else if ((m = t.match(new RegExp(`^on\\s+(click|toggle|type|choose)\\s+(${LOWER})$`))) || (m = t.match(/^on\s+(tick)$/))) {
-      const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err), line: node.line };
-      app.handlers.push(h);
-    } else if (t.startsWith("on ")) {
-      err(node.line, "SYNTAX", "expected `on click|toggle|type|choose <element>` or `on tick`");
-    } else if (t === "always") {
-      for (const c of node.children) {
-        const r = parseStep(c, err);
-        if (!r) continue;
-        if (r.step.do !== "see") err(c.line, "SYNTAX", "`always` holds only `see` checks", c.indent + 1);
-        else if (r.step.at) err(c.line, "SYNTAX", "`always` checks cannot point at a row", c.indent + 1);
-        else app.always.push(r.step);
-      }
-      if (!node.children.length) err(node.line, "SYNTAX", "expected indented `see …` checks");
-    } else if (t === "rules") {
-      app.rules.push(...parseBullets(node, err));
-    } else if ((m = t.match(new RegExp(`^example\\s+(${STR})$`)))) {
-      const ex: Example = { name: parseString(m[1])!, steps: [], line: node.line };
-      for (const c of node.children) {
-        const s = parseStep(c, err);
-        if (s) {
-          ex.steps.push(s.step);
-          if (s.waitMs !== undefined) pendingWaits.push({ step: s.step as any, ms: s.waitMs });
-        }
-      }
-      app.examples.push(ex);
-    } else {
+    } else if ((m = t.match(new RegExp(`^import\\s+(${BUNDLE_NAME})(?:\\.(${UPPER}))?(?:\\s+as\\s+(${UPPER}))?$`)))) {
+      if (m[3] && !m[2]) err(node.line, "SYNTAX", "`as` renames one imported name: `import std.list.Pager as TicketPager`");
+      app.imports!.push({ bundle: m[1], name: m[2], alias: m[3], line: node.line });
+    } else if (t.startsWith("import")) {
+      err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
+    } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "import", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
+  });
+
+  if (!app.name) err(1, "SYNTAX", "a spec starts with `app Name` (or a library with `bundle name`)");
+  if (app.kind === "bundle") {
+    const behaviour = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.always.length || app.examples.length || app.rules.length;
+    if (behaviour) err(1, "SYNTAX", "a bundle holds records, choices, components and a design; state, screens and behaviour go inside a component, examples in the bundle's demo app");
   }
-
-  if (!app.name) err(1, "SYNTAX", "a spec starts with `app Name`");
-
-  for (const w of pendingWaits) {
+  for (const w of ctx.pendingWaits) {
     if (!app.clockMs) continue; // reported by check()
     if (w.ms % app.clockMs !== 0) err(w.step.line, "STEP", `wait duration is not a whole number of clock ticks (${app.clockMs}ms)`);
     else w.step.times = w.ms / app.clockMs;
   }
+  return { app, diagnostics: diags, clockLine: ctx.clockLine };
+}
 
+/** One block (top level, or inside a component). Returns false when the line is not a block. */
+function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"): boolean {
+  const { err } = ctx;
+  const t = node.text;
+  let m: RegExpMatchArray | null;
+  const onlyTop = (what: string) => {
+    if (where === "component") err(node.line, "SYNTAX", `\`${what}\` belongs at the top level, not inside a component`);
+  };
+  if ((m = t.match(new RegExp(`^record\\s+(${UPPER})$`)))) {
+    onlyTop("record");
+    const rec: RecordDecl = { name: m[1], fields: [], line: node.line };
+    for (const c of node.children) {
+      const f = parseField(c, err, false);
+      if (f) rec.fields.push(f);
+    }
+    if (!rec.fields.length) err(node.line, "SYNTAX", `record ${rec.name} has no fields`);
+    app.records.push(rec);
+  } else if ((m = t.match(new RegExp(`^choice\\s+(${UPPER})\\s*(?::\\s*(.*))?$`)))) {
+    onlyTop("choice");
+    // Values, each optionally with a display label: `choice Filter: All "Everything" | Open`.
+    const values: string[] = [];
+    const labels: Record<string, string> = {};
+    const addValue = (raw: string, line: number, col = 1) => {
+      const vm = raw.trim().match(new RegExp(`^(${UPPER})(?:\\s+(${STR}))?$`));
+      if (!vm) return err(line, "SYNTAX", `choice value \`${raw.trim()}\` must be an UpperCamel name, optionally followed by a "label"`, col);
+      values.push(vm[1]);
+      labels[vm[1]] = vm[2] !== undefined ? parseString(vm[2])! : vm[1];
+    };
+    if (m[2] !== undefined && m[2].trim()) for (const v of splitCells(m[2])) addValue(v, node.line);
+    for (const c of node.children) addValue(c.text, c.line, c.indent + 1);
+    if (values.length < 2) err(node.line, "SYNTAX", `choice ${m[1]} needs at least two values, e.g. \`choice ${m[1]}: A | B\``);
+    app.choices.push({ name: m[1], values, labels, line: node.line });
+  } else if (t === "design") {
+    onlyTop("design");
+    app.design = parseDesign(node, err);
+  } else if ((m = t.match(new RegExp(`^component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
+    onlyTop("component");
+    app.components.push(parseComponent(node, m[1], m[2], m[3], ctx));
+  } else if (t === "state") {
+    for (const c of node.children) {
+      const f = parseField(c, err, true);
+      if (f) app.state.push(f);
+    }
+  } else if ((m = t.match(/^clock\s+every\s+(\S+)$/))) {
+    onlyTop("clock");
+    const ms = parseDuration(m[1]);
+    if (ms === undefined || ms <= 0) err(node.line, "SYNTAX", "expected a duration such as `1s`, `250ms` or `2m`");
+    else app.clockMs = ms;
+    ctx.clockLine = node.line;
+  } else if (t === "derive") {
+    for (const c of node.children) {
+      const dm = c.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+      if (!dm) err(c.line, "SYNTAX", "a derived value looks like `name = sentence`", c.indent + 1);
+      else app.derive.push({ name: dm[1], sentence: dm[2] + flattenChildren(c), line: c.line, note: c.note });
+    }
+  } else if (t === "screen") {
+    app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
+  } else if ((m = t.match(new RegExp(`^on\\s+(click|toggle|type|choose)\\s+(${QN})$`))) || (m = t.match(/^on\s+(tick)$/))) {
+    const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err), line: node.line, note: node.note };
+    app.handlers.push(h);
+  } else if (t.startsWith("on ")) {
+    err(node.line, "SYNTAX", "expected `on click|toggle|type|choose <element>` or `on tick`");
+  } else if (t === "always") {
+    for (const c of node.children) {
+      const r = parseStep(c, err, where === "component");
+      if (!r) continue;
+      if (r.step.do !== "see") err(c.line, "SYNTAX", "`always` holds only `see` checks", c.indent + 1);
+      else if (r.step.at) err(c.line, "SYNTAX", "`always` checks cannot point at a row", c.indent + 1);
+      else app.always.push(r.step);
+    }
+    if (!node.children.length) err(node.line, "SYNTAX", "expected indented `see …` checks");
+  } else if (t === "rules") {
+    app.rules.push(...parseBullets(node, err));
+  } else if ((m = t.match(new RegExp(`^example\\s+(${STR})$`)))) {
+    if (where === "component") err(node.line, "NOT_YET", "examples inside a component are not in the language yet; prove a component with examples in its bundle's demo app");
+    const ex: Example = { name: parseString(m[1])!, steps: [], line: node.line };
+    for (const c of node.children) {
+      const st = parseStep(c, err);
+      if (st) {
+        ex.steps.push(st.step);
+        if (st.waitMs !== undefined) ctx.pendingWaits.push({ step: st.step as any, ms: st.waitMs });
+      }
+    }
+    app.examples.push(ex);
+  } else return false;
+  return true;
+}
+
+/**
+ * `component Name [as base] ["look"]`. A component with only a look styles elements (`… as Name`).
+ * With `param`s and blocks it is a behaviour component, instantiated by `use x = Name`.
+ */
+function parseComponent(node: Line, name: string, base: string | undefined, lookStr: string | undefined, ctx: Ctx): Component {
+  const { err } = ctx;
+  const looks = [lookStr ? parseString(lookStr)! : ""];
+  const params: Param[] = [];
+  const body = emptyApp();
+  let hasBody = false;
+  for (const c of node.children) {
+    let m: RegExpMatchArray | null;
+    const str = parseString(c.text);
+    if (str !== undefined) looks.push(str);
+    else if ((m = c.text.match(new RegExp(`^param\\s+(${LOWER})(?:\\s+(${STR}))?(?:\\s*=\\s*(.+))?$`)))) {
+      if (params.some((p) => p.name === m![1])) err(c.line, "DUPLICATE", `param \`${m[1]}\` is declared twice`, c.indent + 1);
+      params.push({ name: m[1], doc: m[2] ? parseString(m[2]) : undefined, default: m[3]?.trim(), line: c.line });
+    } else if (parseBlock(c, body, ctx, "component")) hasBody = true;
+    else err(c.line, "SYNTAX", 'inside a component: a "look" string, `param name`, or a block (state, derive, screen, on, always, rules)', c.indent + 1);
+  }
+  const look = looks.filter(Boolean).join(" ");
+  if (!look && !hasBody) err(node.line, "SYNTAX", `component ${name} needs a look: \`component ${name} "…"\`, or behaviour blocks`);
+  if (base && !Object.values(PRESENTATIONS).some((ps) => ps.includes(base))) err(node.line, "UNKNOWN_NAME", `\`${base}\` is not a built-in presentation`);
+  if (hasBody && !body.screen.length) err(node.line, "SYNTAX", `component ${name} has behaviour but no \`screen\``);
+  return { name, base, look, line: node.line, params: hasBody ? params : undefined, body: hasBody ? body : undefined };
+}
+
+/** Parse and check a self-contained file (no imports). Files with imports go through `load()`. */
+export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
+  const { app, diagnostics, clockLine } = parseSyntax(src);
+  const err: Err = (line, code, message, col = 1) => diagnostics.push({ level: "error", code, line, col, message });
+  const warn: Err = (line, code, message, col = 1) => diagnostics.push({ level: "warning", code, line, col, message });
+  if (app.imports?.length) err(app.imports[0].line, "SYNTAX", "this file imports bundles; check it with `intent check` (which resolves imports), not `parse()`");
   // Semantic checks run even after syntax errors, so one pass reports as much as possible.
-  if (app.name) check(app, err, warn, clockLine);
-  diags.sort((a, b) => a.line - b.line || a.col - b.col);
-  return { app: diags.some((d) => d.level === "error") ? undefined : app, diagnostics: diags };
+  else if (app.name && app.kind !== "bundle") {
+    const used = expandUses(app, err, warn);
+    check(app, err, warn, clockLine, used);
+  }
+  diagnostics.sort((a, b) => a.line - b.line || a.col - b.col);
+  return { app: diagnostics.some((d) => d.level === "error") ? undefined : app, diagnostics };
+}
+
+/** Semantic checks on a complete (expanded) app. */
+export function checkApp(app: App, clockLine: number, used = new Set<string>()): Diagnostic[] {
+  const diags: Diagnostic[] = [];
+  const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
+  const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
+  check(app, err, warn, clockLine, used);
+  return diags;
 }
 
 // ---------------------------------------------------------------- lines
@@ -163,7 +252,8 @@ function buildLineTree(src: string, err: (l: number, c: string, m: string, col?:
     const text = stripComment(raw).trimEnd();
     if (!text.trim()) return;
     const indent = text.length - text.trimStart().length;
-    const node: Line = { text: text.trim(), indent, line: lineNo, children: [] };
+    const note = raw.slice(stripComment(raw).length).replace(/^#\s*/, "").trim() || undefined;
+    const node: Line = { text: text.trim(), indent, line: lineNo, children: [], note };
     if (indent % 2 !== 0) {
       err(lineNo, "INDENT", "indentation must be a multiple of 2 spaces", indent + 1);
       return;
@@ -278,7 +368,7 @@ function parseField(c: Line, err: (l: number, c: string, m: string, col?: number
     err(c.line, "SYNTAX", `state field \`${m[1]}\` needs a default: \`${m[1]}: ${m[2]} = …\``, c.indent + 1);
   }
   if (c.children.length && def?.k !== "table") err(c.children[0].line, "INDENT", "a field has no indented lines");
-  return { name: m[1], type, default: def, line: c.line };
+  return { name: m[1], type, default: def, line: c.line, note: c.note };
 }
 
 // `= table` followed by a header row and data rows, cells separated by `|`.
@@ -325,7 +415,7 @@ function splitCells(line: string): string[] {
   return cells;
 }
 
-const ELEMENT_KINDS: ElementKind[] = ["heading", "text", "field", "button", "checkbox", "select", "list", "section", "progress"];
+const ELEMENT_KINDS: ElementKind[] = ["heading", "text", "field", "button", "checkbox", "select", "list", "section", "progress", "use"];
 
 // Closed set of built-in presentations per element kind (`as …`). Declared components are allowed too.
 export const PRESENTATIONS: Record<ElementKind, string[]> = {
@@ -338,6 +428,7 @@ export const PRESENTATIONS: Record<ElementKind, string[]> = {
   list: ["table", "cards", "grid", "timeline", "bars", "menu"],
   section: ["card", "dialog", "drawer", "sidebar", "header", "toolbar", "row", "grid", "footer", "banner", "main", "form"],
   progress: ["bar", "ring"],
+  use: [],
 };
 
 export const COLOR_ROLES = ["brand", "neutral", "accent", "success", "warning", "danger", "info"];
@@ -376,7 +467,24 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     return;
   }
   const kind = kw as ElementKind;
-  const el: Element = { kind, name: "", children: [], line: c.line };
+  const el: Element = { kind, name: "", children: [], line: c.line, note: c.note };
+  if (kind === "use") {
+    // `use pager = Pager` with indented `param = value` bindings.
+    const um = t.match(new RegExp(`^use\\s+(${LOWER})\\s*=\\s*(${UPPER})$`));
+    if (!um) {
+      err(c.line, "SYNTAX", "expected `use name = Component`", col);
+      return;
+    }
+    el.name = um[1];
+    el.component = um[2];
+    el.bindings = [];
+    for (const k of c.children) {
+      const bm = k.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+      if (!bm) err(k.line, "SYNTAX", "a binding looks like `param = value`", k.indent + 1);
+      else el.bindings.push({ name: bm[1], value: (bm[2] + flattenChildren(k)).trim(), line: k.line });
+    }
+    return el;
+  }
   let rest = t.slice(kw.length).trim();
   // `… as <presentation>`: only a known presentation or an UpperCamel component name counts,
   // so sentences like `= price as money` keep their words.
@@ -443,19 +551,19 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
   return el;
 }
 
-function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number) => void): { step: Step; waitMs?: number } | undefined {
+function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number) => void, inComponent = false): { step: Step; waitMs?: number } | undefined {
   const t = c.text;
   const line = c.line;
   const col = c.indent + 1;
   if (c.children.length) err(c.children[0].line, "INDENT", "example steps have no indented lines");
-  const ROW = `(?:\\s+on\\s+row\\s+(\\d+|with\\s+${STR})(?:\\s+of\\s+(${LOWER}))?)?`;
+  const ROW = `(?:\\s+on\\s+row\\s+(\\d+|with\\s+${STR})(?:\\s+of\\s+(${QN}))?)?`;
   const at = (n?: string, list?: string): RowRef | undefined =>
     !n ? undefined : n.startsWith("with") ? { row: 0, with: parseString(n.replace(/^with\s+/, "")), list } : { row: Number(n), list };
   let m: RegExpMatchArray | null;
-  if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${LOWER})$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], line } };
-  if ((m = t.match(new RegExp(`^(click|toggle)\\s+(${LOWER})${ROW}$`)))) return { step: { do: m[1] as "click", target: m[2], at: at(m[3], m[4]), line } };
-  if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${LOWER})$`)))) return { step: { do: "choose", value: m[1], target: m[2], line } };
-  if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${LOWER})$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], line, quoted: true } };
+  if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${QN})$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], line } };
+  if ((m = t.match(new RegExp(`^(click|toggle)\\s+(${QN})${ROW}$`)))) return { step: { do: m[1] as "click", target: m[2], at: at(m[3], m[4]), line } };
+  if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: m[1], target: m[2], line } };
+  if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], line, quoted: true } };
   if ((m = t.match(new RegExp(`^snapshot\\s+(${STR})$`)))) return { step: { do: "snapshot", name: parseString(m[1])!, line } };
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
   if ((m = t.match(/^wait\s+(\S+)$/))) {
@@ -466,11 +574,14 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     }
     return { step: { do: "tick", times: 0, line }, waitMs: ms };
   }
-  if ((m = t.match(new RegExp(`^see\\s+(${LOWER})\\s+has\\s+(at\\s+most\\s+|at\\s+least\\s+)?(\\d+)\\s+rows?$`))))
-    return { step: { do: "see", target: m[1], check: { is: "rows", count: Number(m[3]), cmp: !m[2] ? undefined : m[2].includes("most") ? "atMost" : "atLeast" }, line } };
-  if ((m = t.match(new RegExp(`^see\\s+(${LOWER})${ROW}\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`))))
+  // Inside a component the row count may be a param: `see rows has at most size rows`.
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})\\s+has\\s+(at\\s+most\\s+|at\\s+least\\s+)?(\\d+|${inComponent ? LOWER : "\\d+"})\\s+rows?$`)))) {
+    const n = /^\d+$/.test(m[3]) ? Number(m[3]) : NaN;
+    return { step: { do: "see", target: m[1], check: { is: "rows", count: n, cmp: !m[2] ? undefined : m[2].includes("most") ? "atMost" : "atLeast", countParam: Number.isNaN(n) ? m[3] : undefined }, line } };
+  }
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`))))
     return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: m[4] as "shown" }, line } };
-  if ((m = t.match(new RegExp(`^see\\s+(${LOWER})${ROW}\\s*=\\s*(.+)$`)))) {
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s*=\\s*(.+)$`)))) {
     const lit = parseLiteral(m[4]);
     if (!lit || lit.k === "emptyList" || lit.k === "nothing" || lit.k === "table") {
       err(line, "SYNTAX", `\`${m[4]}\` is not a value to compare with; use a "string", a number or a choice value`, col);
@@ -485,14 +596,14 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
 
 // ---------------------------------------------------------------- semantic checks
 
-function check(app: App, err: (l: number, c: string, m: string, col?: number) => void, warn: (l: number, c: string, m: string, col?: number) => void, clockLine: number) {
+function check(app: App, err: (l: number, c: string, m: string, col?: number) => void, warn: (l: number, c: string, m: string, col?: number) => void, clockLine: number, usedComponents_ = new Set<string>()) {
   const records = new Map(app.records.map((r) => [r.name, r]));
   const choices = new Map(app.choices.map((c) => [c.name, c]));
   const valueOwner = new Map<string, ChoiceDecl>();
   const typeNames = new Set<string>([app.name]);
 
   const checkReserved = (name: string, line: number) => {
-    if (RESERVED.has(name)) err(line, "RESERVED", `\`${name}\` is reserved; pick another name`);
+    for (const part of name.split(".")) if (RESERVED.has(part)) err(line, "RESERVED", `\`${part}\` is reserved; pick another name`);
   };
 
   for (const r of app.records) {
@@ -638,7 +749,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
 
   // Presentations and components.
   const components = new Set(app.components.map((c) => c.name));
-  const usedComponents = new Set<string>();
+  const usedComponents = new Set<string>(usedComponents_);
   for (const { el } of all) {
     if (!el.as) continue;
     if (/^[A-Z]/.test(el.as)) {
@@ -752,6 +863,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     // Fields and selects just mirror their state (built-in binding), so they need no proof of their own.
     const dynamic = el.kind === "text" || el.kind === "checkbox" || el.kind === "list" || el.kind === "progress" || (el.kind === "button" && (el.enabledWhen || el.expr));
     if (!dynamic) continue;
+    if (el.line >= LINE_BASE) continue; // from a bundle: its demo app proves it
     if (el.kind === "text" && el.expr && parseString(el.expr) !== undefined && !el.expr.includes("{")) continue; // a constant
     const key = list ? `${list.name}.${el.name}` : el.name;
     if (!seen.has(key)) warn(el.line, "UNPROVEN", `\`${el.kind} ${el.name}\` is never checked by a \`see\` step`);
@@ -799,12 +911,13 @@ function lev(a: string, b: string): number {
   return d[a.length][b.length];
 }
 
-export function formatDiagnostics(file: string, src: string, diags: Diagnostic[]): string {
-  const lines = src.split(/\r?\n/);
+export function formatDiagnostics(file: string, src: string, diags: Diagnostic[], sources?: { file: string; text: string }[]): string {
+  const text = (f: string) => (sources?.find((s) => s.file === f)?.text ?? src).split(/\r?\n/);
   return diags
     .map((d) => {
-      const code = lines[d.line - 1] ?? "";
-      return `${file}:${d.line}:${d.col}: ${d.level} ${d.code}: ${d.message}\n  ${String(d.line).padStart(4)} | ${code}\n       | ${" ".repeat(Math.max(0, d.col - 1))}^`;
+      const f = d.file ?? file;
+      const code = text(f)[d.line - 1] ?? "";
+      return `${f}:${d.line}:${d.col}: ${d.level} ${d.code}: ${d.message}\n  ${String(d.line).padStart(4)} | ${code}\n       | ${" ".repeat(Math.max(0, d.col - 1))}^`;
     })
     .join("\n");
 }

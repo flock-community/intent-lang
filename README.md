@@ -47,6 +47,14 @@ example "the limit"
 - Nine example apps of increasing difficulty: [`apps/`](apps).
 - `language.md` is the earlier, broader v0.1 design (in Dutch). This project is its app profile.
 
+## For LLMs: the spec-writing skill
+
+[`skills/intent-spec/SKILL.md`](skills/intent-spec/SKILL.md) teaches an LLM to use Intent well:
+interviewing the user, reusing bundles, writing, checking and building, changing an existing
+app, tracing from the UI back to the spec, and writing bundles. Claude Code loads it
+automatically in this repo (it is linked from `.claude/skills/`). It lives next to the language
+reference on purpose: whoever changes the language updates the skill in the same commit.
+
 ## Quick start
 
 ```sh
@@ -194,6 +202,56 @@ A harness bug is worth recording. The Kit had a recipe named `main`, which Elm r
 The Elm builds "repaired" the compile error by silently not using the Kit, and their numbers
 dropped. The pipeline showed the drop, and counting Kit references per build explained it.
 
+## Phase 3: reuse — bundles, behaviour components, lockfile, source map
+
+Specs can now reuse specs. A **bundle** (`lib/std/list.intent`, starting with `bundle std.list`)
+holds records, choices, components and a design. An app pulls it in with `import std.list`.
+
+```
+component Pager as footer "The page info on the left; previous and next on the right."
+  param items "the list to show one page at a time"
+  param size = 5
+  state
+    page: Int = 1
+  derive
+    visible = the {items} on page {page}, {size} per page
+  screen
+    text pageInfo = "Page {page} of {pageCount}"
+    button next "Next" as secondary
+      enabled when {page} is below {pageCount}
+  on click next
+    - increase {page} by 1
+```
+
+An app uses it with `use pager = Pager` and indented bindings (`items = sorted`). The
+compiler expands this deterministically: names become `pager.next`, `pager.page`, and the
+DOM gets `data-el="pager.next"`.
+
+- `intent.lock` pins every bundle by content hash. A bundle that changes without being re-locked
+  fails the check.
+- `intent expand` prints the canonical, expanded spec. The LLM always reads this form, with the
+  origin of each line (`# from lib/std/list.intent:13`). End-of-line comments are kept as notes.
+- Each build writes `sourcemap.json`: every element, handler, state field and derived value →
+  spec file:line, plus the component instance and bundle when it came from one. Pointing at a
+  button in the app leads to the spec line that made it.
+- Bundles in `lib/`: `std.list` (Pager, with a demo app that proves it), `std.feedback`
+  (Toast), `ui.admin` (design system: design, StatCard, EmptyState) and `support.tickets`
+  (the ticket domain with its badges).
+
+Results (styled, 3 builds per target):
+
+| App | Built on | Same app | Boxes within 8px Elm / TS / Elm↔TS | Pixels differ |
+|---|---|---|---|---|
+| Helpdesk (rewritten) | ui.admin, std.list, std.feedback, support.tickets | 100% | 96% / 94% / 96% | 0.2% |
+| CRM (new, untuned) | ui.admin, std.list, std.feedback | 100% | 74% / 72% / 81% | 0.3% |
+| CRM after one language fix | the same | 100% | **100% / 98% / 99%** | **0.0%** |
+
+The CRM was the first app written after the styling work, so it is a held-out test for looks.
+Almost all of its divergence was one undefined thing: how wide a `search` field is and whether
+its label shows. That became a language rule (v10), not a CRM fix. One TS build per CRM run also
+needed a repair: the Toast's empty section was not rendered. The contract now says an empty
+section may be left out. That code was re-checked afterwards and passes.
+
 ## Layout
 
 ```
@@ -212,6 +270,10 @@ compiler/
   look.ts             stage 2: the LLM writes the Look; checked in the browser
   browser.ts          Playwright driver: DOM contract, fidelity, screenshots, boxes
   visual.ts           pixel diff, box agreement, contact sheets
+  load.ts             imports, bundles, intent.lock, source map
+  expand.ts           instantiating behaviour components (`use x = Component`)
+  print.ts            canonical printer (`intent expand`): what the LLM reads
+lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets
 runtime/{elm,ts}      Ui (renderer, node model) and Fmt, identical per target
 tests/                checker regression, Fmt parity
 runs/                 build outputs and reports (history.jsonl is kept)

@@ -10,6 +10,7 @@ import { buildPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
 import { compile } from "./toolchain.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
+import { sourceMap, where } from "./load.ts";
 
 export interface BuildResult {
   target: Target;
@@ -33,6 +34,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   const log = opts.log ?? (() => {});
   const t0 = Date.now();
   const { appFile, specSource } = scaffold(app, target, dir);
+  writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
   const base = buildPrompt(target, specFile, specText, specSource);
   const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, costUsd: 0, ms: 0 };
@@ -83,8 +85,8 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       const ex = await runJobsIsolated(dir, target, exploreJobs(app, 40, 25, 11), 300_000);
       const v = "error" in ex ? undefined : (ex as ExploreResult[]).find((e) => e.violation)?.violation;
       if (v) {
-        const lines = specText.split("\n");
-        problems = `All examples pass, but this session breaks the rule on line ${v.line} (\`${lines[v.line - 1]?.trim()}\`): ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map(actionText).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
+        const w = where(app, v.line);
+        problems = `All examples pass, but this session breaks the rule at ${w.file}:${w.line} (\`${w.text}\`): ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map(actionText).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
         res.attempts.push({ stage: "always", detail: `line ${v.line}: ${v.message}` });
         log(`attempt ${attempt}: breaks always (line ${v.line})`);
         continue;
@@ -96,11 +98,10 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       log(`attempt ${attempt}: ok`);
       break;
     }
-    const lines = specText.split("\n");
     problems =
       `It compiles, but ${failed.length} of ${exs.length} examples fail:\n\n` +
       failed
-        .map((f) => `## example "${f.name}"\nfails at line ${f.failure!.line}: \`${lines[f.failure!.line - 1]?.trim()}\`\n${f.failure!.message}\n\nScreen at that moment:\n\`\`\`\n${f.failure!.screen}\n\`\`\``)
+        .map((f) => `## example "${f.name}"\nfails at ${where(app, f.failure!.line).file}:${where(app, f.failure!.line).line}: \`${where(app, f.failure!.line).text}\`\n${f.failure!.message}\n\nScreen at that moment:\n\`\`\`\n${f.failure!.screen}\n\`\`\``)
         .join("\n\n");
     res.attempts.push({ stage: "examples", detail: failed.map((f) => `${f.name}: ${f.failure!.message}`).join("; ") });
     log(`attempt ${attempt}: ${failed.length} example(s) fail`);

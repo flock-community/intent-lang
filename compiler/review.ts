@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./gen.ts";
 import { complete } from "./llm.ts";
+import { load } from "./load.ts";
+import { printApp } from "./print.ts";
+import { resolve } from "node:path";
 
 const SYSTEM = `You review specs written in the Intent language for their author, before they are compiled.
 The compiler reads every sentence literally and fills every silence with the defaults in §9 of the language reference. It never asks.
@@ -11,7 +14,9 @@ Your job: find the places where that literal reading will probably surprise the 
 
 export async function review(file: string): Promise<{ text: string; costUsd: number }> {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
-  const spec = readFileSync(file, "utf8");
+  const loaded = load(resolve(file));
+  // Review the canonical, expanded spec: bundles and components included.
+  const spec = loaded.app ? printApp(loaded.app) : readFileSync(file, "utf8");
   const numbered = spec.split("\n").map((l, i) => `${String(i + 1).padStart(3)}  ${l}`).join("\n");
   const prompt = `# Language reference
 

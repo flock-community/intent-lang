@@ -36,7 +36,9 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
 A file is a sequence of top-level blocks, in any order:
 
 ```
-app Name                    # required, first; indented lines = purpose (strings)
+app Name                    # first line of an app; indented lines = purpose (strings)
+bundle std.name             # first line of a library file instead (§4b)
+import std.list             # reuse a bundle (§4b)
 record Name                 # a data shape; indented `field: Type [= default]`
 choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is what users see
 design                      # optional: how the app looks (§4a)
@@ -80,6 +82,7 @@ state
 | `list` | `list name of Type [= expr]` | rows; children are the row's elements | act on a row |
 | `section` | `section name ["Title"]` | a group; children are elements | — |
 | `progress` | `progress name ["Label"] [= expr]` | a value 0–100 as a bar | — |
+| `use` | `use name = Component` + bindings | a behaviour component (§4b) | what it offers |
 
 Modifiers, indented under an element:
 
@@ -161,9 +164,81 @@ Built-in presentations (closed set; each has one meaning):
 | | `icon` | a small square button; its label is its accessible name |
 | select | `tabs`, `chips`, `segmented`, `nav`, `dropdown`, `radio` | one option chosen; `nav` is a vertical menu, `dropdown` a native select |
 | checkbox | `toggle` | a switch |
-| field | `search`, `textarea`, `password` | |
+| field | `search` | a search box: its label is the placeholder (no visible label); 20rem wide in a toolbar or header |
+| | `textarea`, `password` | |
 | list | `table`, `cards`, `grid`, `timeline`, `bars`, `menu` | `bars` is a horizontal bar chart |
 | progress | `bar`, `ring` | |
+
+## 4b. Reuse: bundles, imports and behaviour components
+
+A **bundle** is a library file under `lib/`: `lib/std/list.intent` starts with
+`bundle std.list`. It holds records, choices, components and a `design`. State, screens and
+behaviour live inside its components. A bundle is proven by its demo app (for example
+`lib/std/list.demo.intent`).
+
+```
+import std.list                      # everything std.list declares
+import std.list.Pager                # one name
+import std.list.Pager as TicketPager # one component, renamed
+```
+
+All imported names share one namespace; a name declared twice is an error. A bundle's
+`design` becomes the app's design; the app's own `design` lines override it.
+
+**Behaviour components** have parameters and their own state, derived values, screen,
+events, rules and `always` checks:
+
+```
+component Pager as footer "The page info on the left; previous and next on the right."
+  param items "the list to show one page at a time"   # required
+  param size = 5                                      # with a default
+  state
+    page: Int = 1
+  derive
+    pageCount = the number of {items} divided by {size}, rounded up, but at least 1
+    visible = the {items} on page {page}, {size} per page
+  screen
+    text pageInfo = "Page {page} of {pageCount}"
+    button next "Next" as secondary
+      enabled when {page} is below {pageCount}
+  on click next
+    - increase {page} by 1
+```
+
+Inside a component, write its own names and its params in braces (`{page}`, `{items}`), so
+that every use gets its own copy. The checker warns (`UNSCOPED`) when you don't.
+
+An app places a component with `use`, and binds its params in indented lines:
+
+```
+screen
+  list shown of Ticket = {pager.visible} as table
+    text subject
+  use pager = Pager
+    items = sorted
+    size = 5
+
+on type search
+  - set {pager.page} to 1
+
+example "paging"
+  click pager.next
+  see pager.pageInfo = "Page 2 of 2"
+```
+
+Everything in the component is then called `<use name>.<name>`: `pager.next`, `pager.page`,
+`pager.visible`. The app can read and set these names in its own sentences, handlers and
+examples.
+
+**Locking.** `intent.lock` pins every bundle by content hash. A bundle that changed since it
+was locked fails the check until someone reviews it and runs `intent lock <app>`. Builds never
+pick up a library change silently.
+
+**Notes.** A comment at the end of a line (`remaining: Int = 1500  # seconds left`) is a note:
+the compiler reads it too. A comment on a line of its own is only for people.
+
+`intent expand <app>` prints the app as the compiler reads it: imports resolved, components
+expanded, and each line marked with where it came from.
 
 ## 5. Events
 
@@ -234,6 +309,9 @@ places where the spec is not yet precise.
 | `UNPROVEN` | warning | a dynamic element never checked by any `see` |
 | `UNANCHORED` | warning | a rule or handler sentence that mentions no declared name |
 | `NO_EXAMPLES` | warning | the app has no examples |
+| `LOCK` | error | a bundle is not locked, or changed since it was locked (§4b) |
+| `UNSCOPED` | warning | inside a component, one of its own names is not written in braces |
+| `UNUSED` | warning | a declared component is never used |
 
 ## 8. What the compiler produces
 
@@ -266,7 +344,8 @@ something when it wants different behaviour.
 5. **Look.** Without `as`, an element uses a plain default look that fits `design`. Without
    `design`, the app is neutral grey on white with an indigo brand. The look shows only what
    the spec names: no extra logos, icons, column headers, labels, helper texts or
-   decorations unless a `look` sentence asks for them. Layout follows the spec: elements
+   decorations unless a `look` sentence asks for them. A field shows its label above it
+   (except `search`). Layout follows the spec: elements
    appear in the order they are listed (top to bottom; left to right inside a `row`,
    `header`, `toolbar` or `footer`). Consecutive buttons in one section form a single action
    row, in spec order, aligned to the end. Inside a `sidebar`, elements stack from the top and
@@ -302,6 +381,9 @@ Each version below was added because a real spec needed it. Next candidates:
 - v2: `table` seed data, `select … from list.field`, rounding vocabulary (`Fmt.roundTo`, …).
 - v3: `on row with "…"` in examples, `Fmt.decimal`.
 - v4: `always` invariants, `has at most/at least N rows`.
+- v10: modules: `bundle`, `import`, `intent.lock`; behaviour components (`param`, `state`,
+  `derive`, `screen`, `on`, `always` inside `component`; `use x = Component`); end-of-line
+  comments are notes; `search` fields defined (placeholder label, fixed width).
 - v9: components with a base presentation (`component X as card "…"`).
 - v8: sections inside list rows (component cards); `NOT_YET` instead of hard "unsupported"; layout defaults: spec order, button rows, sidebar footer.
 - v6: `snapshot "…"` visual checkpoints; the look shows only what the spec names.
