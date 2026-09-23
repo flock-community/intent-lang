@@ -1,0 +1,4 @@
+project consumer
+registry ../../registry
+requires
+  support.helpdesk 1.0

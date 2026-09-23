@@ -2,9 +2,12 @@
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { formatDiagnostics } from "./parse.ts";
-import { load as loadSpec, writeLock } from "./load.ts";
+import { load as loadSpec, sha, writeLock } from "./load.ts";
+import { install, publish, readProject } from "./registry.ts";
+import { stepText } from "./print.ts";
+import { existsSync } from "node:fs";
 import { printApp } from "./print.ts";
-import { buildOnce } from "./build.ts";
+import { compileApp } from "./twin.ts";
 import type { Target } from "./gen.ts";
 import { converge, reanalyse } from "./converge.ts";
 import { review } from "./review.ts";
@@ -39,6 +42,42 @@ switch (cmd) {
     for (const f of args) if (!load(f).app) ok = false;
     process.exit(ok ? 0 : 1);
   }
+  case "install": {
+    const project = readProject();
+    if (!project) {
+      console.log("no intent.project here: nothing to install");
+      process.exit(0);
+    }
+    const { installed, problems } = await install(project);
+    for (const d of installed) console.log(`${d.name} ${d.version}  → ${d.file}`);
+    for (const p of problems) console.log(`problem: ${p}`);
+    // Pin the versions first, so the specs can be loaded against them for the override fingerprints.
+    writeLock([], installed);
+    writeLock(args.map((f) => resolve(f)), installed);
+    process.exit(problems.length ? 1 : 0);
+  }
+  case "publish": {
+    // The version is computed from the bundle's names and its demo's examples, never chosen.
+    const file = resolve(args[0]);
+    // A bundle is proven by its demo app; a published app is its own demo.
+    const isApp = /^app\s/m.test(readFileSync(file, "utf8").split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "");
+    const demo = isApp ? file : file.replace(/\.intent$/, ".demo.intent");
+    if (!existsSync(demo)) {
+      console.log(`publishing needs a demo app that proves the bundle: ${demo.replace(process.cwd() + "/", "")}`);
+      process.exit(1);
+    }
+    const d = loadSpec(demo);
+    if (!d.app) {
+      console.log(formatDiagnostics(demo, d.sources[0].text, d.diagnostics, d.sources));
+      console.log("the demo app does not pass the checker");
+      process.exit(1);
+    }
+    const fingerprints = d.app.examples.map((ex) => sha(ex.name + "\n" + ex.steps.map(stepText).join("\n")));
+    const registry = resolve(flags.registry ?? readProject()?.registry ?? "registry");
+    const r = await publish(file, registry, sha, fingerprints);
+    console.log(`published ${r.name} ${r.version} to ${registry}\n  ${r.why.join("\n  ")}`);
+    process.exit(0);
+  }
   case "lock": {
     const rows = writeLock(args.map((f) => resolve(f)));
     for (const r of rows) console.log(`locked ${r.name} sha256:${r.sha}  ${r.file}`);
@@ -59,16 +98,31 @@ switch (cmd) {
     process.exit(0);
   }
   case "build": {
+    // Dependencies first: a project's required bundles are downloaded and pinned.
+    const project = readProject();
+    if (project?.requires.length) {
+      const { installed, problems } = await install(project);
+      if (problems.length) (console.log(problems.join("\n")), process.exit(1));
+      writeLock([], installed);
+      writeLock([resolve(args[0])], installed);
+    }
+    // Twin compilation: a verified build of this exact spec is reused; anything new is compiled
+    // twice, and the build stops when the two compilers disagree (the spec is ambiguous).
     const file = args[0];
     const { app, src } = load(file);
     if (!app) process.exit(1);
     const targets = (flags.target ?? "elm,ts").split(",") as Target[];
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
+    const twin = (flags.twin ?? "auto") as "auto" | "always" | "off";
     const results = await Promise.all(
-      targets.map((t) => buildOnce(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, log: (m) => console.log(`[${t}] ${m}`) })),
+      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin, log: (m) => console.log(`[${t}] ${m}`) })),
     );
     await closeBrowser();
-    for (const r of results) console.log(`${r.target}: ${r.ok ? "OK" : "FAILED"} after ${r.attempts.length} attempt(s), ${r.examples.passed}/${r.examples.total} examples, $${r.costUsd.toFixed(2)}, ${(r.ms / 1000).toFixed(0)}s → ${r.dir}/index.html`);
+    for (const r of results) {
+      const how = r.cached ? "from cache" : r.verified === "twin" ? "twin-verified" : r.verified === "single" ? "single build" : "";
+      if (r.ambiguous) console.log(`${r.target}: STOPPED — the two compilers built different apps (${r.ambiguous.sessions} of ${r.ambiguous.of} sessions differ). The spec is ambiguous; see ${out}/ambiguity-${r.target}.md\n\n${r.ambiguous.report.split("## What the spec leaves open")[1]?.trim() ?? ""}`);
+      else console.log(`${r.target}: ${r.ok ? `OK (${how})` : "FAILED"}, $${r.costUsd.toFixed(2)} → ${r.dir}/index.html`);
+    }
     process.exit(results.every((r) => r.ok) ? 0 : 1);
   }
   case "converge":
@@ -96,9 +150,13 @@ switch (cmd) {
     console.log(`usage:
   intent check <file.intent>... [--json]   syntax and consistency check
   intent lock <file.intent>...             pin the bundles these specs import (intent.lock)
+  intent install [<file.intent>...]        download intent.project's requirements (minimal version selection)
+  intent publish <lib/x/y.intent> [--registry dir]   publish with a computed version (needs its demo app)
   intent expand <file.intent>              print the canonical, expanded spec the compiler reads
   intent review <file.intent>              list what the spec leaves to defaults (one LLM call)
-  intent build <file.intent> [--target elm,ts] [--out dir]
+  intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off]
+                                           auto: reuse a verified build, else compile twice and
+                                           stop when the two compilers disagree
   intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N] [--out dir] [--tag name]
   intent reanalyse <file.intent>... --out <earlier run dir>   re-test existing builds`);
     process.exit(2);

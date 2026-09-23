@@ -1,0 +1,16 @@
+app WordCount
+  "Count the words in a piece of text."
+
+state
+  text: Text = ""
+
+screen
+  field text "Text"
+  text words = "{number of words in text} words"
+  text longest = "Longest: {the longest word}"
+    visible when text has words
+
+example "counting"
+  type "Hello big world" into text
+  see words = "3 words"
+  see longest = "Longest: Hello"

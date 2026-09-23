@@ -313,6 +313,24 @@ different title, triages by priority by default, and adds an SLA note.
   the overridden title raised `BASE_CHANGED` on exactly that override line. A base change
   elsewhere asked only for the normal lock review.
 
+## Phase 5: twin compilation, dependencies and a registry
+
+**`intent build` compiles twice.** Compiler A builds the spec the obvious way. Compiler B is a
+*probe*: it follows every sentence, example and default, but wherever the spec still leaves a
+choice it deliberately takes a different reasonable reading. If the two apps behave
+differently, the spec is ambiguous. The build stops and explains, per spec line, what compiler
+A and compiler B read, and the sentence or example to add. Two *identical* compilers were not
+enough: on a deliberately vague word counter they agreed, because the same model reads the same
+way. The probe found three open questions (what separates words, punctuation at the edges,
+apostrophes and decimal points inside a word). A twin-verified build is cached by the canonical
+spec plus the pinned compiler, so building an unchanged spec again is instant and free.
+
+**Dependencies:** `intent.project` lists a registry and requirements. `intent install` resolves
+them with minimal version selection, downloads into `.intent/deps/` and pins versions and
+hashes in `intent.lock`. `intent publish` computes the version from the bundle's names and its
+demo's behaviour. `examples/consumer/` depends only on the published helpdesk (which pulls in
+four more bundles) and refines it, with no local `lib/`. `registry/` is a sample registry.
+
 ## Layout
 
 ```

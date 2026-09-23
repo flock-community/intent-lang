@@ -57,7 +57,17 @@ const CODING_RULES = `Rules that keep every build identical:
 9. A \`table\` default in the spec is available as \`<stateName>Initial\` in the generated interface; use it in init.
 10. Write plain, straightforward code. No comments needed.`;
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string): string {
+/**
+ * The probe compiler of a twin build: it must honour everything the spec and the language say,
+ * but where they still leave a real choice it takes a different reasonable reading. If its app
+ * behaves differently and still passes every example, the spec is ambiguous.
+ */
+export const PROBE_RULES = `You are the PROBE compiler of a twin build. Another compiler builds this same spec the most obvious way. Your job is to find out whether the spec is ambiguous:
+- Follow every sentence, template, example, \`always\` check and every default in §9 exactly. Never break any of them.
+- Wherever the spec and the defaults together still leave a real choice (what counts as a word, how ties are ordered, what happens in an unmentioned edge case, what an unclear sentence means), deliberately take a DIFFERENT reasonable reading than the most obvious one.
+- Stay reasonable: a person reading the spec should agree your reading is allowed by the text.`;
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
   return `# Language reference
@@ -86,7 +96,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-Write ${target === "elm" ? "src/App.elm" : "app.ts"} now.`;
+${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write ${target === "elm" ? "src/App.elm" : "app.ts"} now.`;
 }
 
 export function repairPrompt(base: string, target: Target, code: string, problems: string): string {

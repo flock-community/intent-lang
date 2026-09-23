@@ -17,7 +17,7 @@ export async function complete(system: string, prompt: string): Promise<LlmResul
   const cwd = mkdtempSync(join(tmpdir(), "intent-llm-"));
   const t0 = Date.now();
   try {
-    const args = ["-p", "--model", MODEL, "--tools", "", "--no-session-persistence", "--setting-sources", "", "--system-prompt", system, "--output-format", "json"];
+    const args = ["-p", "--model", MODEL, "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence", "--setting-sources", "", "--system-prompt", system, "--output-format", "json"];
     for (let attempt = 1; ; attempt++) {
       const r = await run("claude", args, { cwd, input: prompt, timeoutMs: 15 * 60_000 });
       try {

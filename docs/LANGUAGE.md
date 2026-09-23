@@ -1,4 +1,4 @@
-# Intent — language reference (v14, app profile)
+# Intent — language reference (v15, app profile)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -327,6 +327,36 @@ example "paging in priority order"
 - An override that many specs make is a sign that the base is missing something (a param,
   a rule); propose it to the base's author.
 
+## 4d. Projects, dependencies and the registry
+
+A project lists the bundles it needs in `intent.project`, at its root:
+
+```
+project our-desk
+registry https://registry.example.org       # or a folder: ./registry
+requires
+  support.helpdesk 1.0
+  std.list 1.2
+```
+
+`intent install` (and `intent build`, before compiling) picks versions with **minimal version
+selection**: for every bundle, the highest of the minimum versions required anywhere, within
+the same major version. It never picks a release that nobody asked for. Downloads go to
+`.intent/deps/`, and `intent.lock` pins each version with its hash. A bundle in the project's
+own `lib/` always wins, so bundles can be developed in place.
+
+`intent publish lib/x/y.intent` publishes a bundle with a **computed** version:
+
+- **major:** a name, field, choice value, param, element, state or derived value is removed,
+  a param becomes required, or an example of the bundle's demo app changed or disappeared
+  (its behaviour changed);
+- **minor:** something is added;
+- **patch:** anything else.
+
+A bundle is published together with its demo app (`lib/x/y.demo.intent`), which must pass the
+checker. A published app is its own demo. The registry is static files (`index.json` plus one
+file per version), so any file server can host it.
+
 ## 5. Events
 
 ```
@@ -519,6 +549,8 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v15: projects: `intent.project` (`registry`, `requires`), `intent install` with minimal
+  version selection, `intent publish` with computed versions (names + demo behaviour).
 - v14: numeric checks (`is at least|at most|above|below`) and per-row checks
   (`see every row of <list>: …`), in `always` and in examples.
 - v13: refinement: `extends`, `override`, `add to … after …`, `drop`; base proofs run on the

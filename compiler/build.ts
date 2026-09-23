@@ -27,6 +27,7 @@ export interface BuildOptions {
   maxAttempts?: number;
   log?: (msg: string) => void;
   styled?: boolean; // also let the LLM write the presentation (Look) with Tailwind
+  probe?: boolean; // the probe compiler of a twin build: takes different readings where the spec allows
   kit?: boolean; // give the Look stage the generated design-system Kit
 }
 
@@ -37,7 +38,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   const { appFile, specSource } = scaffold(app, target, dir);
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
-  const base = buildPrompt(target, specFile, specText, specSource);
+  const base = buildPrompt(target, specFile, specText, specSource, !!opts.probe);
   const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, compiler: compilerPins(), costUsd: 0, ms: 0 };
 
   let code = "";

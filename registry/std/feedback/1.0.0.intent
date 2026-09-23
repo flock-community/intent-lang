@@ -1,0 +1,16 @@
+bundle std.feedback
+  "Telling people what just happened."
+
+component Toast
+  "A short message that floats at the bottom right until it is dismissed."
+  state
+    message: Text = ""        # set it to show a message; empty means no toast
+  screen
+    text message as toast
+      visible when {message} is not empty
+    button dismiss "Dismiss" as icon
+      visible when {message} is not empty
+  on click dismiss
+    - clear {message}
+  rules
+    - Setting {message} replaces the message on screen at once; it stays until it is dismissed or replaced.

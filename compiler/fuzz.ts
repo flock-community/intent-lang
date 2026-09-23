@@ -14,13 +14,15 @@ function mulberry32(seed: number) {
 }
 
 const GENERIC_TEXT = ["", " ", "a", "Milk", "milk", "Bread", "0", "1", "7", "12.5", "3,75", "-4", "100", "abc", "  x  ", "Yoga"];
+// Text that different readings of "word", "blank", "same name" or "number" disagree on.
+const TRICKY_TEXT = ["don't stop", "e-mail me", "one,two", "  two   spaces  ", "Café Ünïcode", "Hello, world!", "a.b.c", "ALL CAPS", "3 apples", "x@y.z", "tab\tseparated", "MILK "];
 // Numbers that stress parsing and rounding.
 const NUMERIC_EDGES = ["0.01", "0.005", "0,99", "33.33", "99.99", "1000000", "2.675", "1.005", "10.10", "3", "9", "13", "0.1", "07", "1.", ".5", "1e3"];
 
 export function actionTemplates(app: App): { weight: number; make: (rnd: () => number) => Action }[] {
   const typed = new Set<string>();
   for (const ex of app.examples) for (const s of ex.steps) if (s.do === "type") typed.add(s.text);
-  const pool = [...typed, ...GENERIC_TEXT, ...NUMERIC_EDGES];
+  const pool = [...typed, ...GENERIC_TEXT, ...NUMERIC_EDGES, ...TRICKY_TEXT];
   const pick = <T,>(rnd: () => number, xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const out: { weight: number; make: (rnd: () => number) => Action }[] = [];
   const choiceOf = (name: string) => {
@@ -56,7 +58,7 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
   const rnd = mulberry32(seed);
   const pools: Record<string, string[]> = {};
   for (const ex of app.examples) for (const s of ex.steps) if (s.do === "type") (pools[s.target] ??= []).push(s.text);
-  const pool = [...new Set([...Object.values(pools).flat(), ...GENERIC_TEXT, ...NUMERIC_EDGES])];
+  const pool = [...new Set([...Object.values(pools).flat(), ...GENERIC_TEXT, ...NUMERIC_EDGES, ...TRICKY_TEXT])];
   const perMinute = app.clockMs ? Math.max(1, Math.round(60_000 / app.clockMs)) : 0;
   const ticks = app.clockMs ? [1, 1, 2, 5, 10, perMinute, 5 * perMinute, 25 * perMinute] : [];
   const examples = app.examples.map((ex) => ex.steps.map(stepToAction).filter((a): a is Action => !!a));

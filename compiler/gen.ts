@@ -1,13 +1,25 @@
 // Deterministic code generation: everything except the app logic.
 // For each target it writes the typed interface (Spec), the runtime, and the entry points.
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
 
 export type Target = "elm" | "ts";
-export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+export const ROOT = join(dirname(fileURLToPath(import.meta.url)), ".."); // the Intent installation
+
+/**
+ * The user's project: the nearest folder (from where the command runs) with an intent.project or
+ * intent.lock. Its lib/, intent.lock, intent.project and .intent/ belong to the project; the
+ * language reference and runtimes come from the Intent installation (ROOT).
+ */
+export const PROJECT_ROOT = (() => {
+  for (let d = process.cwd(); ; d = dirname(d)) {
+    if (existsSync(join(d, "intent.project")) || existsSync(join(d, "intent.lock"))) return d;
+    if (dirname(d) === d) return ROOT;
+  }
+})();
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 // Names of component instances are qualified (`pager.next`): a record field uses the last part,

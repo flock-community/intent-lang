@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v14** (see the changelog at the end of
+Language version this skill matches: **v15** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -100,6 +100,12 @@ Habits that make builds identical *and* correct:
 
 ## 4. Check, review, build
 
+`intent build` compiles twice: once normally, and once as a **probe** that takes a different
+reading wherever the spec leaves room. If the two apps behave differently, the build stops
+and explains what the spec leaves open, with the lines and the sentence or example to add.
+Answer those questions in the spec, don't work around them. A spec that built identically
+before is reused from the cache, at no cost.
+
 ```
 node compiler/cli.ts check <spec>      # fix every error; read every warning
 node compiler/cli.ts review <spec>     # what the defaults will decide for you (one LLM call)
@@ -158,6 +164,12 @@ copying it (§4c of the reference):
 - If your override would help everyone, propose it to the base (as a param or a rule)
   instead of keeping it private.
 
+## 5c. Dependencies
+
+Bundles from a registry are listed in `intent.project` (`requires std.list 1.2`) and
+installed by `intent install` or `intent build`. Ask for the lowest version that has what you
+need: minimal version selection never upgrades behind your back.
+
 ## 6. Write a bundle
 
 - Start the file with `bundle area.name` in `lib/area/name.intent`. A bundle holds records,
@@ -168,6 +180,8 @@ copying it (§4c of the reference):
   behaviour. Build it before other apps rely on it.
 - After any change: check the demo and the apps that use the bundle, then run `intent lock`.
   A bundle change affects every app, so review it like an API change.
+- Publish with `intent publish lib/area/name.intent`. The version is computed: a removed name
+  or a changed demo example is a new major version. Add, don't change, when you can.
 
 ## Lessons from authors
 

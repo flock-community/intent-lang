@@ -6,13 +6,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { LINE_BASE, type App, type Component, type Diagnostic, type Design } from "./ast.ts";
 import { expandUses } from "./expand.ts";
-import { ROOT } from "./gen.ts";
+import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, parseSyntax } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
 import { MODEL } from "./llm.ts";
 
-export const LIB = join(ROOT, "lib");
-export const LOCK = join(ROOT, "intent.lock");
+export const LIB = join(PROJECT_ROOT, "lib");
+export const LOCK = join(PROJECT_ROOT, "intent.lock");
 
 export interface Loaded {
   app?: App; // undefined when there are errors
@@ -22,17 +22,37 @@ export interface Loaded {
   base?: App; // the published app this spec extends
 }
 
-export const bundlePath = (name: string) => join(LIB, ...name.split(".")) + ".intent";
+/**
+ * Where a bundle's source is: the local lib/ first (so bundles can be developed in place), else
+ * the version pinned in intent.lock and downloaded by `intent install` into .intent/deps/.
+ */
+export const bundlePath = (name: string): string => {
+  const local = join(LIB, ...name.split(".")) + ".intent";
+  if (existsSync(local)) return local;
+  const version = readLockVersions().get(name);
+  return version ? join(PROJECT_ROOT, ".intent/deps", `${name}@${version}.intent`) : local;
+};
 export const sha = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
 export function readLock(): Map<string, string> {
   const lock = new Map<string, string>();
   if (!existsSync(LOCK)) return lock;
   for (const line of readFileSync(LOCK, "utf8").split("\n")) {
-    const m = line.match(/^([a-z][\w.]*)\s+sha256:([0-9a-f]+)/);
+    const m = line.match(/^([a-z][\w.]*)\s+(?:\d+\.\d+\.\d+\s+)?sha256:([0-9a-f]+)/);
     if (m) lock.set(m[1], m[2]);
   }
   return lock;
+}
+
+/** Bundles installed from a registry, with the version pinned for each. */
+export function readLockVersions(): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!existsSync(LOCK)) return out;
+  for (const line of readFileSync(LOCK, "utf8").split("\n")) {
+    const m = line.match(/^([a-z][\w.]*)\s+(\d+\.\d+\.\d+)\s+sha256:/);
+    if (m) out.set(m[1], m[2]);
+  }
+  return out;
 }
 
 /**
@@ -57,7 +77,7 @@ function offsetLines(v: any, base: number) {
 }
 
 export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded {
-  const sources = [{ file: relative(ROOT, file), text: readFileSync(file, "utf8") }];
+  const sources = [{ file: relative(PROJECT_ROOT, file), text: readFileSync(file, "utf8") }];
   const diagnostics: Diagnostic[] = [];
   const at = (line: number): { file: string; line: number } => ({ file: sources[Math.floor(line / LINE_BASE)]?.file ?? sources[0].file, line: line % LINE_BASE });
   const push = (level: "error" | "warning") => (line: number, code: string, message: string, col = 1) => diagnostics.push({ level, code, line, col, message });
@@ -84,17 +104,17 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   if (app.extends) {
     const base = app.extends;
     const path = bundlePath(base.name);
-    if (!existsSync(path)) err(base.line, "UNKNOWN_NAME", `no published app \`${base.name}\` (looked for ${relative(ROOT, path)})`);
+    if (!existsSync(path)) err(base.line, "UNKNOWN_NAME", `no published app \`${base.name}\` (looked for ${relative(PROJECT_ROOT, path)})`);
     else {
       const text = readFileSync(path, "utf8");
-      const idx = sources.push({ file: relative(ROOT, path), text }) - 1;
+      const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
       const parsed = parseSyntax(text);
       offsetLines(parsed.app, idx * LINE_BASE);
       diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-      if (parsed.app.kind !== "app") err(base.line, "BAD_BINDING", `${relative(ROOT, path)} is a bundle; \`extends\` takes a published app`);
+      if (parsed.app.kind !== "app") err(base.line, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is a bundle; \`extends\` takes a published app`);
       if (parsed.app.extends) err(base.line, "NOT_YET", "the base extends another spec itself; refinement is one level deep (compose components beyond that)");
       const digest = sha(text);
-      bundles.push({ name: base.name, file: relative(ROOT, path), sha: digest });
+      bundles.push({ name: base.name, file: relative(PROJECT_ROOT, path), sha: digest });
       if (!opts.ignoreLock) {
         const locked = lock.get(base.name);
         if (!locked) err(base.line, "LOCK", `the base \`${base.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -117,18 +137,18 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     if (loaded.has(name)) return loaded.get(name);
     const path = bundlePath(name);
     if (!existsSync(path)) {
-      err(fromLine, "UNKNOWN_NAME", `no bundle \`${name}\` (looked for ${relative(ROOT, path)})`);
+      err(fromLine, "UNKNOWN_NAME", `no bundle \`${name}\` (looked for ${relative(PROJECT_ROOT, path)})`);
       return;
     }
     const text = readFileSync(path, "utf8");
-    const idx = sources.push({ file: relative(ROOT, path), text }) - 1;
+    const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
     const parsed = parseSyntax(text);
     offsetLines(parsed.app, idx * LINE_BASE);
     diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-    if (parsed.app.kind !== "bundle") err(fromLine, "BAD_BINDING", `${relative(ROOT, path)} is not a bundle (it starts with \`${parsed.app.kind ?? "?"}\`)`);
+    if (parsed.app.kind !== "bundle") err(fromLine, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is not a bundle (it starts with \`${parsed.app.kind ?? "?"}\`)`);
     else if (parsed.app.name !== name) err(idx * LINE_BASE + 1, "BAD_BINDING", `this file must declare \`bundle ${name}\` (it declares \`bundle ${parsed.app.name}\`)`);
     const digest = sha(text);
-    bundles.push({ name, file: relative(ROOT, path), sha: digest });
+    bundles.push({ name, file: relative(PROJECT_ROOT, path), sha: digest });
     if (!opts.ignoreLock) {
       const locked = lock.get(name);
       if (!locked) err(fromLine, "LOCK", `bundle \`${name}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -233,25 +253,27 @@ export function readOverrideLock(file: string): Map<string, string> {
 }
 
 /** Write intent.lock for every bundle the given files use. */
-export function writeLock(files: string[]): { name: string; sha: string; file: string }[] {
-  const all = new Map<string, { name: string; sha: string; file: string }>();
+export function writeLock(files: string[], installed: { name: string; version: string; sha: string; file: string }[] = []): { name: string; sha: string; file: string; version?: string }[] {
+  const all = new Map<string, { name: string; sha: string; file: string; version?: string }>();
+  const versions = readLockVersions();
   const overrides: string[] = [];
   if (existsSync(LOCK))
-    for (const line of readFileSync(LOCK, "utf8").split("\n")) if (line.startsWith("@override") && !files.some((f) => line.split(/\s+/)[1] === relative(ROOT, f))) overrides.push(line);
-  for (const [name, digest] of readLock()) all.set(name, { name, sha: digest, file: relative(ROOT, bundlePath(name)) });
+    for (const line of readFileSync(LOCK, "utf8").split("\n")) if (line.startsWith("@override") && !files.some((f) => line.split(/\s+/)[1] === relative(PROJECT_ROOT, f))) overrides.push(line);
+  for (const [name, digest] of readLock()) all.set(name, { name, sha: digest, file: relative(PROJECT_ROOT, bundlePath(name)), version: versions.get(name) });
+  for (const d of installed) all.set(d.name, d);
   for (const f of files) {
     const loaded = load(f, { ignoreLock: true });
-    for (const b of loaded.bundles) all.set(b.name, b);
+    for (const b of loaded.bundles) all.set(b.name, { ...b, version: b.file.includes(".intent/deps/") ? all.get(b.name)?.version : undefined });
     const child = parseSyntax(readFileSync(f, "utf8")).app;
     if (loaded.base)
-      for (const r of child.refinements ?? []) overrides.push(`@override ${relative(ROOT, f)} sha256:${sha(JSON.stringify(baseTarget(loaded.base, { ...r } as never) ?? null))} ${targetOf(r)}`);
+      for (const r of child.refinements ?? []) overrides.push(`@override ${relative(PROJECT_ROOT, f)} sha256:${sha(JSON.stringify(baseTarget(loaded.base, { ...r } as never) ?? null))} ${targetOf(r)}`);
   }
   const rows = [...all.values()].sort((a, b) => a.name.localeCompare(b.name));
   const width = Math.max(10, ...rows.map((r) => r.name.length)) + 2;
   const pins = compilerPins();
   writeFileSync(
     LOCK,
-    `# intent.lock — generated by \`intent lock\`. Commit it.\n# A bundle, the language or the model changing must be reviewed and locked again; builds never pick up a change silently.\n@language ${pins.languageVersion} sha256:${pins.language}  docs/LANGUAGE.md\n@model    ${pins.model}\n${rows.map((r) => `${r.name.padEnd(width)}sha256:${r.sha}  ${r.file}`).join("\n")}\n${overrides.length ? overrides.join("\n") + "\n" : ""}`,
+    `# intent.lock — generated by \`intent lock\`. Commit it.\n# A bundle, the language or the model changing must be reviewed and locked again; builds never pick up a change silently.\n@language ${pins.languageVersion} sha256:${pins.language}  docs/LANGUAGE.md\n@model    ${pins.model}\n${rows.map((r) => `${r.name.padEnd(width)}${r.version ? `${r.version} ` : ""}sha256:${r.sha}  ${r.file}`).join("\n")}\n${overrides.length ? overrides.join("\n") + "\n" : ""}`,
   );
   return rows;
 }

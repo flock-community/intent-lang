@@ -1,0 +1,28 @@
+app ToastDemo
+  "Proves std.feedback.Toast: a message appears, is replaced, and is dismissed."
+
+import std.feedback
+
+screen
+  button save "Save"
+  button fail "Fail"
+  use toast = Toast
+
+on click save
+  - set {toast.message} to "Saved"
+
+on click fail
+  - set {toast.message} to "Could not save"
+
+example "a message appears and is dismissed"
+  see toast.message is hidden
+  see toast.dismiss is hidden
+  click save
+  see toast.message = "Saved"
+  click toast.dismiss
+  see toast.message is hidden
+
+example "a new message replaces the old one"
+  click save
+  click fail
+  see toast.message = "Could not save"

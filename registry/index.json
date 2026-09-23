@@ -1,0 +1,143 @@
+{
+  "bundles": {
+    "std.list": {
+      "versions": {
+        "1.0.0": {
+          "sha": "5d1e19c1d634a63f",
+          "file": "std/list/1.0.0.intent",
+          "requires": {},
+          "published": "2026-09-23T17:24:49.911Z",
+          "api": [
+            "component Pager",
+            "derive Pager.current",
+            "derive Pager.pageCount",
+            "derive Pager.visible",
+            "element Pager.next",
+            "element Pager.pageInfo",
+            "element Pager.previous",
+            "param Pager.items",
+            "param Pager.size?",
+            "state Pager.page"
+          ],
+          "examples": [
+            "2264b34352eaf794",
+            "1086915fb1507f96",
+            "78ca07d07eb02c78"
+          ]
+        }
+      }
+    },
+    "std.feedback": {
+      "versions": {
+        "1.0.0": {
+          "sha": "8911b216ce8e4436",
+          "file": "std/feedback/1.0.0.intent",
+          "requires": {},
+          "published": "2026-09-23T17:24:50.139Z",
+          "api": [
+            "component Toast",
+            "element Toast.dismiss",
+            "element Toast.message",
+            "state Toast.message"
+          ],
+          "examples": [
+            "d5d23f72aa37e763",
+            "d9e4b58da2dac8e7"
+          ]
+        }
+      }
+    },
+    "ui.admin": {
+      "versions": {
+        "1.0.0": {
+          "sha": "850a035a4c7fb52d",
+          "file": "ui/admin/1.0.0.intent",
+          "requires": {},
+          "published": "2026-09-23T17:24:50.359Z",
+          "api": [
+            "component EmptyState",
+            "component StatCard",
+            "design"
+          ],
+          "examples": [
+            "446ef9cfbf390794"
+          ]
+        }
+      }
+    },
+    "support.tickets": {
+      "versions": {
+        "1.0.0": {
+          "sha": "55b5e356a21c4299",
+          "file": "support/tickets/1.0.0.intent",
+          "requires": {},
+          "published": "2026-09-23T17:24:50.584Z",
+          "api": [
+            "choice Priority.High",
+            "choice Priority.Low",
+            "choice Priority.Normal",
+            "choice Priority.Urgent",
+            "choice Status.Open",
+            "choice Status.Pending",
+            "choice Status.Solved",
+            "component PriorityBadge",
+            "component StatusBadge",
+            "record Comment.author",
+            "record Comment.body",
+            "record Comment.ticket",
+            "record Ticket.assignee",
+            "record Ticket.customer",
+            "record Ticket.id",
+            "record Ticket.priority",
+            "record Ticket.status",
+            "record Ticket.subject"
+          ],
+          "examples": [
+            "0dc01e02d81c5fd0"
+          ]
+        }
+      }
+    },
+    "support.helpdesk": {
+      "versions": {
+        "1.0.0": {
+          "sha": "40d3a459fdad405e",
+          "file": "support/helpdesk/1.0.0.intent",
+          "requires": {
+            "ui.admin": "1.0.0",
+            "std.list": "1.0.0",
+            "std.feedback": "1.0.0",
+            "support.tickets": "1.0.0"
+          },
+          "published": "2026-09-23T17:24:50.812Z",
+          "api": [
+            "choice Page.Inbox",
+            "choice Page.Reports",
+            "choice Page.Settings",
+            "choice Sort.ByPriority",
+            "choice Sort.Newest",
+            "choice Sort.Oldest",
+            "choice StatusFilter.AllTickets",
+            "choice StatusFilter.OnlyOpen",
+            "choice StatusFilter.OnlyPending",
+            "choice StatusFilter.OnlySolved",
+            "record Bar.count",
+            "record Bar.label",
+            "record Bar.share"
+          ],
+          "examples": [
+            "b05cdc1b386d645e",
+            "ab310667f73e031c",
+            "cfc3bac3ce54f57f",
+            "ce064330b9553c40",
+            "ac0b11896d87d96e",
+            "003ca06250fa0f17",
+            "bfe0b6c1124ae34c",
+            "fbf44cdcbf7bfe15",
+            "542eadcb692525e5"
+          ]
+        }
+      }
+    }
+  }
+}
