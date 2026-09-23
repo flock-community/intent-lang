@@ -131,6 +131,8 @@ export interface App {
   kind?: "app" | "bundle";
   name: string;
   imports?: Import[];
+  extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
+  refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];
   design?: Design;

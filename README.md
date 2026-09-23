@@ -295,6 +295,24 @@ not. The language now says `""` is a placeholder, never an option, and observati
 it. Looks on new specs improved (Reservations 82–97%, against 40–64% in the first round), but
 still vary per spec.
 
+## Phase 4: refinement — improving someone else's app
+
+A spec can `extends` a published app and name its changes: `override`, `add to … after …`,
+`drop` (language v13, §4c). Test: the bundled helpdesk was published as
+`lib/support/helpdesk.intent`, and `apps/14-supportdesk.intent` refines it. It gets a
+different title, triages by priority by default, and adds an SLA note.
+
+- **The base's proofs run on the child.** The first version of the child changed the default
+  sort and dropped only the example it knowingly broke. The compiler refused before writing
+  code: *"sorting defaults to ByPriority …, so row 1 of page 2 is "#7", but the "paging"
+  example expects "#3""*. With two more explicit drops and two new examples, it built first
+  try on both targets (9/9 examples).
+- **The checker warns statically** (`OVERRIDES_PROOF`) when a base example checks something
+  the child changed.
+- **The base is pinned with a fingerprint per overridden part.** In a test, a base change to
+  the overridden title raised `BASE_CHANGED` on exactly that override line. A base change
+  elsewhere asked only for the normal lock review.
+
 ## Layout
 
 ```

@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v12** (see the changelog at the end of
+Language version this skill matches: **v13** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -140,6 +140,20 @@ Always change the spec in the smallest local way, then check, then build.
   in the build's `sourcemap.json` (`"pager.next" → lib/std/list.intent:16, component Pager,
   bundle std.list`). If it comes from a bundle, decide whether the change belongs in the
   bundle (every app gets it) or in the app (for example a param, or an app-level handler).
+
+## 5b. Build on someone else's app (refinement)
+
+When a published app in `lib/` is close to what the user wants, `extends` it instead of
+copying it (§4c of the reference):
+
+- Change only what differs, each change named: `override text …`, `override state` / `derive`
+  / `on …`, `add to <section> after <element>`, `drop …`.
+- Run `check`. For every `OVERRIDES_PROOF` warning, decide: the base example still holds
+  (keep it), or your change makes it wrong (`drop example "…"` and write your own version).
+  The compiler reports `SPEC CONFLICT` for the less direct breaks; handle them the same way.
+- `intent lock` pins the base. After a base update, review every `BASE_CHANGED` override.
+- If your override would help everyone, propose it to the base (as a param or a rule)
+  instead of keeping it private.
 
 ## 6. Write a bundle
 

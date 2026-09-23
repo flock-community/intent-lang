@@ -8,6 +8,7 @@ import { LINE_BASE, type App, type Component, type Diagnostic, type Design } fro
 import { expandUses } from "./expand.ts";
 import { ROOT } from "./gen.ts";
 import { checkApp, parseSyntax } from "./parse.ts";
+import { baseTarget, refine, targetOf } from "./refine.ts";
 import { MODEL } from "./llm.ts";
 
 export const LIB = join(ROOT, "lib");
@@ -18,6 +19,7 @@ export interface Loaded {
   diagnostics: Diagnostic[];
   sources: { file: string; text: string }[];
   bundles: { name: string; file: string; sha: string }[];
+  base?: App; // the published app this spec extends
 }
 
 export const bundlePath = (name: string) => join(LIB, ...name.split(".")) + ".intent";
@@ -64,8 +66,9 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
 
   const main = parseSyntax(sources[0].text);
   diagnostics.push(...main.diagnostics);
-  const app = main.app;
+  let app = main.app;
   const lock = readLock();
+  let baseApp: App | undefined;
   if (!opts.ignoreLock && app.kind !== "bundle") {
     const pins = compilerPins();
     const locked = readCompilerLock();
@@ -76,6 +79,37 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
       warn(main.languageLine, "LANGUAGE", `this spec was written for language ${main.language}; the language is now ${pins.languageVersion}. Read the changelog in docs/LANGUAGE.md for what changed`);
   }
   const bundles: Loaded["bundles"] = [];
+
+  // Refinement: start from the published base app, apply the explicit overrides.
+  if (app.extends) {
+    const base = app.extends;
+    const path = bundlePath(base.name);
+    if (!existsSync(path)) err(base.line, "UNKNOWN_NAME", `no published app \`${base.name}\` (looked for ${relative(ROOT, path)})`);
+    else {
+      const text = readFileSync(path, "utf8");
+      const idx = sources.push({ file: relative(ROOT, path), text }) - 1;
+      const parsed = parseSyntax(text);
+      offsetLines(parsed.app, idx * LINE_BASE);
+      diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
+      if (parsed.app.kind !== "app") err(base.line, "BAD_BINDING", `${relative(ROOT, path)} is a bundle; \`extends\` takes a published app`);
+      if (parsed.app.extends) err(base.line, "NOT_YET", "the base extends another spec itself; refinement is one level deep (compose components beyond that)");
+      const digest = sha(text);
+      bundles.push({ name: base.name, file: relative(ROOT, path), sha: digest });
+      if (!opts.ignoreLock) {
+        const locked = lock.get(base.name);
+        if (!locked) err(base.line, "LOCK", `the base \`${base.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
+        else if (locked !== digest) {
+          // Which of this spec's overrides touch a part the base changed?
+          const fp = readOverrideLock(sources[0].file);
+          const changed = (app.refinements ?? []).filter((r) => fp.has(targetOf(r)) && fp.get(targetOf(r)) !== sha(JSON.stringify(baseTarget(parsed.app, r) ?? null)));
+          for (const r of changed) warn(r.line, "BASE_CHANGED", `the base changed the part this overrides (${targetOf(r)}): review your override against the new base`);
+          err(base.line, "LOCK", `the base \`${base.name}\` changed since it was locked; review it${changed.length ? ` (it changed ${changed.length} part(s) you override)` : ""}, then run \`intent lock ${sources[0].file}\``);
+        }
+      }
+      app = refine(parsed.app, app, app.refinements ?? [], err, warn);
+      baseApp = parsed.app;
+    }
+  } else if (app.refinements?.length) err(app.refinements[0].line, "SYNTAX", "`override`, `add to` and `drop` need an `extends <published app>` line");
 
   // Load bundles depth-first; every bundle once.
   const loaded = new Map<string, App>();
@@ -159,7 +193,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   }
   const out = diagnostics.map((d) => ({ ...d, ...at(d.line) }));
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
-  return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles };
+  return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp };
 }
 
 /** Inside a component, its own names must be anchored in braces so they can be renamed per instance. */
@@ -187,17 +221,37 @@ function lintComponent(c: Component, warn: (line: number, code: string, message:
   walk(body.screen);
 }
 
+/** Fingerprints of the base parts a refining spec overrides, as locked: target → sha. */
+export function readOverrideLock(file: string): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!existsSync(LOCK)) return out;
+  for (const line of readFileSync(LOCK, "utf8").split("\n")) {
+    const m = line.match(/^@override\s+(\S+)\s+sha256:([0-9a-f]+)\s+(.+)$/);
+    if (m && m[1] === file) out.set(m[3], m[2]);
+  }
+  return out;
+}
+
 /** Write intent.lock for every bundle the given files use. */
 export function writeLock(files: string[]): { name: string; sha: string; file: string }[] {
   const all = new Map<string, { name: string; sha: string; file: string }>();
+  const overrides: string[] = [];
+  if (existsSync(LOCK))
+    for (const line of readFileSync(LOCK, "utf8").split("\n")) if (line.startsWith("@override") && !files.some((f) => line.split(/\s+/)[1] === relative(ROOT, f))) overrides.push(line);
   for (const [name, digest] of readLock()) all.set(name, { name, sha: digest, file: relative(ROOT, bundlePath(name)) });
-  for (const f of files) for (const b of load(f, { ignoreLock: true }).bundles) all.set(b.name, b);
+  for (const f of files) {
+    const loaded = load(f, { ignoreLock: true });
+    for (const b of loaded.bundles) all.set(b.name, b);
+    const child = parseSyntax(readFileSync(f, "utf8")).app;
+    if (loaded.base)
+      for (const r of child.refinements ?? []) overrides.push(`@override ${relative(ROOT, f)} sha256:${sha(JSON.stringify(baseTarget(loaded.base, { ...r } as never) ?? null))} ${targetOf(r)}`);
+  }
   const rows = [...all.values()].sort((a, b) => a.name.localeCompare(b.name));
   const width = Math.max(10, ...rows.map((r) => r.name.length)) + 2;
   const pins = compilerPins();
   writeFileSync(
     LOCK,
-    `# intent.lock — generated by \`intent lock\`. Commit it.\n# A bundle, the language or the model changing must be reviewed and locked again; builds never pick up a change silently.\n@language ${pins.languageVersion} sha256:${pins.language}  docs/LANGUAGE.md\n@model    ${pins.model}\n${rows.map((r) => `${r.name.padEnd(width)}sha256:${r.sha}  ${r.file}`).join("\n")}\n`,
+    `# intent.lock — generated by \`intent lock\`. Commit it.\n# A bundle, the language or the model changing must be reviewed and locked again; builds never pick up a change silently.\n@language ${pins.languageVersion} sha256:${pins.language}  docs/LANGUAGE.md\n@model    ${pins.model}\n${rows.map((r) => `${r.name.padEnd(width)}sha256:${r.sha}  ${r.file}`).join("\n")}\n${overrides.length ? overrides.join("\n") + "\n" : ""}`,
   );
   return rows;
 }

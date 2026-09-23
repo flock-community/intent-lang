@@ -56,7 +56,9 @@ thread, toast), a design system, an API resource.
 Done: modules and bundles (v10), held-out testing (four independent authors), the
 language review (`docs/reviews/language-review.md`). Next, in this order:
 
-1. **Refinement: `extends` + explicit `override` / `add` / `drop`.** Reuse someone's whole spec
+1. ~~**Refinement: `extends` + explicit `override` / `add` / `drop`.**~~ Done in v13
+   (`lib/support/helpdesk.intent` → `apps/14-supportdesk.intent`). Still open: upstreaming
+   tooling (which overrides do many specs share), refinement of bundles' components. Reuse someone's whole spec
    and improve it. Overrides are named units (elements, derived values, handlers, texts,
    design, seed data), never line ranges. The base's examples and `always` rules must still
    pass unless explicitly dropped (Liskov for specs). The base is pinned, and upgrading it

@@ -1,6 +1,7 @@
 // Parser + checker for .intent files. Deterministic: same text in, same IR and diagnostics out.
 import { expandUses } from "./expand.ts";
 import { LINE_BASE } from "./ast.ts";
+import type { Refinement } from "./refine.ts";
 import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Example, Field, Handler, Literal, Param, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
@@ -79,6 +80,12 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^import\\s+(${BUNDLE_NAME})(?:\\.(${UPPER}))?(?:\\s+as\\s+(${UPPER}))?$`)))) {
       if (m[3] && !m[2]) err(node.line, "SYNTAX", "`as` renames one imported name: `import std.list.Pager as TicketPager`");
       app.imports!.push({ bundle: m[1], name: m[2], alias: m[3], line: node.line });
+    } else if ((m = t.match(new RegExp(`^extends\\s+(${BUNDLE_NAME})$`)))) {
+      if (app.extends) err(node.line, "DUPLICATE", "a spec extends at most one base (compose components for more)");
+      app.extends = { name: m[1], line: node.line };
+    } else if (t.startsWith("override ") || t.startsWith("add to ") || t.startsWith("drop ")) {
+      const r = parseRefinement(node, ctx);
+      if (r) (app.refinements ??= []).push(r);
     } else if ((m = t.match(/^language\s+(v\d+)$/))) {
       // The language version the spec was written for: the checker says when the language moved on.
       language = m[1];
@@ -89,7 +96,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "import", "language", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "import", "language", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -193,6 +200,44 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     app.examples.push(ex);
   } else return false;
   return true;
+}
+
+/** `override …`, `add to <section> [after <element>]`, `drop …`: the explicit changes of a refining spec. */
+function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
+  const { err } = ctx;
+  const t = node.text;
+  let m: RegExpMatchArray | null;
+  if ((m = t.match(/^override\s+(heading|text|field|button|checkbox|select|list|section|progress|use)\s/))) {
+    const el = parseElement({ ...node, text: t.slice("override ".length) }, err, false);
+    return el && { op: "override-element", element: el, line: node.line };
+  }
+  if (t === "override derive") {
+    const c = node.children[0];
+    const dm = c?.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+    if (!dm || node.children.length !== 1) return void err(node.line, "SYNTAX", "`override derive` holds exactly one indented `name = sentence`");
+    return { op: "override-derive", name: dm[1], sentence: dm[2] + flattenChildren(c), note: c.note, line: c.line };
+  }
+  if (t === "override state") {
+    const c = node.children[0];
+    const f = c && node.children.length === 1 ? parseField(c, err, true) : undefined;
+    if (!f) return void err(node.line, "SYNTAX", "`override state` holds exactly one indented `name: Type = default`");
+    return { op: "override-state", field: f, line: c.line };
+  }
+  if ((m = t.match(new RegExp(`^override\\s+on\\s+(click|toggle|type|choose)\\s+(${QN})$`)))) {
+    return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], steps: parseBullets(node, err), line: node.line, note: node.note }, line: node.line };
+  }
+  if ((m = t.match(new RegExp(`^override\\s+component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
+    return { op: "override-component", component: parseComponent(node, m[1], m[2], m[3], ctx), line: node.line };
+  }
+  if ((m = t.match(new RegExp(`^add\\s+to\\s+(${QN})(?:\\s+after\\s+(${QN}))?$`)))) {
+    const elements = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
+    if (!elements.length) err(node.line, "SYNTAX", "`add to …` needs indented elements");
+    return { op: "add-elements", into: m[1], after: m[2], elements, line: node.line };
+  }
+  if ((m = t.match(new RegExp(`^drop\\s+element\\s+(${QN})$`)))) return { op: "drop-element", name: m[1], line: node.line };
+  if ((m = t.match(new RegExp(`^drop\\s+example\\s+(${STR})$`)))) return { op: "drop-example", name: parseString(m[1])!, line: node.line };
+  if ((m = t.match(new RegExp(`^drop\\s+on\\s+(click|toggle|type|choose)\\s+(${QN})$`)))) return { op: "drop-handler", verb: m[1], target: m[2], line: node.line };
+  err(node.line, "SYNTAX", 'expected `override <element|derive|state|on …|component> …`, `add to <section> [after <element>]`, or `drop element x | drop example "…" | drop on click x`');
 }
 
 /**

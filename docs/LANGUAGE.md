@@ -1,4 +1,4 @@
-# Intent — language reference (v12, app profile)
+# Intent — language reference (v13, app profile)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -39,6 +39,7 @@ A file is a sequence of top-level blocks, in any order:
 app Name                    # first line of an app; indented lines = purpose (strings)
 bundle std.name             # first line of a library file instead (§4b)
 import std.list             # reuse a bundle (§4b)
+extends support.helpdesk    # refine a published app (§4c): override, add to, drop
 record Name                 # a data shape; indented `field: Type [= default]`
 choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is what users see
 design                      # optional: how the app looks (§4a)
@@ -282,6 +283,50 @@ the compiler reads it too. A comment on a line of its own is only for people.
 `intent expand <app>` prints the app as the compiler reads it: imports resolved, components
 expanded, and each line marked with where it came from.
 
+## 4c. Refinement: improving someone else's app
+
+A published app (an `app` file in `lib/`, e.g. `lib/support/helpdesk.intent`) can be the base
+of another spec. The new spec starts as a copy of the base and names every change:
+
+```
+app SupportDesk
+  "Our support desk: the standard helpdesk, tuned to how we triage."
+
+extends support.helpdesk
+
+override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
+
+override state
+  sort: Sort = ByPriority          # we triage by priority first
+
+add to header after pageTitle
+  text slaNote = "Urgent tickets are answered within the hour." as caption
+
+drop example "paging"              # pages follow priority order now
+
+example "paging in priority order"
+  click pager.next
+  see ticketId on row 1 = "#7"
+```
+
+- `override <element line>` replaces an element, by name. `override derive`,
+  `override state`, `override on <verb> <element>` and `override component` replace one
+  derived value, state field, handler or component.
+- `add to <section> [after <element>]` places new elements. A refining spec has no `screen`
+  block. New state, derived values, handlers, rules, `always` checks and examples are declared
+  as usual and are added to the base's.
+- `drop element x`, `drop example "…"` and `drop on click x` remove a part.
+- **The base's proofs still apply.** Every base example and `always` check runs on the new
+  spec, unless it is dropped. The checker warns (`OVERRIDES_PROOF`) when a base example
+  checks something you changed; the compiler reports `SPEC CONFLICT` when an override breaks
+  a base example in a less direct way.
+- **The base is pinned.** `intent lock` records the base and a fingerprint of every part you
+  override. When the base changes, the check stops (`LOCK`), and marks each override whose
+  base part changed (`BASE_CHANGED`), so you review exactly those.
+- One level deep: a base does not itself extend another spec. Compose components for more.
+- An override that many specs make is a sign that the base is missing something (a param,
+  a rule); propose it to the base's author.
+
 ## 5. Events
 
 ```
@@ -379,6 +424,8 @@ places where the spec is not yet precise.
 | `UNUSED` | warning | a declared component is never used |
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
 | `LANGUAGE` | warning | the spec was written for an older language version |
+| `OVERRIDES_PROOF` | warning | a base example or `always` check is about something this spec overrides |
+| `BASE_CHANGED` | warning | the base changed a part this spec overrides (see §4c) |
 
 Reserved names: the keywords of Elm and TypeScript (`if`, `then`, `else`, `case`, `of`, `let`,
 `in`, `type`, `module`, `import`, `class`, `const`, `function`, `new`, `return`, `this`,
@@ -459,6 +506,8 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v13: refinement: `extends`, `override`, `add to … after …`, `drop`; base proofs run on the
+  refining spec; overrides fingerprinted in `intent.lock` (`BASE_CHANGED`).
 - v12: `empty` presentation; a select's `""` is a placeholder, never an option; template holes
   and display formats documented; `language vN` line; the lock pins the language and model;
   `SHADOWED` warning; header/toolbar grouping; a screen without a sidebar is one
