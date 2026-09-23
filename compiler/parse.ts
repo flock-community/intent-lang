@@ -3,7 +3,7 @@ import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
-import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Example, Field, Handler, Literal, Param, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
@@ -57,7 +57,7 @@ interface Ctx {
   clockLine: number;
 }
 
-const QN = `${LOWER}(?:\\.${LOWER})*`; // a (possibly qualified) element or state name: pager.next
+const QN = `${LOWER}(?:\\.${LOWER}|\\[\\d+\\])*`; // a (possibly qualified) name: pager.next; in api examples a response path: createTicket.body.items[1].id
 const BUNDLE_NAME = `${LOWER}(?:\\.${LOWER})*`;
 
 export const emptyApp = (): App => ({ name: "", components: [], purpose: [], records: [], choices: [], state: [], derive: [], screen: [], handlers: [], rules: [], examples: [], always: [] });
@@ -101,6 +101,14 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if (t.startsWith("override ") || t.startsWith("add to ") || t.startsWith("drop ")) {
       const r = parseRefinement(node, ctx);
       if (r) (app.refinements ??= []).push(r);
+    } else if ((m = t.match(/^profile\s+([a-z]+)$/))) {
+      if (!["ui", "api"].includes(m[1])) err(node.line, "UNKNOWN_NAME", `no profile \`${m[1]}\` (ui, api)`);
+      app.profile = m[1];
+    } else if ((m = t.match(new RegExp(`^endpoint\\s+(${LOWER})\\s+(GET|POST|PUT|PATCH|DELETE)\\s+(${STR})$`)))) {
+      app.endpoints ??= [];
+      app.endpoints.push(parseEndpoint(node, m[1], m[2] as "GET", parseString(m[3])!, ctx));
+    } else if (t.startsWith("endpoint")) {
+      err(node.line, "SYNTAX", 'expected `endpoint name GET|POST|PUT|PATCH|DELETE "/path/{id}"`');
     } else if ((m = t.match(/^language\s+(v\d+)$/))) {
       // The language version the spec was written for: the checker says when the language moved on.
       language = m[1];
@@ -111,7 +119,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "import", "language", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -215,6 +223,27 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     app.examples.push(ex);
   } else return false;
   return true;
+}
+
+/** `endpoint name METHOD "/path/{id}"` with `path|query|body x: Type`, `returns T` and `- steps`. */
+function parseEndpoint(node: Line, name: string, method: Endpoint["method"], path: string, ctx: Ctx): Endpoint {
+  const { err } = ctx;
+  const ep: Endpoint = { name, method, path, params: [], steps: [], line: node.line, note: node.note };
+  for (const c of node.children) {
+    let m: RegExpMatchArray | null;
+    if ((m = c.text.match(new RegExp(`^(path|query|body)\\s+(${LOWER})\\s*:\\s*(.+)$`)))) {
+      const type = parseType(m[3]);
+      if (!type) err(c.line, "SYNTAX", `\`${m[3]}\` is not a type`, c.indent + 1);
+      else ep.params.push({ in: m[1] as "path", name: m[2], type, line: c.line });
+    } else if ((m = c.text.match(/^returns\s+(.+)$/))) {
+      const type = parseType(m[1]);
+      if (!type) err(c.line, "SYNTAX", `\`${m[1]}\` is not a type`, c.indent + 1);
+      else ep.returns = type;
+    } else if (c.text.startsWith("- ")) ep.steps.push((c.text.slice(2) + flattenChildren(c)).trim());
+    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, or `- step`", c.indent + 1);
+  }
+  if (!ep.steps.length) err(node.line, "SYNTAX", `endpoint ${name} needs steps: what happens and what is answered`);
+  return ep;
 }
 
 /** `override …`, `add to <section> [after <element>]`, `drop …`: the explicit changes of a refining spec. */
@@ -463,6 +492,11 @@ function parseTable(c: Line, err: (l: number, c: string, m: string, col?: number
   return { k: "table", columns, rows };
 }
 
+/** Split `a = 1, b = "x, y"` at commas outside strings. */
+function splitArgs(s: string): string[] {
+  return splitCells(s.replace(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/g, "|")).filter(Boolean);
+}
+
 function splitCells(line: string): string[] {
   const cells: string[] = [];
   let cur = "";
@@ -624,6 +658,17 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: m[1], target: m[2], line } };
   if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], line, quoted: true } };
   if ((m = t.match(new RegExp(`^snapshot\\s+(${STR})$`)))) return { step: { do: "snapshot", name: parseString(m[1])!, line } };
+  // api profile: `call createTicket with subject = "Printer", priority = Urgent`
+  if ((m = t.match(new RegExp(`^call\\s+(${LOWER})(?:\\s+with\\s+(.+))?$`)))) {
+    const args: { name: string; value: Literal }[] = [];
+    for (const part of m[2] ? splitArgs(m[2]) : []) {
+      const am = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+      const lit = am && parseLiteral(am[2]);
+      if (!am || !lit) err(line, "SYNTAX", `\`${part}\` is not \`name = value\``, col);
+      else args.push({ name: am[1], value: lit });
+    }
+    return { step: { do: "call", endpoint: m[1], args, line } };
+  }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
   if ((m = t.match(/^wait\s+(\S+)$/))) {
     const ms = parseDuration(m[1]);
@@ -758,6 +803,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     checkReserved(d.name, d.line);
   }
 
+  // The api profile has endpoints instead of a screen.
+  if (app.profile === "api") return checkApi(app, err, warn, { records, choices, state, derived, checkType, checkReserved });
+  if (app.endpoints?.length) err(app.endpoints[0].line, "SYNTAX", "endpoints belong to the api profile: add `profile api`");
+
   // Screen: scopes and bindings.
   const top = new Map<string, Element>(); // names visible at top level (sections are transparent)
   const lists: Element[] = [];
@@ -880,6 +929,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (!app.clockMs) err(s.line, "STEP", "`tick`/`wait` needs a `clock every …` block");
         continue;
       }
+      if (s.do === "call") {
+        err(s.line, "STEP", "`call` belongs to the api profile (add `profile api`); a screen is driven with click, type, toggle and choose");
+        continue;
+      }
       if (s.do === "snapshot") {
         if (snapshots.has(s.name)) err(s.line, "DUPLICATE", `snapshot "${s.name}" is already used`);
         snapshots.add(s.name);
@@ -973,6 +1026,55 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   const anchored = (s: string) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).some((w) => names.has(w));
   for (const h of app.handlers) for (const s of h.steps) if (!anchored(s) && !/nothing|initial state/i.test(s)) warn(h.line, "UNANCHORED", `"${s}" mentions no declared name`);
   for (const r of app.rules) if (!anchored(r)) warn(1, "UNANCHORED", `rule "${r}" mentions no declared name`);
+}
+
+function checkApi(
+  app: App,
+  err: (l: number, c: string, m: string, col?: number) => void,
+  warn: (l: number, c: string, m: string, col?: number) => void,
+  ctx: { records: Map<string, RecordDecl>; choices: Map<string, ChoiceDecl>; state: Map<string, Field>; derived: Set<string>; checkType: (t: Type, line: number) => boolean; checkReserved: (n: string, line: number) => void },
+) {
+  const eps = new Map<string, Endpoint>();
+  if (app.screen.length) err(app.screen[0].line, "SYNTAX", "an api has endpoints, not a screen");
+  if (!app.endpoints?.length) err(1, "SYNTAX", "an api needs at least one `endpoint`");
+  const routes = new Set<string>();
+  for (const ep of app.endpoints ?? []) {
+    if (eps.has(ep.name)) err(ep.line, "DUPLICATE", `endpoint \`${ep.name}\` is declared twice`);
+    eps.set(ep.name, ep);
+    ctx.checkReserved(ep.name, ep.line);
+    const route = `${ep.method} ${ep.path.replace(/\{[^}]+\}/g, "{}")}`;
+    if (routes.has(route)) err(ep.line, "DUPLICATE", `another endpoint already answers ${ep.method} ${ep.path}`);
+    routes.add(route);
+    const holes = [...ep.path.matchAll(/\{([a-z]\w*)\}/g)].map((m) => m[1]);
+    for (const h of holes) if (!ep.params.some((p) => p.in === "path" && p.name === h)) err(ep.line, "UNKNOWN_NAME", `the path has {${h}}: declare \`path ${h}: Int\` (or Text)`);
+    for (const p of ep.params) {
+      ctx.checkType(p.type, p.line);
+      if (p.in === "path" && !holes.includes(p.name)) err(p.line, "BAD_BINDING", `\`path ${p.name}\` is not in "${ep.path}"`);
+      if (p.in === "body" && ep.method === "GET") err(p.line, "BAD_BINDING", "a GET request has no body; use `query`");
+    }
+    if (ep.returns) ctx.checkType(ep.returns, ep.line);
+  }
+  // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`.
+  for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
+    for (const s of ex.steps) {
+      if (s.do === "call") {
+        const ep = eps.get(s.endpoint);
+        if (!ep) {
+          err(s.line, "UNKNOWN_NAME", `no endpoint \`${s.endpoint}\`${suggest(s.endpoint, [...eps.keys()])}`);
+          continue;
+        }
+        for (const a of s.args) if (!ep.params.some((p) => p.name === a.name)) err(s.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${a.name}\` (${ep.params.map((p) => p.name).join(", ") || "none"})`);
+      } else if (s.do === "see") {
+        const [head, part] = s.target.split(/[.[]/);
+        const target = s.every ?? s.target;
+        const h = target.split(/[.[]/)[0];
+        if (!eps.has(h)) err(s.line, "UNKNOWN_NAME", `\`${h}\` is not an endpoint; check a response as \`see ${[...eps.keys()][0] ?? "endpoint"}.status = 200\` or \`….body.<field>\``);
+        else if (!s.every && !["status", "body"].includes(part)) err(s.line, "UNKNOWN_NAME", `a response has \`status\` and \`body\`: \`see ${head}.status = 200\``);
+      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\` and \`see\`, not \`${s.do}\``);
+    }
+  }
+  for (const ep of eps.values()) if (!app.examples.some((ex) => ex.steps.some((s) => s.do === "call" && s.endpoint === ep.name))) warn(ep.line, "UNPROVEN", `endpoint \`${ep.name}\` is never called in an example`);
+  if (!app.examples.length) warn(1, "NO_EXAMPLES", "the api has no examples; nothing proves its behaviour");
 }
 
 function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boolean {

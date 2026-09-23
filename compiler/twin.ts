@@ -11,6 +11,7 @@ import { PROJECT_ROOT, ROOT, type Target } from "./gen.ts";
 import { complete } from "./llm.ts";
 import { compilerPins, sha } from "./load.ts";
 import { runStyledTraces } from "./look.ts";
+import { apiTraces, callText } from "./api.ts";
 
 const EXPLAIN_SYSTEM = `You help the author of an Intent spec make it unambiguous.
 Two compilers built different apps from the same spec; you explain where the spec left them room to differ, briefly and concretely, citing the spec.`;
@@ -79,18 +80,25 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   // Do they build the same app? Random sessions from the spec plus guided exploration.
   const n = o.sessions ?? 24;
   const length = o.length ?? 20;
-  let traces: Action[][] = makeTraces(app, Math.ceil(n / 2), length, 7);
-  const ex = await runJobsIsolated(a.dir, target, exploreJobs(app, Math.floor(n / 2), length), 600_000);
-  if (!("error" in ex)) traces = traces.concat((ex as ExploreResult[]).map((e) => e.actions));
+  const api = app.profile === "api";
+  let traces: Action[][] = api ? [] : makeTraces(app, Math.ceil(n / 2), length, 7);
+  const calls = api ? apiTraces(app, n, length, 7) : [];
+  if (!api) {
+    const ex = await runJobsIsolated(a.dir, target, exploreJobs(app, Math.floor(n / 2), length), 600_000);
+    if (!("error" in ex)) traces = traces.concat((ex as ExploreResult[]).map((e) => e.actions));
+  }
   const perBuild = new Map<string, (string[] | null)[]>();
   for (const [id, r] of [["A", a], ["B", b]] as const) {
-    if (o.styled) perBuild.set(id, (await runStyledTraces(r.dir, app, traces)).map((t) => t.steps));
+    if (api) {
+      const res = await runJobsIsolated(r.dir, target, calls.map((c) => ({ kind: "api-trace" as const, calls: c })), 600_000);
+      perBuild.set(id, "error" in res ? calls.map(() => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
+    } else if (o.styled) perBuild.set(id, (await runStyledTraces(r.dir, app, traces)).map((t) => t.steps));
     else {
       const res = await runJobsIsolated(r.dir, target, traces.map((actions) => ({ kind: "trace" as const, actions })), 600_000);
       perBuild.set(id, "error" in res ? traces.map(() => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
     }
   }
-  const cmp = compare(traces, perBuild);
+  const cmp = api ? compare(calls, perBuild, callText) : compare(traces, perBuild);
   if (cmp.agree === cmp.total) {
     store(out, cached, "twin", key);
     rmSync(twinDir, { recursive: true, force: true });

@@ -31,6 +31,7 @@ export function stepText(s: Step): string {
     case "choose": return `choose ${s.quoted ? q(s.value) : s.value} in ${s.target}`;
     case "tick": return `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
+    case "call": return `call ${s.endpoint}${s.args.length ? ` with ${s.args.map((a) => `${a.name} = ${lit(a.value, "")}`).join(", ")}` : ""}`;
     case "see": {
       const c = s.check;
       const cmp = (x: typeof c) => (x.is === "num" ? `is ${{ atLeast: "at least", atMost: "at most", above: "above", below: "below" }[x.op]} ${x.ref ?? x.value}` : "");
@@ -75,6 +76,7 @@ export function printApp(app: App): string {
   const out: string[] = [];
   const block = (lines: string[]) => lines.length && out.push(...lines, "");
   block([`app ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
+  if (app.profile && app.profile !== "ui") block([`profile ${app.profile}`]);
   if (app.design) {
     const d = app.design;
     block(["design", ...(d.look ? [`  look ${q(d.look)}`] : []), ...Object.entries(d.colors).map(([k, v]) => `  ${k}: ${v}`), ...(["font", "radius", "density"] as const).filter((k) => d[k]).map((k) => `  ${k}: ${d[k]}`)]);
@@ -86,7 +88,14 @@ export function printApp(app: App): string {
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
   block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
-  block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
+  if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
+  for (const ep of app.endpoints ?? [])
+    block([
+      `endpoint ${ep.name} ${ep.method} ${q(ep.path)}${origin(app, ep.line, ep.note)}`,
+      ...ep.params.map((p) => `  ${p.in} ${p.name}: ${typeToString(p.type)}`),
+      ...(ep.returns ? [`  returns ${typeToString(ep.returns)}`] : []),
+      ...ep.steps.map((s) => `  - ${s}`),
+    ]);
   for (const h of app.handlers) block([`on ${h.verb}${h.target ? ` ${h.target}` : ""}${origin(app, h.line, h.note)}`, ...h.steps.map((s) => `  - ${s}`)]);
   block(app.rules.length ? ["rules", ...app.rules.map((r) => `  - ${r}`)] : []);
   block(app.always.length ? ["always", ...app.always.map((s) => `  ${stepText(s)}${origin(app, s.line)}`)] : []);

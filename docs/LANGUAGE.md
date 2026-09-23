@@ -1,4 +1,4 @@
-# Intent — language reference (v16, app profile)
+# Intent — language reference (v17)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -358,6 +358,46 @@ A bundle is published together with its demo app (`lib/x/y.demo.intent`), which 
 checker. A published app is its own demo. The registry is static files (`index.json` plus one
 file per version), so any file server can host it.
 
+## 4e. The api profile
+
+A spec with `profile api` describes an HTTP service instead of a screen. Its vocabulary is
+the profile spec `lib/profile/api.intent`. Records, choices, state, derive, rules, `always`,
+examples, imports and refinement work as everywhere else.
+
+```
+app TicketsApi
+profile api
+import support.tickets
+
+endpoint createTicket POST "/tickets"
+  body subject: Text
+  body customer: Text
+  body priority: Priority
+  returns Ticket
+  - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  - add a Ticket to the end of tickets with id = the highest id in tickets + 1, …
+  - answer 201 with the new ticket
+
+example "creating a ticket"
+  call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
+  see createTicket.status = 201
+  see createTicket.body.id = 9
+  see listTickets.body[1].id = 9          # after `call listTickets`; lists count from 1
+```
+
+- `path x: T` (appears in the path as `{x}`), `query x: T` and `body x: T` are the input;
+  `returns T` is the answer's body. Steps are sentences, as in handlers: "answer 200 with …",
+  "answer 404 \"…\" and stop".
+- The harness routes requests and checks their input before the service sees them. It answers
+  these itself, with fixed messages: `404 {"error":"Not found"}`, `405 {"error":"Method not
+  allowed"}`, `400 {"error":"<name> is required"}` and `400 {"error":"<name> must be <type>"}`.
+  Refusals written in the spec have the same shape: `{"error": "…"}`.
+- `call x with a = 1, b = "…"` sends a request, and `see x.status` / `see x.body.<path>` check the
+  latest answer of `x`. `has N rows`, numeric checks and `see every row of x.body: …` work on
+  lists. A param left out of a `call` is not sent, which tests the harness's `is required` answer.
+- A build is a Node server (`node server.mjs`, `PORT`) plus the same pure handler under test.
+  Twin compilation, examples, `always` and random call sessions work as for screens.
+
 ## 5. Events
 
 ```
@@ -550,6 +590,8 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v17: the api profile (`profile api`, `endpoint`, `call` / `see x.status|body…`), with a
+  TypeScript/Node harness; the same domain bundle serves a screen and an API.
 - v16: the UI vocabulary is a profile spec (`lib/profile/ui.intent`): element kinds, what they
   show, their verbs, presentations and meanings; the checker reads it (docs/design/profiles.md).
 - v15: projects: `intent.project` (`registry`, `requires`), `intent install` with minimal

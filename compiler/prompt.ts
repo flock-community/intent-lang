@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ELM_APP_SKELETON, ROOT, TS_APP_SKELETON, type Target } from "./gen.ts";
+import { API_APP_SKELETON, API_TARGET_RULES } from "./api.ts";
 
 export const SYSTEM = `You are the code-generation stage of the Intent compiler. You translate an Intent spec into exactly one source module.
 Behave like a compiler: literal, deterministic, no creativity, no extra features, no commentary.
@@ -67,9 +68,45 @@ export const PROBE_RULES = `You are the PROBE compiler of a twin build. Another 
 - Wherever the spec and the defaults together still leave a real choice (what counts as a word, how ties are ordered, what happens in an unmentioned edge case, what an unclear sentence means), deliberately take a DIFFERENT reasonable reading than the most obvious one.
 - Stay reasonable: a person reading the spec should agree your reading is allowed by the text.`;
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false): string {
+const API_CODING_RULES = `Rules that keep every build identical:
+1. Model mirrors the spec's \`state\`: same names, same meaning. Add only what you truly need.
+2. Each endpoint: implement its steps in order, literally. "answer 404 \\"…\\" and stop" returns \`fail(404, "…")\` at once, leaving the model unchanged. "answer 201 with X" returns \`answer(201, X)\`.
+3. Bodies are exactly the declared \`returns\` type: records with their declared fields, lists in the order the steps say.
+4. Where the spec is silent, apply the defaults in §9 of the language reference. Never add behaviour the spec does not ask for.
+5. Every example in the spec must pass. Walk through each one step by step before you answer.
+6. All rounding goes through Fmt. Write plain, straightforward code. No comments needed.`;
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
+  if (api)
+    return `# Language reference
+
+${language}
+
+# ${API_TARGET_RULES}
+
+\`\`\`ts
+${API_APP_SKELETON}\`\`\`
+
+Standard helpers (use these for all number formatting, parsing and rounding):
+\`\`\`
+${FMT_API.ts}
+\`\`\`
+
+${API_CODING_RULES}
+
+# Generated interface (spec.ts)
+
+\`\`\`ts
+${specModule}\`\`\`
+
+# The spec (${specFile})
+
+\`\`\`intent
+${specText}\`\`\`
+
+${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
   return `# Language reference
 
 ${language}

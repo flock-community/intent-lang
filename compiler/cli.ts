@@ -111,7 +111,7 @@ switch (cmd) {
     const file = args[0];
     const { app, src } = load(file);
     if (!app) process.exit(1);
-    const targets = (flags.target ?? "elm,ts").split(",") as Target[];
+    const targets = (flags.target ?? (app.profile === "api" ? "ts" : "elm,ts")).split(",") as Target[];
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
     const twin = (flags.twin ?? "auto") as "auto" | "always" | "off";
     const results = await Promise.all(
@@ -121,7 +121,7 @@ switch (cmd) {
     for (const r of results) {
       const how = r.cached ? "from cache" : r.verified === "twin" ? "twin-verified" : r.verified === "single" ? "single build" : "";
       if (r.ambiguous) console.log(`${r.target}: STOPPED — the two compilers built different apps (${r.ambiguous.sessions} of ${r.ambiguous.of} sessions differ). The spec is ambiguous; see ${out}/ambiguity-${r.target}.md\n\n${r.ambiguous.report.split("## What the spec leaves open")[1]?.trim() ?? ""}`);
-      else console.log(`${r.target}: ${r.ok ? `OK (${how})` : "FAILED"}, $${r.costUsd.toFixed(2)} → ${r.dir}/index.html`);
+      else console.log(`${r.target}: ${r.ok ? `OK (${how})` : "FAILED"}, $${r.costUsd.toFixed(2)} → ${app.profile === "api" ? `${r.dir}/server.mjs (run: node server.mjs)` : `${r.dir}/index.html`}`);
     }
     process.exit(results.every((r) => r.ok) ? 0 : 1);
   }

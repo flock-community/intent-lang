@@ -82,6 +82,7 @@ export type Step =
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
   | { do: "tick"; times: number; line: number }
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
+  | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; line: number } // api profile
   | { do: "see"; target: string; at?: RowRef; every?: string; check: Check; line: number }; // every: check each row of that list
 
 export type Check =
@@ -129,8 +130,21 @@ export interface Import {
   line: number;
 }
 
+export interface Endpoint {
+  name: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  path: string; // "/tickets/{id}"
+  params: { in: "path" | "query" | "body"; name: string; type: Type; line: number }[];
+  returns?: Type; // undefined: the answer has no body
+  steps: string[];
+  line: number;
+  note?: string;
+}
+
 export interface App {
   kind?: "app" | "bundle";
+  profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
+  endpoints?: Endpoint[];
   name: string;
   imports?: Import[];
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)

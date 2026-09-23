@@ -7,7 +7,8 @@ import { actionText, exploreJobs } from "./fuzz.ts";
 import { scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
 import { buildPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
-import { compile } from "./toolchain.ts";
+import { compile, compileApi } from "./toolchain.ts";
+import { apiTraces, callText, scaffoldApi, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
@@ -35,11 +36,17 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   const maxAttempts = opts.maxAttempts ?? 4;
   const log = opts.log ?? (() => {});
   const t0 = Date.now();
-  const { appFile, specSource } = scaffold(app, target, dir);
+  const api = app.profile === "api";
+  const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, compiler: compilerPins(), costUsd: 0, ms: 0 };
+  if (api && target !== "ts") {
+    res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
+    return res;
+  }
+  const { appFile, specSource } = api ? scaffoldApi(app, dir) : scaffold(app, target, dir);
+  if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
-  const base = buildPrompt(target, specFile, specText, specSource, !!opts.probe);
-  const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, compiler: compilerPins(), costUsd: 0, ms: 0 };
+  const base = buildPrompt(target, specFile, specText, specSource, !!opts.probe, api);
 
   let code = "";
   let problems = "";
@@ -64,7 +71,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     code = extractCode(r.text);
     writeFileSync(appFile, code);
 
-    const errors = await compile(target, dir);
+    const errors = api ? await compileApi(dir) : await compile(target, dir);
     if (errors) {
       problems = `The module does not compile:\n\n\`\`\`\n${errors}\n\`\`\``;
       res.attempts.push({ stage: "compile", detail: errors.slice(0, 1500) });
@@ -72,7 +79,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       continue;
     }
 
-    const results = await runJobsIsolated(dir, target, app.examples.map((example) => ({ kind: "example" as const, example, always: app.always })));
+    const results = await runJobsIsolated(dir, target, api ? app.examples.map((example) => ({ kind: "api-example" as const, example, always: app.always })) : app.examples.map((example) => ({ kind: "example" as const, example, always: app.always })));
     if ("error" in results) {
       problems = `Running the examples failed: ${results.error}`;
       res.attempts.push({ stage: "examples", detail: results.error });
@@ -84,11 +91,13 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.examples.passed = exs.length - failed.length;
     if (!failed.length && app.always.length) {
       // Examples pass; now hunt for a session that breaks an `always` rule.
-      const ex = await runJobsIsolated(dir, target, exploreJobs(app, 40, 25, 11), 300_000);
+      const ex = api
+        ? await runJobsIsolated(dir, target, apiTraces(app, 40, 25, 11).map((calls) => ({ kind: "api-trace" as const, calls, always: app.always })), 300_000)
+        : await runJobsIsolated(dir, target, exploreJobs(app, 40, 25, 11), 300_000);
       const v = "error" in ex ? undefined : (ex as ExploreResult[]).find((e) => e.violation)?.violation;
       if (v) {
         const w = where(app, v.line);
-        problems = `All examples pass, but this session breaks the rule at ${w.file}:${w.line} (\`${w.text}\`): ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map(actionText).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
+        problems = `All examples pass, but this session breaks the rule at ${w.file}:${w.line} (\`${w.text}\`): ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map((a) => ("endpoint" in a ? callText(a as unknown as Call) : actionText(a))).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
         res.attempts.push({ stage: "always", detail: `line ${v.line}: ${v.message}` });
         log(`attempt ${attempt}: breaks always (line ${v.line})`);
         continue;

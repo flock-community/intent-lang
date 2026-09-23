@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v16** (see the changelog at the end of
+Language version this skill matches: **v17** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -169,6 +169,13 @@ copying it (§4c of the reference):
 Bundles from a registry are listed in `intent.project` (`requires std.list 1.2`) and
 installed by `intent install` or `intent build`. Ask for the lowest version that has what you
 need: minimal version selection never upgrades behind your back.
+
+## 5d. An API instead of a screen
+
+Write `profile api` and `endpoint` blocks (§4e of the reference). Reuse the same domain bundle
+as the screen. Every endpoint needs examples: the happy path, each refusal ("answer 404 … and
+stop"), and a missing or invalid input (the harness answers those itself). Check list order
+explicitly (`see listTickets.body[1].id = 9`).
 
 ## 6. Write a bundle
 

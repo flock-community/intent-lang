@@ -110,7 +110,7 @@ export interface Divergence {
 }
 
 /** Compare the step sequences of every build on every trace. */
-export function compare(traces: Action[][], perBuild: Map<string, (string[] | null)[]>): { agree: number; total: number; divergences: Divergence[]; matchMajority: Map<string, number> } {
+export function compare<A = Action>(traces: A[][], perBuild: Map<string, (string[] | null)[]>, textOf: (a: A) => string = actionText as (a: A) => string): { agree: number; total: number; divergences: Divergence[]; matchMajority: Map<string, number> } {
   const builds = [...perBuild.keys()];
   const divergences: Divergence[] = [];
   const matchMajority = new Map(builds.map((b) => [b, 0]));
@@ -139,7 +139,7 @@ export function compare(traces: Action[][], perBuild: Map<string, (string[] | nu
     divergences.push({
       trace: ti,
       step: step - 1,
-      actions: trace.slice(0, step).map(actionText),
+      actions: trace.slice(0, step).map(textOf),
       groups: [...byScreen.entries()].sort((a, b) => b[1].length - a[1].length).map(([screen, bs]) => ({ builds: bs, screen })),
     });
   });

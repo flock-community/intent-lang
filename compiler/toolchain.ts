@@ -52,3 +52,14 @@ export async function compileStyled(target: Target, dir: string): Promise<string
   const tw = await run(bin("tailwindcss"), ["-i", "theme.css", "-o", "style.css"], dir);
   return tw.ok ? "" : clean(tw.out);
 }
+
+/** api profile: type-check, then bundle the test client and the server. */
+export async function compileApi(dir: string): Promise<string> {
+  const t = await run(bin("tsc"), ["-p", "."], dir);
+  if (!t.ok) return clean(t.out);
+  for (const [entry, out] of [["test-entry.ts", "test.mjs"], ["server.ts", "server.mjs"]]) {
+    const b = await run(bin("esbuild"), [entry, "--bundle", "--format=esm", "--platform=node", `--outfile=${out}`, "--log-level=error"], dir);
+    if (!b.ok) return clean(b.out);
+  }
+  return "";
+}

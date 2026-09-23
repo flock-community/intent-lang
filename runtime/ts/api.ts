@@ -1,0 +1,109 @@
+// The API runtime: routing, input validation and response helpers. Shared by every API build;
+// the LLM writes only `handle`. Messages are fixed, so every build answers bad input the same way.
+
+export type TypeDesc =
+  | { k: "Text" }
+  | { k: "Int" }
+  | { k: "Decimal" }
+  | { k: "Bool" }
+  | { k: "List"; of: TypeDesc }
+  | { k: "Maybe"; of: TypeDesc }
+  | { k: "Choice"; name: string; values: string[] }
+  | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] };
+
+export interface EndpointDesc {
+  name: string;
+  method: string;
+  path: string;
+  params: { in: "path" | "query" | "body"; name: string; type: TypeDesc }[];
+}
+
+export type Response = { status: number; body: unknown };
+
+/** A successful answer: the status and the body (records, lists, texts, numbers). */
+export function answer(status: number, body?: unknown): Response {
+  return { status, body: body === undefined ? null : JSON.parse(JSON.stringify(body)) };
+}
+
+/** A refusal: the status and one message, always as `{ "error": message }`. */
+export function fail(status: number, error: string): Response {
+  return { status, body: { error } };
+}
+
+const describe = (t: TypeDesc): string =>
+  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : "an object";
+
+/** Check a JSON value against a type; returns the value or an error message. */
+function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error: string } {
+  if (t.k === "Maybe") return v === null || v === undefined ? { ok: null } : check(v, t.of, name);
+  if (v === undefined || v === null) return { error: `${name} is required` };
+  const bad = { error: `${name} must be ${describe(t)}` };
+  switch (t.k) {
+    case "Text": return typeof v === "string" ? { ok: v } : bad;
+    case "Int": return typeof v === "number" && Number.isInteger(v) ? { ok: v } : bad;
+    case "Decimal": return typeof v === "number" && Number.isFinite(v) ? { ok: v } : bad;
+    case "Bool": return typeof v === "boolean" ? { ok: v } : bad;
+    case "Choice": return typeof v === "string" && t.values.includes(v) ? { ok: v } : bad;
+    case "List": {
+      if (!Array.isArray(v)) return bad;
+      const out: unknown[] = [];
+      for (const [i, x] of v.entries()) {
+        const r = check(x, t.of, `${name}[${i + 1}]`);
+        if ("error" in r) return r;
+        out.push(r.ok);
+      }
+      return { ok: out };
+    }
+    case "Record": {
+      if (typeof v !== "object" || Array.isArray(v)) return bad;
+      const out: Record<string, unknown> = {};
+      for (const f of t.fields) {
+        const r = check((v as Record<string, unknown>)[f.name], f.type, `${name}.${f.name}`);
+        if ("error" in r) return r;
+        out[f.name] = r.ok;
+      }
+      return { ok: out };
+    }
+  }
+}
+
+/** A query or path value arrives as text: read it as its type. */
+function fromText(s: string | undefined, t: TypeDesc): unknown {
+  if (s === undefined) return undefined;
+  const inner = t.k === "Maybe" ? t.of : t;
+  if (inner.k === "Int") return /^-?\d+$/.test(s) ? Number(s) : s;
+  if (inner.k === "Decimal") return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
+  if (inner.k === "Bool") return s === "true" ? true : s === "false" ? false : s;
+  return s;
+}
+
+/** Match a request to an endpoint and validate its input. Unknown routes and bad input are answered here. */
+export function route(endpoints: EndpointDesc[], method: string, path: string, query: Record<string, string>, body: unknown): { request: Record<string, unknown> } | { response: Response } {
+  const parts = path.split("/").filter(Boolean);
+  const matches = endpoints
+    .map((e) => {
+      const segs = e.path.split("/").filter(Boolean);
+      if (segs.length !== parts.length) return undefined;
+      const params: Record<string, string> = {};
+      for (let i = 0; i < segs.length; i++) {
+        const m = segs[i].match(/^\{(\w+)\}$/);
+        if (m) params[m[1]] = decodeURIComponent(parts[i]);
+        else if (segs[i] !== parts[i]) return undefined;
+      }
+      return { e, params };
+    })
+    .filter((x): x is { e: EndpointDesc; params: Record<string, string> } => !!x);
+  if (!matches.length) return { response: fail(404, "Not found") };
+  const hit = matches.find((m) => m.e.method === method);
+  if (!hit) return { response: fail(405, "Method not allowed") };
+  const request: Record<string, unknown> = { endpoint: hit.e.name };
+  const bodyObj = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  if (hit.e.params.some((p) => p.in === "body") && body !== undefined && body !== null && (typeof body !== "object" || Array.isArray(body))) return { response: fail(400, "the body must be a JSON object") };
+  for (const p of hit.e.params) {
+    const raw = p.in === "path" ? fromText(hit.params[p.name], p.type) : p.in === "query" ? fromText(query[p.name], p.type) : bodyObj[p.name];
+    const r = check(raw, p.type, p.name);
+    if ("error" in r) return { response: fail(400, r.error) };
+    request[p.name] = r.ok;
+  }
+  return { request };
+}

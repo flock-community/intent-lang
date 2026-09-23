@@ -308,7 +308,7 @@ view model =
 
 // ---------------------------------------------------------------- TypeScript
 
-function tsType(t: Type): string {
+export function tsType(t: Type): string {
   switch (t.k) {
     case "Text": return "string";
     case "Int":
@@ -321,12 +321,9 @@ function tsType(t: Type): string {
 }
 const tsAtom = (t: Type) => (t.k === "Maybe" ? `(${tsType(t)})` : tsType(t));
 
-export function genTsSpec(app: App): string {
+/** Records, choices and table seeds: the domain, shared by every profile. */
+export function tsDomain(app: App): string {
   const out: string[] = [];
-  out.push(`// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
-import type { Node, Wire } from "./ui.ts";
-
-`);
   for (const r of app.records) out.push(`export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n\n`);
   for (const c of app.choices) {
     out.push(`export type ${c.name} = ${c.values.map(q).join(" | ")};\n`);
@@ -338,6 +335,16 @@ import type { Node, Wire } from "./ui.ts";
       const rec = app.records.find((r) => f.type.k === "List" && f.type.of.k === "Named" && r.name === f.type.of.name)!;
       out.push(`/** Initial value of state \`${f.name}\` (the table in the spec). */\nexport const ${f.name}Initial: ${rec.name}[] = [\n${f.default.rows.map((row) => `  { ${rec.fields.map((rf) => `${rf.name}: ${tsLiteral(cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" })}`).join(", ")} },`).join("\n")}\n];\n\n`);
     }
+  return out.join("");
+}
+
+export function genTsSpec(app: App): string {
+  const out: string[] = [];
+  out.push(`// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
+import type { Node, Wire } from "./ui.ts";
+
+`);
+  out.push(tsDomain(app));
   const evs = events(app);
   out.push(`/** Everything the user (or the clock) can do. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${evs
     .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`)
