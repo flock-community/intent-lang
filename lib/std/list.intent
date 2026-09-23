@@ -5,17 +5,18 @@ component Pager as footer "The page info on the left; the previous and next butt
   param items "the list to show one page at a time: a state or derived list"
   param size = 5
   state
-    page: Int = 1
+    page: Int = 1                # the page asked for; {current} is the page shown
   derive
     pageCount = the number of {items} divided by {size}, rounded up, but at least 1
-    visible = the {items} on page {page}, {size} per page
+    current = the smaller of {page} and {pageCount}   # never past the last page, also when {items} gets shorter
+    visible = the {items} from position ({current} - 1) × {size} + 1 on, at most {size} of them
   screen
-    text pageInfo = "Page {page} of {pageCount}"
+    text pageInfo = "Page {current} of {pageCount}"
     button previous "Previous" as secondary
-      enabled when {page} is above 1
+      enabled when {current} is above 1
     button next "Next" as secondary
-      enabled when {page} is below {pageCount}
+      enabled when {current} is below {pageCount}
   on click previous
-    - decrease {page} by 1
+    - set {page} to {current} - 1
   on click next
-    - increase {page} by 1
+    - set {page} to {current} + 1

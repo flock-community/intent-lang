@@ -121,6 +121,8 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
     kind: "section",
     name: inst,
     as: comp.look || comp.base ? comp.name : undefined,
+    visibleWhen: use.visibleWhen, // the app's condition: not rewritten
+    look: use.look,
     children: renameEls(body.screen, false),
     line: use.line,
   };

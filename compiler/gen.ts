@@ -131,7 +131,7 @@ import Ui
 
   // Events
   const evs = events(app);
-  out.push(`{-| Everything the user (or the clock) can do. -}\ntype Event\n    = ${evs
+  out.push(`{-| Everything the user (or the clock) can do. -}\ntype Msg\n    = ${evs
     .map((e) => e.tag + (e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : ""))
     .join("\n    | ")}\n\n`);
   out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. -}\n\n`);
@@ -195,7 +195,7 @@ import Ui
       e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
     return `        ${pat} ->\n            ${body}\n`;
   });
-  out.push(`fromWire : Ui.Wire -> Maybe Event\nfromWire w =\n    case ( w.on, w.target ) of\n${cases.join("\n")}\n        _ ->\n            Nothing\n`);
+  out.push(`fromWire : Ui.Wire -> Maybe Msg\nfromWire w =\n    case ( w.on, w.target ) of\n${cases.join("\n")}\n        _ ->\n            Nothing\n`);
   return out.join("");
 }
 
@@ -283,9 +283,9 @@ init =
     ...
 
 
-update : Event -> Model -> Model
-update event model =
-    case event of
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
         ...
 
 
@@ -327,7 +327,7 @@ import type { Node, Wire } from "./ui.ts";
       out.push(`/** Initial value of state \`${f.name}\` (the table in the spec). */\nexport const ${f.name}Initial: ${rec.name}[] = [\n${f.default.rows.map((row) => `  { ${rec.fields.map((rf) => `${rf.name}: ${tsLiteral(cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" })}`).join(", ")} },`).join("\n")}\n];\n\n`);
     }
   const evs = events(app);
-  out.push(`/** Everything the user (or the clock) can do. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Event =\n  | ${evs
+  out.push(`/** Everything the user (or the clock) can do. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${evs
     .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`)
     .join("\n  | ")};\n\n`);
   out.push(`export type Button = { enabled: boolean };\nexport type LabeledButton = { label: string; enabled: boolean };\n/** A select whose options come from the model: the option texts in order, and the selected one ("" for none). */\nexport type Pick = { options: string[]; selected: string };\n\n`);
@@ -383,18 +383,18 @@ import type { Node, Wire } from "./ui.ts";
       e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
     return `    case ${q(`${e.on} ${e.target}`)}:\n      return ${body};\n`;
   });
-  out.push(`export function fromWire(w: Wire): Event | null {\n  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}  return null;\n}\n`);
+  out.push(`export function fromWire(w: Wire): Msg | null {\n  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}  return null;\n}\n`);
   return out.join("");
 }
 
-export const TS_APP_SKELETON = `import type { Event, Screen /* , … */ } from "./spec.ts";
+export const TS_APP_SKELETON = `import type { Msg, Screen /* , … */ } from "./spec.ts";
 import * as Fmt from "./fmt.ts";
 
 export type Model = { /* … */ };
 
 export function init(): Model { /* … */ }
 
-export function update(event: Event, model: Model): Model {
+export function update(msg: Msg, model: Model): Model {
   switch (event.tag) { /* … */ }
 }
 

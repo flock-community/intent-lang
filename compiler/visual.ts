@@ -27,17 +27,40 @@ export function pixelDiff(a: PNG, b: PNG): number {
 
 /** Boxes of the same elements: share within 8px on every edge, and the median deviation. */
 export function layoutAgreement(a: Rects, b: Rects): { within8: number; median: number; common: number; missing: number } {
-  const keys = Object.keys(a).filter((k) => k in b);
-  const missing = new Set([...Object.keys(a), ...Object.keys(b)]).size - keys.length;
+  const keys = Object.keys(a).filter((k) => k in b && !k.startsWith("__"));
+  const missing = new Set([...Object.keys(a), ...Object.keys(b)].filter((k) => !k.startsWith("__"))).size - keys.length;
   const devs = keys.map((k) => Math.max(...a[k].map((v, i) => Math.abs(v - b[k][i]))));
   devs.sort((x, y) => x - y);
   return { within8: keys.length ? devs.filter((d) => d <= 8).length / keys.length : 0, median: devs.length ? devs[Math.floor(devs.length / 2)] : 0, common: keys.length, missing };
 }
 
+/**
+ * Local layout: each element's position relative to its nearest element-ancestor, plus its size.
+ * One taller header then counts as one difference, not as a shift of everything below it.
+ */
+export function localAgreement(a: Rects, b: Rects): number {
+  const pa = ((a as any).__parents ?? {}) as Record<string, string>;
+  const pb = ((b as any).__parents ?? {}) as Record<string, string>;
+  const keys = Object.keys(a).filter((k) => k in b && !k.startsWith("__"));
+  if (!keys.length) return 0;
+  const rel = (r: Rects, p: Record<string, string>, k: string) => {
+    const box = r[k];
+    const parent = p[k] && r[p[k]] ? r[p[k]] : [0, 0, 0, 0];
+    return [box[0] - parent[0], box[1] - parent[1], box[2], box[3]];
+  };
+  const same = keys.filter((k) => {
+    // Compare relative to the parent only when both builds nest the element under the same parent.
+    const ra = pa[k] === pb[k] ? rel(a, pa, k) : a[k];
+    const rb = pa[k] === pb[k] ? rel(b, pb, k) : b[k];
+    return ra.every((v, i) => Math.abs(v - rb[i]) <= 8);
+  });
+  return same.length / keys.length;
+}
+
 export interface VisualReport {
   states: string[];
-  pairs: { a: string; b: string; pixelDiff: number; within8: number; median: number }[];
-  byGroup: Record<string, { pixelDiff: number; within8: number; median: number }>; // elm, ts, cross
+  pairs: { a: string; b: string; pixelDiff: number; within8: number; median: number; local: number }[];
+  byGroup: Record<string, { pixelDiff: number; within8: number; median: number; local: number }>; // elm, ts, cross
 }
 
 export function compareVisuals(builds: { id: string; dir: string }[]): VisualReport {
@@ -46,7 +69,7 @@ export function compareVisuals(builds: { id: string; dir: string }[]): VisualRep
   const pairs: VisualReport["pairs"] = [];
   for (let i = 0; i < withShots.length; i++)
     for (let j = i + 1; j < withShots.length; j++) {
-      let px = 0, w8 = 0, med = 0, n = 0;
+      let px = 0, w8 = 0, med = 0, loc = 0, n = 0;
       for (const st of states) {
         const fa = join(withShots[i].dir, "shots", st), fb = join(withShots[j].dir, "shots", st);
         if (!existsSync(fa + ".png") || !existsSync(fb + ".png")) continue;
@@ -54,14 +77,15 @@ export function compareVisuals(builds: { id: string; dir: string }[]): VisualRep
         const la = layoutAgreement(JSON.parse(readFileSync(fa + ".json", "utf8")), JSON.parse(readFileSync(fb + ".json", "utf8")));
         w8 += la.within8;
         med += la.median;
+        loc += localAgreement(JSON.parse(readFileSync(fa + ".json", "utf8")), JSON.parse(readFileSync(fb + ".json", "utf8")));
         n++;
       }
-      if (n) pairs.push({ a: withShots[i].id, b: withShots[j].id, pixelDiff: px / n, within8: w8 / n, median: med / n });
+      if (n) pairs.push({ a: withShots[i].id, b: withShots[j].id, pixelDiff: px / n, within8: w8 / n, median: med / n, local: loc / n });
     }
   const group = (p: (x: { a: string; b: string }) => boolean) => {
     const xs = pairs.filter(p);
     const avg = (f: (x: (typeof pairs)[0]) => number) => (xs.length ? xs.reduce((s, x) => s + f(x), 0) / xs.length : NaN);
-    return { pixelDiff: avg((x) => x.pixelDiff), within8: avg((x) => x.within8), median: avg((x) => x.median) };
+    return { pixelDiff: avg((x) => x.pixelDiff), within8: avg((x) => x.within8), median: avg((x) => x.median), local: avg((x) => x.local) };
   };
   const t = (id: string) => id.split("-")[0];
   return {

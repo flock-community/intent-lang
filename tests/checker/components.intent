@@ -1,0 +1,40 @@
+app Components
+  "A same-file behaviour component, `use` with modifiers, `as` on its own line, and names that used to be reserved."
+
+component Counter as card "A small counter."
+  param start = 0
+  param step
+  state
+    value: Int = 0
+  derive
+    shown = {value} + {start}
+  screen
+    text label = "{shown}"
+    button up "Up" as primary
+  on click up
+    - increase {value} by {step}
+
+record Event
+  title: Text
+
+state
+  event: Text = ""
+  showCounter: Bool = true
+
+screen
+  field event "Event"
+  text summary = the event's title, with every word capitalised, followed by a dash and the length of the text
+    as caption
+  use counter = Counter
+    step = 2
+    visible when showCounter
+    look "narrow"
+  use broken = Counter            # expect: BAD_BINDING
+  use other = Missing             # expect: UNKNOWN_NAME
+    step = 1
+    colour = red                  # not reported: the component itself is missing
+
+example "counting"
+  click counter.up
+  see counter.label = "2"
+  see summary = ""

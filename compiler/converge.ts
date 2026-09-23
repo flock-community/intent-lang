@@ -230,15 +230,15 @@ export function renderReport(reports: AppReport[], o: ConvergeOptions): string {
   out.push("", "*Same app* = share of random sessions in which every build showed identical screens after every action.", "");
   const styled = reports.filter((r) => r.visual);
   if (styled.length) {
-    out.push("### Looks (styled builds)", "", "| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Boxes within 8px: Elm / TS / Elm↔TS | Median box offset (px) |", "|---|---|---|---|---|");
+    out.push("### Looks (styled builds)", "", "| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Local layout agrees: Elm / TS / Elm↔TS | Boxes within 8px (absolute) | Median box offset (px) |", "|---|---|---|---|---|---|");
     for (const r of styled) {
       const v = r.visual!.byGroup;
       const okBuilds = r.builds.filter((b) => b.ok).length;
       const faithful = okBuilds - Object.keys(r.fidelity ?? {}).length;
       const p = (x: number) => (Number.isNaN(x) ? "–" : `${(x * 100).toFixed(1)}%`);
-      out.push(`| ${r.app} | ${faithful}/${okBuilds} | ${p(v.elm.pixelDiff)} / ${p(v.ts.pixelDiff)} / ${p(v.cross.pixelDiff)} | ${pct(v.elm.within8)} / ${pct(v.ts.within8)} / ${pct(v.cross.within8)} | ${[v.elm.median, v.ts.median, v.cross.median].map((m) => (Number.isNaN(m) ? "–" : m.toFixed(0))).join(" / ")} |`);
+      out.push(`| ${r.app} | ${faithful}/${okBuilds} | ${p(v.elm.pixelDiff)} / ${p(v.ts.pixelDiff)} / ${p(v.cross.pixelDiff)} | ${pct(v.elm.local)} / ${pct(v.ts.local)} / ${pct(v.cross.local)} | ${pct(v.elm.within8)} / ${pct(v.ts.within8)} / ${pct(v.cross.within8)} | ${[v.elm.median, v.ts.median, v.cross.median].map((m) => (Number.isNaN(m) ? "–" : m.toFixed(0))).join(" / ")} |`);
     }
-    out.push("", "*Page = logic*: builds whose page showed exactly the logic's screen in every session. *Pixels differ*: average share of differing pixels between two builds' screenshots of the same state. *Boxes within 8px*: share of elements whose box is within 8px on every edge.", "");
+    out.push("", "*Page = logic*: builds whose page showed exactly the logic's screen in every session. *Pixels differ*: average share of differing pixels between two builds' screenshots of the same state. *Local layout agrees*: share of elements whose position relative to their parent, and whose size, are within 8px, so one taller block counts once instead of shifting everything below it. *Boxes within 8px (absolute)*: the same on absolute page positions.", "");
   }
   for (const r of reports) {
     out.push(`## ${r.app}`, "");

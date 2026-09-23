@@ -36,11 +36,11 @@ const STYLE_RULES = `Styling rules:
 - Show only what the spec names (§9, Look): no extra logos, icons, column headers, labels, helper texts or decorations unless a look sentence asks for them.`;
 
 const TARGET = {
-  elm: `Target: Elm 0.19, elm/html. You write \`src/Look.elm\`, exposing exactly \`render : Screen -> Html Event\`.
-- Available: elm/core, elm/html (Html, Html.Attributes, Html.Events), elm/json, and the generated \`Spec\` module (types, Event constructors, and \`<choice>Label\`/\`<choice>ToString\`/\`<choice>Values\` helpers). Nothing else; no Debug.
+  elm: `Target: Elm 0.19, elm/html. You write \`src/Look.elm\`, exposing exactly \`render : Screen -> Html Msg\`.
+- Available: elm/core, elm/html (Html, Html.Attributes, Html.Events), elm/json, and the generated \`Spec\` module (types, Msg constructors, and \`<choice>Label\`/\`<choice>ToString\`/\`<choice>Values\` helpers). Nothing else; no Debug.
 - Data attributes: \`Html.Attributes.attribute "data-el" "name"\`; ARIA the same way. Inline SVG needs the elm/svg package, which is not available: draw icons with characters or styled empty elements.
 - Events: \`onClick (ShownOpenClicked row.key)\`, \`onInput DraftTyped\`, \`onClick (StatusFilterChosen v)\`, \`onInput (\\\\v -> …)\` for a native select via \`<choice>FromString\`.`,
-  ts: `Target: TypeScript + Preact (TSX). You write \`look.tsx\`, exporting exactly \`render(screen: Screen, send: (e: Event) => void): VNode\`.
+  ts: `Target: TypeScript + Preact (TSX). You write \`look.tsx\`, exporting exactly \`render(screen: Screen, send: (msg: Msg) => void): VNode\`.
 - Available: preact (import type { VNode } from "preact"), and the generated \`./spec.ts\` (types, and \`<choice>Values\`/\`<choice>Labels\`). Nothing else. Import with explicit extensions: \`import type { … } from "./spec.ts"\`.
 - JSX uses class= (not className). Events: onClick={() => send({ tag: "ShownOpenClicked", key: row.key })}, onInput={(e) => send({ tag: "DraftTyped", text: (e.target as HTMLInputElement).value })}.
 - The code must type-check in strict mode.`,
@@ -55,7 +55,7 @@ ${language}
 
 # Your task: the presentation
 
-The app's logic is already compiled: a separate module turns the state into the \`Screen\` value below and handles every \`Event\`. You write only how a Screen looks and which Event each control sends.
+The app's logic is already compiled: a separate module turns the state into the \`Screen\` value below and handles every \`Msg\`. You write only how a Screen looks and which Msg each control sends.
 
 ${TARGET[target]}
 

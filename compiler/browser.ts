@@ -235,13 +235,21 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
         if (i < 0) return `no row showing ${JSON.stringify(a.rowWith)}`;
         row = i + 1;
       }
-      return page.evaluate(pageAct, { on: a.on, target: a.target, list: a.list, row, text: a.text, value: a.value });
+      // "choose option N" picks by position among the options the page offers (like the logic driver does).
+      let value = a.value;
+      if (a.on === "choose" && a.pick !== undefined) {
+        const sel = findNamed(dom, a.target);
+        if (!sel?.options?.length) return `no options in ${a.target}`;
+        value = sel.options[a.pick % sel.options.length];
+      }
+      return page.evaluate(pageAct, { on: a.on, target: a.target, list: a.list, row, text: a.text, value });
     },
     async rects() {
       await settle();
       return page.evaluate(() => {
         const out: Record<string, [number, number, number, number]> = {};
         const rows = new Map<Element, number>();
+        const keyOf = new Map<Element, string>();
         for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-el]"))) {
           if (!(el as any).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
           const row = el.closest("[data-row]");
@@ -254,8 +262,16 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
           }
           const r = el.getBoundingClientRect();
           out[key] = [Math.round(r.x + window.scrollX), Math.round(r.y + window.scrollY), Math.round(r.width), Math.round(r.height)];
+          keyOf.set(el, key);
         }
-        return out;
+        // Each element's nearest element-ancestor, so layouts can be compared locally.
+        const parents: Record<string, string> = {};
+        for (const [el, key] of keyOf) {
+          let p = el.parentElement;
+          while (p && !keyOf.has(p)) p = p.parentElement;
+          if (p) parents[key] = keyOf.get(p)!;
+        }
+        return { ...out, __parents: parents } as any;
       });
     },
     async shot() {
@@ -270,11 +286,26 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
 
 /** A section with nothing visible in it is the same as no section: a page need not render it. */
 export function dropEmptySections(obs: Obs): Obs {
+  // Text on a page is whitespace-collapsed and trimmed by HTML itself; compare the screen the same way.
+  const text = (n: any) => (n.k === "text" && typeof n.v === "string" ? { ...n, v: n.v.replace(/\s+/g, " ").trim() } : n);
   const clean = (nodes: any[]): any[] =>
     nodes
-      .map((n) => (n.k === "section" ? { ...n, c: clean(n.c) } : n.k === "list" ? { ...n, rows: n.rows.map((r: any) => ({ ...r, c: clean(r.c) })) } : n))
+      .map((n) => (n.k === "section" ? { ...n, c: clean(n.c) } : n.k === "list" ? { ...n, rows: n.rows.map((r: any) => ({ ...r, c: clean(r.c) })) } : text(n)))
       .filter((n) => !(n.k === "section" && !n.c.some((c: any) => c.k !== "heading")));
   return { ...obs, c: clean(obs.c) };
+}
+
+function findNamed(obs: Obs, name: string): any {
+  const walk = (nodes: any[]): any => {
+    for (const n of nodes) {
+      if (n.n === name && n.k !== "section") return n;
+      if (n.k === "section") {
+        const r = walk(n.c);
+        if (r) return r;
+      }
+    }
+  };
+  return walk(obs.c);
 }
 
 function findList(obs: Obs, name: string): any {

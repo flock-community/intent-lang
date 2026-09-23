@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v10** (see the changelog at the end of
+Language version this skill matches: **v11** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -40,8 +40,11 @@ List `lib/` and read the bundles before writing anything yourself:
 - An admin look: `import ui.admin` gives you the design, `StatCard` and `EmptyState`.
 - Domains: `support.tickets`, and more over time.
 
-Import with `import std.list`. Place a component with `use name = Component` plus indented
-bindings, then refer to `name.x` in your sentences, handlers and examples. If a bundle
+Import with `import std.list`. Place a component with `use name = Component`, with indented
+bindings (`items = sorted`, no braces) and, when needed, `visible when …`. Then refer to its
+names as `{name.x}` in your sentences and handlers (`set {toast.message} to "Saved"`), and as
+`name.x` in examples (`click pager.next`). A bundle's `design` becomes yours; your own
+`design` lines override it. If a bundle
 *almost* fits, do not copy it into the app: note what is missing (a param, a component) as a
 candidate change to the bundle, and tell the user.
 
@@ -73,6 +76,15 @@ Habits that make builds identical *and* correct:
   look sentence only describes the difference. The look shows only what the spec names.
 - **End-of-line comments are notes the compiler reads.** Use them to explain a field's
   meaning (`remaining: Int = 1500  # seconds left`).
+- **Stop explicitly:** a validation step ends with "… and stop", otherwise later steps still
+  run. Use "otherwise" for the other branch, "that <item>" for the clicked row in a handler,
+  and "its" for the row's item in a row expression (§5 of the reference).
+- **Name intermediate values** in `derive` (`quantity = amount read as a whole number`)
+  and use the name in templates and sentences, instead of repeating phrases.
+- **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `
+  when nothing is chosen). Give the empty case its own text or hide the element.
+- **Filters with "all"** are their own choice (`AnyCategory "All" | OnlyBrakes "Brakes"`).
+  Relations between records are by value (keep the title or id in a field).
 
 ## 4. Check, review, build
 
@@ -130,6 +142,22 @@ Always change the spec in the smallest local way, then check, then build.
   behaviour. Build it before other apps rely on it.
 - After any change: check the demo and the apps that use the bundle, then run `intent lock`.
   A bundle change affects every app, so review it like an API change.
+
+## Lessons from authors
+
+Two authors who knew only the reference and `lib/` wrote specs that built as **the same app
+in every build** on the first attempt. Their looks converged less than specs written with
+the harness in view. What they stumbled over, now fixed in the reference, is worth
+remembering when you write or review a spec:
+
+- the module system was missing from the reference, so they learned it from the demo app:
+  keep the reference complete, and keep demos for every bundle;
+- natural names were rejected (`Event`): check the reserved list in §7;
+- `visible when` under `use` and `as` after a long expression were unclear;
+- a component's own state can go stale (a page past the end): components must clamp
+  or reset their own state, not every app;
+- "confirmed never exceeds capacity" cannot be an `always` check yet. Keep it as a rule in
+  words, *and* add an example for the edge case.
 
 ## Keep this skill current
 

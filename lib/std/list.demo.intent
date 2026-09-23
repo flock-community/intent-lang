@@ -21,12 +21,17 @@ state
     "ten"
     "eleven"
     "twelve"
+  filter: Text = ""
+
+derive
+  matching = the numbers whose label contains filter
 
 screen
+  field filter "Filter"
   list shown of Number = {pager.visible}
     text label
   use pager = Pager
-    items = numbers
+    items = matching
     size = 5
 
 always
@@ -49,3 +54,11 @@ example "paging to the end and back"
   see pager.next is disabled
   click pager.previous
   see pager.pageInfo = "Page 2 of 3"
+
+example "the page follows a shorter list"
+  click pager.next
+  click pager.next
+  see pager.pageInfo = "Page 3 of 3"
+  type "e" into filter
+  see pager.pageInfo = "Page 2 of 2"
+  see pager.next is disabled

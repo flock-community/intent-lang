@@ -24,8 +24,8 @@ export const RESERVED = new Set([
   "for", "function", "instanceof", "new", "null", "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "void",
   "while", "with", "yield", "let", "static", "implements", "interface", "package", "private", "protected", "public", "await", "async",
   // generated / runtime
-  "key", "model", "event", "screen", "init", "update", "view", "main",
-  "Model", "Msg", "Event", "Screen", "Button", "LabeledButton", "Node", "Wire", "Ui", "Fmt", "Spec", "App", "Main", "Worker", "Maybe",
+  "key", // the row key in generated row types
+  "Model", "Msg", "Screen", "Button", "LabeledButton", "Pick", "Node", "Wire", "Ui", "Fmt", "Spec", "App", "Main", "Worker", "Maybe",
   "List", "Text", "Int", "Decimal", "Bool", "String", "Float", "Just", "Nothing", "True", "False", "Tick", "Ok", "Err", "Result",
   "Html", "Sub", "Cmd", "Json", "Dict", "Set", "Array", "Char", "Basics", "Debug", "Platform", "Task", "Time", "Browser",
 ]);
@@ -479,9 +479,11 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     el.component = um[2];
     el.bindings = [];
     for (const k of c.children) {
-      const bm = k.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
-      if (!bm) err(k.line, "SYNTAX", "a binding looks like `param = value`", k.indent + 1);
-      else el.bindings.push({ name: bm[1], value: (bm[2] + flattenChildren(k)).trim(), line: k.line });
+      let vm: RegExpMatchArray | null;
+      if ((vm = k.text.match(/^visible\s+when\s+(.+)$/))) el.visibleWhen = vm[1] + flattenChildren(k);
+      else if ((vm = k.text.match(new RegExp(`^look\\s+(${STR})$`)))) el.look = parseString(vm[1]);
+      else if ((vm = k.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`)))) el.bindings.push({ name: vm[1], value: (vm[2] + flattenChildren(k)).trim(), line: k.line });
+      else err(k.line, "SYNTAX", "under `use`: `param = value`, `visible when …` or `look \"…\"`", k.indent + 1);
     }
     return el;
   }
@@ -531,6 +533,7 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     let mm: RegExpMatchArray | null;
     if ((mm = k.text.match(/^visible\s+when\s+(.+)$/))) el.visibleWhen = mm[1] + flattenChildren(k);
     else if ((mm = k.text.match(new RegExp(`^look\\s+(${STR})$`)))) el.look = [el.look, parseString(mm[1])].filter(Boolean).join(" ");
+    else if ((mm = k.text.match(/^as\s+([A-Za-z][A-Za-z0-9]*)$/))) el.as = mm[1]; // for long `= …` lines
     else if ((mm = k.text.match(/^enabled\s+when\s+(.+)$/))) {
       if (kind !== "button") err(k.line, "SYNTAX", "`enabled when` is only for buttons", k.indent + 1);
       el.enabledWhen = mm[1] + flattenChildren(k);

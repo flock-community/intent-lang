@@ -252,6 +252,33 @@ its label shows. That became a language rule (v10), not a CRM fix. One TS build 
 needed a repair: the Toast's empty section was not rendered. The contract now says an empty
 section may be left out. That code was re-checked afterwards and passes.
 
+### Held-out test: specs by independent authors
+
+Two authors (fresh agents) wrote specs from a plain description, knowing only the reference
+and `lib/`: a workshop sign-up app with a waiting list, and a warehouse inventory. Neither was
+tuned for; both reuse `ui.admin`, `std.list` and `std.feedback`.
+
+| App | Builds OK first try | Same app (Elm / TS / Elm≡TS) | Page = logic | Local layout (Elm / TS / Elm↔TS) | Pixels differ |
+|---|---|---|---|---|---|
+| Workshops | 6/6 | 100% / 100% / 100% | 6/6 | 40% / 43% / 49% | 1.3–1.7% |
+| Inventory | 6/6 | 100% / 100% / 100% | 6/6 | 48% / 95% / 64% | 0.5–2.7% |
+
+- **Behaviour generalises:** every build of both apps is the same app. The first report said
+  otherwise (70% same app, the page matching its logic in 1 of 12 builds). Both causes were
+  harness bugs: the browser driver sent an empty value for "choose option N", and the page
+  comparison did not collapse whitespace the way HTML does. Both are fixed, and the builds
+  were re-measured without rebuilding.
+- **Looks generalise less.** By eye the contact sheets are nearly identical: same layout, same
+  components. The box metrics count small padding differences inside cards, which cascade.
+  A "local layout" metric (position relative to the parent) was added next to the absolute
+  one; it is fairer but not perfect. The gap with tuned apps (87–99%) is real: more Kit
+  recipes and layout defaults are needed before new specs converge as tightly.
+- **The authors' feedback became language v11:** reserved names listed and narrowed
+  (`Event` is free; the generated type is now `Msg`), `visible when` on `use`, `as` on its own
+  line, handler idioms (`and stop`, `otherwise`, `its`), a Pager that never shows a page past
+  the end, and the module system documented in the reference (they had to learn it from a
+  demo app).
+
 ## Layout
 
 ```

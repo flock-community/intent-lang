@@ -78,7 +78,7 @@ port observe : J.Value -> Cmd msg
 
 
 type Msg
-    = Ev Spec.Event
+    = Ev Spec.Msg
     | Ready
 
 
@@ -106,7 +106,7 @@ main =
 const TS_STYLED_MAIN = `import { render } from "preact";
 import * as App from "./app.ts";
 import { render as look } from "./look.tsx";
-import { toNode, type Event } from "./spec.ts";
+import { toNode, type Msg } from "./spec.ts";
 
 const w = window as any;
 let model = App.init();
@@ -117,7 +117,7 @@ function draw() {
   w.__screen = JSON.parse(JSON.stringify(toNode(App.view(model))));
   w.__n++;
 }
-function send(e: Event) {
+function send(e: Msg) {
   model = App.update(e, model);
   draw();
 }
@@ -132,15 +132,15 @@ import Html.Events exposing (..)
 import Spec exposing (..)
 
 
-render : Screen -> Html Event
+render : Screen -> Html Msg
 render screen =
     ...
 `;
 
 export const TS_LOOK_SKELETON = `import type { VNode } from "preact";
-import type { Event, Screen /* , … */ } from "./spec.ts";
+import type { Msg, Screen /* , … */ } from "./spec.ts";
 
-export function render(screen: Screen, send: (e: Event) => void): VNode {
+export function render(screen: Screen, send: (msg: Msg) => void): VNode {
   return <div class="min-h-screen …">…</div>;
 }
 `;

@@ -1,4 +1,4 @@
-# Intent — language reference (v5, app profile)
+# Intent — language reference (v11, app profile)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -108,6 +108,23 @@ Binding (checked by the compiler):
 - `list x` without `=` shows state or derived value `x`, which must be a list.
 - Names are unique on the screen, except inside a list, where row elements have their own
   scope. Sections do not create a scope.
+- A section title and a field label are fixed text. To show a changing title, use
+  `text x = … as title` as the section's first element.
+- `select x from items.name` with `x` = `""`, or a text that is not among the options,
+  shows no option as chosen.
+- Relations between records are by value: keep the related record's name, title or id in a
+  field (`workshop: Text`, `ticket: Int`), and match on it.
+- A filter with an "all" option is its own choice, with its own value names:
+  `choice CategoryFilter: AnyCategory "All" | OnlyBrakes "Brakes" | …`. Value names are unique
+  across the app.
+
+`as <presentation>` goes at the end of the element's line. When that line is long (a long
+`= …` sentence), put it on an indented line of its own instead:
+
+```
+text places = "Full" when its signups reach its capacity, otherwise "{n} places left"
+  as badge
+```
 
 ## 4a. Look: design, components, presentations
 
@@ -228,7 +245,20 @@ example "paging"
 
 Everything in the component is then called `<use name>.<name>`: `pager.next`, `pager.page`,
 `pager.visible`. The app can read and set these names in its own sentences, handlers and
-examples.
+examples (`set {toast.message} to "Saved"`). Braces mark a name as a reference; they are
+required inside components, and recommended in app sentences. A binding value
+(`items = sorted`) is a name or a literal, without braces.
+
+A `use` can also take `visible when …` and `look "…"`, like any element:
+
+```
+  use pager = Pager
+    items = sorted
+    visible when sorted is not empty
+```
+
+The look of a bundle component's elements belongs to the bundle; an app cannot restyle
+them one by one yet (`NOT_YET`). Change the design, or propose a change to the bundle.
 
 **Locking.** `intent.lock` pins every bundle by content hash. A bundle that changed since it
 was locked fails the check until someone reviews it and runs `intent lock <app>`. Builds never
@@ -253,6 +283,17 @@ on tick                 # requires `clock`
 
 Each indented `- sentence` is one step, applied in order. Refer to declared names exactly.
 Sentences may be conditional ("if draft is blank, do nothing").
+
+Idioms the compiler reads the same way every time:
+
+- **Stop early:** `- if quantity is not a whole number above 0, set {toast.message} to "…" and stop`.
+  "and stop" skips the remaining steps. Without it, the next steps still run.
+- **Otherwise:** an `otherwise …` step applies only when the step before it did not.
+- **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
+  ticket") is the item of the clicked row. In an expression inside a row, "its" and "this
+  <item>" refer to the row's item: `text left = its capacity minus its number of sign-ups`.
+- **Named intermediate values:** give a value a name in `derive` and use that name (for
+  example `quantity = amount read as a whole number`), instead of repeating the phrase.
 
 ## 6. Examples
 
@@ -287,6 +328,10 @@ always
 The harness checks `always` rules in examples, in its own exploration of each build, and in
 the differential sessions.
 
+`has 1 row` and `has 3 rows` are both fine. `see x on row 2 is hidden` checks an element inside a
+row. A list hidden by `visible when` counts as not on the screen: check it with
+`see list is hidden`, not with a row count.
+
 Rows are counted from 1, in screen order. `of <list>` is needed only if the element name
 exists in more than one list.
 
@@ -302,7 +347,7 @@ places where the spec is not yet precise.
 | `UNKNOWN_NAME` | error | a reference to an undeclared element, field, type or value |
 | `BAD_BINDING` | error | e.g. `field x` where state `x` is not Text |
 | `DUPLICATE` | error | a name declared twice in one scope |
-| `RESERVED` | error | a name that clashes with target keywords or generated names |
+| `RESERVED` | error | a name that clashes with target keywords or generated names (see below) |
 | `STEP` | error | an example step that does not match the element (click a text, …) |
 | `NOT_YET` | error | a construct the language does not have yet (see "Growing the language") |
 | `NO_HANDLER` | warning | a button without `on click` |
@@ -313,6 +358,15 @@ places where the spec is not yet precise.
 | `UNSCOPED` | warning | inside a component, one of its own names is not written in braces |
 | `UNUSED` | warning | a declared component is never used |
 
+Reserved names: the keywords of Elm and TypeScript (`if`, `then`, `else`, `case`, `of`, `let`,
+`in`, `type`, `module`, `import`, `class`, `const`, `function`, `new`, `return`, `this`,
+`true`, `false`, `null`, …), `key` (row keys), and these type names: `Model`, `Msg`,
+`Screen`, `Button`, `LabeledButton`, `Pick`, `Node`, `Wire`, `Ui`, `Fmt`, `Spec`, `App`,
+`Main`, `Worker`, `Maybe`, `List`, `Text`, `Int`, `Decimal`, `Bool`, `String`, `Float`,
+`Just`, `Nothing`, `True`, `False`, `Tick`, `Ok`, `Err`, `Result`, `Html`, `Sub`, `Cmd`,
+`Json`, `Dict`, `Set`, `Array`, `Char`, `Basics`, `Debug`, `Platform`, `Time`, `Browser`.
+Domain words such as `Event`, `event`, `Task`, `update` or `view` are free to use.
+
 ## 8. What the compiler produces
 
 For every target the harness generates, deterministically from the spec:
@@ -320,10 +374,10 @@ For every target the harness generates, deterministically from the spec:
 - the domain types (records, choices),
 - `Screen` — a typed record with one field per dynamic element (`Maybe` when it has
   `visible when`, a list of row records for lists),
-- `Event` — one variant per possible user action,
+- `Msg` — one variant per possible user action,
 - rendering, the event wiring and the test driver.
 
-The LLM writes only the app module: `Model`, `init`, `update : Event → Model → Model`
+The LLM writes only the app module: `Model`, `init`, `update : Msg → Model → Model`
 and `view : Model → Screen`, using the standard helpers (`Fmt`). A build is accepted when
 it type-checks and passes every example.
 
@@ -372,20 +426,29 @@ Each version below was added because a real spec needed it. Next candidates:
 - `clock` in styled apps;
 - several screens with navigation, and state that survives a reload;
 - effects the harness owns, such as HTTP and randomness with a seed;
-- richer `always` checks (sums, relations between elements);
+- richer `always` checks: per row and over all rows ("no part has negative stock",
+  "confirmed sign-ups never exceed capacity");
+- restyling a bundle component's elements from the app;
+- type parameters and slots, so a component can render the app's own rows;
+- a checker warning for templates whose hole can be empty (`"{date} · {location}"` showing ` · `);
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
 
-- v1: records, choices, state, screen, events, examples, §9 defaults.
-- v2: `table` seed data, `select … from list.field`, rounding vocabulary (`Fmt.roundTo`, …).
-- v3: `on row with "…"` in examples, `Fmt.decimal`.
-- v4: `always` invariants, `has at most/at least N rows`.
+- v11: `visible when` and `look` on `use`; `as` on its own line; handler idioms (`and stop`,
+  `otherwise`, `its`); reserved names listed and narrowed (domain words like `Event` are free;
+  the generated message type is now `Msg`); `std.list.Pager` never shows a page past the end.
 - v10: modules: `bundle`, `import`, `intent.lock`; behaviour components (`param`, `state`,
   `derive`, `screen`, `on`, `always` inside `component`; `use x = Component`); end-of-line
   comments are notes; `search` fields defined (placeholder label, fixed width).
 - v9: components with a base presentation (`component X as card "…"`).
-- v8: sections inside list rows (component cards); `NOT_YET` instead of hard "unsupported"; layout defaults: spec order, button rows, sidebar footer.
+- v8: sections inside list rows (component cards); `NOT_YET` instead of hard "unsupported";
+  layout defaults: spec order, button rows, sidebar footer.
+- v7: no language change; the harness gained the Kit (class recipes derived from `design`).
 - v6: `snapshot "…"` visual checkpoints; the look shows only what the spec names.
 - v5: styling: `design`, `component`, `as <presentation>`, `look`, `progress`, choice labels,
   label + value on `progress`.
+- v4: `always` invariants, `has at most/at least N rows`.
+- v3: `on row with "…"` in examples, `Fmt.decimal`.
+- v2: `table` seed data, `select … from list.field`, rounding vocabulary (`Fmt.roundTo`, …).
+- v1: records, choices, state, screen, events, examples, §9 defaults.
