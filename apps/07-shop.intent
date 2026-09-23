@@ -71,6 +71,10 @@ on click apply
   - otherwise set appliedCode to "" and codeMessage to "Unknown code"
   - clear code
 
+always
+  see every row of products: left is at least 0
+  see every row of cart: qty is at least 1
+
 example "the shop at the start"
   see products has 4 rows
   see name on row 4 of products = "Coffee"

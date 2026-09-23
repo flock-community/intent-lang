@@ -7,7 +7,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Example, Step } from "./ast.ts";
+import type { Check, Example, Step } from "./ast.ts";
 
 export type Obs = any; // Ui Node as JSON
 
@@ -58,7 +58,7 @@ export interface TraceResult {
 function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]): Violation | undefined {
   for (const s of always ?? []) {
     if (s.do !== "see") continue;
-    if (s.check.is !== "hidden" && s.check.is !== "shown" && "missing" in locate(obs, s.target)) continue;
+    if (!s.every && s.check.is !== "hidden" && s.check.is !== "shown" && "missing" in locate(obs, s.target)) continue;
     const msg = checkSee(obs, s);
     if (msg) return { line: s.line, message: msg, actions: [...actions], screen: describe(obs) };
   }
@@ -210,8 +210,44 @@ export function stepToAction(s: Step): Action | undefined {
   }
 }
 
+/** The number an element shows: a progress value, or the first number in its text ("10 left" → 10). */
+function shownNumber(n: any): number | undefined {
+  if (n.k === "progress") return Number(n.v);
+  const m = String(n.v ?? "").replace(/(\d),(\d)/g, "$1.$2").match(/-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : undefined;
+}
+
+function compareNumber(n: any, c: Extract<Check, { is: "num" }>, scope: any[], what: string): string | undefined {
+  const x = shownNumber(n);
+  const other = c.ref !== undefined ? findIn(scope, c.ref) : undefined;
+  const y = c.ref !== undefined ? (other ? shownNumber(other) : undefined) : c.value;
+  if (x === undefined) return `${what} shows no number (${JSON.stringify(n.v)})`;
+  if (y === undefined) return c.ref !== undefined ? `\`${c.ref}\` is not on the screen or shows no number` : undefined;
+  const ok = c.op === "atLeast" ? x >= y : c.op === "atMost" ? x <= y : c.op === "above" ? x > y : x < y;
+  const words = { atLeast: "at least", atMost: "at most", above: "above", below: "below" }[c.op];
+  return ok ? undefined : `expected ${what} to be ${words} ${c.ref ? `\`${c.ref}\` (${y})` : y}, but it shows ${x}`;
+}
+
 export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | undefined {
   const c = s.check;
+  if (s.every) {
+    // Check each row of the list; a missing list or a row without the element is skipped.
+    const list = findIn(obs.c, s.every);
+    if (!list) return;
+    for (const [i, r] of list.rows.entries()) {
+      const n = findIn(r.c, s.target);
+      const what = `\`${s.target}\` on row ${i + 1} of \`${s.every}\``;
+      if (c.is === "hidden") {
+        if (n) return `expected ${what} to be hidden`;
+        continue;
+      }
+      if (!n) continue;
+      const msg =
+        c.is === "num" ? compareNumber(n, c, r.c, what) : c.is === "eq" ? (String(n.k === "button" ? n.label : n.v) === c.value ? undefined : `expected ${what} = ${JSON.stringify(c.value)}, got ${JSON.stringify(n.v)}`) : checkSee({ c: r.c }, { ...s, every: undefined });
+      if (msg) return msg;
+    }
+    return;
+  }
   const f = locate(obs, s.target, s.at?.list, s.at?.row, s.at?.with);
   const what = s.at ? `\`${s.target}\` on row ${s.at.with !== undefined ? `with ${JSON.stringify(s.at.with)}` : s.at.row}` : `\`${s.target}\``;
   if (c.is === "hidden") return "missing" in f ? undefined : `expected ${what} to be hidden, but it is on the screen`;
@@ -228,6 +264,7 @@ export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | un
     case "disabled": return n.enabled === (c.is === "enabled") ? undefined : `expected ${what} to be ${c.is}, but it is ${n.enabled ? "enabled" : "disabled"}`;
     case "checked":
     case "unchecked": return n.checked === (c.is === "checked") ? undefined : `expected ${what} to be ${c.is}`;
+    case "num": return compareNumber(n, c, obs.c, what);
     case "eq": {
       const actual = n.k === "button" ? n.label : String(n.v);
       return actual === c.value ? undefined : `expected ${what} = ${JSON.stringify(c.value)}, got ${JSON.stringify(actual)}`;

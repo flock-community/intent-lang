@@ -635,6 +635,25 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     const n = /^\d+$/.test(m[3]) ? Number(m[3]) : NaN;
     return { step: { do: "see", target: m[1], check: { is: "rows", count: n, cmp: !m[2] ? undefined : m[2].includes("most") ? "atMost" : "atLeast", countParam: Number.isNaN(n) ? m[3] : undefined }, line } };
   }
+  // Numbers: `see stock is at least 0`, `see every row of shown: confirmed is at most capacity`.
+  const NUMCMP = `(at\\s+least|at\\s+most|above|below)\\s+(-?\\d+(?:\\.\\d+)?|${QN})`;
+  const numCheck = (op: string, rhs: string): Check => {
+    const o = op.replace(/\s+/g, " ");
+    const opName = o === "at least" ? "atLeast" : o === "at most" ? "atMost" : o === "above" ? "above" : "below";
+    return /^-?\d/.test(rhs) ? { is: "num", op: opName, value: Number(rhs) } : { is: "num", op: opName, ref: rhs };
+  };
+  if ((m = t.match(new RegExp(`^see\\s+every\\s+row\\s+of\\s+(${QN})\\s*:\\s*(.+)$`)))) {
+    const list = m[1];
+    const inner = m[2].trim();
+    let im: RegExpMatchArray | null;
+    if ((im = inner.match(new RegExp(`^(${QN})\\s+is\\s+${NUMCMP}$`)))) return { step: { do: "see", target: im[1], every: list, check: numCheck(im[2], im[3]), line } };
+    if ((im = inner.match(new RegExp(`^(${QN})\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`)))) return { step: { do: "see", target: im[1], every: list, check: { is: im[2] as "shown" }, line } };
+    if ((im = inner.match(new RegExp(`^(${QN})\\s*=\\s*(${STR})$`)))) return { step: { do: "see", target: im[1], every: list, check: { is: "eq", value: parseString(im[2])! }, line } };
+    err(line, "SYNTAX", "after `see every row of <list>:` comes `<element> is at least|at most|above|below <number or element>`, `<element> is shown|hidden|…` or `<element> = \"text\"`", col);
+    return;
+  }
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+${NUMCMP}$`))))
+    return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: numCheck(m[4], m[5]), line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`))))
     return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: m[4] as "shown" }, line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s*=\\s*(.+)$`)))) {
@@ -865,6 +884,16 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         continue;
       }
       const at = "at" in s ? s.at : undefined;
+      if (s.do === "see" && s.every) {
+        // `see every row of L: x …`: x is an element of L's rows.
+        const list = all.find((a) => a.el.name === s.every && a.el.kind === "list");
+        const inRow = all.filter((a) => a.list?.name === s.every);
+        if (!list) err(s.line, "UNKNOWN_NAME", `no list \`${s.every}\`${suggest(s.every, lists.map((l) => l.name))}`);
+        else if (!inRow.some((a) => a.el.name === s.target)) err(s.line, "UNKNOWN_NAME", `rows of \`${s.every}\` have no \`${s.target}\`${suggest(s.target, inRow.map((a) => a.el.name))}`);
+        else if (s.check.is === "num" && s.check.ref && !inRow.some((a) => a.el.name === (s.check as { ref: string }).ref)) err(s.line, "UNKNOWN_NAME", `rows of \`${s.every}\` have no \`${(s.check as { ref: string }).ref}\``);
+        seen.add(`${s.every}.${s.target}`);
+        continue;
+      }
       const cands = findEl(s.target).filter((c) => (at ? c.list && (!at.list || c.list.name === at.list) : !c.list));
       if (!cands.length) {
         const any = findEl(s.target);
@@ -907,6 +936,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           else if (c.is === "eq") need(["text", "field", "select", "button", "progress"], "compare the value of");
           else if (c.is === "disabled" || c.is === "enabled") need(["button"], `check \`is ${c.is}\` on`);
           else if (c.is === "checked" || c.is === "unchecked") need(["checkbox"], `check \`is ${c.is}\` on`);
+          else if (c.is === "num") {
+            need(["text", "field", "progress"], "compare the number shown by");
+            if (c.ref && !findEl(c.ref).length) err(s.line, "UNKNOWN_NAME", `no element \`${c.ref}\``);
+          }
           if (c.is === "eq" && el.kind === "button" && !el.expr) warn(s.line, "STEP", `button \`${el.name}\` has a fixed label; this check proves nothing`);
           if (c.is === "eq" && el.kind === "select" && !el.from) {
             const st = state.get(el.name);

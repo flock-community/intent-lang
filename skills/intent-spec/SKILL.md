@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v13** (see the changelog at the end of
+Language version this skill matches: **v14** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -86,7 +86,10 @@ Habits that make builds identical *and* correct:
 - **Template holes** hold a name, a row field, a name with a format (`{total as money}`) or a
   short phrase over names; name anything longer in `derive`. A hole that can be empty
   (nothing chosen yet) needs its own text for that case.
-- **An invariant over several rows** ("no table booked twice"): derive a count of the
+- **Per-row and numeric invariants** go straight into `always`: `see every row of cart:
+  qty is at least 1`, `see every row of events: confirmed is at most capacity`. Write one for
+  every "never" in the user's words.
+- **An invariant across rows** ("no table booked twice"): derive a count of the
   violations, show it in an alert visible only when it is above 0, and add
   `always see <alert> is hidden`.
 - **Un-picking a select:** a handler sets it to `""` (for example a Clear button); `""` shows
@@ -179,8 +182,8 @@ remembering when you write or review a spec:
 - `visible when` under `use` and `as` after a long expression were unclear;
 - a component's own state can go stale (a page past the end): components must clamp
   or reset their own state, not every app;
-- "confirmed never exceeds capacity" cannot be an `always` check yet. Use the violation-count
-  pattern above, keep the rule in words, *and* add an example for the edge case;
+- "confirmed never exceeds capacity" can now be an `always` check per row (v14); authors
+  before v14 had to keep it in words;
 - the second round of authors (reservations, library) asked what may go inside `{…}`, how to
   add a record and hand out ids, and how to un-pick a select; these are now in the reference
   (§4, §5).

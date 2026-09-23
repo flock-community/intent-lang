@@ -69,8 +69,9 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    English only in the leaves.
 3. **Identity and references** (review #2): relations as declared references instead of text
    columns with a comment, and defined behaviour when a selection points at nothing.
-4. **Real invariants** (review #3): a small closed expression form for `always` over state
-   and per row, plus a warning for `rules` sentences that no check covers.
+4. **Real invariants** (review #3): per-row and numeric checks done in v14 (screen-level,
+   harness-verified). Still open: invariants across rows, over state not on screen, and a
+   warning for `rules` sentences that no check covers.
 5. **Bundles as versioned behavioural contracts** (review #4): a demo for every bundle, a
    semantic version computed from names *and* examples, namespaced imports, immutable
    versions.

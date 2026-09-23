@@ -54,3 +54,8 @@ example "bad steps"
   click remove                        # expect: STEP
   toggle done on row 1
   wait 3s                             # expect: STEP
+
+always
+  see every row of nothing: x is at least 0          # expect: UNKNOWN_NAME
+  see every row of items: price is at least 0        # expect: UNKNOWN_NAME
+  see every row of items: title is sort of fine      # expect: SYNTAX

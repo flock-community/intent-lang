@@ -82,12 +82,14 @@ export type Step =
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
   | { do: "tick"; times: number; line: number }
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
-  | { do: "see"; target: string; at?: RowRef; check: Check; line: number };
+  | { do: "see"; target: string; at?: RowRef; every?: string; check: Check; line: number }; // every: check each row of that list
 
 export type Check =
   | { is: "eq"; value: string } // canonical string of the expected value
   | { is: "rows"; count: number; cmp?: "atMost" | "atLeast"; countParam?: string }
-  | { is: "disabled" | "enabled" | "hidden" | "shown" | "checked" | "unchecked" };
+  | { is: "disabled" | "enabled" | "hidden" | "shown" | "checked" | "unchecked" }
+  // A number read from what is shown ("10 left" → 10), compared with a number or another element in the same scope.
+  | { is: "num"; op: "atLeast" | "atMost" | "above" | "below"; value?: number; ref?: string };
 
 export interface Example {
   name: string;

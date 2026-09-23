@@ -1,4 +1,4 @@
-# Intent — language reference (v13, app profile)
+# Intent — language reference (v14, app profile)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -389,9 +389,23 @@ always
 The harness checks `always` rules in examples, in its own exploration of each build, and in
 the differential sessions. `see x has N rows` (exactly N) works too.
 
-An invariant that is not about one element ("no table is booked twice") cannot be an `always`
-check yet. Until it can: derive a count of the violations, show it in an alert that is only
-visible when the count is above 0, and write `always see <alert> is hidden`.
+Numbers and rows:
+
+```
+always
+  see lowCount is at least 0                                 # the number an element shows
+  see every row of cart: qty is at least 1                   # checked on each row
+  see every row of events: confirmed is at most capacity     # against another element of the same row
+  see every row of shown: status = "Open"                    # also: is shown / hidden / …
+```
+
+The number is read from what the element shows ("10 left" → 10, "× 2" → 2, a progress bar's
+value). Comparisons: `at least`, `at most`, `above`, `below`, against a number or another
+element in the same row (or on the screen). These also work as example steps.
+
+An invariant across rows ("no table is booked twice") cannot be an `always` check yet. Until
+it can: derive a count of the violations, show it in an alert that is only visible when the
+count is above 0, and write `always see <alert> is hidden`.
 
 `has 1 row` and `has 3 rows` are both fine. `see x on row 2 is hidden` checks an element inside a
 row. A list hidden by `visible when` counts as not on the screen: check it with
@@ -497,8 +511,7 @@ Each version below was added because a real spec needed it. Next candidates:
 - `clock` in styled apps;
 - several screens with navigation, and state that survives a reload;
 - effects the harness owns, such as HTTP and randomness with a seed;
-- richer `always` checks: per row and over all rows ("no part has negative stock",
-  "confirmed sign-ups never exceed capacity");
+- invariants across rows ("no table is booked twice") and over state that is not on screen;
 - restyling a bundle component's elements from the app;
 - type parameters and slots, so a component can render the app's own rows;
 - a checker warning for templates whose hole can be empty (`"{date} · {location}"` showing ` · `);
@@ -506,6 +519,8 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v14: numeric checks (`is at least|at most|above|below`) and per-row checks
+  (`see every row of <list>: …`), in `always` and in examples.
 - v13: refinement: `extends`, `override`, `add to … after …`, `drop`; base proofs run on the
   refining spec; overrides fingerprinted in `intent.lock` (`BASE_CHANGED`).
 - v12: `empty` presentation; a select's `""` is a placeholder, never an option; template holes
