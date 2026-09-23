@@ -19,5 +19,12 @@ for (const f of readdirSync(apps).filter((f) => f.endsWith(".intent"))) {
   const errs = load(join(apps, f)).diagnostics.filter((d) => d.level === "error");
   if (errs.length) (failures++, console.log(`apps/${f}: ${errs.length} error(s)`));
 }
+// The profile is the source of truth; the language reference (the compiler's prompt) must agree.
+const { uiProfile } = await import("../../compiler/profile.ts");
+const doc = readFileSync(join(dir, "../../docs/LANGUAGE.md"), "utf8");
+const table = doc.slice(doc.indexOf("Built-in presentations"), doc.indexOf("## 4b."));
+for (const e of uiProfile().elements)
+  for (const pr of e.presentations)
+    if (!table.includes(`\`${pr.name}\``)) (failures++, console.log(`profile presentation ${e.kind} as ${pr.name} is missing from the reference's presentation table`));
 console.log(failures ? `${failures} failure(s)` : "checker tests pass");
 process.exit(failures ? 1 : 0);

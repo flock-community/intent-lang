@@ -1,5 +1,6 @@
 // Parser + checker for .intent files. Deterministic: same text in, same IR and diagnostics out.
 import { expandUses } from "./expand.ts";
+import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Example, Field, Handler, Literal, Param, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
@@ -30,6 +31,20 @@ export const RESERVED = new Set([
   "List", "Text", "Int", "Decimal", "Bool", "String", "Float", "Just", "Nothing", "True", "False", "Tick", "Ok", "Err", "Result",
   "Html", "Sub", "Cmd", "Json", "Dict", "Set", "Array", "Char", "Basics", "Debug", "Platform", "Task", "Time", "Browser",
 ]);
+// The element kinds and their presentations come from the UI profile (lib/profile/ui.intent),
+// a spec in its own right: docs/design/profiles.md.
+const PROFILE = uiProfile();
+export const PRESENTATIONS: Record<ElementKind, string[]> = Object.fromEntries(
+  PROFILE.elements.map((e) => [e.kind, e.presentations.map((x) => x.name)]),
+) as Record<ElementKind, string[]>;
+// Kinds the harness implements for every target; a profile element outside this set cannot be built yet.
+const HARNESS_KINDS: ElementKind[] = ["heading", "text", "field", "button", "checkbox", "select", "list", "section", "progress", "use"];
+for (const e of PROFILE.elements)
+  if (!HARNESS_KINDS.includes(e.kind as ElementKind)) throw new Error(`the UI profile declares element \`${e.kind}\`, which the harness does not implement yet`);
+const VERB_KINDS = verbKinds(PROFILE); // verb → element kind
+const VERBS = Object.keys(VERB_KINDS).join("|");
+const CLOCK_VERBS = PROFILE.clockVerbs.map((v) => v.name).join("|");
+
 // Task is a very natural record name; allow it (Elm's Task module is not imported by generated code).
 RESERVED.delete("Task");
 
@@ -171,11 +186,11 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     }
   } else if (t === "screen") {
     app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
-  } else if ((m = t.match(new RegExp(`^on\\s+(click|toggle|type|choose)\\s+(${QN})$`))) || (m = t.match(/^on\s+(tick)$/))) {
+  } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS})\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS})$`)))) {
     const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err), line: node.line, note: node.note };
     app.handlers.push(h);
   } else if (t.startsWith("on ")) {
-    err(node.line, "SYNTAX", "expected `on click|toggle|type|choose <element>` or `on tick`");
+    err(node.line, "SYNTAX", `expected \`on ${VERBS} <element>\` or \`on ${CLOCK_VERBS}\``);
   } else if (t === "always") {
     for (const c of node.children) {
       const r = parseStep(c, err, where === "component");
@@ -223,7 +238,7 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
     if (!f) return void err(node.line, "SYNTAX", "`override state` holds exactly one indented `name: Type = default`");
     return { op: "override-state", field: f, line: c.line };
   }
-  if ((m = t.match(new RegExp(`^override\\s+on\\s+(click|toggle|type|choose)\\s+(${QN})$`)))) {
+  if ((m = t.match(new RegExp(`^override\\s+on\\s+(${VERBS})\\s+(${QN})$`)))) {
     return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], steps: parseBullets(node, err), line: node.line, note: node.note }, line: node.line };
   }
   if ((m = t.match(new RegExp(`^override\\s+component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
@@ -236,7 +251,7 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
   }
   if ((m = t.match(new RegExp(`^drop\\s+element\\s+(${QN})$`)))) return { op: "drop-element", name: m[1], line: node.line };
   if ((m = t.match(new RegExp(`^drop\\s+example\\s+(${STR})$`)))) return { op: "drop-example", name: parseString(m[1])!, line: node.line };
-  if ((m = t.match(new RegExp(`^drop\\s+on\\s+(click|toggle|type|choose)\\s+(${QN})$`)))) return { op: "drop-handler", verb: m[1], target: m[2], line: node.line };
+  if ((m = t.match(new RegExp(`^drop\\s+on\\s+(${VERBS})\\s+(${QN})$`)))) return { op: "drop-handler", verb: m[1], target: m[2], line: node.line };
   err(node.line, "SYNTAX", 'expected `override <element|derive|state|on …|component> …`, `add to <section> [after <element>]`, or `drop element x | drop example "…" | drop on click x`');
 }
 
@@ -468,21 +483,9 @@ function splitCells(line: string): string[] {
   return cells;
 }
 
-const ELEMENT_KINDS: ElementKind[] = ["heading", "text", "field", "button", "checkbox", "select", "list", "section", "progress", "use"];
+const ELEMENT_KINDS = PROFILE.elements.map((e) => e.kind) as ElementKind[];
 
-// Closed set of built-in presentations per element kind (`as …`). Declared components are allowed too.
-export const PRESENTATIONS: Record<ElementKind, string[]> = {
-  heading: ["title", "subtitle"],
-  text: ["badge", "avatar", "toast", "alert", "caption", "stat", "title", "code"],
-  field: ["search", "textarea", "password"],
-  button: ["primary", "secondary", "danger", "link", "icon", "ghost"],
-  checkbox: ["toggle"],
-  select: ["tabs", "dropdown", "chips", "segmented", "nav", "radio"],
-  list: ["table", "cards", "grid", "timeline", "bars", "menu"],
-  section: ["card", "dialog", "drawer", "sidebar", "header", "toolbar", "row", "grid", "footer", "banner", "main", "form", "empty"],
-  progress: ["bar", "ring"],
-  use: [],
-};
+
 
 export const COLOR_ROLES = ["brand", "neutral", "accent", "success", "warning", "danger", "info"];
 export const PALETTES = ["slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"];
@@ -845,7 +848,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
 
   // Handlers.
   const findEl = (name: string): { el: Element; list?: Element }[] => all.filter((a) => a.el.name === name);
-  const verbKind: Record<string, ElementKind> = { click: "button", toggle: "checkbox", type: "field", choose: "select" };
+  const verbKind = VERB_KINDS as Record<string, ElementKind>;
   const handled = new Set<string>();
   for (const h of app.handlers) {
     if (h.verb === "tick") {

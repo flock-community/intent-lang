@@ -1,4 +1,4 @@
-# Intent — language reference (v15, app profile)
+# Intent — language reference (v16, app profile)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -174,6 +174,7 @@ Built-in presentations (closed set; each has one meaning):
 | | `dialog` | a modal centered over a dimmed backdrop, with its title on top |
 | | `empty` | a centered "nothing here" block: a muted circle, then its texts stacked |
 | | `drawer` | a panel over the right side of the page, full height |
+| heading | `title`, `subtitle` | a page or panel title; a smaller title |
 | text | `title` | a page or panel title |
 | | `caption` | small muted text |
 | | `badge` | a small rounded pill |
@@ -549,6 +550,8 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v16: the UI vocabulary is a profile spec (`lib/profile/ui.intent`): element kinds, what they
+  show, their verbs, presentations and meanings; the checker reads it (docs/design/profiles.md).
 - v15: projects: `intent.project` (`registry`, `requires`), `intent install` with minimal
   version selection, `intent publish` with computed versions (names + demo behaviour).
 - v14: numeric checks (`is at least|at most|above|below`) and per-row checks

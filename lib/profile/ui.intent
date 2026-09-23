@@ -1,0 +1,89 @@
+profile ui
+  "Interactive screens: what people see, and what they can do on them."
+
+element heading "fixed text that titles a part of the screen"
+  presentation title "a page or panel title"
+  presentation subtitle "a smaller title"
+
+element text "a text value"
+  shows value: Text
+  presentation badge "a small rounded pill"
+  presentation avatar "initials in a circle"
+  presentation toast "a floating message at the bottom right"
+  presentation alert "a tinted box with a warning colour"
+  presentation caption "small muted text"
+  presentation stat "a large number"
+  presentation title "a page or panel title"
+  presentation code "monospace text"
+
+element field "an editable text box"
+  shows value: Text
+  edits Text
+  verb type "the user types into it; the step is `type \"…\" into x`"
+  presentation search "a search box: its label is the placeholder (no visible label); 20rem wide in a toolbar or header"
+  presentation textarea "several lines"
+  presentation password "hidden characters"
+
+element button "a button"
+  shows label: Text
+  shows enabled: Bool
+  verb click "the user clicks it"
+  modifier enabled when
+  presentation primary "filled with the brand colour"
+  presentation secondary "white with a border"
+  presentation danger "filled with the danger colour"
+  presentation link "looks like a text link"
+  presentation icon "a small square button; its label is its accessible name"
+  presentation ghost "no border, no fill"
+
+element checkbox "a tick box"
+  shows checked: Bool
+  edits Bool
+  verb toggle "the user flips it"
+  presentation toggle "a switch"
+
+element select "one value chosen from options"
+  shows value: Text
+  shows options: List Text
+  edits Choice
+  verb choose "the user picks an option; the step is `choose X in x`"
+  presentation tabs "tabs above content"
+  presentation dropdown "a native select"
+  presentation chips "a row of pills"
+  presentation segmented "a segmented control"
+  presentation nav "a vertical menu"
+  presentation radio "radio buttons"
+
+element list "rows of a record type; its children are the elements of each row"
+  shows rows: List Row
+  presentation table "a table with a header row"
+  presentation cards "a grid of cards"
+  presentation grid "items in equal columns"
+  presentation timeline "entries stacked in time order"
+  presentation bars "a horizontal bar chart"
+  presentation menu "a list of lines"
+
+element section "a group of elements"
+  presentation card "a surface with border, radius, padding; tables, menus, toolbars and footers inside it run edge to edge"
+  presentation dialog "a modal centered over a dimmed backdrop, with its title on top"
+  presentation drawer "a panel over the right side of the page, full height"
+  presentation sidebar "a fixed-width column at the left, full height"
+  presentation header "a row at the top of its parent: the first element left, the others together on the right"
+  presentation toolbar "a row of controls: the first left, the others together on the right, wrapping when needed"
+  presentation row "children side by side"
+  presentation grid "children in equal columns"
+  presentation footer "a row at the bottom of its parent: info left, actions right"
+  presentation banner "a full-width strip"
+  presentation main "the main content column"
+  presentation form "fields stacked with labels above them"
+  presentation empty "a centered \"nothing here\" block: a muted circle, then its texts stacked"
+
+element progress "a value from 0 to 100"
+  shows value: Int
+  presentation bar "a horizontal bar"
+  presentation ring "a circle that fills"
+
+element use "an instance of a behaviour component (§4b)"
+
+clock
+  verb tick "one clock interval passes; the steps are `tick N times` and `wait 3s`"
