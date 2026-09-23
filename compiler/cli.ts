@@ -59,8 +59,8 @@ switch (cmd) {
   case "publish": {
     // The version is computed from the bundle's names and its demo's examples, never chosen.
     const file = resolve(args[0]);
-    // A bundle is proven by its demo app; a published app is its own demo.
-    const isApp = /^app\s/m.test(readFileSync(file, "utf8").split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "");
+    // A bundle is proven by its demo app; a published app or contract is its own proof.
+    const isApp = /^(app|contract)\s/m.test(readFileSync(file, "utf8").split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "");
     const demo = isApp ? file : file.replace(/\.intent$/, ".demo.intent");
     if (!existsSync(demo)) {
       console.log(`publishing needs a demo app that proves the bundle: ${demo.replace(process.cwd() + "/", "")}`);

@@ -1,0 +1,26 @@
+app Refined
+  "Refined types: seed data and defaults must satisfy their rule."
+
+type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/
+type Age = Int from 0 to 150
+type Broken = Int from 10 to 1          # expect: BAD_BINDING
+type Wrong = Text from 1                 # expect: SYNTAX
+
+record Person
+  mail: Email
+  age: Age
+
+state
+  people: List Person = table
+    mail          | age
+    "ann@x.nl"    | 30
+    "not-an-email" | 31                  # expect: BAD_BINDING
+    "bo@y.org"    | 200                  # expect: BAD_BINDING
+  contact: Email = "nobody"              # expect: BAD_BINDING
+
+screen
+  list people of Person
+    text mail
+
+example "people"
+  see people has 3 rows

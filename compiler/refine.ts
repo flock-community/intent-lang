@@ -151,6 +151,7 @@ export function refine(base: App, child: App, refinements: Refinement[], err: Er
   // The child's own additions.
   if (child.screen.length) err(child.screen[0].line, "SYNTAX", "a spec that `extends` another has no `screen` block; place new elements with `add to <section> [after <element>]`");
   app.records.push(...child.records);
+  app.refined = [...(app.refined ?? []), ...(child.refined ?? [])];
   app.choices.push(...child.choices);
   app.components.push(...child.components);
   app.state.push(...child.state);

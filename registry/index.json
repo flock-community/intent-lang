@@ -138,6 +138,70 @@
           ]
         }
       }
+    },
+    "std.text": {
+      "versions": {
+        "1.0.0": {
+          "sha": "7f11e28265d0081c",
+          "file": "std/text/1.0.0.intent",
+          "requires": {},
+          "published": "2026-09-23T17:46:38.387Z",
+          "api": [
+            "type Email = Text [^@\\s]+@[^@\\s]+\\.[^@\\s]+.."
+          ],
+          "examples": [
+            "2c9d163118e6da8f"
+          ]
+        }
+      }
+    },
+    "support.ticketsApi": {
+      "versions": {
+        "1.0.0": {
+          "sha": "77578aa0e34b3b52",
+          "file": "support/ticketsApi/1.0.0.intent",
+          "requires": {
+            "support.tickets": "1.0.0"
+          },
+          "published": "2026-09-23T17:46:47.437Z",
+          "api": [
+            "answers addComment 201: Comment",
+            "answers addComment 400: Problem",
+            "answers addComment 404: Problem",
+            "answers createTicket 201: Ticket",
+            "answers createTicket 400: Problem",
+            "answers getTicket 200: Ticket",
+            "answers getTicket 404: Problem",
+            "answers listComments 200: List Comment",
+            "answers listComments 404: Problem",
+            "answers listTickets 200: List Ticket",
+            "answers solveTicket 200: Ticket",
+            "answers solveTicket 404: Problem",
+            "answers solveTicket 409: Problem",
+            "endpoint addComment POST /tickets/{id}/comments",
+            "endpoint createTicket POST /tickets",
+            "endpoint getTicket GET /tickets/{id}",
+            "endpoint listComments GET /tickets/{id}/comments",
+            "endpoint listTickets GET /tickets",
+            "endpoint solveTicket POST /tickets/{id}/solve",
+            "param addComment.body.author: Text",
+            "param addComment.body.text: Text",
+            "param addComment.path.id: Int",
+            "param createTicket.body.customer: Text",
+            "param createTicket.body.priority: Priority",
+            "param createTicket.body.subject: Text",
+            "param getTicket.path.id: Int",
+            "param listComments.path.id: Int",
+            "param listTickets.query.status: Maybe Status?",
+            "param solveTicket.path.id: Int"
+          ],
+          "examples": [
+            "9f6f5270b09f62b1",
+            "42301b3ed19802ed",
+            "e70a7006f546e41d"
+          ]
+        }
+      }
     }
   }
 }

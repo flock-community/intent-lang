@@ -19,6 +19,8 @@ function typeDesc(app: App, t: Type): string {
     case "List": return `{ k: "List", of: ${typeDesc(app, t.of)} }`;
     case "Maybe": return `{ k: "Maybe", of: ${typeDesc(app, t.of)} }`;
     case "Named": {
+      const rf = app.refined?.find((x) => x.name === t.name);
+      if (rf) return `{ k: "Refined", name: ${q(rf.name)}, base: { k: ${q(rf.base)} }${rf.pattern !== undefined ? `, pattern: ${q(`^(?:${rf.pattern})$`)}` : ""}${rf.min !== undefined ? `, min: ${rf.min}` : ""}${rf.max !== undefined ? `, max: ${rf.max}` : ""} }`;
       const c = app.choices.find((x) => x.name === t.name);
       if (c) return `{ k: "Choice", name: ${q(c.name)}, values: ${JSON.stringify(c.values)} }`;
       const r = app.records.find((x) => x.name === t.name)!;

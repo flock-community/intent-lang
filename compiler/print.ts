@@ -83,6 +83,7 @@ export function printApp(app: App): string {
   }
   // Look components only; behaviour components are already expanded into the app.
   block(app.components.filter((c) => c.look || c.base).map((c) => `component ${c.name}${c.base ? ` as ${c.base}` : ""} ${q(c.look)}${origin(app, c.line)}`));
+  block((app.refined ?? []).map((r) => `type ${r.name} = ${r.base} ${r.pattern !== undefined ? `matching /${r.pattern}/` : [r.min !== undefined ? `from ${r.min}` : "", r.max !== undefined ? `to ${r.max}` : ""].filter(Boolean).join(" ")}${origin(app, r.line)}`));
   block(app.choices.map((c) => `choice ${c.name}: ${c.values.map((v) => (c.labels[v] !== v ? `${v} ${q(c.labels[v])}` : v)).join(" | ")}${origin(app, c.line)}`));
   for (const r of app.records) block([`record ${r.name}${origin(app, r.line)}`, ...r.fields.map((f) => `  ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${lit(f.default, "  ")}` : ""}${origin(app, 0, f.note)}`)]);
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);

@@ -1,0 +1,65 @@
+contract support.ticketsApi
+  "The support desk's tickets and comments over HTTP: what clients send, and what they get back."
+
+import support.tickets
+
+endpoint listTickets GET "/tickets"
+  query status: Maybe Status        # only tickets with this status; all when absent
+  answers 200 List Ticket
+
+endpoint getTicket GET "/tickets/{id}"
+  path id: Int
+  answers 200 Ticket
+  answers 404 Problem
+
+endpoint createTicket POST "/tickets"
+  body subject: Text
+  body customer: Text
+  body priority: Priority
+  answers 201 Ticket
+  answers 400 Problem
+
+endpoint solveTicket POST "/tickets/{id}/solve"
+  path id: Int
+  answers 200 Ticket
+  answers 404 Problem
+  answers 409 Problem               # already solved
+
+endpoint addComment POST "/tickets/{id}/comments"
+  path id: Int
+  body author: Text
+  body text: Text
+  answers 201 Comment
+  answers 400 Problem
+  answers 404 Problem
+
+endpoint listComments GET "/tickets/{id}/comments"
+  path id: Int
+  answers 200 List Comment
+  answers 404 Problem
+
+example "a new ticket is open and can be fetched"
+  call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
+  see createTicket.status = 201
+  see createTicket.body.subject = "Printer on fire"
+  see createTicket.body.status = "Open"
+
+example "listing, and a ticket that does not exist"
+  call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
+  call listTickets with status = Open
+  see listTickets.status = 200
+  call getTicket with id = 999999
+  see getTicket.status = 404
+
+example "solving and commenting on a new ticket"
+  call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
+  call addComment with id = {createTicket.body.id}, author = "Sam", text = "On it"
+  see addComment.status = 201
+  see addComment.body.body = "On it"
+  call listComments with id = {createTicket.body.id}
+  see listComments.body has 1 row
+  call solveTicket with id = {createTicket.body.id}
+  see solveTicket.status = 200
+  see solveTicket.body.status = "Solved"
+  call solveTicket with id = {createTicket.body.id}
+  see solveTicket.status = 409

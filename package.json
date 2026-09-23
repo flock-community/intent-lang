@@ -5,7 +5,7 @@
   "scripts": {
     "intent": "node compiler/cli.ts",
     "check": "node compiler/cli.ts check apps/*.intent",
-    "test": "node tests/checker/run.ts && npm run test:fmt",
+    "test": "node tests/checker/run.ts && node tests/api/runtime.ts && npm run test:fmt",
     "test:fmt": "cd tests/fmt-parity && ../../node_modules/.bin/elm make src/Probe.elm --optimize --output=probe.js > /dev/null && cp probe.js probe.cjs && node parity.ts",
     "typecheck": "tsc --noEmit -p ."
   },

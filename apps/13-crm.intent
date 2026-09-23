@@ -4,6 +4,7 @@ app Crm
 import ui.admin
 import std.list
 import std.feedback
+import std.text
 
 component StageBadge as badge "Tinted per value: Lead in info, Proposal in warning, Won in success, Lost in neutral."
 
@@ -59,7 +60,7 @@ derive
   pipelineValue = the sum of value over the deals in stage Lead or Proposal
   wonValue = the sum of value over the Won deals
   winRate = the number of Won deals × 100 divided by the number of Won and Lost deals together, rounded down; 0 when there are none
-  emailValid = newEmail trimmed contains exactly one "@" with at least one character before it, and after the "@" a "." with at least one character on both sides of that "."
+  emailValid = newEmail, trimmed, is a valid Email
 
 screen
   section sidebar as sidebar

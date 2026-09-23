@@ -1,0 +1,4 @@
+bundle std.text
+  "Common kinds of text, each with one precise rule."
+
+type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/     # something@domain.tld, no spaces

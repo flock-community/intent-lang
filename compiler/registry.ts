@@ -159,6 +159,7 @@ export function apiOf(b: App): string[] {
     for (const d of c.body?.derive ?? []) out.push(`derive ${c.name}.${d.name}`);
   }
   if (b.design) out.push("design");
+  for (const r of b.refined ?? []) out.push(`type ${r.name} = ${r.base} ${r.pattern ?? ""}${r.min ?? ""}..${r.max ?? ""}`);
   // A contract's surface is the wire: endpoint signatures, param and answer types, and field types.
   if (b.kind === "contract") {
     const ty = (t: import("./ast.ts").Type): string => (t.k === "List" || t.k === "Maybe" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k);
@@ -195,7 +196,7 @@ export async function publish(bundleFile: string, registry: string, sha: (t: str
   if (/^https?:\/\//.test(registry)) throw new Error("publishing goes to a registry folder (upload that folder to your server)");
   const text = readFileSync(bundleFile, "utf8");
   const { app } = parseSyntax(text);
-  if (app.kind !== "bundle" && app.kind !== "app") throw new Error(`${bundleFile} is not a bundle or app`);
+  if (app.kind !== "bundle" && app.kind !== "app" && app.kind !== "contract") throw new Error(`${bundleFile} is not a bundle, app or contract`);
   const name = app.name.includes(".") ? app.name : relative(join(PROJECT_ROOT, "lib"), bundleFile).replace(/\.intent$/, "").split("/").join(".");
   const index = await readIndex(registry);
   const versions = Object.keys(index.bundles[name]?.versions ?? {}).sort(cmpVersion);

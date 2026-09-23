@@ -1,4 +1,4 @@
-# Intent — language reference (v18)
+# Intent — language reference (v19)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -42,6 +42,7 @@ import std.list             # reuse a bundle (§4b)
 extends support.helpdesk    # refine a published app (§4c): override, add to, drop
 record Name                 # a data shape; indented `field: Type [= default]`
 choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is what users see
+type Email = Text matching /…/  # a refined type: a base type with one precise rule (§3a)
 design                      # optional: how the app looks (§4a)
 component Name "look"       # optional: a reusable look for sections/elements (§4a)
 state                       # what the app remembers; indented `field: Type = default`
@@ -68,6 +69,25 @@ state
     "Apple"   | 0.40  | 10
     "Bread"   | 2.35  | 3
 ```
+
+## 3a. Refined types
+
+A refined type is a base type with one precise rule. It is defined once, and every build checks
+it the same way:
+
+```
+type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/    # the whole text must match
+type Age = Int from 0 to 150                              # inclusive
+type Price = Decimal from 0
+```
+
+- Use it like any type: `mail: Email`, `body email: Email`, `List Email`.
+- In sentences, "is a valid Email" means exactly the rule. The compiler generates the check
+  (`isEmail`) for every target, and builds never write their own.
+- The checker checks seed data, defaults and literals against the rule before any build.
+- An api answers a value that breaks the rule with `400 {"error": "<name> must be a valid Email"}`.
+  A contract that answers a refined type is checked against it too.
+- Common ones are in bundles: `import std.text` gives `Email`.
 
 ## 4. Screen elements
 
@@ -637,6 +657,8 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v19: refined types (`type Email = Text matching /…/`, `type Age = Int from 0 to 150`) with
+  generated checks for every target, checked seed data and api validation; `std.text`.
 - v18: contracts: `contract`, `answers <status> [Type]`, `implements`, endpoints by name only in
   the implementation, `Problem`; checked by the checker, the TypeScript compiler (typed
   handlers) and at run time; `intent client`; `{endpoint.body.x}` in `call` arguments.

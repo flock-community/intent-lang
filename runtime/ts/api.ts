@@ -9,7 +9,8 @@ export type TypeDesc =
   | { k: "List"; of: TypeDesc }
   | { k: "Maybe"; of: TypeDesc }
   | { k: "Choice"; name: string; values: string[] }
-  | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] };
+  | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] }
+  | { k: "Refined"; name: string; base: TypeDesc; pattern?: string; min?: number; max?: number };
 
 export interface EndpointDesc {
   name: string;
@@ -41,7 +42,7 @@ export function conforms(answers: Record<number, TypeDesc | null> | undefined, r
 }
 
 const describe = (t: TypeDesc): string =>
-  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : "an object";
+  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
 
 /** Check a JSON value against a type; returns the value or an error message. */
 function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error: string } {
@@ -54,6 +55,13 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
     case "Decimal": return typeof v === "number" && Number.isFinite(v) ? { ok: v } : bad;
     case "Bool": return typeof v === "boolean" ? { ok: v } : bad;
     case "Choice": return typeof v === "string" && t.values.includes(v) ? { ok: v } : bad;
+    case "Refined": {
+      const b = check(v, t.base, name);
+      if ("error" in b) return { error: `${name} must be a valid ${t.name}` };
+      const x = b.ok as string | number;
+      const fits = t.pattern !== undefined ? new RegExp(t.pattern).test(String(x)) : (t.min === undefined || (x as number) >= t.min) && (t.max === undefined || (x as number) <= t.max);
+      return fits ? { ok: x } : bad;
+    }
     case "List": {
       if (!Array.isArray(v)) return bad;
       const out: unknown[] = [];
@@ -80,7 +88,8 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
 /** A query or path value arrives as text: read it as its type. */
 function fromText(s: string | undefined, t: TypeDesc): unknown {
   if (s === undefined) return undefined;
-  const inner = t.k === "Maybe" ? t.of : t;
+  let inner = t.k === "Maybe" ? t.of : t;
+  if (inner.k === "Refined") inner = inner.base;
   if (inner.k === "Int") return /^-?\d+$/.test(s) ? Number(s) : s;
   if (inner.k === "Decimal") return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
   if (inner.k === "Bool") return s === "true" ? true : s === "false" ? false : s;

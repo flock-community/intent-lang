@@ -1,0 +1,23 @@
+app TextDemo
+  "Proves std.text: which texts are a valid Email."
+
+import std.text
+
+state
+  address: Text = ""
+
+screen
+  field address "Email"
+  text verdict = "valid" when address, trimmed, is a valid Email, otherwise "invalid"
+
+example "valid and invalid addresses"
+  type "ann@example.org" into address
+  see verdict = "valid"
+  type " ann@example.org " into address
+  see verdict = "valid"
+  type "ann@example" into address
+  see verdict = "invalid"
+  type "ann example.org" into address
+  see verdict = "invalid"
+  type "a b@example.org" into address
+  see verdict = "invalid"

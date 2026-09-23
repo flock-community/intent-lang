@@ -26,6 +26,16 @@ export interface Field {
   note?: string;
 }
 
+/** `type Email = Text matching /re/`, `type Age = Int from 0 to 150`: a base type with a rule. */
+export interface RefinedDecl {
+  name: string;
+  base: "Text" | "Int" | "Decimal";
+  pattern?: string; // Text: the whole text must match
+  min?: number;
+  max?: number;
+  line: number;
+}
+
 export interface RecordDecl {
   name: string;
   fields: Field[];
@@ -158,6 +168,7 @@ export interface App {
   components: Component[];
   purpose: string[];
   records: RecordDecl[];
+  refined?: RefinedDecl[];
   choices: ChoiceDecl[];
   state: Field[];
   clockMs?: number;

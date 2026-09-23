@@ -3,7 +3,7 @@ import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
-import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
@@ -163,7 +163,28 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   const onlyTop = (what: string) => {
     if (where === "component") err(node.line, "SYNTAX", `\`${what}\` belongs at the top level, not inside a component`);
   };
-  if ((m = t.match(new RegExp(`^record\\s+(${UPPER})$`)))) {
+  if ((m = t.match(new RegExp(`^type\\s+(${UPPER})\\s*=\\s*(Text|Int|Decimal)\\s+(.+)$`)))) {
+    onlyTop("type");
+    // A refined type: a base type with a rule. `matching /re/` for Text, `from a [to b]` / `to b` for numbers.
+    const [, name, base, rule] = m;
+    const r: RefinedDecl = { name, base: base as "Text", line: node.line };
+    let rm: RegExpMatchArray | null;
+    if (base === "Text" && (rm = rule.match(/^matching\s+\/(.+)\/$/))) {
+      try {
+        new RegExp(rm[1]);
+        r.pattern = rm[1];
+      } catch {
+        err(node.line, "SYNTAX", `\`/${rm[1]}/\` is not a valid pattern`);
+      }
+    } else if (base !== "Text" && (rm = rule.match(/^(?:from\s+(-?\d+(?:\.\d+)?))?\s*(?:to\s+(-?\d+(?:\.\d+)?))?$/)) && (rm[1] || rm[2])) {
+      if (rm[1]) r.min = Number(rm[1]);
+      if (rm[2]) r.max = Number(rm[2]);
+    } else {
+      err(node.line, "SYNTAX", base === "Text" ? "a refined text looks like `type Email = Text matching /…/`" : `a refined number looks like \`type Age = ${base} from 0 to 150\``);
+      return true;
+    }
+    (app.refined ??= []).push(r);
+  } else if ((m = t.match(new RegExp(`^record\\s+(${UPPER})$`)))) {
     onlyTop("record");
     const rec: RecordDecl = { name: m[1], fields: [], line: node.line };
     for (const c of node.children) {
@@ -770,9 +791,16 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     }
   }
 
+  REFINED = new Map((app.refined ?? []).map((r) => [r.name, r]));
+  for (const r of app.refined ?? []) {
+    if (typeNames.has(r.name)) err(r.line, "DUPLICATE", `type \`${r.name}\` is declared twice`);
+    typeNames.add(r.name);
+    checkReserved(r.name, r.line);
+    if (r.min !== undefined && r.max !== undefined && r.min > r.max) err(r.line, "BAD_BINDING", `${r.name}: from ${r.min} is above to ${r.max}`);
+  }
   const checkType = (t: Type, line: number): boolean => {
     if (t.k === "List" || t.k === "Maybe") return checkType(t.of, line);
-    if (t.k === "Named" && !records.has(t.name) && !choices.has(t.name)) {
+    if (t.k === "Named" && !records.has(t.name) && !choices.has(t.name) && !REFINED.has(t.name)) {
       err(line, "UNKNOWN_NAME", `unknown type \`${t.name}\`${suggest(t.name, [...typeNames])}`);
       return false;
     }
@@ -1117,8 +1145,23 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
     case "Bool": return l.k === "bool";
     case "List": return l.k === "emptyList" || l.k === "table";
     case "Maybe": return l.k === "nothing" || literalFits(l, t.of, choices);
-    case "Named": return l.k === "value" && !!choices.get(t.name)?.values.includes(l.v);
+    case "Named": {
+      const r = REFINED.get(t.name);
+      if (r) return literalFits(l, { k: r.base }, choices) && satisfies(r, l.k === "text" ? l.v : l.k === "number" ? l.v : undefined);
+      return l.k === "value" && !!choices.get(t.name)?.values.includes(l.v);
+    }
   }
+}
+
+/** The refined types of the app being checked (set by check). */
+let REFINED = new Map<string, RefinedDecl>();
+
+/** Does a value satisfy a refined type's rule? The same rule the generated validators apply. */
+export function satisfies(r: RefinedDecl, v: string | number | undefined): boolean {
+  if (v === undefined) return false;
+  if (r.pattern !== undefined) return typeof v === "string" && new RegExp(`^(?:${r.pattern})$`).test(v);
+  if (typeof v !== "number") return false;
+  return (r.min === undefined || v >= r.min) && (r.max === undefined || v <= r.max);
 }
 
 // ---------------------------------------------------------------- hints

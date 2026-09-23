@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v18** (see the changelog at the end of
+Language version this skill matches: **v19** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -83,6 +83,10 @@ Habits that make builds identical *and* correct:
   and use the name in templates and sentences, instead of repeating phrases.
 - **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `
   when nothing is chosen). Give the empty case its own text or hide the element.
+- **Validity rules are types, not sentences.** For an email, a code, an age or an amount, use or
+  declare a refined type (`import std.text` for `Email`, `type Age = Int from 0 to 150`) and
+  write "is a valid Email". Don't describe the rule in words: two compilers read words
+  differently, but they check a type the same way.
 - **Template holes** hold a name, a row field, a name with a format (`{total as money}`) or a
   short phrase over names; name anything longer in `derive`. A hole that can be empty
   (nothing chosen yet) needs its own text for that case.

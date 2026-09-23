@@ -55,7 +55,7 @@ const CODING_RULES = `Rules that keep every build identical:
 6. Row keys: a stable id per item, assigned when the item is created.
 7. Every example in the spec must pass. Walk through each one step by step before you answer.
 8. All rounding goes through Fmt (roundTo / roundUpTo / roundDownTo / cents). Never write your own rounding, epsilon or float tricks.
-9. A \`table\` default in the spec is available as \`<stateName>Initial\` in the generated interface; use it in init.
+9. A \`table\` default in the spec is available as \`<stateName>Initial\` in the generated interface; use it in init. For every refined type (\`type Email = Text matching …\`) the interface has a check, \`isEmail\`: "is a valid Email" in the spec means exactly that check. Never write your own.
 10. Write plain, straightforward code. No comments needed.`;
 
 /**
@@ -74,7 +74,7 @@ const API_CODING_RULES = `Rules that keep every build identical:
 3. Bodies are exactly the declared \`returns\` type: records with their declared fields, lists in the order the steps say.
 4. Where the spec is silent, apply the defaults in §9 of the language reference. Never add behaviour the spec does not ask for.
 5. Every example in the spec must pass. Walk through each one step by step before you answer.
-6. All rounding goes through Fmt. Write plain, straightforward code. No comments needed.`;
+6. All rounding goes through Fmt. For every refined type the interface has a check (\`isEmail\`); "is a valid Email" means that check. Write plain, straightforward code. No comments needed.`;
 
 export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");

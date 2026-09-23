@@ -189,6 +189,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   const owner = new Map<string, string>();
   for (const r of app.records) owner.set(r.name, "this file");
   for (const c of app.choices) owner.set(c.name, "this file");
+  for (const r of app.refined ?? []) owner.set(r.name, "this file");
   for (const c of app.components) owner.set(c.name, "this file");
   const claim = (name: string, by: string, line: number) => {
     const prev = owner.get(name);
@@ -212,6 +213,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   for (const [name, b] of loaded) {
     for (const r of b.records) (claim(r.name, name, r.line), app.records.push(r));
     for (const c of b.choices) (claim(c.name, name, c.line), app.choices.push(c));
+    for (const r of b.refined ?? []) (claim(r.name, name, r.line), (app.refined ??= []).push(r));
     for (const c of b.components) {
       const alias = aliases.get(name)?.get(c.name);
       const comp: Component = { ...c, name: alias ?? c.name, from: name };
@@ -251,6 +253,7 @@ function implementContract(app: App, contract: App, err: (line: number, code: st
   app.imports = [...(contract.imports ?? []), ...(app.imports ?? [])];
   app.records.unshift(...contract.records);
   app.choices.unshift(...contract.choices);
+  app.refined = [...(contract.refined ?? []), ...(app.refined ?? [])];
   const own = new Map((app.endpoints ?? []).map((e) => [e.name, e]));
   const merged: NonNullable<App["endpoints"]> = [];
   for (const sig of contract.endpoints ?? []) {

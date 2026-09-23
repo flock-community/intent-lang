@@ -123,8 +123,20 @@ export function genElmSpec(app: App): string {
 -}
 
 import Ui
-
+${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
+  for (const r of app.refined ?? []) {
+    // A refined type is its base type plus a generated check: `isEmail : String -> Bool`.
+    const lc = lowerFirst(r.name);
+    const base = r.base === "Text" ? "String" : r.base === "Int" ? "Int" : "Float";
+    out.push(`type alias ${r.name} =\n    ${base}\n\n`);
+    if (r.pattern !== undefined)
+      out.push(`${lc}Pattern : Regex.Regex\n${lc}Pattern =\n    Maybe.withDefault Regex.never (Regex.fromString ${q(`^(?:${r.pattern})$`)})\n\n\n{-| Whether a text is a valid ${r.name}. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    Regex.contains ${lc}Pattern s\n\n`);
+    else {
+      const conds = [r.min !== undefined ? `n >= ${r.min}` : "", r.max !== undefined ? `n <= ${r.max}` : ""].filter(Boolean).join(" && ");
+      out.push(`{-| Whether a number is a valid ${r.name}. -}\nis${r.name} : ${base} -> Bool\nis${r.name} n =\n    ${conds || "True"}\n\n`);
+    }
+  }
   for (const r of app.records) out.push(elmRecord(r.name, r.fields.map((f) => [f.name, elmType(f.type)])) + "\n");
   for (const c of app.choices) {
     const lc = lowerFirst(c.name);
@@ -324,6 +336,11 @@ const tsAtom = (t: Type) => (t.k === "Maybe" ? `(${tsType(t)})` : tsType(t));
 /** Records, choices and table seeds: the domain, shared by every profile. */
 export function tsDomain(app: App): string {
   const out: string[] = [];
+  for (const r of app.refined ?? []) {
+    out.push(`/** A ${r.base === "Text" ? "text" : "number"} with a rule: see is${r.name}. */\nexport type ${r.name} = ${r.base === "Text" ? "string" : "number"};\n`);
+    if (r.pattern !== undefined) out.push(`/** Whether a text is a valid ${r.name}. */\nexport function is${r.name}(s: string): boolean {\n  return new RegExp(${q(`^(?:${r.pattern})$`)}).test(s);\n}\n\n`);
+    else out.push(`/** Whether a number is a valid ${r.name}. */\nexport function is${r.name}(n: number): boolean {\n  return ${[r.min !== undefined ? `n >= ${r.min}` : "", r.max !== undefined ? `n <= ${r.max}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
+  }
   for (const r of app.records) out.push(`export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n\n`);
   for (const c of app.choices) {
     out.push(`export type ${c.name} = ${c.values.map(q).join(" | ")};\n`);
