@@ -79,9 +79,14 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    spirit of Wirespec; see `docs/reviews/wirespec.md` for what was learned from it), refined
    types (v19) and screens that call APIs through contracts, tested against the real provider
    (v20), and **layers** (v21: CORS, API keys and safe headers as reusable, separately verified
-   specs in `lib/std/http/`). Next: unions of records, headers in contracts, screens that call
-   an API behind a key, transport-free `rpc` and `channel`, styled builds of screens that make
-   calls, and Kotlin as a second API target.
+   specs in `lib/std/http/`).
+7. **Lessons from a real app** (`docs/reviews/openouros.md`, three openouros slices written as
+   specs in `runs/openouros/`). In order: v22 events and subscriptions (with wire names for
+   choice values), v23 time and a steerable clock in api apps, v24 effects on actions
+   (approval, permissions, outbox, compensation) with a `std.actions` layer, then stored state
+   with identity and references, then unions of records and several targets per app. Also
+   open: headers in contracts, screens that call an API behind a key, styled builds of screens
+   that make calls, and Kotlin as a second API target.
 
 ## Lessons from the experiments (keep applying them)
 

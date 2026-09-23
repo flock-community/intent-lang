@@ -21,3 +21,6 @@ example "hello"
   request OPTIONS "/hello" with header origin = "https://desk.example"
   see request.status = 204
   see request.nope = 1                    # expect: UNKNOWN_NAME
+  call hello
+  see hello.body.nonsense = "x"           # expect: UNKNOWN_NAME
+  see hello.body.error = "x"

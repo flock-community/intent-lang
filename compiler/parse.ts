@@ -1268,6 +1268,36 @@ function checkApi(
         const h = target.split(/[.[]/)[0];
         if (!eps.has(h)) err(s.line, "UNKNOWN_NAME", `\`${h}\` is not an endpoint; check a response as \`see ${[...eps.keys()][0] ?? "endpoint"}.status = 200\` or \`….body.<field>\``);
         else if (!s.every && !["status", "body"].includes(part)) err(s.line, "UNKNOWN_NAME", `a response has \`status\` and \`body\`: \`see ${head}.status = 200\``);
+        else {
+          // The path into the body must exist in a type the endpoint can answer with: \`returns\`, or any of its \`answers\`.
+          const ep = eps.get(h)!;
+          // Every endpoint may also refuse with a Problem: its own refusals, the harness's 400/404, a layer's 401.
+          const types = [ep.returns, ...(ep.answers ?? []).map((x) => x.type), ...(ctx.records.has("Problem") ? [{ k: "Named", name: "Problem" } as Type] : [])].filter((t): t is Type => !!t);
+          const parts = (target.match(/[a-z]\w*|\[\d+\]/gi) ?? []).slice(1);
+          if (parts[0] === "body" && types.length) {
+            const rest = [...parts.slice(1), ...(s.every ? [s.target] : [])];
+            const every = !!s.every;
+            const walk = (t: Type, ps: string[], listNeeded: boolean): string | undefined => {
+              let cur: Type = t;
+              for (const [i, p] of ps.entries()) {
+                if (cur.k === "Maybe") cur = cur.of;
+                if (every && i === ps.length - 1 && cur.k === "List") cur = cur.of; // \`see every row of x.body: field\`
+                if (p.startsWith("[")) {
+                  if (cur.k !== "List") return `\`${p}\` needs a list, but this is ${typeToString(cur)}`;
+                  cur = cur.of;
+                  continue;
+                }
+                const rec = cur.k === "Named" ? ctx.records.get(cur.name) : undefined;
+                const f = rec?.fields.find((x) => x.name === p);
+                if (!f) return `${typeToString(cur)} has no \`${p}\`${rec ? ` (${rec.fields.map((x) => x.name).join(", ")})` : ""}`;
+                cur = f.type;
+              }
+              if (listNeeded && (cur.k === "Maybe" ? cur.of : cur).k !== "List") return `this is ${typeToString(cur)}, not a list`;
+            };
+            const problems = types.map((t) => walk(t, rest, s.check.is === "rows"));
+            if (problems.every(Boolean)) err(s.line, "UNKNOWN_NAME", `\`${target}${s.every ? `: ${s.target}` : ""}\`: ${problems[0]}`);
+          }
+        }
       } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\` and \`see\`, not \`${s.do}\``);
     }
   }
