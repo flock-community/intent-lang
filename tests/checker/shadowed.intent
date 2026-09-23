@@ -1,0 +1,17 @@
+app Shadowed
+  "A row element whose name is both a field of the row and an app-level name."
+
+record Booking
+  party: Int
+
+state
+  bookings: List Booking = []
+  party: Text = ""
+
+screen
+  field party "Party"
+  list bookings of Booking
+    text party                    # expect: SHADOWED
+
+example "nothing"
+  see bookings has 0 rows

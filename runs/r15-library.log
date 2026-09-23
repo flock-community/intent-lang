@@ -1,0 +1,32 @@
+apps/held-out-2/library.intent: ok — 0 error(s), 0 warning(s)
+library ts-1: attempt 1: ok
+library ts-3: attempt 1: ok
+library ts-2: attempt 1: ok
+library elm-3: attempt 1: ok
+library elm-1: attempt 1: ok
+library elm-2: attempt 1: ok
+library ts-1: look attempt 1: ok (67 screens match)
+library ts-2: look attempt 1: ok (67 screens match)
+library ts-3: look attempt 1: ok (67 screens match)
+library elm-1: look attempt 1: ok (67 screens match)
+library elm-3: look attempt 1: ok (67 screens match)
+library elm-2: look attempt 1: ok (67 screens match)
+# Convergence report — v12-heldout2-library
+
+3 builds per target (elm, ts), 30 random sessions × 20 actions per app.
+
+| App | Builds OK | First-try OK | `always` held | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Library | 6/6 | 6/6 | 6/6 | 0% | 100% | 0% | 100% | 68% / 60% | $4.20 |
+
+*Same app* = share of random sessions in which every build showed identical screens after every action.
+
+### Looks (styled builds)
+
+| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Local layout agrees: Elm / TS / Elm↔TS | Boxes within 8px (absolute) | Median box offset (px) |
+|---|---|---|---|---|---|
+| Library | 6/6 | 1.0% / 0.8% / 0.9% | 59% / 56% / 63% | 59% / 53% / 62% | 14 / 13 / 12 |
+
+*Page = logic*: builds whose page showed exactly the logic's screen in every session. *Pixels differ*: average share of differing pixels between two builds' screenshots of the same state. *Local layout agrees*: share of elements whose position relative to their parent, and whose size, are within 8px, so one taller block counts once instead of shifting everything below it. *Boxes within 8px (absolute)*: the same on absolute page positions.
+
+full report: /Users/sjors/Develop/Personal/intentlang/runs/r15-heldout2/report.md

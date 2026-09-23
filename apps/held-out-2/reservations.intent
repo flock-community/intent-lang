@@ -1,0 +1,348 @@
+app Reservations
+  "Tonight's reservations for a small restaurant with 8 tables of 2, 4 or 6 seats."
+  "Staff book a party into a fixed time slot; the system gives the smallest free table that fits."
+  "A reservation holds its table for its own slot and the next one. Staff can cancel and mark arrivals."
+
+import ui.admin
+import std.feedback
+
+component StatusPill as badge "Tinted per value: Booked in brand, Arrived in success."
+component BoardCard as card "The section title as a small semibold heading at the top, above its content."
+
+choice Status: Booked | Arrived
+
+record DiningTable
+  number: Int
+  seats: Int
+
+record Slot
+  label: Text              # the start time as shown, e.g. "19:00"
+  position: Int            # 1 for the first slot of the evening, 7 for the last
+
+record Reservation
+  id: Int
+  guest: Text
+  phone: Text
+  party: Int               # number of guests (covers)
+  time: Text               # the label of its slot
+  tableNo: Int             # the number of its table
+  status: Status = Booked
+
+state
+  tables: List DiningTable = table
+    number | seats
+    1      | 2
+    2      | 2
+    3      | 2
+    4      | 4
+    5      | 4
+    6      | 4
+    7      | 6
+    8      | 6
+  slots: List Slot = table
+    label   | position
+    "18:00" | 1
+    "18:30" | 2
+    "19:00" | 3
+    "19:30" | 4
+    "20:00" | 5
+    "20:30" | 6
+    "21:00" | 7
+  reservations: List Reservation = table
+    id | guest      | phone          | party | time    | tableNo | status
+    1  | "Mulder"   | "06 1234 5601" | 5     | "20:00" | 7       | Booked
+    2  | "Jansen"   | "06 1234 5602" | 2     | "18:00" | 1       | Arrived
+    3  | "Bakker"   | "06 1234 5603" | 6     | "19:00" | 7       | Booked
+    4  | "De Vries" | "06 1234 5604" | 4     | "18:30" | 4       | Booked
+    5  | "Smit"     | "06 1234 5605" | 2     | "19:30" | 1       | Booked
+    6  | "Visser"   | "06 1234 5606" | 3     | "19:00" | 5       | Booked
+    7  | "Meijer"   | "06 1234 5607" | 2     | "20:30" | 1       | Booked
+  nextId: Int = 8          # the id the next reservation gets
+  guestName: Text = ""
+  phoneNumber: Text = ""
+  partyText: Text = ""
+  slotChoice: Text = ""    # the label of the chosen slot; empty until one is chosen
+
+derive
+  partySize = partyText read as a whole number
+  cleanName = guestName trimmed
+  cleanPhone = phoneNumber trimmed
+  bestTable = among the tables with at least {partySize} seats that are free at the slot labelled {slotChoice} and also free at the slot right after it (when there is one), the number of the one with the fewest seats, the lowest number on ties; 0 when there is no such table
+  sorted = the reservations ordered by the position of the slot labelled with their time, earliest first, then by tableNo, lowest first
+  covers = the sum of the party of all reservations
+  reservationCount = the number of reservations
+  arrivedCovers = the sum of the party of the reservations whose status is Arrived
+  conflicts = the number of reservations that hold their table at a slot where another reservation also holds it, plus the number of reservations whose party is more than the seats of their table
+
+screen
+  section page as main
+    heading "Tonight's service"
+    section stats as grid
+      section coversStat as StatCard
+        text coversLabel = "Covers booked"
+        text covers
+      section countStat as StatCard
+        text countLabel = "Reservations"
+        text reservationCount
+      section arrivedStat as StatCard
+        text arrivedLabel = "Guests arrived"
+        text arrivedCovers
+    text conflictAlert = "{conflicts} reservations overlap or do not fit their table"
+      as alert
+      visible when conflicts is above 0
+    section bookForm "New reservation" as BoardCard
+      section bookFields as row
+        field guestName "Guest name"
+        field phoneNumber "Phone"
+        field partyText "Party size"
+        select slotChoice "Time" from slots.label
+      button book "Book table" as primary
+    section board as row
+      look "The reservations card takes two thirds of the width, the free tables card one third; both start at the top."
+      section overview "Reservations" as BoardCard
+        list reservationsShown of Reservation = sorted as table
+          visible when reservations is not empty
+          text time
+          text tableLabel = "Table {tableNo}"
+          text guest
+          text phone as caption
+          text partyLabel = "{party} guests"
+          text status as StatusPill
+          button arrive "Mark arrived" as secondary
+            enabled when its status is Booked
+          button cancel "Cancel" as ghost
+        section noReservations as EmptyState
+          visible when reservations is empty
+          text emptyTitle = "No reservations tonight"
+          text emptyHint = "New bookings appear here, sorted by time."
+      section availability "Free tables per slot" as BoardCard
+        list slotGrid of Slot = slots as table
+          text label
+          text freeTables = the tables free at this slot as "T" followed by the number, lowest number first, joined with ", "; "None" when no table is free
+          text freeCount = "N free", where N is the number of tables free at this slot
+            as badge
+        text availabilityHint = "A new booking also needs its table free for the next slot."
+          as caption
+  use toast = Toast
+
+on click book
+  - if {guestName} is blank, set {toast.message} to "Enter the guest's name" and stop
+  - if {phoneNumber} is blank or contains no digit, set {toast.message} to "Enter a phone number" and stop
+  - if {partySize} is not a whole number from 1 to 6, set {toast.message} to "Party size must be a whole number from 1 to 6" and stop
+  - if {slotChoice} is empty, set {toast.message} to "Choose a time slot" and stop
+  - if {bestTable} is 0, set {toast.message} to "No free table for a party of {partySize} at {slotChoice}" and stop
+  - set {toast.message} to "Booked table {bestTable} for {cleanName} at {slotChoice}"
+  - add a Reservation to the end of {reservations} with id {nextId}, guest {cleanName}, phone {cleanPhone}, party {partySize}, time {slotChoice}, tableNo {bestTable} (as computed before adding) and status Booked
+  - increase {nextId} by 1
+  - clear {guestName}, {phoneNumber} and {partyText}; keep {slotChoice}
+
+on click arrive
+  - set the status of that reservation to Arrived
+  - set {toast.message} to "Marked {guest} as arrived", with the guest of that reservation
+
+on click cancel
+  - set {toast.message} to "Cancelled {guest} at {time}", with the guest and time of that reservation
+  - remove that reservation from {reservations}
+
+rules
+  - A reservation holds its table at its own slot and at the next slot in {slots} order: a 19:00 reservation holds 19:00 and 19:30; a 21:00 reservation holds only 21:00.
+  - A table is free at a slot when no reservation in {reservations} holds it at that slot.
+  - Two reservations never hold the same table at the same slot, and a party is never seated at a table with fewer seats than its party.
+  - Cancel removes the reservation at once, also when its status is Arrived (a party that left early frees its table); there is no undo.
+  - When nothing fits, nothing is booked and {guestName}, {phoneNumber}, {partyText} and {slotChoice} keep what was typed, so staff can try another time.
+
+always
+  see conflictAlert is hidden
+  see slotGrid has at least 7 rows
+  see slotGrid has at most 7 rows
+  see reservationsShown has at most 32 rows   # 8 tables, at most 4 two-slot bookings each
+
+example "tonight's overview is sorted by time, then by table"
+  see reservationsShown has 7 rows
+  see guest on row 1 = "Jansen"
+  see guest on row 2 = "De Vries"
+  see guest on row 3 = "Visser"
+  see guest on row 4 = "Bakker"
+  see guest on row 5 = "Smit"
+  see guest on row 6 = "Mulder"
+  see guest on row 7 = "Meijer"
+  see time on row 3 = "19:00"
+  see tableLabel on row 3 = "Table 5"
+  see tableLabel on row 4 = "Table 7"
+  see phone on row 1 = "06 1234 5602"
+  see partyLabel on row 4 = "6 guests"
+  see status on row 1 = Arrived
+  see status on row 2 = Booked
+  see arrive on row 1 is disabled
+  see arrive on row 2 is enabled
+  see noReservations is hidden
+  see toast.message is hidden
+  snapshot "tonight's overview"
+
+example "the covers count"
+  see covers = 24
+  see reservationCount = 7
+  see arrivedCovers = 2
+
+example "the free tables per slot"
+  see slotGrid has 7 rows
+  see label on row 1 = "18:00"
+  see freeTables on row 1 = "T2, T3, T4, T5, T6, T7, T8"
+  see freeCount on row 1 = "7 free"
+  see freeTables on row 2 = "T2, T3, T5, T6, T7, T8"
+  see freeTables on row 3 = "T1, T2, T3, T6, T8"
+  see freeCount on row 3 = "5 free"
+  see freeTables on row 4 = "T2, T3, T4, T6, T8"
+  see freeTables on row 5 = "T2, T3, T4, T5, T6, T8"
+  see freeTables on row 6 = "T2, T3, T4, T5, T6, T8"
+  see label on row 7 = "21:00"
+  see freeTables on row 7 = "T2, T3, T4, T5, T6, T7, T8"
+
+example "the smallest free table that fits"
+  type "Peters" into guestName
+  type "06 5550 0001" into phoneNumber
+  type "3" into partyText
+  choose "19:00" in slotChoice
+  click book
+  see toast.message = "Booked table 6 for Peters at 19:00"
+  see reservationsShown has 8 rows
+  see guest on row 4 = "Peters"
+  see tableLabel on row 4 = "Table 6"
+  see status on row 4 = Booked
+  see covers = 27
+  see reservationCount = 8
+  see guestName = ""
+  see phoneNumber = ""
+  see partyText = ""
+  see slotChoice = "19:00"
+  see freeTables on row 3 = "T1, T2, T3, T8"
+  see freeTables on row 4 = "T2, T3, T4, T8"
+  snapshot "booked"
+  type "Kramer" into guestName
+  type "06 5550 0002" into phoneNumber
+  type "2" into partyText
+  click book
+  see toast.message = "Booked table 2 for Kramer at 19:00"
+  see covers = 29
+
+example "a booking holds its table for two slots"
+  type "Kok" into guestName
+  type "06 5550 0003" into phoneNumber
+  type "6" into partyText
+  choose "19:30" in slotChoice
+  click book
+  see toast.message = "Booked table 8 for Kok at 19:30"
+  see freeTables on row 4 = "T2, T3, T4, T6"
+  see freeTables on row 5 = "T2, T3, T4, T5, T6"
+  see freeTables on row 6 = "T2, T3, T4, T5, T6, T8"
+  type "Dekker" into guestName
+  type "06 5550 0004" into phoneNumber
+  type "6" into partyText
+  choose "18:30" in slotChoice
+  click book
+  see toast.message = "Booked table 8 for Dekker at 18:30"
+  see freeTables on row 2 = "T2, T3, T5, T6, T7"
+  see freeTables on row 3 = "T1, T2, T3, T6"
+  type "Ek" into guestName
+  type "06 5550 0009" into phoneNumber
+  type "5" into partyText
+  click book
+  see toast.message = "No free table for a party of 5 at 18:30"
+
+example "nothing fits"
+  type "Kok" into guestName
+  type "06 5550 0003" into phoneNumber
+  type "6" into partyText
+  choose "19:30" in slotChoice
+  click book
+  type "Dekker" into guestName
+  type "06 5550 0004" into phoneNumber
+  type "5" into partyText
+  choose "20:00" in slotChoice
+  click book
+  see toast.message = "No free table for a party of 5 at 20:00"
+  see reservationsShown has 8 rows
+  see covers = 30
+  see guestName = "Dekker"
+  see partyText = "5"
+  see slotChoice = "20:00"
+  snapshot "nothing fits"
+
+example "cancelling frees the table"
+  click cancel on row with "Bakker"
+  see toast.message = "Cancelled Bakker at 19:00"
+  see reservationsShown has 6 rows
+  see guest on row 4 = "Smit"
+  see covers = 18
+  see reservationCount = 6
+  see freeTables on row 3 = "T1, T2, T3, T6, T7, T8"
+  see freeTables on row 4 = "T2, T3, T4, T6, T7, T8"
+  type "Bos" into guestName
+  type "06 5550 0005" into phoneNumber
+  type "6" into partyText
+  choose "19:00" in slotChoice
+  click book
+  see toast.message = "Booked table 7 for Bos at 19:00"
+  see tableLabel on row 4 = "Table 7"
+
+example "marking a party as arrived"
+  see arrive on row 5 is enabled
+  click arrive on row with "Smit"
+  see toast.message = "Marked Smit as arrived"
+  see status on row 5 = Arrived
+  see arrive on row 5 is disabled
+  see arrivedCovers = 4
+  see covers = 24
+  see reservationsShown has 7 rows
+
+example "checks before booking"
+  click book
+  see toast.message = "Enter the guest's name"
+  type "Peters" into guestName
+  click book
+  see toast.message = "Enter a phone number"
+  type "abc" into phoneNumber
+  click book
+  see toast.message = "Enter a phone number"
+  type "06 5550 0001" into phoneNumber
+  type "7" into partyText
+  click book
+  see toast.message = "Party size must be a whole number from 1 to 6"
+  type "two" into partyText
+  click book
+  see toast.message = "Party size must be a whole number from 1 to 6"
+  type "2" into partyText
+  click book
+  see toast.message = "Choose a time slot"
+  see reservationsShown has 7 rows
+  see covers = 24
+  click toast.dismiss
+  see toast.message is hidden
+
+example "an empty evening"
+  click cancel on row 1
+  click cancel on row 1
+  click cancel on row 1
+  click cancel on row 1
+  click cancel on row 1
+  click cancel on row 1
+  click cancel on row 1
+  see toast.message = "Cancelled Meijer at 20:30"
+  see reservationsShown is hidden
+  see noReservations is shown
+  see emptyTitle = "No reservations tonight"
+  see covers = 0
+  see reservationCount = 0
+  see freeTables on row 3 = "T1, T2, T3, T4, T5, T6, T7, T8"
+  see freeCount on row 3 = "8 free"
+  snapshot "no reservations"
+
+example "names and phone numbers are stored trimmed"
+  type "  Peters " into guestName
+  type " 06 5550 0001 " into phoneNumber
+  type "3" into partyText
+  choose "19:00" in slotChoice
+  click book
+  see toast.message = "Booked table 6 for Peters at 19:00"
+  see guest on row 4 of reservationsShown = "Peters"
+  see phone on row 4 of reservationsShown = "06 5550 0001"

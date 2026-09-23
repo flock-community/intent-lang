@@ -20,6 +20,9 @@ export function kit(app: App): Record<string, string> {
     // page and layout
     page: "min-h-screen bg-neutral-50 font-sans text-neutral-900 antialiased",
     shell: "flex min-h-screen",
+    container: `mx-auto flex w-full max-w-6xl flex-col ${d.gap} ${d.page}`,
+    stack: "flex flex-col gap-4",
+    stackTight: "flex flex-col gap-1",
     sidebar: `flex w-60 shrink-0 flex-col ${d.gap} border-r border-neutral-200 bg-white px-4 py-6`,
     content: `flex min-w-0 flex-1 flex-col ${d.gap} ${d.page}`,
     header: "flex items-center justify-between gap-4",
@@ -104,6 +107,7 @@ export function kit(app: App): Record<string, string> {
     ringLabel: "text-2xl font-semibold text-neutral-900",
     // empty state
     empty: "flex flex-col items-center gap-2 px-6 py-12 text-center",
+    emptyIcon: "h-12 w-12 rounded-full bg-neutral-100",
   };
 }
 
@@ -133,7 +137,11 @@ ${Object.entries(k)
 export const KIT_GUIDE = `The Kit (generated from the design block) holds the exact class string for every built-in presentation. Use it:
 - Every built-in presentation uses its Kit recipe as its whole class, unchanged: e.g. a \`button … as primary\` has exactly Kit.buttonPrimary, a \`section … as card\` is a Kit.card element whose content sits in a Kit.cardBody element, \`list … as table\` uses table/thead/th/tr/td, \`select … as chips\` uses chipList/chip/chipOn, \`checkbox … as toggle\` uses toggle/toggleOn with a knob/knobOn inside.
 - Cards: a \`card\` is a Kit.card element. Its title (if any) and plain elements go in a Kit.cardBody. A \`toolbar\`, a \`list … as table\`, a \`list … as menu\` and a \`footer\` inside a card are its direct children, flush with the card's edges (they carry their own padding: toolbar and footer recipes, th/td). Several plain elements in a row share one Kit.cardBody.
-- Page structure: the root is Kit.page; with a sidebar, Kit.shell holds Kit.sidebar and Kit.content. A \`grid\` with N children uses grid2/grid3/grid4. Labels above fields use Kit.label inside Kit.formField. Dialogs are Kit.backdrop > Kit.dialog; their buttons sit in Kit.actions at the bottom.
+- Page structure: the root is Kit.page. With a sidebar, Kit.shell holds Kit.sidebar and Kit.content. Without a sidebar, everything sits in one Kit.container (centered, at most 6xl wide).
+- A section without \`as\` is a vertical stack: Kit.stackTight when it holds only texts and headings, Kit.stack otherwise.
+- A toolbar (and a header) puts its first element on the left and all the others together on the right, in spec order, in one Kit.row.
+- Tables size their columns automatically: no widths on th or td, unless a look sentence gives them.
+- A section \`as empty\` (or a component based on it) is Kit.empty: centered, with its texts stacked. A \`grid\` with N children uses grid2/grid3/grid4. Labels above fields use Kit.label inside Kit.formField. Dialogs are Kit.backdrop > Kit.dialog; their buttons sit in Kit.actions at the bottom.
 - Layout follows §9 (Look): spec order; consecutive buttons form one Kit.actions row; a \`footer\` section inside a sidebar is Kit.sidebarFooter (pinned to the bottom).
 - A \`search\` field has no visible label: its label is the placeholder (and aria-label), with Kit.search. Every other field has its label above it (Kit.formField > Kit.label + Kit.input).
 - Elements without \`as\` use the closest plain recipe: text → body, heading → heading, button → buttonSecondary, field → input, select → dropdown, checkbox → checkbox, list → menu, section → a plain div with the parent's gap.

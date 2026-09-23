@@ -143,6 +143,8 @@ export function canonical(obs: Obs): string {
     if (v && typeof v === "object") {
       const out: any = {};
       for (const k of Object.keys(v).sort()) if (k !== "key") out[k] = strip(v[k]);
+      // "" is how a select shows "nothing chosen" (a placeholder), never one of its options.
+      if (v.k === "select" && Array.isArray(out.options)) out.options = out.options.filter((o: string) => o !== "");
       return out;
     }
     return v;

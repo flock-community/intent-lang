@@ -50,7 +50,7 @@ export const emptyApp = (): App => ({ name: "", components: [], purpose: [], rec
  * Syntax only: the file's own declarations, imports and components, without resolving imports
  * and without semantic checks. `load.ts` resolves imports and expands components, then checks.
  */
-export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[]; clockLine: number } {
+export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[]; clockLine: number; language?: string; languageLine: number } {
   const diags: Diagnostic[] = [];
   const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
@@ -58,6 +58,8 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   const app = emptyApp();
   app.imports = [];
   const ctx: Ctx = { err, warn, pendingWaits: [], clockLine: 0 };
+  let language: string | undefined;
+  let languageLine = 1;
 
   roots.forEach((node, i) => {
     const t = node.text;
@@ -77,11 +79,17 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^import\\s+(${BUNDLE_NAME})(?:\\.(${UPPER}))?(?:\\s+as\\s+(${UPPER}))?$`)))) {
       if (m[3] && !m[2]) err(node.line, "SYNTAX", "`as` renames one imported name: `import std.list.Pager as TicketPager`");
       app.imports!.push({ bundle: m[1], name: m[2], alias: m[3], line: node.line });
+    } else if ((m = t.match(/^language\s+(v\d+)$/))) {
+      // The language version the spec was written for: the checker says when the language moved on.
+      language = m[1];
+      languageLine = node.line;
+    } else if (t.startsWith("language")) {
+      err(node.line, "SYNTAX", "expected `language v12`");
     } else if (t.startsWith("import")) {
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "import", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "import", "language", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -96,7 +104,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     if (w.ms % app.clockMs !== 0) err(w.step.line, "STEP", `wait duration is not a whole number of clock ticks (${app.clockMs}ms)`);
     else w.step.times = w.ms / app.clockMs;
   }
-  return { app, diagnostics: diags, clockLine: ctx.clockLine };
+  return { app, diagnostics: diags, clockLine: ctx.clockLine, language, languageLine };
 }
 
 /** One block (top level, or inside a component). Returns false when the line is not a block. */
@@ -426,7 +434,7 @@ export const PRESENTATIONS: Record<ElementKind, string[]> = {
   checkbox: ["toggle"],
   select: ["tabs", "dropdown", "chips", "segmented", "nav", "radio"],
   list: ["table", "cards", "grid", "timeline", "bars", "menu"],
-  section: ["card", "dialog", "drawer", "sidebar", "header", "toolbar", "row", "grid", "footer", "banner", "main", "form"],
+  section: ["card", "dialog", "drawer", "sidebar", "header", "toolbar", "row", "grid", "footer", "banner", "main", "form", "empty"],
   progress: ["bar", "ring"],
   use: [],
 };
@@ -704,6 +712,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   walk(app.screen, undefined, top);
   if (!app.screen.length) err(1, "SYNTAX", "the app has no `screen`");
 
+  for (const { el, list } of all) {
+    if (list && el.kind !== "heading" && records.get(list.of!)?.fields.some((f) => f.name === el.name) && (state.has(el.name) || derived.has(el.name)))
+      warn(el.line, "SHADOWED", `\`${el.name}\` is a field of ${list.of} and also an app-level name; inside the row it means the row's field. Rename the app-level one to avoid mix-ups`);
+  }
   for (const { el, list } of all) {
     const rowType = list ? records.get(list.of!) : undefined;
     const rowField = rowType?.fields.find((f) => f.name === el.name);

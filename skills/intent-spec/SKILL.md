@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v11** (see the changelog at the end of
+Language version this skill matches: **v12** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -83,6 +83,15 @@ Habits that make builds identical *and* correct:
   and use the name in templates and sentences, instead of repeating phrases.
 - **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `
   when nothing is chosen). Give the empty case its own text or hide the element.
+- **Template holes** hold a name, a row field, a name with a format (`{total as money}`) or a
+  short phrase over names; name anything longer in `derive`. A hole that can be empty
+  (nothing chosen yet) needs its own text for that case.
+- **An invariant over several rows** ("no table booked twice"): derive a count of the
+  violations, show it in an alert visible only when it is above 0, and add
+  `always see <alert> is hidden`.
+- **Un-picking a select:** a handler sets it to `""` (for example a Clear button); `""` shows
+  as an empty placeholder.
+- **Don't give a row element the same name as an app-level value** (`SHADOWED`).
 - **Filters with "all"** are their own choice (`AnyCategory "All" | OnlyBrakes "Brakes"`).
   Relations between records are by value (keep the title or id in a field).
 
@@ -156,8 +165,11 @@ remembering when you write or review a spec:
 - `visible when` under `use` and `as` after a long expression were unclear;
 - a component's own state can go stale (a page past the end): components must clamp
   or reset their own state, not every app;
-- "confirmed never exceeds capacity" cannot be an `always` check yet. Keep it as a rule in
-  words, *and* add an example for the edge case.
+- "confirmed never exceeds capacity" cannot be an `always` check yet. Use the violation-count
+  pattern above, keep the rule in words, *and* add an example for the edge case;
+- the second round of authors (reservations, library) asked what may go inside `{…}`, how to
+  add a record and hand out ids, and how to un-pick a select; these are now in the reference
+  (§4, §5).
 
 ## Keep this skill current
 

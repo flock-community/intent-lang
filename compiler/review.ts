@@ -15,19 +15,20 @@ Your job: find the places where that literal reading will probably surprise the 
 export async function review(file: string): Promise<{ text: string; costUsd: number }> {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const loaded = load(resolve(file));
-  // Review the canonical, expanded spec: bundles and components included.
-  const spec = loaded.app ? printApp(loaded.app) : readFileSync(file, "utf8");
-  const numbered = spec.split("\n").map((l, i) => `${String(i + 1).padStart(3)}  ${l}`).join("\n");
+  // The author's own file, numbered (cite these lines), plus the expanded spec for context.
+  const source = readFileSync(file, "utf8");
+  const numbered = source.split("\n").map((l, i) => `${String(i + 1).padStart(3)}  ${l}`).join("\n");
+  const expanded = loaded.app && (loaded.app.imports?.length ?? 0) > 0 ? printApp(loaded.app) : "";
   const prompt = `# Language reference
 
 ${language}
 
-# The spec (with line numbers)
+# The spec (with line numbers — cite these)
 
 \`\`\`
 ${numbered}
 \`\`\`
-
+${expanded ? `\n# The same spec with its imports expanded (context only; do not cite its lines)\n\n\`\`\`\n${expanded}\n\`\`\`\n` : ""}
 List at most 8 findings, most important first. Only report things a user of the app would notice. For each finding write exactly:
 
 ### <line numbers>: <a question the spec does not answer>

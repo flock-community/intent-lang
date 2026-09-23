@@ -53,16 +53,26 @@ thread, toast), a design system, an API resource.
 
 ## Direction
 
-1. ~~A module system and the first `std` bundles, with behaviour components.~~ Done in v10:
-   `bundle`/`import`/`intent.lock`, `use x = Component`, the source map. Next here: type
-   parameters and slots (a component that renders the app's rows), the Kit as a spec bundle,
-   and a registry for community bundles.
-2. An API profile, splitting the language into a generic core (records, choices, derive,
-   rules, `always`, examples, modules), a UI profile and an API profile.
-3. Kotlin as a second backend target for the API profile (TypeScript/Node first).
-4. Held-out tests: independent authors write specs from the docs only, with and without
-   bundles. This is the real measure of the language, and it guards against overfitting to
-   our own specs.
+Done: modules and bundles (v10), held-out testing (four independent authors), the
+language review (`docs/reviews/language-review.md`). Next, in this order:
+
+1. **Refinement: `extends` + explicit `override` / `add` / `drop`.** Reuse someone's whole spec
+   and improve it. Overrides are named units (elements, derived values, handlers, texts,
+   design, seed data), never line ranges. The base's examples and `always` rules must still
+   pass unless explicitly dropped (Liskov for specs). The base is pinned, and upgrading it
+   re-applies the overrides with conflict detection. One level deep; compose beyond that.
+   Overrides that many apps share flow upstream into the base as params.
+2. **A small structured grammar for behaviour** (review #1): early exits, branches,
+   "A when C, otherwise B", list operations and templates as forms the parser knows, with
+   English only in the leaves.
+3. **Identity and references** (review #2): relations as declared references instead of text
+   columns with a comment, and defined behaviour when a selection points at nothing.
+4. **Real invariants** (review #3): a small closed expression form for `always` over state
+   and per row, plus a warning for `rules` sentences that no check covers.
+5. **Bundles as versioned behavioural contracts** (review #4): a demo for every bundle, a
+   semantic version computed from names *and* examples, namespaced imports, immutable
+   versions.
+6. An API profile (generic core + UI profile + API profile), then Kotlin as its second backend.
 
 ## Lessons from the experiments (keep applying them)
 

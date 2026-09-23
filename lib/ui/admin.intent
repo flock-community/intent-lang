@@ -13,4 +13,4 @@ design
   density: comfortable
 
 component StatCard as card "A small uppercase muted label above a large semibold number."
-component EmptyState "A centered block: a large muted circle as an illustration, a semibold title and one line of muted text."
+component EmptyState as empty "The title semibold, the hint as one line of muted text."

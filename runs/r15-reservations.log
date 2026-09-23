@@ -1,0 +1,32 @@
+apps/held-out-2/reservations.intent: ok — 0 error(s), 0 warning(s)
+reservations ts-2: attempt 1: ok
+reservations ts-1: attempt 1: ok
+reservations ts-3: attempt 1: ok
+reservations elm-2: attempt 1: ok
+reservations elm-1: attempt 1: ok
+reservations elm-3: attempt 1: ok
+reservations ts-1: look attempt 1: ok (77 screens match)
+reservations ts-2: look attempt 1: ok (77 screens match)
+reservations ts-3: look attempt 1: ok (77 screens match)
+reservations elm-3: look attempt 1: ok (77 screens match)
+reservations elm-2: look attempt 1: ok (77 screens match)
+reservations elm-1: look attempt 1: ok (77 screens match)
+# Convergence report — v12-heldout2-reservations
+
+3 builds per target (elm, ts), 30 random sessions × 20 actions per app.
+
+| App | Builds OK | First-try OK | `always` held | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Reservations | 6/6 | 6/6 | 6/6 | 0% | 0% | 100% | 0% | 45% / 54% | $4.10 |
+
+*Same app* = share of random sessions in which every build showed identical screens after every action.
+
+### Looks (styled builds)
+
+| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Local layout agrees: Elm / TS / Elm↔TS | Boxes within 8px (absolute) | Median box offset (px) |
+|---|---|---|---|---|---|
+| Reservations | 6/6 | 1.9% / 2.0% / 1.6% | 86% / 97% / 87% | 82% / 97% / 84% | 5 / 5 / 4 |
+
+*Page = logic*: builds whose page showed exactly the logic's screen in every session. *Pixels differ*: average share of differing pixels between two builds' screenshots of the same state. *Local layout agrees*: share of elements whose position relative to their parent, and whose size, are within 8px, so one taller block counts once instead of shifting everything below it. *Boxes within 8px (absolute)*: the same on absolute page positions.
+
+full report: /Users/sjors/Develop/Personal/intentlang/runs/r15-heldout2-res/report.md

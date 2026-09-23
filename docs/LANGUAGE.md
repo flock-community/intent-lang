@@ -1,4 +1,4 @@
-# Intent — language reference (v11, app profile)
+# Intent — language reference (v12, app profile)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -98,6 +98,12 @@ Binding (checked by the compiler):
 - `text x` without `=` shows state `x`, derived value `x`, or — inside a list — the row
   item's field `x`. With `= expr`, `expr` is either a template string (`"{count} left"`)
   or a sentence.
+- Inside a template hole `{…}`: a declared name (`{count}`, `{toast.message}`), a field of
+  the row's item inside a list (`{title}`), a name with a display format (`{total as money}`),
+  or a short phrase over declared names (`{the number of attendees}`, `{today + 14}`). Keep
+  holes short: name longer computations in `derive`. Display formats: `as money` (two
+  decimals), `as decimal` (up to 8 decimals), `as clock` (m:ss), `as percent` (a whole number
+  and `%`). A hole that can be empty (nothing chosen yet) needs an explicit text for that case.
 - `field x` edits state `x`, which must be `Text`. Typing replaces `x` with the typed text.
 - `select x` edits state `x`, which must be a choice; its options are the choice values in
   declared order.
@@ -111,7 +117,8 @@ Binding (checked by the compiler):
 - A section title and a field label are fixed text. To show a changing title, use
   `text x = … as title` as the section's first element.
 - `select x from items.name` with `x` = `""`, or a text that is not among the options,
-  shows no option as chosen.
+  shows no option as chosen. `""` is shown as an empty placeholder; it is never one of the
+  options. To un-pick, a handler sets `x` to `""` (for example a "Clear" button).
 - Relations between records are by value: keep the related record's name, title or id in a
   field (`workshop: Text`, `ticket: Int`), and match on it.
 - A filter with an "all" option is its own choice, with its own value names:
@@ -155,8 +162,8 @@ Built-in presentations (closed set; each has one meaning):
 |---|---|---|
 | section | `main` | the main content column |
 | | `sidebar` | a fixed-width column at the left, full height |
-| | `header` | a row at the top of its parent: title left, actions right |
-| | `toolbar` | a row of controls, wrapping when needed |
+| | `header` | a row at the top of its parent: the first element left, the others together on the right |
+| | `toolbar` | a row of controls: the first left, the others together on the right, wrapping when needed |
 | | `card` | a surface with border, radius, padding; tables, menus, toolbars and footers inside it run edge to edge |
 | | `grid` | children in equal columns |
 | | `row` | children side by side |
@@ -164,6 +171,7 @@ Built-in presentations (closed set; each has one meaning):
 | | `footer` | a row at the bottom of its parent: info left, actions right |
 | | `banner` | a full-width strip |
 | | `dialog` | a modal centered over a dimmed backdrop, with its title on top |
+| | `empty` | a centered "nothing here" block: a muted circle, then its texts stacked |
 | | `drawer` | a panel over the right side of the page, full height |
 | text | `title` | a page or panel title |
 | | `caption` | small muted text |
@@ -260,9 +268,13 @@ A `use` can also take `visible when …` and `look "…"`, like any element:
 The look of a bundle component's elements belongs to the bundle; an app cannot restyle
 them one by one yet (`NOT_YET`). Change the design, or propose a change to the bundle.
 
-**Locking.** `intent.lock` pins every bundle by content hash. A bundle that changed since it
+**Locking.** `intent.lock` (one per repository, at its root) pins every bundle by content hash,
+plus the language reference and the model the compiler uses. A bundle that changed since it
 was locked fails the check until someone reviews it and runs `intent lock <app>`. Builds never
 pick up a library change silently.
+
+**Version.** A spec may say which language version it was written for, on a line of its own:
+`language v12`. The checker warns when the language has moved on since.
 
 **Notes.** A comment at the end of a line (`remaining: Int = 1500  # seconds left`) is a note:
 the compiler reads it too. A comment on a line of its own is only for people.
@@ -292,6 +304,10 @@ Idioms the compiler reads the same way every time:
 - **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
   ticket") is the item of the clicked row. In an expression inside a row, "its" and "this
   <item>" refer to the row's item: `text left = its capacity minus its number of sign-ups`.
+- **Adding a record:** `- add a Ticket to the end of tickets with subject = {draft}, trimmed,
+  and status Open`. New ids: `id = the highest id in tickets + 1` (1 when there are none).
+- **Messages in handlers** refer to the clicked row's fields by name: `set {toast.message} to
+  "Cancelled {guest} at {time}"` inside `on click cancel` of a row.
 - **Named intermediate values:** give a value a name in `derive` and use that name (for
   example `quantity = amount read as a whole number`), instead of repeating the phrase.
 
@@ -326,7 +342,11 @@ always
 ```
 
 The harness checks `always` rules in examples, in its own exploration of each build, and in
-the differential sessions.
+the differential sessions. `see x has N rows` (exactly N) works too.
+
+An invariant that is not about one element ("no table is booked twice") cannot be an `always`
+check yet. Until it can: derive a count of the violations, show it in an alert that is only
+visible when the count is above 0, and write `always see <alert> is hidden`.
 
 `has 1 row` and `has 3 rows` are both fine. `see x on row 2 is hidden` checks an element inside a
 row. A list hidden by `visible when` counts as not on the screen: check it with
@@ -357,6 +377,8 @@ places where the spec is not yet precise.
 | `LOCK` | error | a bundle is not locked, or changed since it was locked (§4b) |
 | `UNSCOPED` | warning | inside a component, one of its own names is not written in braces |
 | `UNUSED` | warning | a declared component is never used |
+| `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
+| `LANGUAGE` | warning | the spec was written for an older language version |
 
 Reserved names: the keywords of Elm and TypeScript (`if`, `then`, `else`, `case`, `of`, `let`,
 `in`, `type`, `module`, `import`, `class`, `const`, `function`, `new`, `return`, `this`,
@@ -399,7 +421,9 @@ something when it wants different behaviour.
    `design`, the app is neutral grey on white with an indigo brand. The look shows only what
    the spec names: no extra logos, icons, column headers, labels, helper texts or
    decorations unless a `look` sentence asks for them. A field shows its label above it
-   (except `search`). Layout follows the spec: elements
+   (except `search`). Without a sidebar, the screen is one centered column. A section
+   without `as` stacks its elements vertically. Table columns size themselves unless a
+   `look` sets widths. Layout follows the spec: elements
    appear in the order they are listed (top to bottom; left to right inside a `row`,
    `header`, `toolbar` or `footer`). Consecutive buttons in one section form a single action
    row, in spec order, aligned to the end. Inside a `sidebar`, elements stack from the top and
@@ -435,6 +459,10 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v12: `empty` presentation; a select's `""` is a placeholder, never an option; template holes
+  and display formats documented; `language vN` line; the lock pins the language and model;
+  `SHADOWED` warning; header/toolbar grouping; a screen without a sidebar is one
+  centered column; plain sections stack; table columns size themselves.
 - v11: `visible when` and `look` on `use`; `as` on its own line; handler idioms (`and stop`,
   `otherwise`, `its`); reserved names listed and narrowed (domain words like `Event` are free;
   the generated message type is now `Msg`); `std.list.Pager` never shows a page past the end.

@@ -287,7 +287,12 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
 /** A section with nothing visible in it is the same as no section: a page need not render it. */
 export function dropEmptySections(obs: Obs): Obs {
   // Text on a page is whitespace-collapsed and trimmed by HTML itself; compare the screen the same way.
-  const text = (n: any) => (n.k === "text" && typeof n.v === "string" ? { ...n, v: n.v.replace(/\s+/g, " ").trim() } : n);
+  const text = (n: any) =>
+    n.k === "text" && typeof n.v === "string"
+      ? { ...n, v: n.v.replace(/\s+/g, " ").trim() }
+      : n.k === "select" && Array.isArray(n.options)
+        ? { ...n, options: n.options.filter((o: string) => o !== "") } // a "" placeholder is not an option
+        : n;
   const clean = (nodes: any[]): any[] =>
     nodes
       .map((n) => (n.k === "section" ? { ...n, c: clean(n.c) } : n.k === "list" ? { ...n, rows: n.rows.map((r: any) => ({ ...r, c: clean(r.c) })) } : text(n)))

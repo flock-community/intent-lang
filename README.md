@@ -279,6 +279,22 @@ tuned for; both reuse `ui.admin`, `std.list` and `std.feedback`.
   the end, and the module system documented in the reference (they had to learn it from a
   demo app).
 
+### Second held-out round (after v11/v12)
+
+Two new authors wrote a restaurant reservations app and a library loans app from the
+v12 reference and skill.
+
+| App | First try | Same app | Page = logic | Local layout (Elm / TS / Elm↔TS) | Pixels differ |
+|---|---|---|---|---|---|
+| Reservations | 6/6 | 100% | 6/6 | 86% / 97% / 87% | 1.6–2.0% |
+| Library | 6/6 | 100% | 6/6 | 59% / 56% / 63% | 0.8–1.0% |
+
+The first measurement said 0% same app for both. The cause was one language silence: how a
+dropdown shows "nothing chosen". Some builds rendered an empty placeholder option, others did
+not. The language now says `""` is a placeholder, never an option, and observations normalise
+it. Looks on new specs improved (Reservations 82–97%, against 40–64% in the first round), but
+still vary per spec.
+
 ## Layout
 
 ```

@@ -10,7 +10,7 @@ import { buildPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
 import { compile } from "./toolchain.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
-import { sourceMap, where } from "./load.ts";
+import { compilerPins, sourceMap, where } from "./load.ts";
 
 export interface BuildResult {
   target: Target;
@@ -18,6 +18,7 @@ export interface BuildResult {
   ok: boolean;
   attempts: { stage: "llm" | "compile" | "examples" | "always" | "spec" | "ok"; detail: string }[];
   examples: { passed: number; total: number };
+  compiler?: { language: string; languageVersion: string; model: string }; // what this build was compiled with
   costUsd: number;
   ms: number;
 }
@@ -37,7 +38,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
   const base = buildPrompt(target, specFile, specText, specSource);
-  const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, costUsd: 0, ms: 0 };
+  const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, compiler: compilerPins(), costUsd: 0, ms: 0 };
 
   let code = "";
   let problems = "";
