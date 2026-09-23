@@ -1,6 +1,6 @@
 // Compile a scaffolded build directory with the real target toolchain.
 import { run as proc } from "./proc.ts";
-import { copyFileSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, type Target } from "./gen.ts";
 
@@ -18,7 +18,13 @@ export async function compile(target: Target, dir: string): Promise<string> {
     if (!w.ok) return clean(w.out);
     copyFileSync(join(dir, "worker.js"), join(dir, "worker.cjs"));
     const m = await run(bin("elm"), ["make", "src/Main.elm", "--optimize", "--output=main.js"], dir);
-    return m.ok ? "" : clean(m.out);
+    if (!m.ok) return clean(m.out);
+    if (existsSync(join(dir, "glue.ts"))) {
+      // Apps that make calls: the fetch glue for the browser.
+      const g = await run(bin("esbuild"), ["glue.ts", "--bundle", "--format=iife", "--outfile=glue.js", "--log-level=error"], dir);
+      if (!g.ok) return clean(g.out);
+    }
+    return "";
   }
   const t = await run(bin("tsc"), ["-p", "."], dir);
   if (!t.ok) return clean(t.out);

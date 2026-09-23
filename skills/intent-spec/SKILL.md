@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v19** (see the changelog at the end of
+Language version this skill matches: **v20** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -189,6 +189,15 @@ signatures and every status each may answer, plus examples that work on any impl
 `implements` it and writes only steps. Consumers generate a typed client with `intent client`.
 Inside one app (between components, or a screen and its logic), there is no wire and no
 contract to write: component params and the generated interfaces are the contract.
+
+## 5f. A screen that uses an API
+
+`uses <contract> as <alias>` plus `tested with "<provider spec>"` (§4g). Load data `on start`,
+and handle every call's answer with `on answer`: the success status, and `otherwise` for the
+rest (show the Problem's error). The screen's examples run against the real provider with
+its seed data, so write them from that data (`see rows has 8 rows`, the provider's newest
+first). After a change (add, solve), call the list endpoint again instead of editing the list
+locally: the screen then shows what the service holds, and two builds cannot drift apart.
 
 ## 6. Write a bundle
 

@@ -1,0 +1,61 @@
+app TicketsUi
+  "A small front end for the tickets API: list, add and solve tickets."
+
+uses support.ticketsApi as tickets
+  tested with "apps/api/tickets-api.intent"
+
+state
+  rows: List Ticket = []            # the tickets as the API last listed them
+  draft: Text = ""
+  problem: Text = ""
+
+screen
+  field draft "New ticket"
+  button add "Add"
+    enabled when draft is not blank
+  text problem
+    visible when problem is not empty
+  list rows of Ticket
+    text subject
+    text status
+    button solve "Solve"
+      enabled when its status is not Solved
+
+on start
+  - call tickets.listTickets
+
+on answer tickets.listTickets
+  - if its status is 200, set rows to its body
+
+on click add
+  - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+
+on answer tickets.createTicket
+  - if its status is 201, clear draft and problem, and call tickets.listTickets
+  - otherwise set problem to the error in its body
+
+on click solve
+  - call tickets.solveTicket with id = the id of that ticket
+
+on answer tickets.solveTicket
+  - call tickets.listTickets
+
+example "the list loads from the api"
+  see rows has 8 rows
+  see subject on row 1 = "Refund for double charge"
+  see status on row 1 = "Open"
+
+example "adding a ticket"
+  see add is disabled
+  type "Printer on fire" into draft
+  see add is enabled
+  click add
+  see rows has 9 rows
+  see subject on row 1 = "Printer on fire"
+  see draft = ""
+  see problem is hidden
+
+example "solving a ticket"
+  click solve on row with "Refund for double charge"
+  see status on row 1 = "Solved"
+  see solve on row 1 is disabled

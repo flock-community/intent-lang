@@ -12,7 +12,7 @@ export type Node =
   | { k: "list"; n: string; rows: { key: string; c: Node[] }[] }
   | { k: "section"; n: string; label: string; c: Node[] };
 
-export type Wire = { on: string; target: string; key?: string; text?: string; value?: string };
+export type Wire = { on: string; target: string; key?: string; text?: string; value?: string; answer?: unknown };
 
 export interface Program<M> {
   init: () => M;
@@ -21,7 +21,8 @@ export interface Program<M> {
   clockMs?: number;
 }
 
-export function mount<M>(root: HTMLElement, p: Program<M>): void {
+/** Render the program into root; returns dispatch, for events from outside the screen (answers to calls). */
+export function mount<M>(root: HTMLElement, p: Program<M>): (w: Wire) => void {
   let model = p.init();
   const dispatch = (w: Wire) => {
     model = p.step(w, model);
@@ -40,6 +41,7 @@ export function mount<M>(root: HTMLElement, p: Program<M>): void {
   };
   if (p.clockMs) setInterval(() => dispatch({ on: "tick", target: "" }), p.clockMs);
   draw();
+  return dispatch;
 }
 
 function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HTMLElement {

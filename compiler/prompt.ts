@@ -1,7 +1,7 @@
 // The prompt that turns the LLM into the code-generation stage of the compiler.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ELM_APP_SKELETON, ROOT, TS_APP_SKELETON, type Target } from "./gen.ts";
+import { ELM_APP_SKELETON, ELM_APP_SKELETON_CALLS, ROOT, TS_APP_SKELETON, TS_APP_SKELETON_CALLS, type Target } from "./gen.ts";
 import { API_APP_SKELETON, API_TARGET_RULES } from "./api.ts";
 
 export const SYSTEM = `You are the code-generation stage of the Intent compiler. You translate an Intent spec into exactly one source module.
@@ -58,6 +58,20 @@ const CODING_RULES = `Rules that keep every build identical:
 9. A \`table\` default in the spec is available as \`<stateName>Initial\` in the generated interface; use it in init. For every refined type (\`type Email = Text matching …\`) the interface has a check, \`isEmail\`: "is a valid Email" in the spec means exactly that check. Never write your own.
 10. Write plain, straightforward code. No comments needed.`;
 
+/** Apps that call APIs (\`uses <contract> as <alias>\`). */
+const CALL_RULES = {
+  elm: `Calls (this app uses an API):
+- \`init\` and \`update\` also return the calls to make, in the order the steps say: \`( model, [ TicketsCreateTicket { subject = …, customer = …, priority = … } ] )\`. No step says "call": return \`[]\`.
+- \`on start\`: the calls \`init\` returns. \`on answer tickets.createTicket\`: the message \`TicketsCreateTicketAnswered answer\`; the answer has one variant per status the contract declares (\`TicketsCreateTicket201 ticket\`, \`TicketsCreateTicket400 problem\`) plus \`TicketsCreateTicketFailed reason\`.
+- "if its status is 201" matches that variant; "its body" is the value it carries. "otherwise" covers every other variant, Failed included.
+- Every argument of a call is given; an absent optional one is \`Nothing\`.`,
+  ts: `Calls (this app uses an API):
+- \`init\` and \`update\` return \`{ model, calls }\`: the calls to make, in the order the steps say, as \`{ call: "tickets.createTicket", args: { subject, customer, priority } }\`. No step says "call": \`calls: []\`.
+- \`on start\`: the calls \`init\` returns. \`on answer tickets.createTicket\`: the message \`{ tag: "TicketsCreateTicketAnswered", answer }\`; \`answer\` is one of the statuses the contract declares (\`{ status: 201, body: Ticket }\`, \`{ status: 400, body: Problem }\`) or \`{ status: 0, error }\` (no valid answer).
+- "if its status is 201" is \`answer.status === 201\`; "its body" is \`answer.body\`. "otherwise" covers every other status, 0 included.
+- Every argument of a call is given; an absent optional one is \`null\`.`,
+};
+
 /**
  * The probe compiler of a twin build: it must honour everything the spec and the language say,
  * but where they still leave a real choice it takes a different reasonable reading. If its app
@@ -76,7 +90,7 @@ const API_CODING_RULES = `Rules that keep every build identical:
 5. Every example in the spec must pass. Walk through each one step by step before you answer.
 6. All rounding goes through Fmt. For every refined type the interface has a check (\`isEmail\`); "is a valid Email" means that check. Write plain, straightforward code. No comments needed.`;
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false): string {
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
   if (api)
@@ -114,7 +128,7 @@ ${language}
 # ${TARGET_RULES[target]}
 
 \`\`\`${lang}
-${target === "elm" ? ELM_APP_SKELETON : TS_APP_SKELETON}\`\`\`
+${target === "elm" ? (calls ? ELM_APP_SKELETON_CALLS : ELM_APP_SKELETON) : calls ? TS_APP_SKELETON_CALLS : TS_APP_SKELETON}\`\`\`
 
 Standard helpers (use these for all number/time formatting and parsing):
 \`\`\`
@@ -122,7 +136,7 @@ ${FMT_API[target]}
 \`\`\`
 
 ${CODING_RULES}
-
+${calls ? `\n${CALL_RULES[target]}\n` : ""}
 # Generated interface (${target === "elm" ? "src/Spec.elm" : "spec.ts"})
 
 \`\`\`${lang}

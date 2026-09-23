@@ -95,6 +95,15 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^import\\s+(${BUNDLE_NAME})(?:\\.(${UPPER}))?(?:\\s+as\\s+(${UPPER}))?$`)))) {
       if (m[3] && !m[2]) err(node.line, "SYNTAX", "`as` renames one imported name: `import std.list.Pager as TicketPager`");
       app.imports!.push({ bundle: m[1], name: m[2], alias: m[3], line: node.line });
+    } else if ((m = t.match(new RegExp(`^uses\\s+(${BUNDLE_NAME})\\s+as\\s+(${LOWER})$`)))) {
+      // A client of a contract; `tested with "<provider spec>"` names the implementation examples run against.
+      let testedWith: string | undefined;
+      for (const c of node.children) {
+        const tm = c.text.match(new RegExp(`^tested\\s+with\\s+(${STR})$`));
+        if (tm) testedWith = parseString(tm[1]);
+        else err(c.line, "SYNTAX", 'under `uses`: `tested with "path/to/provider.intent"`', c.indent + 1);
+      }
+      (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, line: node.line });
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
       if (app.implements) err(node.line, "DUPLICATE", "an app implements one contract");
       app.implements = { name: m[1], line: node.line };
@@ -128,7 +137,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "contract", "implements", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "contract", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -233,7 +242,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     }
   } else if (t === "screen") {
     app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
-  } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS})\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS})$`)))) {
+  } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS}|answer)\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS}|start)$`)))) {
     const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err), line: node.line, note: node.note };
     app.handlers.push(h);
   } else if (t.startsWith("on ")) {
@@ -942,7 +951,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   }
   for (const c of app.components) {
     if (typeNames.has(c.name) || valueOwner.has(c.name)) err(c.line, "DUPLICATE", `component \`${c.name}\` clashes with a type or value name`);
-    if (!usedComponents.has(c.name)) warn(c.line, "UNUSED", `component \`${c.name}\` is never used (\`… as ${c.name}\`)`);
+    // A library offers more than one app uses: only the app's own components must be used.
+    if (!usedComponents.has(c.name) && c.line < LINE_BASE) warn(c.line, "UNUSED", `component \`${c.name}\` is never used (\`… as ${c.name}\`)`);
   }
 
   // Handlers.
@@ -954,6 +964,18 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       if (!app.clockMs) err(h.line, "BAD_BINDING", "`on tick` needs a `clock every …` block");
       continue;
     }
+    if (h.verb === "start") continue;
+    if (h.verb === "answer") {
+      // `on answer tickets.listTickets`: a client alias and an endpoint of its contract.
+      const [alias, ep] = h.target.split(".");
+      const client = app.clients?.find((c) => c.alias === alias);
+      if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
+      else if (!client.contract.endpoints?.some((e) => e.name === ep)) err(h.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${ep}\`${suggest(ep ?? "", client.contract.endpoints?.map((e) => e.name) ?? [])}`);
+      const key = `answer ${h.target}`;
+      if (handled.has(key)) err(h.line, "DUPLICATE", `there is already an \`on ${key}\``);
+      handled.add(key);
+      continue;
+    }
     const found = findEl(h.target);
     const want = verbKind[h.verb];
     if (!found.length) err(h.line, "UNKNOWN_NAME", `no element \`${h.target}\` on the screen${suggest(h.target, all.map((a) => a.el.name))}`);
@@ -963,6 +985,16 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     handled.add(key);
   }
   if (app.clockMs && !app.handlers.some((h) => h.verb === "tick")) warn(clockLine, "NO_HANDLER", "the app has a clock but no `on tick`");
+  // Calls: \`call tickets.createTicket …\` must name an endpoint of a client, and its answer should be handled.
+  if (app.clients?.length)
+    for (const h of app.handlers)
+      for (const st of h.steps)
+        for (const m of st.matchAll(/\bcall\s+([a-z]\w*)\.([a-z]\w*)/gi)) {
+          const client = app.clients.find((c) => c.alias === m[1]);
+          if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${m[1]}\`; declare it with \`uses <contract> as ${m[1]}\``);
+          else if (!client.contract.endpoints?.some((e) => e.name === m[2])) err(h.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${m[2]}\`${suggest(m[2], client.contract.endpoints?.map((e) => e.name) ?? [])}`);
+          else if (!handled.has(`answer ${m[1]}.${m[2]}`)) warn(h.line, "NO_HANDLER", `\`${m[1]}.${m[2]}\` is called, but its answer is ignored: add \`on answer ${m[1]}.${m[2]}\``);
+        }
   for (const { el } of all) if (el.kind === "button" && !handled.has(`click ${el.name}`)) warn(el.line, "NO_HANDLER", `button \`${el.name}\` has no \`on click ${el.name}\``);
 
   // Examples.
@@ -1072,6 +1104,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   const names = new Set<string>([
     ...state.keys(), ...derived, ...all.map((a) => a.el.name), ...records.keys(), ...choices.keys(), ...valueOwner.keys(),
     ...app.records.flatMap((r) => r.fields.map((f) => f.name)),
+    ...(app.clients ?? []).flatMap((c) => [c.alias, ...(c.contract.endpoints ?? []).map((e) => e.name)]),
   ]);
   const anchored = (s: string) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).some((w) => names.has(w));
   for (const h of app.handlers) for (const s of h.steps) if (!anchored(s) && !/nothing|initial state/i.test(s)) warn(h.line, "UNANCHORED", `"${s}" mentions no declared name`);

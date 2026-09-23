@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
+import { callDescs, elmAnswerMsgs, genElmCalls, genTsCalls, hasClients, tsAnswerMsgs } from "./calls.ts";
 
 export type Target = "elm" | "ts";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), ".."); // the Intent installation
@@ -97,7 +98,7 @@ function tsLiteral(l: Literal): string {
 
 // ---------------------------------------------------------------- Elm
 
-function elmType(t: Type): string {
+export function elmType(t: Type): string {
   switch (t.k) {
     case "Text": return "String";
     case "Int": return "Int";
@@ -108,7 +109,7 @@ function elmType(t: Type): string {
     case "Named": return t.name;
   }
 }
-const elmAtom = (t: Type) => (t.k === "List" || t.k === "Maybe" ? `(${elmType(t)})` : elmType(t));
+export const elmAtom = (t: Type) => (t.k === "List" || t.k === "Maybe" ? `(${elmType(t)})` : elmType(t));
 
 function elmRecord(name: string, fields: [string, string][]): string {
   if (!fields.length) return `type alias ${name} =\n    {}\n`;
@@ -122,7 +123,7 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-import Ui
+${hasClients(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
   for (const r of app.refined ?? []) {
@@ -155,8 +156,8 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
 
   // Events
   const evs = events(app);
-  out.push(`{-| Everything the user (or the clock) can do. -}\ntype Msg\n    = ${evs
-    .map((e) => e.tag + (e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : ""))
+  out.push(`{-| Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. -}\ntype Msg\n    = ${[...evs
+    .map((e) => e.tag + (e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app)]
     .join("\n    | ")}\n\n`);
   out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. -}\n\n`);
 
@@ -220,6 +221,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     return `        ${pat} ->\n            ${body}\n`;
   });
   out.push(`fromWire : Ui.Wire -> Maybe Msg\nfromWire w =\n    case ( w.on, w.target ) of\n${cases.join("\n")}\n        _ ->\n            Nothing\n`);
+  if (hasClients(app)) out.push(`\n\n${genElmCalls(app)}`);
   return out.join("");
 }
 
@@ -251,6 +253,116 @@ main =
         }
 `;
 }
+
+/** Apps that make calls: ports carry calls out (`request`) and answers in (`answer`); glue.js performs them with fetch. */
+function genElmMainCalls(app: App): string {
+  return `port module Main exposing (main)
+
+import App
+import Browser
+import Html
+import Json.Decode as D
+import Json.Encode as J
+import Spec
+${app.clockMs ? "import Time\n" : ""}import Ui
+
+
+port request : J.Value -> Cmd msg
+
+
+port answer : (D.Value -> msg) -> Sub msg
+
+
+type In
+    = FromUi Ui.Wire
+    | FromApi D.Value
+
+
+send : List Spec.Call -> Cmd In
+send calls =
+    Cmd.batch (List.map (\\c -> request (Spec.callToJson c)) calls)
+
+
+main : Program () App.Model In
+main =
+    Browser.element
+        { init = \\_ -> Tuple.mapSecond send App.init
+        , update =
+            \\i m ->
+                let
+                    msg =
+                        case i of
+                            FromUi w ->
+                                Spec.fromWire w
+
+                            FromApi v ->
+                                Spec.fromAnswer v
+                in
+                case msg of
+                    Just e ->
+                        Tuple.mapSecond send (App.update e m)
+
+                    Nothing ->
+                        ( m, Cmd.none )
+        , view = \\m -> Html.map FromUi (Ui.render (Spec.toNode (App.view m)))
+        , subscriptions = \\_ -> Sub.batch [ answer FromApi${app.clockMs ? `, Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", text = "", value = "" })` : ""} ]
+        }
+`;
+}
+
+/** The test worker of an app that makes calls: each observation also carries the calls made since the last one. */
+const ELM_WORKER_CALLS = `port module Worker exposing (main)
+
+import App
+import Json.Decode as D
+import Json.Encode as J
+import Spec
+import Ui
+
+
+port observe : J.Value -> Cmd msg
+
+
+port act : (D.Value -> msg) -> Sub msg
+
+
+type alias Model =
+    { app : App.Model, pending : List Spec.Call }
+
+
+main : Program () Model D.Value
+main =
+    Platform.worker
+        { init = \\_ -> ( { app = Tuple.first App.init, pending = Tuple.second App.init }, Cmd.none )
+        , update =
+            \\v m ->
+                let
+                    msg =
+                        if D.decodeValue (D.field "on" D.string) v == Ok "answer" then
+                            Result.toMaybe (D.decodeValue (D.field "answer" D.value) v) |> Maybe.andThen Spec.fromAnswer
+
+                        else
+                            case D.decodeValue Ui.wireDecoder v of
+                                Ok w ->
+                                    Spec.fromWire w
+
+                                Err _ ->
+                                    Nothing
+
+                    ( next, calls ) =
+                        case msg of
+                            Just e ->
+                                App.update e m.app
+
+                            Nothing ->
+                                ( m.app, [] )
+                in
+                ( { app = next, pending = [] }
+                , observe (J.object [ ( "screen", Ui.encode (Spec.toNode (App.view next)) ), ( "calls", J.list Spec.callToJson (m.pending ++ calls) ) ])
+                )
+        , subscriptions = \\_ -> act identity
+        }
+`;
 
 const ELM_WORKER = `port module Worker exposing (main)
 
@@ -318,6 +430,32 @@ view model =
     { ... }
 `;
 
+export const ELM_APP_SKELETON_CALLS = `module App exposing (Model, init, update, view)
+
+import Fmt
+import Spec exposing (..)
+
+
+type alias Model =
+    { ... }
+
+
+init : ( Model, List Call )
+init =
+    ( ..., [ ... ] )
+
+
+update : Msg -> Model -> ( Model, List Call )
+update msg model =
+    case msg of
+        ...
+
+
+view : Model -> Screen
+view model =
+    { ... }
+`;
+
 // ---------------------------------------------------------------- TypeScript
 
 export function tsType(t: Type): string {
@@ -359,12 +497,12 @@ export function genTsSpec(app: App): string {
   const out: string[] = [];
   out.push(`// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 import type { Node, Wire } from "./ui.ts";
-
+${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : ""}
 `);
   out.push(tsDomain(app));
   const evs = events(app);
-  out.push(`/** Everything the user (or the clock) can do. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${evs
-    .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`)
+  out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${[...evs
+    .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)]
     .join("\n  | ")};\n\n`);
   out.push(`export type Button = { enabled: boolean };\nexport type LabeledButton = { label: string; enabled: boolean };\n/** A select whose options come from the model: the option texts in order, and the selected one ("" for none). */\nexport type Pick = { options: string[]; selected: string };\n\n`);
   const aliases: string[] = [];
@@ -419,7 +557,8 @@ import type { Node, Wire } from "./ui.ts";
       e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
     return `    case ${q(`${e.on} ${e.target}`)}:\n      return ${body};\n`;
   });
-  out.push(`export function fromWire(w: Wire): Msg | null {\n  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}  return null;\n}\n`);
+  out.push(`export function fromWire(w: Wire): Msg | null {\n  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}${hasClients(app) ? `  if (w.on === "answer" && w.answer) return fromAnswer(w.answer as Answer);\n` : ""}  return null;\n}\n`);
+  if (hasClients(app)) out.push(`\n${genTsCalls(app)}`);
   return out.join("");
 }
 
@@ -437,7 +576,83 @@ export function update(msg: Msg, model: Model): Model {
 export function view(model: Model): Screen { /* … */ }
 `;
 
+export const TS_APP_SKELETON_CALLS = `import type { Call, Msg, Screen /* , … */ } from "./spec.ts";
+import * as Fmt from "./fmt.ts";
+
+export type Model = { /* … */ };
+
+export function init(): { model: Model; calls: Call[] } { /* … */ }
+
+export function update(msg: Msg, model: Model): { model: Model; calls: Call[] } {
+  switch (msg.tag) { /* … */ }
+}
+
+export function view(model: Model): Screen { /* … */ }
+`;
+
+/** Entry points of an app that makes calls: the browser performs them with fetch; tests hand them to the driver. */
+function genTsEntriesCalls(app: App): { main: string; test: string } {
+  const main = `import * as App from "./app.ts";
+import { callEndpoints, callToJson, fromWire, toNode, type Call } from "./spec.ts";
+import { mount, STYLE, type Wire } from "./ui.ts";
+import { fetchCall } from "./calls.ts";
+
+const style = document.createElement("style");
+style.textContent = STYLE;
+document.head.append(style);
+let dispatch: (w: Wire) => void = () => {};
+const perform = (calls: Call[]) => {
+  for (const c of calls) fetchCall(callEndpoints, callToJson(c)).then((a) => dispatch({ on: "answer", target: a.endpoint, answer: a }));
+};
+dispatch = mount(document.getElementById("app")!, {
+  init: () => {
+    const r = App.init();
+    perform(r.calls);
+    return r.model;
+  },
+  step: (w, m) => {
+    const e = fromWire(w);
+    if (!e) return m;
+    const r = App.update(e, m);
+    perform(r.calls);
+    return r.model;
+  },
+  render: (m) => toNode(App.view(m)),
+  clockMs: ${app.clockMs ?? 0},
+});
+`;
+  const test = `import * as App from "./app.ts";
+import { callToJson, fromWire, toNode } from "./spec.ts";
+import type { CallOut } from "./calls.ts";
+import type { Wire } from "./ui.ts";
+
+export function start() {
+  const first = App.init();
+  let m = first.model;
+  let pending: CallOut[] = first.calls.map(callToJson);
+  return {
+    observe: () => JSON.parse(JSON.stringify(toNode(App.view(m)))),
+    /** The calls made since the last time this was asked, in order. */
+    calls() {
+      const out = pending;
+      pending = [];
+      return JSON.parse(JSON.stringify(out));
+    },
+    send(w: Wire) {
+      const e = fromWire(w);
+      if (!e) return;
+      const r = App.update(e, m);
+      m = r.model;
+      pending.push(...r.calls.map(callToJson));
+    },
+  };
+}
+`;
+  return { main, test };
+}
+
 function genTsEntries(app: App): { main: string; test: string } {
+  if (hasClients(app)) return genTsEntriesCalls(app);
   const main = `import * as App from "./app.ts";
 import { fromWire, toNode } from "./spec.ts";
 import { mount, STYLE } from "./ui.ts";
@@ -483,14 +698,26 @@ export function scaffold(app: App, target: Target, dir: string): { appFile: stri
     copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
     const spec = genElmSpec(app);
     writeFileSync(join(dir, "src/Spec.elm"), spec);
-    writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
-    writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER);
-    writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
+    if (hasClients(app)) {
+      writeFileSync(join(dir, "src/Main.elm"), genElmMainCalls(app));
+      writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER_CALLS);
+      copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+      writeFileSync(join(dir, "glue.ts"), `// Performs the app's calls with fetch and sends the answers back in.\nimport { fetchCall, type CallDesc } from "./calls.ts";\n\nconst endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n(globalThis as any).intentConnect = (app: any) =>\n  app.ports.request.subscribe((c: any) => fetchCall(endpoints, c).then((a) => app.ports.answer.send(a)));\n`);
+      writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script src="glue.js"></script><script>intentConnect(Elm.Main.init({ node: document.getElementById("app") }))</script>`, true));
+    } else {
+      writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
+      writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER);
+      writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
+    }
     return { appFile: join(dir, "src/App.elm"), specSource: spec };
   } else {
     mkdirSync(dir, { recursive: true });
     copyFileSync(join(ROOT, "runtime/ts/ui.ts"), join(dir, "ui.ts"));
     copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
+    if (hasClients(app)) {
+      copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
+      copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+    }
     const spec = genTsSpec(app);
     writeFileSync(join(dir, "spec.ts"), spec);
     const { main, test } = genTsEntries(app);

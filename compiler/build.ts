@@ -12,6 +12,7 @@ import { apiTraces, callText, scaffoldApi, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
+import { callDescs, hasClients } from "./calls.ts";
 
 export interface BuildResult {
   target: Target;
@@ -30,6 +31,12 @@ export interface BuildOptions {
   styled?: boolean; // also let the LLM write the presentation (Look) with Tailwind
   probe?: boolean; // the probe compiler of a twin build: takes different readings where the spec allows
   kit?: boolean; // give the Look stage the generated design-system Kit
+  providers?: Record<string, string>; // apps that make calls: per alias, the provider build that answers them in tests
+}
+
+/** Apps that make calls: which provider build answers which alias, for the test driver. */
+export function writeProviders(app: App, dir: string, providers: Record<string, string>) {
+  writeFileSync(join(dir, "providers.json"), JSON.stringify({ endpoints: callDescs(app), providers }, null, 2));
 }
 
 export async function buildOnce(app: App, specFile: string, specText: string, target: Target, dir: string, opts: BuildOptions = {}): Promise<BuildResult> {
@@ -42,11 +49,16 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
     return res;
   }
+  if (hasClients(app) && opts.styled) {
+    res.attempts.push({ stage: "compile", detail: "styled builds of apps that make calls are not in the harness yet" });
+    return res;
+  }
   const { appFile, specSource } = api ? scaffoldApi(app, dir) : scaffold(app, target, dir);
+  if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
   if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
-  const base = buildPrompt(target, specFile, specText, specSource, !!opts.probe, api);
+  const base = buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app));
 
   let code = "";
   let problems = "";

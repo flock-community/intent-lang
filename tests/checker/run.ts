@@ -14,6 +14,15 @@ for (const f of readdirSync(dir).filter((f) => f.endsWith(".intent") && f !== "b
   for (const e of expected) if (!got.includes(e)) (failures++, console.log(`${f}: missing ${e}`));
   for (const d of parse(src).diagnostics) if (d.level === "error" && !expected.includes(`${d.line}:${d.code}`)) (failures++, console.log(`${f}: unexpected ${d.line}:${d.code} ${d.message}`));
 }
+// Specs that need the loader (imports, contracts, clients): the same \`# expect:\` comments, checked through load().
+for (const f of readdirSync(join(dir, "load")).filter((f) => f.endsWith(".intent"))) {
+  const src = readFileSync(join(dir, "load", f), "utf8");
+  const expected = src.split("\n").flatMap((l, i) => [...l.matchAll(/# expect: ([A-Z_]+)/g)].map((m) => `${i + 1}:${m[1]}`));
+  const diags = load(join(dir, "load", f), { ignoreLock: true }).diagnostics.filter((d) => d.line < 100_000);
+  const got = diags.map((d) => `${d.line}:${d.code}`);
+  for (const e of expected) if (!got.includes(e)) (failures++, console.log(`load/${f}: missing ${e}`));
+  for (const d of diags) if (d.level === "error" && !expected.includes(`${d.line}:${d.code}`)) (failures++, console.log(`load/${f}: unexpected ${d.line}:${d.code} ${d.message}`));
+}
 const apps = join(dir, "../../apps");
 for (const f of readdirSync(apps).filter((f) => f.endsWith(".intent"))) {
   const errs = load(join(apps, f)).diagnostics.filter((d) => d.level === "error");

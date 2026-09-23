@@ -4,7 +4,10 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App } from "./ast.ts";
-import { buildOnce, type BuildResult } from "./build.ts";
+import { buildOnce, writeProviders, type BuildResult } from "./build.ts";
+import { hasClients } from "./calls.ts";
+import { load } from "./load.ts";
+import { printApp } from "./print.ts";
 import { runJobsIsolated, type Action, type ExploreResult, type TraceResult } from "./exec.ts";
 import { compare, exploreJobs, makeTraces, type Divergence } from "./fuzz.ts";
 import { PROJECT_ROOT, ROOT, type Target } from "./gen.ts";
@@ -43,17 +46,54 @@ export function cacheKey(specText: string, target: Target, o: Pick<TwinOptions, 
   return sha(JSON.stringify({ specText, compiler: compilerPins(), target, styled: !!o.styled, kit: !!o.kit }));
 }
 
+const providerBuilds = new Map<string, Promise<TwinResult>>();
+
+/**
+ * Apps that make calls are tested against the real provider: build each \`tested with\` app first
+ * (twin-verified and cached like any build; once per provider spec, shared by every target).
+ */
+async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: Record<string, string> } | { problem: string; costUsd: number }> {
+  const providers: Record<string, string> = {};
+  let costUsd = 0;
+  for (const c of app.clients ?? []) {
+    if (!c.testedWith) continue;
+    const loaded = load(join(PROJECT_ROOT, c.testedWith));
+    if (!loaded.app) return { problem: `the provider ${c.testedWith} has errors`, costUsd };
+    const text = printApp(loaded.app);
+    const dir = join(PROJECT_ROOT, ".intent/providers", c.providerDigest ?? c.alias);
+    if (!providerBuilds.has(dir)) {
+      o.log(`building the provider ${c.testedWith} first`);
+      providerBuilds.set(dir, compileApp(loaded.app, c.testedWith, text, "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, log: (m) => o.log(`provider ${c.alias}: ${m}`) }));
+    }
+    const r = await providerBuilds.get(dir)!;
+    costUsd += r.cached ? 0 : r.costUsd;
+    if (!r.ok) return { problem: `the provider ${c.testedWith} did not build`, costUsd };
+    providers[c.alias] = dir;
+  }
+  return { providers };
+}
+
 export async function compileApp(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions): Promise<TwinResult> {
+  let providers: Record<string, string> | undefined;
+  if (hasClients(app)) {
+    const p = await ensureProviders(app, o);
+    if ("problem" in p) {
+      o.log(p.problem);
+      return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: p.costUsd };
+    }
+    providers = p.providers;
+  }
   const key = cacheKey(specText, target, o);
   const cached = join(CACHE, key);
   const meta = existsSync(join(cached, "intent-build.json")) ? JSON.parse(readFileSync(join(cached, "intent-build.json"), "utf8")) : undefined;
   if (meta && o.twin !== "always" && (meta.verified === "twin" || o.twin === "off")) {
     rmSync(out, { recursive: true, force: true });
     cpSync(cached, out, { recursive: true });
+    if (providers) writeProviders(app, out, providers);
     o.log(`cache hit (${meta.verified}-verified build of this exact spec and compiler)`);
     return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
   }
-  const opts = { styled: o.styled, kit: o.kit };
+  const opts = { styled: o.styled, kit: o.kit, providers };
   if (o.twin === "off") {
     const r = await buildOnce(app, specFile, specText, target, out, { ...opts, log: o.log });
     if (r.ok) store(out, cached, "single", key);

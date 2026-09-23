@@ -1,4 +1,4 @@
-# Intent — language reference (v19)
+# Intent — language reference (v20)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -464,6 +464,50 @@ Contracts cannot fail silently:
 - **Versions are computed on publish:** a removed endpoint, param or answer, or a changed type,
   makes a new major version.
 
+## 4g. Calling an API from a screen
+
+A screen that talks to a service names the service's contract and calls its endpoints. The
+answers come back as events:
+
+```
+app TicketsUi
+uses support.ticketsApi as tickets              # the contract; its types come with it
+  tested with "apps/api/tickets-api.intent"     # the provider the examples run against
+
+on start
+  - call tickets.listTickets
+
+on answer tickets.listTickets
+  - if its status is 200, set rows to its body
+
+on click add
+  - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+
+on answer tickets.createTicket
+  - if its status is 201, clear draft and problem, and call tickets.listTickets
+  - otherwise set problem to the error in its body
+```
+
+- `uses <contract> as <alias>` makes the contract's endpoints callable as `<alias>.<endpoint>`.
+  Its records and choices (and `Problem`) are available to the app.
+- `call <alias>.<endpoint> with a = …, b = …` in a handler step sends a request. An optional
+  argument that is not given is absent.
+- `on answer <alias>.<endpoint>` handles the answer. "its status" is the status; "its body" is
+  the body, typed by the contract for that status. An answer the contract does not allow (the
+  network is down, or the body has the wrong shape) is not any declared status: `otherwise`
+  covers it.
+- `on start` runs once when the app starts.
+
+**Tests run against the real provider, not mocks.** The examples of the screen run against a
+build of the app named in `tested with` (built first, and cached). A call is answered right
+after the step that made it, before the next `see`; calls made in one step are answered in the
+order they were made, and calls made by answers are answered in turn, until nothing is pending.
+Every example starts with a fresh provider, so the screen's examples read the provider's seed
+data (`see rows has 8 rows`).
+
+The checker reports a call to an endpoint the contract does not have, and warns when a call's
+answer is never handled.
+
 ## 5. Events
 
 ```
@@ -473,6 +517,8 @@ on toggle done          # checkbox (in addition to the built-in flip)
 on type draft           # field (in addition to the built-in assignment)
 on choose filter        # select (in addition to the built-in assignment)
 on tick                 # requires `clock`
+on start                # once, when the app starts
+on answer tickets.listTickets   # the answer to a call (§4g)
 ```
 
 Each indented `- sentence` is one step, applied in order. Refer to declared names exactly.
@@ -602,6 +648,12 @@ The LLM writes only the app module: `Model`, `init`, `update : Msg → Model →
 and `view : Model → Screen`, using the standard helpers (`Fmt`). A build is accepted when
 it type-checks and passes every example.
 
+An app that calls APIs (§4g) also gets a `Call` type (one variant per endpoint), an answer type
+per endpoint (one variant per declared status, plus a failure) and one `…Answered` message per
+endpoint. Its `init` and `update` return the calls to make next to the model. In the browser the
+runtime sends them with `fetch` to the page's origin, or to the `api` query parameter
+(`index.html?api=http://localhost:3000`).
+
 ## 9. Defaults when the spec is silent
 
 These are part of the language. A compiler must apply them, and a spec only needs to say
@@ -656,6 +708,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v20: screens call APIs through contracts: `uses <contract> as <alias>` (with `tested with
+  "<provider spec>"`), `call <alias>.<endpoint> with …` in handlers, `on answer <alias>.<endpoint>`
+  and `on start`. Examples run against the real provider build, settled after every step.
 
 - v19: refined types (`type Email = Text matching /…/`, `type Age = Int from 0 to 150`) with
   generated checks for every target, checked seed data and api validation; `std.text`.

@@ -1,0 +1,34 @@
+app CallsChecks
+
+uses support.ticketsApi as tickets
+  tested with "apps/api/tickets-api.intent"
+
+state
+  rows: List Ticket = []
+
+screen
+  button reload "Reload"
+  button open "Open"
+  list rows of Ticket
+    text subject
+
+on start
+  - call tickets.listTickets
+
+on click reload                        # expect: UNKNOWN_NAME
+  - call tickets.listTicket
+
+on click open                          # expect: NO_HANDLER
+  - call tickets.getTicket with id = 1
+
+on answer tickets.listTickets
+  - set rows to its body
+
+on answer tickets.deleteTicket         # expect: UNKNOWN_NAME
+  - set rows to its body
+
+on answer shop.listTickets             # expect: UNKNOWN_NAME
+  - set rows to its body
+
+example "loads"
+  see rows has 8 rows

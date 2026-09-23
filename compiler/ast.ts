@@ -69,7 +69,7 @@ export interface Element {
   note?: string;
 }
 
-export type Verb = "click" | "toggle" | "type" | "choose" | "tick";
+export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer";
 
 export interface Handler {
   verb: Verb;
@@ -161,6 +161,8 @@ export interface App {
   imports?: Import[];
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
   implements?: { name: string; line: number }; // an api app that implements a published contract
+  uses?: { contract: string; alias: string; testedWith?: string; line: number }[]; // clients of contracts
+  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string }[]; // resolved by the loader
   refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];

@@ -7,13 +7,14 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { App, Check, Example, Literal, Step, Type } from "./ast.ts";
 import { ROOT, tsDomain, tsType } from "./gen.ts";
+import { toHttp } from "../runtime/ts/calls.ts";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 const q = (s: string) => JSON.stringify(s);
 
 // ---------------------------------------------------------------- generated interface
 
-function typeDesc(app: App, t: Type): string {
+export function typeDesc(app: App, t: Type): string {
   switch (t.k) {
     case "Text": case "Int": case "Decimal": case "Bool": return `{ k: ${q(t.k)} }`;
     case "List": return `{ k: "List", of: ${typeDesc(app, t.of)} }`;
@@ -185,25 +186,6 @@ export function literalJson(l: Literal): unknown {
     case "value": return l.v;
     default: return null;
   }
-}
-
-/** Turn a call into method, path, query and body, the way a client would send it. */
-function toHttp(eps: EpDesc[], c: Call) {
-  const ep = eps.find((e) => e.name === c.endpoint)!;
-  let path = ep.path;
-  const query: Record<string, string> = {};
-  const body: Record<string, unknown> = {};
-  let hasBody = false;
-  for (const p of ep.params) {
-    if (!(p.name in c.args)) continue;
-    const v = c.args[p.name];
-    if (p.in === "path") path = path.replace(`{${p.name}}`, encodeURIComponent(String(v)));
-    else if (p.in === "query") {
-      if (v !== null) query[p.name] = String(v);
-    } else (body[p.name] = v), (hasBody = true);
-  }
-  // A path param that was not given stays literally "{id}" and does not match a number: like a client that forgot it.
-  return { method: ep.method, path, query, body: hasBody || ep.params.some((p) => p.in === "body") ? body : undefined };
 }
 
 type Responses = Map<string, { status: number; body: unknown }>;

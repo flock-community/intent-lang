@@ -331,6 +331,26 @@ hashes in `intent.lock`. `intent publish` computes the version from the bundle's
 demo's behaviour. `examples/consumer/` depends only on the published helpdesk (which pulls in
 four more bundles) and refines it, with no local `lib/`. `registry/` is a sample registry.
 
+## Phase 6: APIs, contracts, and screens that call them
+
+**The api profile** (v17) builds HTTP services from the same kind of spec: endpoints with
+steps, examples that `call` and `see` answers. The harness owns the router, input validation and
+error messages; the LLM writes only handlers. **Contracts** (v18) say what goes over the wire,
+in the spirit of Wirespec: every status an endpoint may answer, with its body type. The checker,
+the typed handlers and a run-time check on every answer in every test hold implementations to
+it. **Refined types** (v19, `type Email = Text matching /…/`) get generated checks on every target.
+
+**Screens call APIs through contracts** (v20). `uses support.ticketsApi as tickets` plus
+`tested with "apps/api/tickets-api.intent"`; handlers `call tickets.createTicket with …`, and
+`on answer tickets.createTicket` handles the typed answer. The harness generates the call and
+answer types (with JSON decoders for Elm), performs calls with `fetch` in the browser, and in
+tests answers them from the **real provider build**, not mocks. After each step the calls are
+answered until nothing is pending, so the observed screen is settled and the same in every
+build. The call log is part of the observation, so two builds that call differently count as
+different apps. First run of `apps/15-tickets-ui.intent`: the provider and the screen built on
+the first attempt in Elm and TypeScript, both twin-verified (24 sessions each), and 60 of 60
+sessions identical across the two targets (801 steps made calls).
+
 ## Layout
 
 ```
@@ -352,6 +372,10 @@ compiler/
   load.ts             imports, bundles, intent.lock, source map
   expand.ts           instantiating behaviour components (`use x = Component`)
   print.ts            canonical printer (`intent expand`): what the LLM reads
+  twin.ts             `intent build`: twin compilation, the build cache, providers first
+  api.ts              api profile harness: typed handlers, router, test client, `intent client`
+  calls.ts            screens that call APIs: Call / answer types, JSON, answer messages
+  registry.ts         `intent install` / `intent publish`
 lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets
 runtime/{elm,ts}      Ui (renderer, node model) and Fmt, identical per target
 tests/                checker regression, Fmt parity
@@ -364,8 +388,9 @@ runs/                 build outputs and reports (history.jsonl is kept)
   `grid`, `row` and `sidebar`, but sizes are still words in `look`.
 - The Kit's drawer has no backdrop and overlaps the page: consistent in every build, but a
   design flaw. Stable is not the same as good.
-- One screen per app. No navigation, persistence, HTTP or randomness yet. Each could be
-  added the same way: the harness owns the effect, and the spec names it.
+- One screen per app. No navigation, persistence or randomness yet. HTTP calls (v20) show
+  the pattern for each: the harness owns the effect, and the spec names it.
+- Styled builds of screens that make calls are not in the harness yet.
 - Behaviour sentences are natural language. Stability comes from the typed interface,
   the defaults, the examples and the invariants, not from a formal semantics. The
   pipeline measures what that buys, and so far it buys a lot.

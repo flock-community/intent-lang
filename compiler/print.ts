@@ -77,6 +77,17 @@ export function printApp(app: App): string {
   const block = (lines: string[]) => lines.length && out.push(...lines, "");
   block([`app ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
   if (app.profile && app.profile !== "ui") block([`profile ${app.profile}`]);
+  // A client: the contract's endpoints, as the app may call them (\`call <alias>.<endpoint>\`).
+  for (const c of app.clients ?? [])
+    block([
+      `uses ${c.contract.name} as ${c.alias}`,
+      ...(c.testedWith ? [`  tested with ${q(c.testedWith)}${c.providerDigest ? `  # provider ${c.providerDigest}` : ""}`] : []),
+      ...(c.contract.endpoints ?? []).flatMap((ep) => [
+        `  endpoint ${ep.name} ${ep.method} ${q(ep.path)}${ep.note ? `  # ${ep.note}` : ""}`,
+        ...ep.params.map((p) => `    ${p.in} ${p.name}: ${typeToString(p.type)}`),
+        ...(ep.answers ?? []).map((a) => `    answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`),
+      ]),
+    ]);
   if (app.design) {
     const d = app.design;
     block(["design", ...(d.look ? [`  look ${q(d.look)}`] : []), ...Object.entries(d.colors).map(([k, v]) => `  ${k}: ${v}`), ...(["font", "radius", "density"] as const).filter((k) => d[k]).map((k) => `  ${k}: ${d[k]}`)]);

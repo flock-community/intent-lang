@@ -10,6 +10,7 @@ import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, parseSyntax } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
 import { MODEL } from "./llm.ts";
+import { printApp } from "./print.ts";
 
 export const LIB = join(PROJECT_ROOT, "lib");
 export const LOCK = join(PROJECT_ROOT, "intent.lock");
@@ -156,6 +157,42 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     }
   }
 
+  // Clients: `uses <contract> as <alias>` brings the contract's types, and its endpoints as calls.
+  for (const u of app.uses ?? []) {
+    const path = bundlePath(u.contract);
+    if (!existsSync(path)) {
+      err(u.line, "UNKNOWN_NAME", `no contract \`${u.contract}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+      continue;
+    }
+    const text = readFileSync(path, "utf8");
+    const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
+    const parsed = parseSyntax(text);
+    offsetLines(parsed.app, idx * LINE_BASE);
+    diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
+    if (parsed.app.kind !== "contract") err(u.line, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is not a contract`);
+    const digest = sha(text);
+    bundles.push({ name: u.contract, file: relative(PROJECT_ROOT, path), sha: digest });
+    if (!opts.ignoreLock) {
+      const locked = lock.get(u.contract);
+      if (!locked) err(u.line, "LOCK", `the contract \`${u.contract}\` is not locked; run \`intent lock ${sources[0].file}\``);
+      else if (locked !== digest) err(u.line, "LOCK", `the contract \`${u.contract}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
+    }
+    let providerDigest: string | undefined;
+    if (u.testedWith && !existsSync(join(PROJECT_ROOT, u.testedWith))) err(u.line, "UNKNOWN_NAME", `no provider spec at ${u.testedWith}`);
+    else if (u.testedWith) {
+      // The provider the examples run against: it must implement this contract, and build.
+      const p = load(join(PROJECT_ROOT, u.testedWith), opts);
+      if (!p.app) err(u.line, "PROVIDER", `the provider ${u.testedWith} has errors; run \`intent check ${u.testedWith}\``);
+      else if (p.app.implements?.name !== u.contract) err(u.line, "PROVIDER", `${u.testedWith} does not implement \`${u.contract}\``);
+      else providerDigest = sha(printApp(p.app)).slice(0, 12);
+    }
+    app.imports = [...(parsed.app.imports ?? []), ...(app.imports ?? [])];
+    for (const r of parsed.app.refined ?? []) (app.refined ??= []).push(r);
+    app.records.push(...parsed.app.records.filter((r) => !app.records.some((x) => x.name === r.name)));
+    app.choices.push(...parsed.app.choices.filter((c) => !app.choices.some((x) => x.name === c.name)));
+    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest });
+  }
+
   // Load bundles depth-first; every bundle once.
   const loaded = new Map<string, App>();
   const loadBundle = (name: string, fromLine: number): App | undefined => {
@@ -233,7 +270,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   }
 
   // `Problem` is the body of every refusal: { "error": "…" }. Built in for services and contracts.
-  if ((app.profile === "api" || app.kind === "contract") && !app.records.some((r) => r.name === "Problem"))
+  if ((app.profile === "api" || app.kind === "contract" || app.clients?.length) && !app.records.some((r) => r.name === "Problem"))
     app.records.push({ name: "Problem", fields: [{ name: "error", type: { k: "Text" }, line: 0 }], line: 0 });
   for (const c of app.components) if (c.body) lintComponent(c, warn);
   const used = expandUses(app, err, warn);

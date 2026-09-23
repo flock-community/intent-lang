@@ -3,7 +3,8 @@
 // Used in-process via `runJobs`, and as a child process (`node exec.ts <dir> <target> <jobs.json>`)
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { toHttp, type CallDesc, type CallOut } from "../runtime/ts/calls.ts";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -67,20 +68,74 @@ function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]
 interface Session {
   observe(): Promise<Obs>;
   send(w: object): Promise<void>;
+  calls?(): Promise<CallOut[]>;
 }
 
+/**
+ * Apps that make calls (\`providers.json\` in the build): after every event, the calls it made are
+ * answered by the real provider (its test client, fresh per session), in order, until nothing is
+ * pending. The screen after a step is the settled screen. Each observation also lists the calls
+ * made since the previous one, so two builds that call differently are different apps.
+ */
 async function openSession(dir: string, target: string): Promise<Session> {
+  const raw = await openRawSession(dir, target);
+  if (!existsSync(join(dir, "providers.json"))) return raw;
+  const { endpoints, providers } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string> };
+  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown) => any }> = {};
+  for (const [alias, pdir] of Object.entries(providers)) clients[alias] = (await import(pathToFileURL(join(pdir, "test.mjs")).href + `?t=${Date.now()}`)).start();
+  const log: string[] = [];
+  const settle = async () => {
+    const queue: CallOut[] = await raw.calls!();
+    for (let n = 0; queue.length; n++) {
+      if (n >= 100) throw new Error("the calls do not settle: 100 answers in a row led to new calls");
+      const c = queue.shift()!;
+      const alias = c.endpoint.split(".")[0];
+      const client = clients[alias];
+      if (!client) throw new Error(`a call to ${c.endpoint}, but no provider for \`${alias}\` (add \`tested with "…"\` to its \`uses\`)`);
+      const h = toHttp(endpoints, c);
+      const res = client.send(h.method, h.path, h.query, h.body);
+      if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
+      log.push(`${c.endpoint} ${stable(c.args)} → ${res.status}`);
+      await raw.send({ on: "answer", target: c.endpoint, answer: { endpoint: c.endpoint, status: res.status, body: res.body } });
+      queue.push(...(await raw.calls!()));
+    }
+  };
+  await settle();
+  return {
+    observe: async () => {
+      const obs = { ...(await raw.observe()), calls: [...log] };
+      log.length = 0;
+      return obs;
+    },
+    send: async (w) => {
+      await raw.send(w);
+      await settle();
+    },
+  };
+}
+
+/** JSON with sorted keys: the same call reads the same from every build. */
+const stable = (v: unknown): string =>
+  Array.isArray(v) ? `[${v.map(stable).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v ?? null);
+
+async function openRawSession(dir: string, target: string): Promise<Session> {
   if (target === "ts") {
     const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
     const s = mod.start();
-    return { observe: async () => s.observe(), send: async (w) => s.send(w) };
+    return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []) };
   }
   const require = createRequire(import.meta.url);
   const { Elm } = require(join(dir, "worker.cjs"));
   const app = Elm.Worker.init();
   let last: Obs | undefined;
+  let made: CallOut[] = [];
   let waiting: ((v: Obs) => void) | undefined;
   app.ports.observe.subscribe((v: Obs) => {
+    // Apps that make calls observe { screen, calls }.
+    if (v && v.screen) {
+      made.push(...v.calls);
+      v = v.screen;
+    }
     last = v;
     waiting?.(v);
   });
@@ -101,7 +156,15 @@ async function openSession(dir: string, target: string): Promise<Session> {
       }
     });
   await deliver({ on: "noop" });
-  return { observe: async () => last, send: deliver };
+  return {
+    observe: async () => last,
+    send: deliver,
+    calls: async () => {
+      const out = made;
+      made = [];
+      return out;
+    },
+  };
 }
 
 // ---------------------------------------------------------------- observation helpers
@@ -178,6 +241,7 @@ export function describe(obs: Obs): string {
     }
   };
   walk(obs.c, "");
+  if (obs.calls?.length) lines.push("calls made and answered in this step:", ...obs.calls.map((c: string) => `  ${c}`));
   return lines.join("\n");
 }
 
