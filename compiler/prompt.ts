@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ELM_APP_SKELETON, ELM_APP_SKELETON_CALLS, ROOT, TS_APP_SKELETON, TS_APP_SKELETON_CALLS, type Target } from "./gen.ts";
 import { API_APP_SKELETON, API_TARGET_RULES } from "./api.ts";
+import { LAYER_RULES, LAYER_SKELETON } from "./layer.ts";
 
 export const SYSTEM = `You are the code-generation stage of the Intent compiler. You translate an Intent spec into exactly one source module.
 Behave like a compiler: literal, deterministic, no creativity, no extra features, no commentary.
@@ -164,4 +165,31 @@ ${code}\`\`\`
 ${problems}
 
 Fix these problems. Reply with the complete corrected module.`;
+}
+
+/** A layer (std.http.cors, …): one module with \`before\` and \`after\`, checked by the layer's own examples. */
+export function layerPrompt(specFile: string, specText: string, specModule: string, probe = false): string {
+  const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
+  return `# Language reference
+
+${language}
+
+# ${LAYER_RULES}
+
+\`\`\`ts
+${LAYER_SKELETON}\`\`\`
+
+In the layer's examples, the layer runs around a stub app that answers 200 with the body \`{ "reached": true, …what before passed on }\`, and the params are those under \`examples with\` (defaults otherwise). The same module then runs in real apps with their own params: never hard-code an example's values.
+
+# Generated interface (spec.ts)
+
+\`\`\`ts
+${specModule}\`\`\`
+
+# The spec (${specFile})
+
+\`\`\`intent
+${specText}\`\`\`
+
+${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write layer.ts now.`;
 }

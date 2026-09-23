@@ -331,7 +331,7 @@ hashes in `intent.lock`. `intent publish` computes the version from the bundle's
 demo's behaviour. `examples/consumer/` depends only on the published helpdesk (which pulls in
 four more bundles) and refines it, with no local `lib/`. `registry/` is a sample registry.
 
-## Phase 6: APIs, contracts, and screens that call them
+## Phase 6: APIs, contracts, layers, and screens that call them
 
 **The api profile** (v17) builds HTTP services from the same kind of spec: endpoints with
 steps, examples that `call` and `see` answers. The harness owns the router, input validation and
@@ -350,6 +350,22 @@ build. The call log is part of the observation, so two builds that call differen
 different apps. First run of `apps/15-tickets-ui.intent`: the provider and the screen built on
 the first attempt in Elm and TypeScript, both twin-verified (24 sessions each), and 60 of 60
 sessions identical across the two targets (801 steps made calls).
+
+**Layers** (v21) are the parts of an HTTP service nobody wants to think through again:
+`std.http.secure` (safe headers), `std.http.cors` (which web pages may call) and
+`std.http.apiKey` (who calls; provides `caller` to every endpoint). Each is a spec of its own
+with examples, compiled once, twin-verified and cached. An api uses one with
+`use cors = std.http.cors` and binds its params, and the verified module is copied in, not
+recompiled. `apps/api/desk-api.intent` runs behind all three, and what an agent may do depends
+on the caller. All three layers and the desk API built on the first attempt and were
+twin-verified. Random sessions reached every status the spec names (401, 403, 404, 409 and the
+successes). Eight planted bugs (any origin allowed, keys matched ignoring case or spaces, a
+forgotten public path, a missing header) were each caught by a layer's own examples. On a
+rebuild, the twin probe found a real gap in the CORS spec: does a header sent with an empty value
+count? One compiler treated `access-control-request-method: ""` as a preflight and the other did
+not. The spec now says a blank header counts as absent, with an example. The same run exposed an
+off-by-one in the ambiguity report for api and layer sessions (it stopped one request before the
+request that differed), which is fixed.
 
 ## Layout
 
@@ -375,6 +391,7 @@ compiler/
   twin.ts             `intent build`: twin compilation, the build cache, providers first
   api.ts              api profile harness: typed handlers, router, test client, `intent client`
   calls.ts            screens that call APIs: Call / answer types, JSON, answer messages
+  layer.ts            layers: generated interface, stub app, driver, random requests
   registry.ts         `intent install` / `intent publish`
 lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets
 runtime/{elm,ts}      Ui (renderer, node model) and Fmt, identical per target

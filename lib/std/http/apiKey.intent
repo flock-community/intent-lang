@@ -1,0 +1,62 @@
+layer std.http.apiKey
+  "Every request carries an API key in a header; the caller is whoever the key belongs to."
+
+record ApiKey
+  secret: Text
+  owner: Text
+
+param keys: List ApiKey                            # the keys that may call, and who each belongs to
+param keyHeader: Text = "x-api-key"                # the header that carries the key
+param public: List Text = []                       # paths anyone may call without a key, matched exactly ("/health")
+
+provides caller: Text                              # the owner of the key; "" on a public path and for OPTIONS
+
+before every request
+  - a request whose method is OPTIONS passes with caller "": browsers send preflights without keys
+  - a request whose path is in public passes with caller ""
+  - when the request has no keyHeader header, or its value is blank: answer 401 "Missing API key" with header www-authenticate = "ApiKey", and stop
+  - secrets are compared in constant time, so the time an answer takes does not reveal how much of a key was right
+  - when no key in keys has exactly that value as its secret: answer 401 "Unknown API key" with header www-authenticate = "ApiKey", and stop
+  - otherwise the request passes with caller = the owner of the key with that secret
+
+examples with
+  keys = table
+    secret         | owner
+    "k-ann-7f3a"   | "Ann"
+    "k-sam-91bc"   | "Sam"
+  public = "/health"
+
+example "a known key: the app knows who calls"
+  request GET "/tickets" with header x-api-key = "k-sam-91bc"
+  see status = 200
+  see body.reached = true
+  see body.caller = "Sam"
+
+example "no key"
+  request GET "/tickets"
+  see status = 401
+  see body.error = "Missing API key"
+  see header www-authenticate = "ApiKey"
+  see body.reached is absent
+
+example "a blank key is no key"
+  request GET "/tickets" with header x-api-key = "   "
+  see status = 401
+  see body.error = "Missing API key"
+
+example "an unknown key, or a known key with different case or spaces"
+  request POST "/tickets" with header x-api-key = "k-ann-0000"
+  see status = 401
+  see body.error = "Unknown API key"
+  request POST "/tickets" with header x-api-key = "K-ANN-7F3A"
+  see status = 401
+  request POST "/tickets" with header x-api-key = " k-ann-7f3a"
+  see status = 401
+
+example "public paths and preflights need no key"
+  request GET "/health"
+  see status = 200
+  see body.caller = ""
+  request OPTIONS "/tickets" with header origin = "https://desk.example", header access-control-request-method = "POST"
+  see body.reached = true
+  see body.caller = ""

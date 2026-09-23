@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v20** (see the changelog at the end of
+Language version this skill matches: **v21** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -189,6 +189,17 @@ signatures and every status each may answer, plus examples that work on any impl
 `implements` it and writes only steps. Consumers generate a typed client with `intent client`.
 Inside one app (between components, or a screen and its logic), there is no wire and no
 contract to write: component params and the generated interfaces are the contract.
+
+## 5g. What every API needs: use layers, don't write them
+
+Never write CORS, API-key checks or security headers as endpoint steps. Use the layers in
+`lib/std/http/` (§4h): `use secure = std.http.secure` first, then `std.http.cors` with the
+exact origins of the web pages, then `std.http.apiKey`, and use "the caller" in steps for what
+depends on who calls (only the assignee solves; a comment's author is the caller). Keys in the
+spec are test keys. Examples then send `header x-api-key = "…"`, and cover: no key, an unknown
+key, a public path, each role doing what it may and what it may not, and a preflight from the
+allowed origin. If a concern repeats across APIs and no layer covers it, write a new layer
+(with its own examples against the stub app) instead of copying steps.
 
 ## 5f. A screen that uses an API
 

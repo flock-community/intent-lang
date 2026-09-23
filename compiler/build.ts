@@ -6,13 +6,14 @@ import { runJobsIsolated, type ExampleResult, type ExploreResult } from "./exec.
 import { actionText, exploreJobs } from "./fuzz.ts";
 import { scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
-import { buildPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
-import { compile, compileApi } from "./toolchain.ts";
+import { buildPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
+import { compile, compileApi, compileLayer } from "./toolchain.ts";
 import { apiTraces, callText, scaffoldApi, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
 import { callDescs, hasClients } from "./calls.ts";
+import { readLayerConfig, scaffoldLayer } from "./layer.ts";
 
 export interface BuildResult {
   target: Target;
@@ -32,6 +33,7 @@ export interface BuildOptions {
   probe?: boolean; // the probe compiler of a twin build: takes different readings where the spec allows
   kit?: boolean; // give the Look stage the generated design-system Kit
   providers?: Record<string, string>; // apps that make calls: per alias, the provider build that answers them in tests
+  layers?: Record<string, string>; // api apps behind layers: per alias, the verified layer build to reuse
 }
 
 /** Apps that make calls: which provider build answers which alias, for the test driver. */
@@ -43,9 +45,10 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   const maxAttempts = opts.maxAttempts ?? 4;
   const log = opts.log ?? (() => {});
   const t0 = Date.now();
-  const api = app.profile === "api";
+  const layer = app.kind === "layer";
+  const api = app.profile === "api" && !layer;
   const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, compiler: compilerPins(), costUsd: 0, ms: 0 };
-  if (api && target !== "ts") {
+  if ((api || layer) && target !== "ts") {
     res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
     return res;
   }
@@ -53,12 +56,12 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: "styled builds of apps that make calls are not in the harness yet" });
     return res;
   }
-  const { appFile, specSource } = api ? scaffoldApi(app, dir) : scaffold(app, target, dir);
+  const { appFile, specSource } = layer ? scaffoldLayer(app, dir) : api ? scaffoldApi(app, dir, opts.layers) : scaffold(app, target, dir);
   if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
   if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
-  const base = buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app));
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app));
 
   let code = "";
   let problems = "";
@@ -83,7 +86,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     code = extractCode(r.text);
     writeFileSync(appFile, code);
 
-    const errors = api ? await compileApi(dir) : await compile(target, dir);
+    const errors = layer ? await compileLayer(dir) : api ? await compileApi(dir) : await compile(target, dir);
     if (errors) {
       problems = `The module does not compile:\n\n\`\`\`\n${errors}\n\`\`\``;
       res.attempts.push({ stage: "compile", detail: errors.slice(0, 1500) });
@@ -91,7 +94,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       continue;
     }
 
-    const results = await runJobsIsolated(dir, target, api ? app.examples.map((example) => ({ kind: "api-example" as const, example, always: app.always })) : app.examples.map((example) => ({ kind: "example" as const, example, always: app.always })));
+    const results = await runJobsIsolated(dir, target, layer ? app.examples.map((example) => ({ kind: "layer-example" as const, example, config: readLayerConfig(dir) })) : api ? app.examples.map((example) => ({ kind: "api-example" as const, example, always: app.always })) : app.examples.map((example) => ({ kind: "example" as const, example, always: app.always })));
     if ("error" in results) {
       problems = `Running the examples failed: ${results.error}`;
       res.attempts.push({ stage: "examples", detail: results.error });

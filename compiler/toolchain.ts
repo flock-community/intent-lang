@@ -69,3 +69,11 @@ export async function compileApi(dir: string): Promise<string> {
   }
   return "";
 }
+
+/** A layer: type-check, then bundle its test entry (the layer around a stub app). */
+export async function compileLayer(dir: string): Promise<string> {
+  const t = await run(bin("tsc"), ["-p", "."], dir);
+  if (!t.ok) return clean(t.out);
+  const b = await run(bin("esbuild"), ["test-entry.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=test.mjs", "--log-level=error"], dir);
+  return b.ok ? "" : clean(b.out);
+}

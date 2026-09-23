@@ -1,0 +1,23 @@
+app LayerChecks
+profile api
+
+use cors = std.http.cors
+  origin = "https://desk.example"          # expect: UNKNOWN_NAME
+  maxAge = 1, 2                           # expect: BAD_BINDING
+use auth = std.http.apiKey                # expect: BAD_BINDING
+use nope = std.http.nothing               # expect: UNKNOWN_NAME
+
+state
+  count: Int = 0
+
+endpoint hello GET "/hello"
+  returns Int
+  - answer 200 with count
+
+example "hello"
+  call hello with header x-api-key = "k"
+  see hello.status = 200
+  see hello.header.vary = "origin"
+  request OPTIONS "/hello" with header origin = "https://desk.example"
+  see request.status = 204
+  see request.nope = 1                    # expect: UNKNOWN_NAME

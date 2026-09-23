@@ -15,6 +15,7 @@ import { complete } from "./llm.ts";
 import { compilerPins, sha } from "./load.ts";
 import { runStyledTraces } from "./look.ts";
 import { apiTraces, callText } from "./api.ts";
+import { layerTraces, readLayerConfig, requestText } from "./layer.ts";
 
 const EXPLAIN_SYSTEM = `You help the author of an Intent spec make it unambiguous.
 Two compilers built different apps from the same spec; you explain where the spec left them room to differ, briefly and concretely, citing the spec.`;
@@ -73,7 +74,36 @@ async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: R
   return { providers };
 }
 
+const layerBuilds = new Map<string, Promise<TwinResult>>();
+
+/** An api behind layers: each layer spec is built once (twin-verified, cached) and its module reused. */
+async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<string, string> } | { problem: string; costUsd: number }> {
+  const layers: Record<string, string> = {};
+  let costUsd = 0;
+  for (const l of app.layers ?? []) {
+    const dir = join(PROJECT_ROOT, ".intent/layers", `${l.layer}-${l.digest}`);
+    if (!layerBuilds.has(dir)) {
+      o.log(`building the layer ${l.layer} first`);
+      layerBuilds.set(dir, compileApp(l.spec!, `${l.layer}.intent`, printApp(l.spec!), "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, log: (m) => o.log(`layer ${l.alias}: ${m}`) }));
+    }
+    const r = await layerBuilds.get(dir)!;
+    costUsd += r.cached ? 0 : r.costUsd;
+    if (!r.ok) return { problem: `the layer ${l.layer} did not build${r.ambiguous ? " (its spec is ambiguous)" : ""}`, costUsd };
+    layers[l.alias] = dir;
+  }
+  return { layers };
+}
+
 export async function compileApp(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions): Promise<TwinResult> {
+  let layerDirs: Record<string, string> | undefined;
+  if (app.layers?.length) {
+    const r = await ensureLayers(app, o);
+    if ("problem" in r) {
+      o.log(r.problem);
+      return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: r.costUsd };
+    }
+    layerDirs = r.layers;
+  }
   let providers: Record<string, string> | undefined;
   if (hasClients(app)) {
     const p = await ensureProviders(app, o);
@@ -93,7 +123,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     o.log(`cache hit (${meta.verified}-verified build of this exact spec and compiler)`);
     return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
   }
-  const opts = { styled: o.styled, kit: o.kit, providers };
+  const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs };
   if (o.twin === "off") {
     const r = await buildOnce(app, specFile, specText, target, out, { ...opts, log: o.log });
     if (r.ok) store(out, cached, "single", key);
@@ -120,16 +150,22 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   // Do they build the same app? Random sessions from the spec plus guided exploration.
   const n = o.sessions ?? 24;
   const length = o.length ?? 20;
-  const api = app.profile === "api";
-  let traces: Action[][] = api ? [] : makeTraces(app, Math.ceil(n / 2), length, 7);
+  const layer = app.kind === "layer";
+  const api = app.profile === "api" && !layer;
+  let traces: Action[][] = api || layer ? [] : makeTraces(app, Math.ceil(n / 2), length, 7);
   const calls = api ? apiTraces(app, n, length, 7) : [];
-  if (!api) {
+  const requests = layer ? layerTraces(app, n, length, 7) : [];
+  if (!api && !layer) {
     const ex = await runJobsIsolated(a.dir, target, exploreJobs(app, Math.floor(n / 2), length), 600_000);
     if (!("error" in ex)) traces = traces.concat((ex as ExploreResult[]).map((e) => e.actions));
   }
   const perBuild = new Map<string, (string[] | null)[]>();
   for (const [id, r] of [["A", a], ["B", b]] as const) {
-    if (api) {
+    if (layer) {
+      const config = readLayerConfig(r.dir);
+      const res = await runJobsIsolated(r.dir, target, requests.map((rs) => ({ kind: "layer-trace" as const, requests: rs, config })), 600_000);
+      perBuild.set(id, "error" in res ? requests.map(() => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
+    } else if (api) {
       const res = await runJobsIsolated(r.dir, target, calls.map((c) => ({ kind: "api-trace" as const, calls: c })), 600_000);
       perBuild.set(id, "error" in res ? calls.map(() => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
     } else if (o.styled) perBuild.set(id, (await runStyledTraces(r.dir, app, traces)).map((t) => t.steps));
@@ -138,7 +174,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
       perBuild.set(id, "error" in res ? traces.map(() => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
     }
   }
-  const cmp = api ? compare(calls, perBuild, callText) : compare(traces, perBuild);
+  const cmp = layer ? compare(requests, perBuild, requestText, false) : api ? compare(calls, perBuild, callText, false) : compare(traces, perBuild);
   if (cmp.agree === cmp.total) {
     store(out, cached, "twin", key);
     rmSync(twinDir, { recursive: true, force: true });

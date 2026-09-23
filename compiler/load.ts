@@ -157,6 +157,45 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     }
   }
 
+  // Layers: `use cors = std.http.cors` in an api app. Each layer is a checked, locked spec of its
+  // own; the app binds its params. Its build is reused by every app (keyed by its canonical text).
+  for (const l of app.layers ?? []) {
+    if (app.profile !== "api") err(l.line, "BAD_BINDING", "layers wrap an api: add `profile api`");
+    const path = bundlePath(l.layer);
+    if (!existsSync(path)) {
+      err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+      continue;
+    }
+    const loaded = load(path, opts);
+    if (!loaded.app) {
+      err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${relative(PROJECT_ROOT, path)}\``);
+      continue;
+    }
+    if (loaded.app.kind !== "layer") {
+      err(l.line, "BAD_BINDING", `${l.layer} is not a layer`);
+      continue;
+    }
+    const text = readFileSync(path, "utf8");
+    bundles.push({ name: l.layer, file: relative(PROJECT_ROOT, path), sha: sha(text) });
+    if (!opts.ignoreLock) {
+      const locked = lock.get(l.layer);
+      if (!locked) err(l.line, "LOCK", `the layer \`${l.layer}\` is not locked; run \`intent lock ${sources[0].file}\``);
+      else if (locked !== sha(text)) err(l.line, "LOCK", `the layer \`${l.layer}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
+    }
+    l.spec = loaded.app;
+    l.digest = sha(printApp(loaded.app)).slice(0, 12);
+    const params = new Map((loaded.app.params ?? []).map((p) => [p.name, p]));
+    for (const b of l.bindings) {
+      const p = params.get(b.name);
+      if (!p) err(b.line, "UNKNOWN_NAME", `layer ${l.layer} has no param \`${b.name}\` (${[...params.keys()].join(", ") || "none"})`);
+      else if (Array.isArray(b.value) && p.type.k !== "List") err(b.line, "BAD_BINDING", `\`${b.name}\` is one ${p.type.k === "Named" ? p.type.name : p.type.k}, not a list`);
+      else if (!Array.isArray(b.value) && b.value.k === "table" && p.type.k !== "List") err(b.line, "BAD_BINDING", `\`${b.name}\` is not a list; a table does not fit`);
+    }
+    for (const p of params.values()) if (p.default === undefined && !l.bindings.some((b) => b.name === p.name)) err(l.line, "BAD_BINDING", `layer ${l.layer} needs \`${p.name}\`: bind it in an indented line (\`${p.name} = …\`)`);
+    for (const pv of loaded.app.provides ?? [])
+      for (const ep of app.endpoints ?? []) if (ep.params.some((x) => x.name === pv.name)) err(ep.line, "DUPLICATE", `endpoint ${ep.name} has a param \`${pv.name}\`, which layer ${l.alias} also provides`);
+  }
+
   // Clients: `uses <contract> as <alias>` brings the contract's types, and its endpoints as calls.
   for (const u of app.uses ?? []) {
     const path = bundlePath(u.contract);

@@ -1,6 +1,6 @@
 // Canonical printer: an (expanded) app back to Intent text. The LLM always reads this form, so
 // the same spec — whatever its formatting or imports — gives the same bytes. `intent expand`.
-import type { App, Element, Literal, Step } from "./ast.ts";
+import type { App, Binding, Element, Literal, Step } from "./ast.ts";
 import { LINE_BASE } from "./ast.ts";
 import { typeToString } from "./parse.ts";
 
@@ -31,9 +31,14 @@ export function stepText(s: Step): string {
     case "choose": return `choose ${s.quoted ? q(s.value) : s.value} in ${s.target}`;
     case "tick": return `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
-    case "call": return `call ${s.endpoint}${s.args.length ? ` with ${s.args.map((a) => `${a.name} = ${lit(a.value, "")}`).join(", ")}` : ""}`;
+    case "call": {
+      const args = [...(s.headers ?? []).map((h) => `header ${h.name} = ${lit(h.value, "")}`), ...s.args.map((a) => `${a.name} = ${lit(a.value, "")}`)];
+      return `call ${s.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
+    }
+    case "request": return `request ${s.method} ${q(s.path)}${s.args.length ? ` with ${s.args.map((a) => `${a.in} ${a.name} = ${lit(a.value, "")}`).join(", ")}` : ""}`;
     case "see": {
       const c = s.check;
+      if (/(^|\.)header\./.test(s.target)) return `see ${s.target} ${c.is === "eq" ? `= ${q(c.value)}` : "is absent"}`;
       const cmp = (x: typeof c) => (x.is === "num" ? `is ${{ atLeast: "at least", atMost: "at most", above: "above", below: "below" }[x.op]} ${x.ref ?? x.value}` : "");
       if (s.every) return `see every row of ${s.every}: ${s.target} ${c.is === "num" ? cmp(c) : c.is === "eq" ? `= ${q(c.value)}` : `is ${c.is}`}`;
       if (c.is === "num") return `see ${s.target}${at} ${cmp(c)}`;
@@ -72,11 +77,25 @@ function element(app: App, el: Element, ind: string): string[] {
   return out;
 }
 
+function binding(b: Binding, ind: string): string[] {
+  if (Array.isArray(b.value)) return [`${ind}${b.name} = ${b.value.map((v) => lit(v, "")).join(", ")}`];
+  const text = lit(b.value, ind);
+  return (`${ind}${b.name} = ${text}`).split("\n");
+}
+
 export function printApp(app: App): string {
   const out: string[] = [];
   const block = (lines: string[]) => lines.length && out.push(...lines, "");
-  block([`app ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
-  if (app.profile && app.profile !== "ui") block([`profile ${app.profile}`]);
+  block([`${app.kind ?? "app"} ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
+  if (app.profile && app.profile !== "ui" && app.kind !== "layer") block([`profile ${app.profile}`]);
+  // Layers the api runs behind, in order, with their bound params.
+  for (const l of app.layers ?? [])
+    block([
+      `use ${l.alias} = ${l.layer}${l.digest ? `  # layer ${l.digest}` : ""}`,
+      ...(l.spec?.purpose ?? []).map((p) => `  # ${p}`),
+      ...(l.spec?.provides ?? []).map((p) => `  # provides ${p.name}: ${typeToString(p.type)} to every endpoint${p.note ? ` — ${p.note}` : ""}`),
+      ...l.bindings.flatMap((b) => binding(b, "  ")),
+    ]);
   // A client: the contract's endpoints, as the app may call them (\`call <alias>.<endpoint>\`).
   for (const c of app.clients ?? [])
     block([
@@ -97,6 +116,13 @@ export function printApp(app: App): string {
   block((app.refined ?? []).map((r) => `type ${r.name} = ${r.base} ${r.pattern !== undefined ? `matching /${r.pattern}/` : [r.min !== undefined ? `from ${r.min}` : "", r.max !== undefined ? `to ${r.max}` : ""].filter(Boolean).join(" ")}${origin(app, r.line)}`));
   block(app.choices.map((c) => `choice ${c.name}: ${c.values.map((v) => (c.labels[v] !== v ? `${v} ${q(c.labels[v])}` : v)).join(" | ")}${origin(app, c.line)}`));
   for (const r of app.records) block([`record ${r.name}${origin(app, r.line)}`, ...r.fields.map((f) => `  ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${lit(f.default, "  ")}` : ""}${origin(app, 0, f.note)}`)]);
+  if (app.kind === "layer") {
+    block((app.params ?? []).map((f) => `param ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${(Array.isArray(f.default) ? f.default : [f.default]).map((v) => lit(v, "")).join(", ")}` : ""}${origin(app, f.line, f.note)}`));
+    block((app.provides ?? []).map((f) => `provides ${f.name}: ${typeToString(f.type)}${origin(app, f.line, f.note)}`));
+    if (app.before) block(["before every request", ...app.before.steps.map((st) => `  - ${st}`)]);
+    if (app.after) block(["after every answer", ...app.after.steps.map((st) => `  - ${st}`)]);
+    if (app.exampleConfig?.length) block(["examples with", ...app.exampleConfig.flatMap((b) => binding(b, "  "))]);
+  }
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
   block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);

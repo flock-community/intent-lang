@@ -109,8 +109,12 @@ export interface Divergence {
   groups: { builds: string[]; screen: string }[]; // majority first
 }
 
-/** Compare the step sequences of every build on every trace. */
-export function compare<A = Action>(traces: A[][], perBuild: Map<string, (string[] | null)[]>, textOf: (a: A) => string = actionText as (a: A) => string): { agree: number; total: number; divergences: Divergence[]; matchMajority: Map<string, number> } {
+/**
+ * Compare the step sequences of every build on every trace. Screen sessions start with the
+ * initial screen (step 0 is before any action); api and layer sessions do not (step 0 is the
+ * answer to the first request): pass \`initial = false\` for those.
+ */
+export function compare<A = Action>(traces: A[][], perBuild: Map<string, (string[] | null)[]>, textOf: (a: A) => string = actionText as (a: A) => string, initial = true): { agree: number; total: number; divergences: Divergence[]; matchMajority: Map<string, number> } {
   const builds = [...perBuild.keys()];
   const divergences: Divergence[] = [];
   const matchMajority = new Map(builds.map((b) => [b, 0]));
@@ -138,8 +142,8 @@ export function compare<A = Action>(traces: A[][], perBuild: Map<string, (string
     seqs.forEach((s, i) => byScreen.set(screenAt(s), [...(byScreen.get(screenAt(s)) ?? []), builds[i]]));
     divergences.push({
       trace: ti,
-      step: step - 1,
-      actions: trace.slice(0, step).map(textOf),
+      step: initial ? step - 1 : step,
+      actions: trace.slice(0, initial ? step : step + 1).map(textOf),
       groups: [...byScreen.entries()].sort((a, b) => b[1].length - a[1].length).map(([screen, bs]) => ({ builds: bs, screen })),
     });
   });

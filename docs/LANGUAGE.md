@@ -1,4 +1,4 @@
-# Intent — language reference (v20)
+# Intent — language reference (v21)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -417,6 +417,12 @@ example "creating a ticket"
   lists. A param left out of a `call` is not sent, which tests the harness's `is required` answer.
 - A build is a Node server (`node server.mjs`, `PORT`) plus the same pure handler under test.
   Twin compilation, examples, `always` and random call sessions work as for screens.
+- Headers: `call x with header x-api-key = "…", a = 1` sends a request header;
+  `see x.header.vary = "origin"` and `see x.header.vary is absent` check an answer's header
+  (names are lower case). `see x.body.field is absent` checks that a value is not there.
+- A raw request, for what is not an endpoint (a preflight, an unknown path):
+  `request OPTIONS "/tickets" with header origin = "…", query status = Open, body text = "…"`,
+  then `see request.status`, `see request.header.<name>`, `see request.body…`.
 
 ## 4f. Contracts: what goes over the wire
 
@@ -507,6 +513,55 @@ data (`see rows has 8 rows`).
 
 The checker reports a call to an endpoint the contract does not have, and warns when a call's
 answer is never handled.
+
+## 4h. Layers: reusable parts of an HTTP service
+
+CORS, API keys and safe headers are the same for every API and easy to get subtly wrong. They
+are **layers**: specs of their own (`lib/std/http/`), compiled once, proven by their own
+examples, and reused by every api that runs behind them.
+
+```
+app DeskApi
+profile api
+
+use secure = std.http.secure          # safe headers on every answer
+use cors = std.http.cors              # which web pages may call
+  origins = "https://desk.example"
+  headers = "content-type", "x-api-key"
+use auth = std.http.apiKey            # who calls; provides `caller`
+  keys = table
+    secret       | owner
+    "k-ann-7f3a" | "Ann"
+  public = "/health"
+
+endpoint solveTicket POST "/tickets/{id}/solve"
+  path id: Int
+  - if that ticket's assignee is not the caller, answer 403 "Only the assignee can solve this ticket" and stop
+```
+
+- `use <name> = <layer>` binds the layer's params in indented lines: a literal, literals
+  separated by commas (a list), or a `table`. Params with a default may be left out.
+- Layers run in the order of the `use` lines: the first sees every request first and every
+  answer last. A layer that answers (a refused key, a preflight) stops the request: later layers
+  and the app are not reached, and the answer goes back out through the layers before it. So put
+  `secure` first (every answer gets its headers) and `cors` before `auth` (a page can read a 401).
+- A layer can **provide** values to every endpoint: `std.http.apiKey` provides `caller`, the
+  owner of the key. Endpoint steps use it by name ("the caller").
+- A layer's answers are not the app's: the contract of an endpoint (§4f) covers what the app
+  answers, not a 401 from `auth`.
+
+Available layers: `std.http.secure` (x-content-type-options, x-frame-options, referrer-policy,
+cache-control, content-security-policy), `std.http.cors` (`origins`, `headers`, `maxAge`),
+`std.http.apiKey` (`keys`, `keyHeader`, `public`; provides `caller`; secrets compared in
+constant time).
+
+**Writing a layer** (`layer std.http.cors`): `param name: Type [= default]`, `provides name:
+Type`, `before every request` (steps that may answer and stop, or pass the request on) and
+`after every answer` (steps that change the answer on its way out, usually its headers; this
+runs for every answer, including the harness's 404 and 400). Examples send raw requests and
+check the answer with `see status = 204`, `see header vary = "origin"`, `see body.error = "…"`.
+They run the layer around a stub app that answers `200 { "reached": true, … }` with what the
+layer provided (`see body.caller = "Sam"`). `examples with` binds the params the examples use.
 
 ## 5. Events
 
@@ -708,6 +763,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v21: layers (`layer`, `param`, `provides`, `before every request`, `after every answer`,
+  `examples with`) and `use <name> = <layer>` in api apps; `std.http.secure`, `std.http.cors`
+  and `std.http.apiKey`; request and answer headers in api examples (`call … with header h =
+  …`, `see x.header.h`), raw `request` steps and `is absent`.
 
 - v20: screens call APIs through contracts: `uses <contract> as <alias>` (with `tested with
   "<provider spec>"`), `call <alias>.<endpoint> with …` in handlers, `on answer <alias>.<endpoint>`

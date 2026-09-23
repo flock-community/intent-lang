@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import type { App, Check, Example, Literal, Step, Type } from "./ast.ts";
 import { ROOT, tsDomain, tsType } from "./gen.ts";
 import { toHttp } from "../runtime/ts/calls.ts";
+import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 const q = (s: string) => JSON.stringify(s);
@@ -34,6 +35,8 @@ const typeName = (e: { name: string }) => cap(e.name);
 
 export function genApiSpec(app: App): string {
   const eps = app.endpoints ?? [];
+  // What the layers hand to every endpoint (\`provides caller: Text\` in std.http.apiKey).
+  const provided = (app.layers ?? []).flatMap((l) => (l.spec?.provides ?? []).map((p) => ({ ...p, from: l.alias })));
   const respType = (e: Endpoint) =>
     e.answers?.length
       ? e.answers.map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`).join(" | ")
@@ -42,9 +45,9 @@ export function genApiSpec(app: App): string {
 import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
 
-${tsDomain(app)}/** One variant per endpoint, with its validated input (path, query and body params together). */
+${tsDomain(app)}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from layer ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
-${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
+${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
 
 ${eps
   .map(
@@ -86,12 +89,55 @@ export const handlers: Handlers<Model> = {
 };
 `;
 
-const SERVER = `import { createServer } from "node:http";
-import * as App from "./app.ts";
+/** One request through the layers (in order), the router and the handlers, and back out through the layers. */
+const PIPELINE = `import * as App from "./app.ts";
 import { route } from "./api.ts";
+import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
 import { endpoints } from "./spec.ts";
+import { layers } from "./layers.ts";
 
-let model = App.init();
+const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
+
+export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown } };
+
+export function pipeline() {
+  let model = App.init();
+  return (req: HttpRequest): Handled => {
+    const passed: typeof layers = [];
+    const provided: Record<string, unknown> = {};
+    let res: HttpResponse | undefined;
+    let endpoint: string | undefined;
+    let appAnswer: { status: number; body: unknown } | undefined;
+    for (const l of layers) {
+      passed.push(l);
+      const b = l.before(copy(req), copy(l.config));
+      if ("answer" in b) {
+        res = normalize(b.answer);
+        break;
+      }
+      Object.assign(provided, copy(b.pass));
+    }
+    if (!res) {
+      const r = route(endpoints, req.method, req.path, req.query, req.body === undefined ? undefined : copy(req.body));
+      if ("response" in r) res = { ...r.response, headers: {} };
+      else {
+        endpoint = r.request.endpoint as string;
+        const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided }, model);
+        model = out.model;
+        appAnswer = copy({ status: out.response.status, body: out.response.body });
+        res = { status: out.response.status, headers: {}, body: out.response.body };
+      }
+    }
+    for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
+    return { ...normalize(res), endpoint, appAnswer };
+  };
+}
+`;
+
+const SERVER = `import { createServer } from "node:http";
+import { pipeline } from "./pipeline.ts";
+
+const handle = pipeline();
 createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
@@ -103,42 +149,58 @@ createServer((req, res) => {
     } catch {
       body = null;
     }
-    const r = route(endpoints, req.method ?? "GET", url.pathname, Object.fromEntries(url.searchParams), body);
-    let response;
-    if ("response" in r) response = r.response;
-    else ({ model, response } = (App.handlers as any)[r.request.endpoint as string](r.request, model));
-    res.writeHead(response.status, { "content-type": "application/json" });
-    res.end(JSON.stringify(response.body));
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k.toLowerCase()] = v;
+    const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body });
+    const noBody = out.status === 204 || out.status === 304 || req.method === "HEAD";
+    res.writeHead(out.status, { ...(noBody ? {} : { "content-type": "application/json" }), ...out.headers });
+    res.end(noBody ? undefined : JSON.stringify(out.body));
   });
 }).listen(Number(process.env.PORT ?? 3000), () => console.log("listening on " + (process.env.PORT ?? 3000)));
 `;
 
-const TEST_ENTRY = `import * as App from "./app.ts";
-import { conforms, route } from "./api.ts";
-import { answers, endpoints } from "./spec.ts";
+const TEST_ENTRY = `import { conforms } from "./api.ts";
+import { answers } from "./spec.ts";
+import { pipeline } from "./pipeline.ts";
 
-/** A client for tests: the same routing and validation as the server, without the network. */
+/** A client for tests: the same layers, routing and validation as the server, without the network. */
 export function start() {
-  let model = App.init();
+  const handle = pipeline();
   return {
-    send(method: string, path: string, query: Record<string, string>, body: unknown) {
-      const r = route(endpoints, method, path, query, body === undefined ? undefined : JSON.parse(JSON.stringify(body)));
-      if ("response" in r) return r.response;
-      const name = r.request.endpoint as string;
-      const out = (App.handlers as any)[name](r.request, model);
-      model = out.model;
-      const response = JSON.parse(JSON.stringify(out.response));
-      // The contract is checked on every answer: a status it does not declare, or a body of the wrong shape.
-      const problem = conforms(answers[name], response);
-      return problem ? { ...response, contractError: \`\${name} \${problem}\` } : response;
+    send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}) {
+      const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) });
+      const response = { status: out.status, body: out.body, headers: out.headers };
+      // The contract is checked on every answer of the app: a status it does not declare, or a body of the wrong shape.
+      const problem = out.endpoint && out.appAnswer ? conforms(answers[out.endpoint], out.appAnswer) : undefined;
+      return problem ? { ...response, contractError: \`\${out.endpoint} \${problem}\` } : response;
     },
   };
 }
 `;
 
-export function scaffoldApi(app: App, dir: string): { appFile: string; specSource: string } {
+export function scaffoldApi(app: App, dir: string, layerDirs: Record<string, string> = {}): { appFile: string; specSource: string } {
   mkdirSync(dir, { recursive: true });
   copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
+  copyFileSync(join(ROOT, "runtime/ts/http.ts"), join(dir, "http.ts"));
+  // Each layer's verified module, as built once for that layer spec, and the composition with the bound config.
+  for (const l of app.layers ?? []) {
+    mkdirSync(join(dir, "layers", l.alias), { recursive: true });
+    for (const f of LAYER_FILES) copyFileSync(join(layerDirs[l.alias], f), join(dir, "layers", l.alias, f));
+  }
+  writeFileSync(
+    join(dir, "layers.ts"),
+    `// Generated — do not edit. The layers this api runs behind, in order, with their bound params.
+import type { HttpRequest, HttpResponse } from "./http.ts";
+${(app.layers ?? []).map((l) => `import * as ${l.alias} from "./layers/${l.alias}/layer.ts";`).join("\n")}
+
+export type Layer = { name: string; before: (req: HttpRequest, config: any) => { pass: Record<string, unknown> } | { answer: HttpResponse }; after: (req: HttpRequest, res: HttpResponse, config: any) => HttpResponse; config: unknown };
+
+export const layers: Layer[] = [
+${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, before: ${l.alias}.before as Layer["before"], after: ${l.alias}.after as Layer["after"], config: ${JSON.stringify(layerConfig(l.spec!, l.bindings))} },`).join("\n")}
+];
+`,
+  );
+  writeFileSync(join(dir, "pipeline.ts"), PIPELINE);
   copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
   const spec = genApiSpec(app);
   writeFileSync(join(dir, "spec.ts"), spec);
@@ -146,7 +208,7 @@ export function scaffoldApi(app: App, dir: string): { appFile: string; specSourc
   writeFileSync(join(dir, "test-entry.ts"), TEST_ENTRY);
   writeFileSync(
     join(dir, "tsconfig.json"),
-    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022"], types: ["node"], skipLibCheck: true }, include: ["*.ts"] }, null, 2),
+    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022"], types: ["node"], skipLibCheck: true }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
   );
   writeFileSync(join(dir, "README.md"), `# ${app.name}\n\nRun: \`node server.mjs\` (PORT, default 3000).\n\n${(app.endpoints ?? []).map((e) => `- ${e.method} ${e.path}`).join("\n")}\n`);
   return { appFile: join(dir, "app.ts"), specSource: spec };
@@ -165,6 +227,7 @@ export const API_TARGET_RULES = `Target: TypeScript (strict mode), a pure HTTP h
 export interface Call {
   endpoint: string;
   args: Record<string, unknown>;
+  headers?: Record<string, string>;
 }
 
 export type ApiJob = { kind: "api-example"; example: Example; always?: Step[] } | { kind: "api-trace"; calls: Call[]; always?: Step[] };
@@ -188,10 +251,16 @@ export function literalJson(l: Literal): unknown {
   }
 }
 
-type Responses = Map<string, { status: number; body: unknown }>;
+export type Responses = Map<string, { status: number; body: unknown; headers?: Record<string, string> }>;
 
 /** Follow a response path: `createTicket.body.items[2].id` (lists count from 1). */
 function atPath(responses: Responses, target: string): { found: boolean; value?: unknown } {
+  // A header: \`createTicket.header.vary\` (header names have dashes, so they are not a path).
+  const hm = target.match(/^(\w+)\.header\.([a-z0-9-]+)$/i);
+  if (hm) {
+    const v = responses.get(hm[1])?.headers?.[hm[2].toLowerCase()];
+    return v === undefined ? { found: false } : { found: true, value: v };
+  }
   const parts = target.match(/[a-z]\w*|\[\d+\]/gi) ?? [];
   const r = parts.length ? responses.get(parts[0] as string) : undefined;
   if (!r) return { found: false };
@@ -228,7 +297,7 @@ function checkValue(v: unknown, c: Check, what: string): string | undefined {
 }
 
 /** Check a `see` step against the latest responses. Always-checks skip what has not been answered yet. */
-function checkSeeApi(responses: Responses, s: Extract<Step, { do: "see" }>, invariant = false): string | undefined {
+export function checkSeeApi(responses: Responses, s: Extract<Step, { do: "see" }>, invariant = false): string | undefined {
   if (s.every) {
     const list = atPath(responses, s.every);
     if (!list.found || !Array.isArray(list.value)) return invariant ? undefined : `${s.every} is not a list`;
@@ -255,7 +324,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
     const responses: Responses = new Map();
     const call = (c: Call) => {
       const h = toHttp(eps, c);
-      const res = client.send(h.method, h.path, h.query, h.body);
+      const res = client.send(h.method, h.path, h.query, h.body, c.headers ?? {});
       responses.set(c.endpoint, res);
       return res;
     };
@@ -283,7 +352,8 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
               } else args[a.name] = literalJson(a.value);
             }
             if (failure) break;
-            const res = call({ endpoint: s.endpoint, args });
+            const headers = Object.fromEntries((s.headers ?? []).map((h) => [h.name, String(literalJson(h.value))]));
+            const res = call({ endpoint: s.endpoint, args, headers });
             if (res.contractError) {
               failure = { line: s.line, message: `the answer breaks the contract: ${res.contractError}`, screen: dump(responses) };
               break;
@@ -291,6 +361,10 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
             const v = broken(job.always);
             if (v) (failure = { line: s.line, message: `after this call, \`always\` (line ${v.line}) is broken: ${v.message}`, screen: dump(responses) }), true;
             if (failure) break;
+          } else if (s.do === "request") {
+            // A raw request, through the layers and the router: its answer is \`request.…\`.
+            const r = requestOf(s);
+            responses.set("request", client.send(r.method, r.path, r.query, r.body, r.headers));
           } else if (s.do === "see") {
             const msg = checkSeeApi(responses, s);
             if (msg) {
@@ -305,7 +379,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         let violation: { line: number; message: string; actions: Call[]; screen: string } | undefined;
         for (const [i, c] of job.calls.entries()) {
           const res = call(c);
-          steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body }));
+          steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body, headers: Object.fromEntries(Object.entries(res.headers ?? {}).sort()) }));
           const v = res.contractError ? { line: 0, message: `the answer breaks the contract: ${res.contractError}` } : broken(job.always);
           if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
         }
@@ -320,7 +394,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
 
 /** The latest responses, readable: for repair prompts and reports. */
 function dump(responses: Responses): string {
-  return [...responses].map(([ep, r]) => `${ep} → ${r.status} ${JSON.stringify(r.body)}`).join("\n");
+  return [...responses].map(([ep, r]) => `${ep} → ${r.status} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
 }
 
 // ---------------------------------------------------------------- random sessions
@@ -342,7 +416,13 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
   const rnd = mulberry32(seed);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const exampleValues = new Map<string, unknown[]>();
-  for (const ex of app.examples) for (const s of ex.steps) if (s.do === "call") for (const a of s.args) exampleValues.set(a.name, [...(exampleValues.get(a.name) ?? []), literalJson(a.value)]);
+  const headerValues = new Map<string, string[]>();
+  for (const ex of app.examples)
+    for (const s of ex.steps)
+      if (s.do === "call") {
+        for (const a of s.args) exampleValues.set(a.name, [...(exampleValues.get(a.name) ?? []), literalJson(a.value)]);
+        for (const h of s.headers ?? []) headerValues.set(h.name, [...(headerValues.get(h.name) ?? []), String(literalJson(h.value))]);
+      }
   const valueFor = (name: string, t: Type): unknown => {
     const own = exampleValues.get(name) ?? [];
     if (own.length && rnd() < 0.5) return pick(own);
@@ -365,14 +445,20 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
       const ep = pick(eps);
       const args: Record<string, unknown> = {};
       for (const p of ep.params) if (rnd() > 0.05) args[p.name] = valueFor(p.name, p.type);
-      calls.push({ endpoint: ep.name, args });
+      // Headers the examples send (an API key, an origin): mostly one of theirs, sometimes none or another.
+      const headers: Record<string, string> = {};
+      for (const [h, vs] of headerValues) if (rnd() < 0.85) headers[h] = rnd() < 0.9 ? pick(vs) : pick(TEXTS);
+      calls.push({ endpoint: ep.name, args, ...(headerValues.size ? { headers } : {}) });
     }
     traces.push(calls);
   }
   return traces;
 }
 
-export const callText = (c: Call) => `call ${c.endpoint}${Object.keys(c.args).length ? ` with ${Object.entries(c.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}`;
+export const callText = (c: Call) => {
+  const args = [...Object.entries(c.headers ?? {}).map(([k, v]) => `header ${k} = ${JSON.stringify(v)}`), ...Object.entries(c.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`)];
+  return `call ${c.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
+};
 
 /**
  * A typed client for a contract: one function per endpoint, answering the contract's response

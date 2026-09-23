@@ -1,0 +1,20 @@
+layer std.http.secure
+  "Safe headers for a JSON API: answers are not sniffed, framed, cached, or leak where a request came from."
+
+after every answer
+  - set header x-content-type-options to "nosniff"
+  - set header x-frame-options to "DENY"
+  - set header referrer-policy to "no-referrer"
+  - set header cache-control to "no-store"
+  - set header content-security-policy to "default-src 'none'; frame-ancestors 'none'"
+  - every other header, the status and the body stay as they are
+
+example "every answer gets the headers"
+  request GET "/tickets"
+  see status = 200
+  see body.reached = true
+  see header x-content-type-options = "nosniff"
+  see header x-frame-options = "DENY"
+  see header referrer-policy = "no-referrer"
+  see header cache-control = "no-store"
+  see header content-security-policy = "default-src 'none'; frame-ancestors 'none'"

@@ -92,7 +92,9 @@ export type Step =
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
   | { do: "tick"; times: number; line: number }
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
-  | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; line: number } // api profile
+  | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
+  // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.
+  | { do: "request"; method: string; path: string; args: { in: "header" | "query" | "body"; name: string; value: Literal }[]; line: number }
   | { do: "see"; target: string; at?: RowRef; every?: string; check: Check; line: number }; // every: check each row of that list
 
 export type Check =
@@ -154,7 +156,15 @@ export interface Endpoint {
 }
 
 export interface App {
-  kind?: "app" | "bundle" | "contract";
+  kind?: "app" | "bundle" | "contract" | "layer";
+  // A layer (kind "layer"): what an app configures, what it hands to endpoints, and its two steps lists.
+  params?: LayerParam[];
+  provides?: Field[];
+  before?: { steps: string[]; line: number };
+  after?: { steps: string[]; line: number };
+  exampleConfig?: Binding[]; // `examples with`: the params the layer's own examples run with
+  // An api app: the layers it runs behind, in order (`use cors = std.http.cors`).
+  layers?: LayerUse[];
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
   endpoints?: Endpoint[];
   name: string;
@@ -180,6 +190,29 @@ export interface App {
   rules: string[];
   examples: Example[];
   always: Step[]; // invariants: `see` steps that must hold after every action
+}
+
+export interface LayerParam {
+  name: string;
+  type: Type;
+  default?: Literal | Literal[];
+  line: number;
+  note?: string;
+}
+
+export interface Binding {
+  name: string;
+  value: Literal | Literal[]; // a list param: comma-separated literals, or a table
+  line: number;
+}
+
+export interface LayerUse {
+  alias: string;
+  layer: string; // the layer's bundle name, e.g. std.http.cors
+  bindings: Binding[];
+  line: number;
+  spec?: App; // resolved by the loader
+  digest?: string; // the layer spec's canonical hash: its build is reused by every app
 }
 
 /** Lines from imported files are offset by their file index × LINE_BASE (see App.sources). */

@@ -78,8 +78,10 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
 6. ~~An API profile~~ done (v17, profile as a spec), and **contracts** (v18: our own, in the
    spirit of Wirespec; see `docs/reviews/wirespec.md` for what was learned from it), refined
    types (v19) and screens that call APIs through contracts, tested against the real provider
-   (v20). Next: unions of records, headers, transport-free `rpc` and `channel`, styled builds
-   of screens that make calls, and Kotlin as a second API target.
+   (v20), and **layers** (v21: CORS, API keys and safe headers as reusable, separately verified
+   specs in `lib/std/http/`). Next: unions of records, headers in contracts, screens that call
+   an API behind a key, transport-free `rpc` and `channel`, styled builds of screens that make
+   calls, and Kotlin as a second API target.
 
 ## Lessons from the experiments (keep applying them)
 

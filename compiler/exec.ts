@@ -465,7 +465,7 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
 }
 
 /** Run jobs in a child process with a timeout, so an infinite loop in generated code cannot hang the harness. */
-export async function runJobsIsolated(dir: string, target: string, jobs: Job[] | import("./api.ts").ApiJob[], timeoutMs = 120_000): Promise<(ExampleResult | TraceResult | ExploreResult)[] | { error: string }> {
+export async function runJobsIsolated(dir: string, target: string, jobs: Job[] | import("./api.ts").ApiJob[] | import("./layer.ts").LayerJob[], timeoutMs = 120_000): Promise<(ExampleResult | TraceResult | ExploreResult)[] | { error: string }> {
   const jobFile = join(dir, `jobs-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
   writeFileSync(jobFile, JSON.stringify(jobs));
   const r = await run(process.execPath, [new URL(import.meta.url).pathname, dir, target, jobFile], { timeoutMs });
@@ -480,6 +480,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const [dir, target, jobFile] = process.argv.slice(2);
   const jobs: Job[] = JSON.parse(readFileSync(jobFile, "utf8"));
   // api-profile jobs go to the api driver.
-  const res = (jobs[0] as { kind: string } | undefined)?.kind?.startsWith("api-") ? await (await import("./api.ts")).runApiJobs(dir, jobs as never) : await runJobs(dir, target, jobs);
+  const kind = (jobs[0] as { kind: string } | undefined)?.kind ?? "";
+  const res = kind.startsWith("api-") ? await (await import("./api.ts")).runApiJobs(dir, jobs as never) : kind.startsWith("layer-") ? await (await import("./layer.ts")).runLayerJobs(dir, jobs as never) : await runJobs(dir, target, jobs);
   writeFileSync(jobFile + ".out", JSON.stringify(res));
 }

@@ -1,0 +1,72 @@
+layer std.http.cors
+  "Lets web pages on other origins call the API: only the origins you allow, with the methods and headers you allow."
+  "Pages served from the API's own origin need none of this."
+
+param origins: List Text = []                      # origins that may call, exactly as browsers send them ("https://desk.example"); empty: any origin
+param headers: List Text = "content-type"          # request headers a page may send
+param maxAge: Int = 600                            # seconds a browser may remember a preflight's answer
+
+before every request
+  - a header whose value is blank counts as absent, here and in after every answer
+  - each request is judged by its own method and headers only
+  - an origin is allowed when origins is empty, or when origins contains it exactly
+  - a request is a preflight when its method is OPTIONS and it has both an origin header and an access-control-request-method header
+  - a preflight from an origin that is not allowed: answer 403 "Origin not allowed" and stop
+  - a preflight from an allowed origin: answer 204 without a body, with header access-control-allow-methods = "GET, POST, PUT, PATCH, DELETE", header access-control-allow-headers = the headers joined by ", ", and header access-control-max-age = maxAge; stop
+  - every other request passes on
+
+after every answer
+  - when the request has an origin header and that origin is allowed: set header access-control-allow-origin to that origin, and header vary to "origin"
+  - otherwise the answer is unchanged: without these headers, the browser does not hand the answer to the page
+
+examples with
+  origins = "https://desk.example", "https://admin.desk.example"
+  headers = "content-type", "x-api-key"
+
+example "a preflight from an allowed origin"
+  request OPTIONS "/tickets" with header origin = "https://desk.example", header access-control-request-method = "POST"
+  see status = 204
+  see header access-control-allow-origin = "https://desk.example"
+  see header access-control-allow-methods = "GET, POST, PUT, PATCH, DELETE"
+  see header access-control-allow-headers = "content-type, x-api-key"
+  see header access-control-max-age = "600"
+  see header vary = "origin"
+  see body.reached is absent
+
+example "a preflight from another origin"
+  request OPTIONS "/tickets" with header origin = "https://evil.example", header access-control-request-method = "DELETE"
+  see status = 403
+  see body.error = "Origin not allowed"
+  see header access-control-allow-origin is absent
+
+example "a request from an allowed origin reaches the app, and the page may read the answer"
+  request GET "/tickets" with header origin = "https://admin.desk.example"
+  see status = 200
+  see body.reached = true
+  see header access-control-allow-origin = "https://admin.desk.example"
+  see header vary = "origin"
+
+example "a request from another origin reaches the app, but the page may not read the answer"
+  request POST "/tickets" with header origin = "https://evil.example"
+  see status = 200
+  see header access-control-allow-origin is absent
+
+example "a request without an origin (not from a browser page) is left alone"
+  request GET "/tickets"
+  see status = 200
+  see body.reached = true
+  see header access-control-allow-origin is absent
+  see header vary is absent
+
+example "OPTIONS without a requested method is not a preflight"
+  request OPTIONS "/tickets" with header origin = "https://desk.example"
+  see body.reached = true
+  request OPTIONS "/tickets" with header origin = "https://evil.example", header access-control-request-method = "  "
+  see status = 200
+  see body.reached = true
+
+example "a blank origin is no origin"
+  request GET "/tickets" with header origin = ""
+  see status = 200
+  see header access-control-allow-origin is absent
+  see header vary is absent

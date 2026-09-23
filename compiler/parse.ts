@@ -3,7 +3,7 @@ import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
-import type { App, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import type { App, Binding, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
@@ -59,6 +59,7 @@ interface Ctx {
 
 const QN = `${LOWER}(?:\\.${LOWER}|\\[\\d+\\])*`; // a (possibly qualified) name: pager.next; in api examples a response path: createTicket.body.items[1].id
 const BUNDLE_NAME = `${LOWER}(?:\\.${LOWER})*`;
+const HEADER = "[a-z0-9][a-z0-9-]*"; // a header name, lower case: access-control-allow-origin
 
 export const emptyApp = (): App => ({ name: "", components: [], purpose: [], records: [], choices: [], state: [], derive: [], screen: [], handlers: [], rules: [], examples: [], always: [] });
 
@@ -80,12 +81,13 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   roots.forEach((node, i) => {
     const t = node.text;
     let m: RegExpMatchArray | null;
-    if ((m = t.match(new RegExp(`^(app|bundle|contract)\\s+(\\S+)$`)))) {
+    if ((m = t.match(new RegExp(`^(app|bundle|contract|layer)\\s+(\\S+)$`)))) {
       if (i !== 0) err(node.line, "SYNTAX", `\`${m[1]}\` must be the first block`);
       if (app.name) err(node.line, "DUPLICATE", "only one `app` or `bundle` per file");
       const ok = m[1] === "app" ? new RegExp(`^${UPPER}$`).test(m[2]) : new RegExp(`^${BUNDLE_NAME}$`).test(m[2]);
       if (!ok) err(node.line, "SYNTAX", m[1] === "app" ? "an app name is UpperCamel: `app Helpdesk`" : `a ${m[1]} name is lower case with dots: \`${m[1]} std.list\``);
-      app.kind = m[1] as "app" | "bundle" | "contract";
+      app.kind = m[1] as "app" | "bundle" | "contract" | "layer";
+      if (app.kind === "layer") app.profile = "api";
       app.name = m[2];
       for (const c of node.children) {
         const str = parseString(c.text);
@@ -104,6 +106,26 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
         else err(c.line, "SYNTAX", 'under `uses`: `tested with "path/to/provider.intent"`', c.indent + 1);
       }
       (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, line: node.line });
+    } else if ((m = t.match(new RegExp(`^use\\s+(${LOWER})\\s*=\\s*(${LOWER}(?:\\.${LOWER})+)$`)))) {
+      // An api app runs behind a layer: \`use cors = std.http.cors\`, params bound in indented lines.
+      (app.layers ??= []).push({ alias: m[1], layer: m[2], bindings: node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b), line: node.line });
+    } else if (app.kind === "layer" && (m = t.match(new RegExp(`^param\\s+(${LOWER})\\s*:\\s*([^=]+?)\\s*(?:=\\s*(.+))?$`)))) {
+      const f = parseField({ ...node, text: `${m[1]}: ${m[2]}` }, err, false);
+      const def = m[3] !== undefined ? parseBinding({ ...node, text: `${m[1]} = ${m[3]}` }, err) : undefined;
+      if (f) (app.params ??= []).push({ name: f.name, type: f.type, default: def?.value, line: node.line, note: node.note });
+    } else if (app.kind === "layer" && t.startsWith("param")) {
+      err(node.line, "SYNTAX", 'expected `param name: Type` or `param name: Type = default` (a list: `= "a", "b"`)');
+    } else if (app.kind === "layer" && (m = t.match(/^provides\s+(.+)$/))) {
+      const f = parseField({ ...node, text: m[1] }, err, false);
+      if (f) (app.provides ??= []).push(f);
+    } else if (app.kind === "layer" && /^before\s+every\s+request$/.test(t)) {
+      if (app.before) err(node.line, "DUPLICATE", "one `before every request` per layer");
+      app.before = { steps: parseBullets(node, err), line: node.line };
+    } else if (app.kind === "layer" && /^after\s+every\s+answer$/.test(t)) {
+      if (app.after) err(node.line, "DUPLICATE", "one `after every answer` per layer");
+      app.after = { steps: parseBullets(node, err), line: node.line };
+    } else if (app.kind === "layer" && /^examples\s+with$/.test(t)) {
+      app.exampleConfig = node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b);
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
       if (app.implements) err(node.line, "DUPLICATE", "an app implements one contract");
       app.implements = { name: m[1], line: node.line };
@@ -146,6 +168,12 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   if (app.kind === "bundle") {
     const behaviour = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.always.length || app.examples.length || app.rules.length;
     if (behaviour) err(1, "SYNTAX", "a bundle holds records, choices, components and a design; state, screens and behaviour go inside a component, examples in the bundle's demo app");
+  }
+  if (app.kind === "layer") {
+    // A layer wraps every request of an api: no state, no endpoints, no screen.
+    const other = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.components.length || app.endpoints?.length || app.layers?.length;
+    if (other) err(1, "SYNTAX", "a layer holds records, choices, `param`, `provides`, `before every request`, `after every answer`, `examples with` and examples");
+    if (!app.before && !app.after) err(1, "SYNTAX", "a layer needs `before every request` or `after every answer` (or both)");
   }
   if (app.kind === "contract") {
     // A contract says what goes over the wire, never how: types, endpoint signatures, answers, examples.
@@ -543,6 +571,26 @@ function parseTable(c: Line, err: (l: number, c: string, m: string, col?: number
   return { k: "table", columns, rows };
 }
 
+/** A param binding: \`origins = "https://a.example", "https://b.example"\`, \`size = 5\`, or \`keys = table\` with rows. */
+function parseBinding(c: Line, err: (l: number, c: string, m: string, col?: number) => void): Binding | undefined {
+  const m = c.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+  if (!m) {
+    err(c.line, "SYNTAX", "a binding looks like `name = value` (a literal, literals separated by commas, or `table`)", c.indent + 1);
+    return;
+  }
+  if (m[2].trim() === "table") {
+    const t = parseTable(c, err);
+    return t && { name: m[1], value: t, line: c.line };
+  }
+  if (c.children.length) err(c.children[0].line, "INDENT", "a binding has no indented lines (except a `table`)");
+  const parts = splitArgs(m[2]).map((p) => parseLiteral(p));
+  if (parts.some((p) => !p) || !parts.length) {
+    err(c.line, "SYNTAX", `\`${m[2]}\` is not a literal or a list of literals`, c.indent + 1);
+    return;
+  }
+  return { name: m[1], value: parts.length === 1 ? parts[0]! : (parts as Literal[]), line: c.line };
+}
+
 /** Split `a = 1, b = "x, y"` at commas outside strings. */
 function splitArgs(s: string): string[] {
   return splitCells(s.replace(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/g, "|")).filter(Boolean);
@@ -712,14 +760,44 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   // api profile: `call createTicket with subject = "Printer", priority = Urgent`
   if ((m = t.match(new RegExp(`^call\\s+(${LOWER})(?:\\s+with\\s+(.+))?$`)))) {
     const args: { name: string; value: Literal }[] = [];
+    const headers: { name: string; value: Literal }[] = [];
     for (const part of m[2] ? splitArgs(m[2]) : []) {
+      const hm = part.match(new RegExp(`^header\\s+(${HEADER})\\s*=\\s*(.+)$`));
+      if (hm) {
+        const v = parseLiteral(hm[2]);
+        if (!v) err(line, "SYNTAX", `\`${hm[2]}\` is not a literal`, col);
+        else headers.push({ name: hm[1], value: v });
+        continue;
+      }
       const am = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
       // `{createTicket.body.id}`: a value from an earlier answer (kept as a text literal holding the reference).
       const lit = am && (/^\{[a-z][\w.[\]]*\}$/i.test(am[2].trim()) ? ({ k: "text", v: am[2].trim() } as Literal) : parseLiteral(am[2]));
       if (!am || !lit) err(line, "SYNTAX", `\`${part}\` is not \`name = value\``, col);
       else args.push({ name: am[1], value: lit });
     }
-    return { step: { do: "call", endpoint: m[1], args, line } };
+    return { step: { do: "call", endpoint: m[1], args, ...(headers.length ? { headers } : {}), line } };
+  }
+  // A raw request: \`request OPTIONS "/tickets" with header origin = "https://a.example", query status = Open\`.
+  if ((m = t.match(new RegExp(`^request\\s+(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\\s+(${STR})(?:\\s+with\\s+(.+))?$`)))) {
+    const args: { in: "header" | "query" | "body"; name: string; value: Literal }[] = [];
+    for (const part of m[3] ? splitArgs(m[3]) : []) {
+      const am = part.match(new RegExp(`^(header|query|body)\\s+(${HEADER})\\s*=\\s*(.+)$`));
+      const v = am && parseLiteral(am[3]);
+      if (!am || !v) err(line, "SYNTAX", `\`${part}\` is not \`header|query|body name = value\``, col);
+      else args.push({ in: am[1] as "header", name: am[2], value: v });
+    }
+    return { step: { do: "request", method: m[1], path: parseString(m[2])!, args, line } };
+  }
+  if (t.startsWith("request")) {
+    err(line, "SYNTAX", 'expected `request GET|POST|…|OPTIONS "/path" [with header name = "value", query name = …, body name = …]`', col);
+    return;
+  }
+  // An answer without that value: \`see body.reached is absent\` (api and layers).
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})\\s+is\\s+absent$`)))) return { step: { do: "see", target: m[1], check: { is: "hidden" }, line } };
+  // Headers of an answer: \`see header vary = "origin"\`, \`see listTickets.header.x-api-key is absent\`.
+  if ((m = t.match(new RegExp(`^see\\s+((?:${LOWER}\\.)?header[.\\s](${HEADER}))\\s*(?:=\\s*(${STR})|is\\s+absent)$`)))) {
+    const target = m[1].replace(/header\s+/, "header.");
+    return { step: { do: "see", target, check: m[3] !== undefined ? { is: "eq", value: parseString(m[3])! } : { is: "hidden" }, line } };
   }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
   if ((m = t.match(/^wait\s+(\S+)$/))) {
@@ -863,6 +941,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   }
 
   // The api profile has endpoints instead of a screen.
+  if (app.kind === "layer") return checkLayer(app, err, warn, checkType);
   if (app.profile === "api") return checkApi(app, err, warn, { records, choices, state, derived, checkType, checkReserved });
   if (app.endpoints?.length) err(app.endpoints[0].line, "SYNTAX", "endpoints belong to the api profile: add `profile api`");
 
@@ -1011,8 +1090,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (!app.clockMs) err(s.line, "STEP", "`tick`/`wait` needs a `clock every …` block");
         continue;
       }
-      if (s.do === "call") {
-        err(s.line, "STEP", "`call` belongs to the api profile (add `profile api`); a screen is driven with click, type, toggle and choose");
+      if (s.do === "call" || s.do === "request") {
+        err(s.line, "STEP", `\`${s.do}\` belongs to the api profile (add \`profile api\`); a screen is driven with click, type, toggle and choose`);
         continue;
       }
       if (s.do === "snapshot") {
@@ -1111,6 +1190,26 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   for (const r of app.rules) if (!anchored(r)) warn(1, "UNANCHORED", `rule "${r}" mentions no declared name`);
 }
 
+/** A see-target on a raw answer: \`status\`, \`header.x\`, \`body…\` (layers), or the same after \`request.\` (apps). */
+const RAW_TARGET = /^(?:request\.)?(status|header\.[a-z0-9-]+|body(?:[.[].*)?)$/;
+
+function checkLayer(app: App, err: Err, warn: Err, checkType: (t: Type, line: number) => boolean) {
+  const params = new Map((app.params ?? []).map((p) => [p.name, p]));
+  for (const p of app.params ?? []) checkType(p.type, p.line);
+  for (const p of app.provides ?? []) checkType(p.type, p.line);
+  for (const b of app.exampleConfig ?? []) if (!params.has(b.name)) err(b.line, "UNKNOWN_NAME", `the layer has no param \`${b.name}\`${suggest(b.name, [...params.keys()])}`);
+  const bound = new Set((app.exampleConfig ?? []).map((b) => b.name));
+  for (const p of app.params ?? []) if (!p.default && !bound.has(p.name)) err(p.line, "BAD_BINDING", `param \`${p.name}\` has no default: give its value for the examples under \`examples with\``);
+  for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }])
+    for (const s of ex.steps) {
+      if (s.do === "request") continue;
+      if (s.do === "see" && RAW_TARGET.test(s.target)) continue;
+      if (s.do === "see") err(s.line, "UNKNOWN_NAME", `a layer's example sees the answer: \`see status = 200\`, \`see header vary = "origin"\`, \`see body.reached = true\``);
+      else err(s.line, "STEP", `a layer's example sends \`request METHOD "/path" with header name = "…"\` and checks with \`see\`, not \`${s.do}\``);
+    }
+  if (!app.examples.length) warn(1, "NO_EXAMPLES", "the layer has no examples; nothing proves its behaviour");
+}
+
 function checkApi(
   app: App,
   err: (l: number, c: string, m: string, col?: number) => void,
@@ -1157,6 +1256,12 @@ function checkApi(
           continue;
         }
         for (const a of s.args) if (!ep.params.some((p) => p.name === a.name)) err(s.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${a.name}\` (${ep.params.map((p) => p.name).join(", ") || "none"})`);
+      } else if (s.do === "request") {
+        continue;
+      } else if (s.do === "see" && s.target.startsWith("request.")) {
+        if (!RAW_TARGET.test(s.target)) err(s.line, "UNKNOWN_NAME", "a raw answer has `request.status`, `request.header.<name>` and `request.body…`");
+      } else if (s.do === "see" && /^[a-z]\w*\.header\./i.test(s.target)) {
+        if (!eps.has(s.target.split(".")[0])) err(s.line, "UNKNOWN_NAME", `\`${s.target.split(".")[0]}\` is not an endpoint`);
       } else if (s.do === "see") {
         const [head, part] = s.target.split(/[.[]/);
         const target = s.every ?? s.target;
