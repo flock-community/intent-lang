@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v17** (see the changelog at the end of
+Language version this skill matches: **v18** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -176,6 +176,15 @@ Write `profile api` and `endpoint` blocks (§4e of the reference). Reuse the sam
 as the screen. Every endpoint needs examples: the happy path, each refusal ("answer 404 … and
 stop"), and a missing or invalid input (the harness answers those itself). Check list order
 explicitly (`see listTickets.body[1].id = 9`).
+
+## 5e. Contracts between services
+
+When a service is used by anyone else, write its **contract** first (§4f): records, endpoint
+signatures and every status each may answer, plus examples that work on any implementation
+(use `{createTicket.body.id}` instead of ids from seed data). Publish it. The service
+`implements` it and writes only steps. Consumers generate a typed client with `intent client`.
+Inside one app (between components, or a screen and its logic), there is no wire and no
+contract to write: component params and the generated interfaces are the contract.
 
 ## 6. Write a bundle
 

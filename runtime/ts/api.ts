@@ -1,5 +1,5 @@
 // The API runtime: routing, input validation and response helpers. Shared by every API build;
-// the LLM writes only `handle`. Messages are fixed, so every build answers bad input the same way.
+// the LLM writes only the handlers. Messages are fixed, so every build answers bad input the same way.
 
 export type TypeDesc =
   | { k: "Text" }
@@ -21,13 +21,23 @@ export interface EndpointDesc {
 export type Response = { status: number; body: unknown };
 
 /** A successful answer: the status and the body (records, lists, texts, numbers). */
-export function answer(status: number, body?: unknown): Response {
-  return { status, body: body === undefined ? null : JSON.parse(JSON.stringify(body)) };
+export function answer<S extends number, B = null>(status: S, body?: B): { status: S; body: B } {
+  return { status, body: (body === undefined ? null : JSON.parse(JSON.stringify(body))) as B };
 }
 
-/** A refusal: the status and one message, always as `{ "error": message }`. */
-export function fail(status: number, error: string): Response {
+/** A refusal: the status and one message, always as `{ "error": message }` (a Problem). */
+export function fail<S extends number>(status: S, error: string): { status: S; body: { error: string } } {
   return { status, body: { error } };
+}
+
+/** Does an answer match the contract? Returns what is wrong, or undefined. */
+export function conforms(answers: Record<number, TypeDesc | null> | undefined, r: Response): string | undefined {
+  if (!answers) return;
+  if (!(r.status in answers)) return `answered ${r.status}, which the contract does not declare (${Object.keys(answers).join(", ")})`;
+  const t = answers[r.status];
+  if (t === null) return r.body === null ? undefined : `answered ${r.status} with a body, but the contract declares none`;
+  const c = check(r.body, t, "the body");
+  return "error" in c ? `answered ${r.status}, but ${c.error}` : undefined;
 }
 
 const describe = (t: TypeDesc): string =>

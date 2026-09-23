@@ -159,6 +159,16 @@ export function apiOf(b: App): string[] {
     for (const d of c.body?.derive ?? []) out.push(`derive ${c.name}.${d.name}`);
   }
   if (b.design) out.push("design");
+  // A contract's surface is the wire: endpoint signatures, param and answer types, and field types.
+  if (b.kind === "contract") {
+    const ty = (t: import("./ast.ts").Type): string => (t.k === "List" || t.k === "Maybe" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k);
+    for (const r of b.records) for (const f of r.fields) out.push(`field ${r.name}.${f.name}: ${ty(f.type)}`);
+    for (const e of b.endpoints ?? []) {
+      out.push(`endpoint ${e.name} ${e.method} ${e.path}`);
+      for (const p of e.params) out.push(`param ${e.name}.${p.in}.${p.name}: ${ty(p.type)}${p.type.k === "Maybe" ? "?" : ""}`);
+      for (const a of e.answers ?? []) out.push(`answers ${e.name} ${a.status}${a.type ? `: ${ty(a.type)}` : ""}`);
+    }
+  }
   return out.sort();
 }
 

@@ -2,6 +2,7 @@
 // router with validation, a server, and a test driver. The LLM writes only `init` and `handle`.
 // Observations are responses: { endpoint, status, body } after every call.
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { Endpoint } from "./ast.ts";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { App, Check, Example, Literal, Step, Type } from "./ast.ts";
@@ -26,28 +27,49 @@ function typeDesc(app: App, t: Type): string {
   }
 }
 
+const typeName = (e: { name: string }) => cap(e.name);
+
 export function genApiSpec(app: App): string {
   const eps = app.endpoints ?? [];
+  const respType = (e: Endpoint) =>
+    e.answers?.length
+      ? e.answers.map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`).join(" | ")
+      : "Response";
   return `// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
-import type { EndpointDesc, Response } from "./api.ts";
+import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
 
 ${tsDomain(app)}/** One variant per endpoint, with its validated input (path, query and body params together). */
 export type Request =
 ${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
 
-${eps.map((e) => `/** ${e.method} ${e.path}${e.returns ? ` → ${tsType(e.returns)}` : ""} */\nexport type ${cap(e.name)}Request = Extract<Request, { endpoint: ${q(e.name)} }>;`).join("\n")}
+${eps
+  .map(
+    (e) => `/** ${e.method} ${e.path} */
+export type ${typeName(e)}Request = Extract<Request, { endpoint: ${q(e.name)} }>;
+/** What ${e.name} may answer${e.answers?.length ? " (its contract)" : ""}. */
+export type ${typeName(e)}Response = ${respType(e)};`,
+  )
+  .join("\n\n")}
+
+/** One handler per endpoint: the request and the model in, the new model and the answer out. */
+export type Handlers<M> = {
+${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model: M; response: ${typeName(e)}Response };`).join("\n")}
+};
 
 /** The endpoints, for the router: methods, paths and parameter types. */
 export const endpoints: EndpointDesc[] = [
 ${eps.map((e) => `  { name: ${q(e.name)}, method: ${q(e.method)}, path: ${q(e.path)}, params: [${e.params.map((p) => `{ in: ${q(p.in)}, name: ${q(p.name)}, type: ${typeDesc(app, p.type)} }`).join(", ")}] },`).join("\n")}
 ];
 
-export type Handled = { model: unknown; response: Response };
+/** The contract's answers per endpoint (status → body type), checked on every answer in tests. */
+export const answers: Record<string, Record<number, TypeDesc | null>> = {
+${eps.filter((e) => e.answers?.length).map((e) => `  ${e.name}: { ${e.answers!.map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}
+};
 `;
 }
 
-export const API_APP_SKELETON = `import type { Request, Response /* , Ticket, … */ } from "./spec.ts";
+export const API_APP_SKELETON = `import type { Handlers /* , Ticket, … */ } from "./spec.ts";
 import { answer, fail } from "./api.ts";
 import * as Fmt from "./fmt.ts";
 
@@ -55,9 +77,10 @@ export type Model = { /* … */ };
 
 export function init(): Model { /* … */ }
 
-export function handle(req: Request, model: Model): { model: Model; response: Response } {
-  switch (req.endpoint) { /* … */ }
-}
+export const handlers: Handlers<Model> = {
+  someEndpoint: (req, model) => { /* … */ return { model, response: answer(200, …) }; },
+  /* one per endpoint */
+};
 `;
 
 const SERVER = `import { createServer } from "node:http";
@@ -80,7 +103,7 @@ createServer((req, res) => {
     const r = route(endpoints, req.method ?? "GET", url.pathname, Object.fromEntries(url.searchParams), body);
     let response;
     if ("response" in r) response = r.response;
-    else ({ model, response } = App.handle(r.request as never, model));
+    else ({ model, response } = (App.handlers as any)[r.request.endpoint as string](r.request, model));
     res.writeHead(response.status, { "content-type": "application/json" });
     res.end(JSON.stringify(response.body));
   });
@@ -88,8 +111,8 @@ createServer((req, res) => {
 `;
 
 const TEST_ENTRY = `import * as App from "./app.ts";
-import { route } from "./api.ts";
-import { endpoints } from "./spec.ts";
+import { conforms, route } from "./api.ts";
+import { answers, endpoints } from "./spec.ts";
 
 /** A client for tests: the same routing and validation as the server, without the network. */
 export function start() {
@@ -98,9 +121,13 @@ export function start() {
     send(method: string, path: string, query: Record<string, string>, body: unknown) {
       const r = route(endpoints, method, path, query, body === undefined ? undefined : JSON.parse(JSON.stringify(body)));
       if ("response" in r) return r.response;
-      const out = App.handle(r.request as never, model);
+      const name = r.request.endpoint as string;
+      const out = (App.handlers as any)[name](r.request, model);
       model = out.model;
-      return JSON.parse(JSON.stringify(out.response));
+      const response = JSON.parse(JSON.stringify(out.response));
+      // The contract is checked on every answer: a status it does not declare, or a body of the wrong shape.
+      const problem = conforms(answers[name], response);
+      return problem ? { ...response, contractError: \`\${name} \${problem}\` } : response;
     },
   };
 }
@@ -124,10 +151,10 @@ export function scaffoldApi(app: App, dir: string): { appFile: string; specSourc
 
 export const API_TARGET_RULES = `Target: TypeScript (strict mode), a pure HTTP handler. You write \`app.ts\`.
 - The harness already routes requests and validates their input: \`handle\` only receives valid requests (the \`Request\` union in spec.ts). Unknown routes and bad input never reach you.
-- Answer with \`answer(status, body)\` or \`fail(status, message)\` from "./api.ts". A body is records, lists of records, or plain values, exactly as the endpoint \`returns\`. "answer 404 \\"No such ticket\\"" means \`fail(404, "No such ticket")\`.
+- Answer with \`answer(status, body)\` or \`fail(status, message)\` from "./api.ts" (\`answer(204)\` for no body). A body is records, lists of records, or plain values, exactly as the endpoint \`returns\`. "answer 404 \\"No such ticket\\"" means \`fail(404, "No such ticket")\`.
 - Available: the standard library, "./spec.ts", "./api.ts" and "./fmt.ts". No I/O, no timers, no randomness, no Date. Import with explicit extensions.
 - Model is immutable: return a new model from handle. Handle every endpoint in the switch.
-- The module must export exactly Model, init, handle with these signatures:`;
+- The module must export exactly Model, init and handlers (one handler per endpoint, typed by \`Handlers<Model>\` in spec.ts). When an endpoint has a contract, its handler's answers are typed: only the declared statuses and body types compile.`;
 
 // ---------------------------------------------------------------- driving a build
 
@@ -259,7 +286,24 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         let failure: { line: number; message: string; screen: string } | undefined;
         for (const s of job.example.steps) {
           if (s.do === "call") {
-            call({ endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])) });
+            // An argument may use a value from an earlier answer: `id = {createTicket.body.id}`.
+            const args: Record<string, unknown> = {};
+            for (const a of s.args) {
+              if (a.value.k === "text" && /^\{[a-z][\w.[\]]*\}$/i.test(a.value.v)) {
+                const ref = atPath(responses, a.value.v.slice(1, -1));
+                if (!ref.found) {
+                  failure = { line: s.line, message: `${a.value.v}: no such value in an earlier answer`, screen: dump(responses) };
+                  break;
+                }
+                args[a.name] = ref.value;
+              } else args[a.name] = literalJson(a.value);
+            }
+            if (failure) break;
+            const res = call({ endpoint: s.endpoint, args });
+            if (res.contractError) {
+              failure = { line: s.line, message: `the answer breaks the contract: ${res.contractError}`, screen: dump(responses) };
+              break;
+            }
             const v = broken(job.always);
             if (v) (failure = { line: s.line, message: `after this call, \`always\` (line ${v.line}) is broken: ${v.message}`, screen: dump(responses) }), true;
             if (failure) break;
@@ -278,7 +322,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         for (const [i, c] of job.calls.entries()) {
           const res = call(c);
           steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body }));
-          const v = broken(job.always);
+          const v = res.contractError ? { line: 0, message: `the answer breaks the contract: ${res.contractError}` } : broken(job.always);
           if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
         }
         out.push({ steps, violation });
@@ -345,3 +389,36 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
 }
 
 export const callText = (c: Call) => `call ${c.endpoint}${Object.keys(c.args).length ? ` with ${Object.entries(c.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}`;
+
+/**
+ * A typed client for a contract: one function per endpoint, answering the contract's response
+ * union. Generated from the same contract as the provider's handlers, so the two cannot drift.
+ */
+export function genClient(contract: App): string {
+  const eps = contract.endpoints ?? [];
+  const respType = (e: Endpoint) => (e.answers?.length ? e.answers.map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`).join(" | ") : "{ status: number; body: unknown }");
+  return `// Generated from contract ${contract.name} — do not edit. A typed client: provider and consumer share this contract.
+${tsDomain(contract).replace(/\/\*\* Initial value[\s\S]*?\n\];\n\n/g, "")}
+${eps.map((e) => `/** ${e.method} ${e.path} */\nexport type ${cap(e.name)}Response = ${respType(e)};`).join("\n\n")}
+
+export function client(baseUrl: string, fetchFn: typeof fetch = fetch) {
+  const call = async (method: string, path: string, query: Record<string, unknown>, body: Record<string, unknown> | undefined) => {
+    const qs = Object.entries(query).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => \`\${encodeURIComponent(k)}=\${encodeURIComponent(String(v))}\`).join("&");
+    const res = await fetchFn(baseUrl.replace(/\\/$/, "") + path + (qs ? "?" + qs : ""), { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
+    const text = await res.text();
+    return { status: res.status, body: text ? JSON.parse(text) : null };
+  };
+  return {
+${eps
+  .map((e) => {
+    const params = e.params.map((p) => `${p.name}${p.type.k === "Maybe" ? "?" : ""}: ${tsType(p.type)}`).join("; ");
+    const path = e.path.replace(/\{(\w+)\}/g, (_, n) => `\${encodeURIComponent(String(args.${n}))}`);
+    const query = e.params.filter((p) => p.in === "query").map((p) => `${p.name}: args.${p.name}`).join(", ");
+    const body = e.params.some((p) => p.in === "body") ? `{ ${e.params.filter((p) => p.in === "body").map((p) => `${p.name}: args.${p.name}`).join(", ")} }` : "undefined";
+    return `    ${e.name}: (args: { ${params} }${e.params.length ? "" : " = {}"}) => call(${q(e.method)}, \`${path}\`, { ${query} }, ${body}) as Promise<${cap(e.name)}Response>,`;
+  })
+  .join("\n")}
+  };
+}
+`;
+}

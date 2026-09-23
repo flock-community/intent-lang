@@ -87,6 +87,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   const main = parseSyntax(sources[0].text);
   diagnostics.push(...main.diagnostics);
   let app = main.app;
+  if (app.kind === "contract") app.profile = "api"; // a contract is checked with the api vocabulary
   const lock = readLock();
   let baseApp: App | undefined;
   if (!opts.ignoreLock && app.kind !== "bundle") {
@@ -130,6 +131,30 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
       baseApp = parsed.app;
     }
   } else if (app.refinements?.length) err(app.refinements[0].line, "SYNTAX", "`override`, `add to` and `drop` need an `extends <published app>` line");
+
+  // A contract: the app implements it. Its types and endpoint signatures come from the contract;
+  // the app adds only behaviour. Anything that does not match is an error, never a silent drift.
+  if (app.implements) {
+    const c = app.implements;
+    const path = bundlePath(c.name);
+    if (!existsSync(path)) err(c.line, "UNKNOWN_NAME", `no contract \`${c.name}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+    else {
+      const text = readFileSync(path, "utf8");
+      const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
+      const parsed = parseSyntax(text);
+      offsetLines(parsed.app, idx * LINE_BASE);
+      diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
+      if (parsed.app.kind !== "contract") err(c.line, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is not a contract`);
+      const digest = sha(text);
+      bundles.push({ name: c.name, file: relative(PROJECT_ROOT, path), sha: digest });
+      if (!opts.ignoreLock) {
+        const locked = lock.get(c.name);
+        if (!locked) err(c.line, "LOCK", `the contract \`${c.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
+        else if (locked !== digest) err(c.line, "LOCK", `the contract \`${c.name}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
+      }
+      implementContract(app, parsed.app, err);
+    }
+  }
 
   // Load bundles depth-first; every bundle once.
   const loaded = new Map<string, App>();
@@ -205,15 +230,47 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     app.design = merged;
   }
 
+  // `Problem` is the body of every refusal: { "error": "…" }. Built in for services and contracts.
+  if ((app.profile === "api" || app.kind === "contract") && !app.records.some((r) => r.name === "Problem"))
+    app.records.push({ name: "Problem", fields: [{ name: "error", type: { k: "Text" }, line: 0 }], line: 0 });
   for (const c of app.components) if (c.body) lintComponent(c, warn);
   const used = expandUses(app, err, warn);
   app.sources = sources;
   if (app.name && app.kind !== "bundle") {
+    // (a contract is checked as an api without behaviour)
     diagnostics.push(...checkApp(app, main.clockLine, used));
   }
   const out = diagnostics.map((d) => ({ ...d, ...at(d.line) }));
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
   return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp };
+}
+
+/** Merge a contract into the app that implements it, and check that the app matches it exactly. */
+function implementContract(app: App, contract: App, err: (line: number, code: string, message: string) => void) {
+  app.profile ??= "api";
+  app.imports = [...(contract.imports ?? []), ...(app.imports ?? [])];
+  app.records.unshift(...contract.records);
+  app.choices.unshift(...contract.choices);
+  const own = new Map((app.endpoints ?? []).map((e) => [e.name, e]));
+  const merged: NonNullable<App["endpoints"]> = [];
+  for (const sig of contract.endpoints ?? []) {
+    const impl = own.get(sig.name);
+    if (!impl) {
+      err(app.implements!.line, "CONTRACT", `endpoint \`${sig.name}\` of the contract is not implemented: add \`endpoint ${sig.name}\` with its steps`);
+      continue;
+    }
+    own.delete(sig.name);
+    if (!impl.signatureOnly) {
+      const same = impl.method === sig.method && impl.path === sig.path && JSON.stringify(impl.params.map((p) => [p.in, p.name, p.type])) === JSON.stringify(sig.params.map((p) => [p.in, p.name, p.type]));
+      if (!same) err(impl.line, "CONTRACT", `endpoint \`${sig.name}\` differs from its contract (${sig.method} ${sig.path}); write only \`endpoint ${sig.name}\` and its steps`);
+    }
+    if (impl.params.length && impl.signatureOnly) err(impl.line, "CONTRACT", `endpoint \`${sig.name}\`: its params come from the contract`);
+    merged.push({ ...sig, steps: impl.steps, line: impl.line, note: impl.note ?? sig.note, returns: sig.returns ?? sig.answers?.find((a) => a.status < 300 && a.type)?.type });
+  }
+  for (const extra of own.values()) err(extra.line, "CONTRACT", `endpoint \`${extra.name}\` is not in the contract; a contract is the whole public surface. Add it to the contract first`);
+  app.endpoints = merged;
+  // The contract's examples run on every implementation (consumer-facing behaviour).
+  app.examples.unshift(...contract.examples);
 }
 
 /** Inside a component, its own names must be anchored in braces so they can be renamed per instance. */

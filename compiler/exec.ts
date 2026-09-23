@@ -412,7 +412,7 @@ export async function runJobsIsolated(dir: string, target: string, jobs: Job[] |
   return out;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [dir, target, jobFile] = process.argv.slice(2);
   const jobs: Job[] = JSON.parse(readFileSync(jobFile, "utf8"));
   // api-profile jobs go to the api driver.

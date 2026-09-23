@@ -1,9 +1,7 @@
 app TicketsApi
   "The support desk's tickets and comments, as an HTTP API."
 
-profile api
-
-import support.tickets
+implements support.ticketsApi
 
 state
   tickets: List Ticket = table
@@ -21,49 +19,33 @@ state
     1      | "Mara Jansen"  | "I reset my password but the login page keeps rejecting it."
     1      | "Sam"          | "Thanks Mara, looking into it now."
 
-endpoint listTickets GET "/tickets"
-  query status: Maybe Status
-  returns List Ticket
+endpoint listTickets
   - answer 200 with the tickets whose status is status (every ticket when status is absent), highest id first
 
-endpoint getTicket GET "/tickets/{id}"
-  path id: Int
-  returns Ticket
+endpoint getTicket
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - answer 200 with that ticket
 
-endpoint createTicket POST "/tickets"
-  body subject: Text
-  body customer: Text
-  body priority: Priority
-  returns Ticket
+endpoint createTicket
   - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
   - if customer, trimmed, is blank, answer 400 "Customer is required" and stop
   - add a Ticket to the end of tickets with id = the highest id in tickets + 1, subject and customer trimmed, the given priority, status Open and assignee ""
   - answer 201 with the new ticket
 
-endpoint solveTicket POST "/tickets/{id}/solve"
-  path id: Int
-  returns Ticket
+endpoint solveTicket
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if that ticket is Solved, answer 409 "Already solved" and stop
   - set its status to Solved
   - answer 200 with the ticket
 
-endpoint addComment POST "/tickets/{id}/comments"
-  path id: Int
-  body author: Text
-  body text: Text
-  returns Comment
+endpoint addComment
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if text, trimmed, is blank, answer 400 "Comment is empty" and stop
   - add a Comment to the end of comments with ticket = id, author trimmed and body = text trimmed
   - if the ticket is Open, set its status to Pending
   - answer 201 with the new comment
 
-endpoint listComments GET "/tickets/{id}/comments"
-  path id: Int
-  returns List Comment
+endpoint listComments
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - answer 200 with the comments whose ticket is id, in their order
 

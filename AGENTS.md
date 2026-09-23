@@ -75,7 +75,10 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
 5. **Bundles as versioned behavioural contracts** (review #4): a demo for every bundle, a
    semantic version computed from names *and* examples, namespaced imports, immutable
    versions.
-6. An API profile (generic core + UI profile + API profile), then Kotlin as its second backend.
+6. ~~An API profile~~ done (v17, profile as a spec), and **contracts** (v18: our own, in the
+   spirit of Wirespec; see `docs/reviews/wirespec.md` for what was learned from it). Next: ideas
+   from Wirespec (refined types, unions of records, headers, transport-free `rpc` and
+   `channel`), a screen that calls an API through its contract, and Kotlin as a second API target.
 
 ## Lessons from the experiments (keep applying them)
 

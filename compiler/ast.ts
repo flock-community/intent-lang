@@ -136,18 +136,21 @@ export interface Endpoint {
   path: string; // "/tickets/{id}"
   params: { in: "path" | "query" | "body"; name: string; type: Type; line: number }[];
   returns?: Type; // undefined: the answer has no body
+  answers?: { status: number; type?: Type; line: number }[]; // the contract: every status it may answer, with its body type
+  signatureOnly?: boolean; // `endpoint name` in an app that implements a contract: method, path and params come from it
   steps: string[];
   line: number;
   note?: string;
 }
 
 export interface App {
-  kind?: "app" | "bundle";
+  kind?: "app" | "bundle" | "contract";
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
   endpoints?: Endpoint[];
   name: string;
   imports?: Import[];
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
+  implements?: { name: string; line: number }; // an api app that implements a published contract
   refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];

@@ -1,4 +1,4 @@
-# Intent — language reference (v17)
+# Intent — language reference (v18)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -398,6 +398,52 @@ example "creating a ticket"
 - A build is a Node server (`node server.mjs`, `PORT`) plus the same pure handler under test.
   Twin compilation, examples, `always` and random call sessions work as for screens.
 
+## 4f. Contracts: what goes over the wire
+
+A **contract** is a publishable file that says what a service accepts and answers, and nothing
+about how. It holds records, choices, endpoint signatures with every status they may answer,
+and examples. The app that provides the service `implements` it and writes only behaviour:
+
+```
+contract support.ticketsApi
+import support.tickets
+
+endpoint createTicket POST "/tickets"
+  body subject: Text
+  body customer: Text
+  body priority: Priority
+  answers 201 Ticket
+  answers 400 Problem                # Problem is built in: { "error": "…" }
+
+example "solving a new ticket"
+  call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
+  call solveTicket with id = {createTicket.body.id}     # a value from an earlier answer
+  see solveTicket.status = 200
+```
+
+```
+app TicketsApi
+implements support.ticketsApi
+
+endpoint createTicket                  # the signature comes from the contract
+  - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  - …
+  - answer 201 with the new ticket
+```
+
+Contracts cannot fail silently:
+
+- **The checker** requires every contract endpoint to be implemented, no endpoint outside the
+  contract, and every status a step answers to be declared (`CONTRACT` errors).
+- **The compiler** types each handler by its answers: only the declared statuses and body types
+  compile.
+- **Every answer in every test** is checked against the contract at run time, including the
+  shape of the body. The contract's examples run on every implementation.
+- **The consumer** uses a typed client generated from the same contract version:
+  `intent client support/ticketsApi.intent`.
+- **Versions are computed on publish:** a removed endpoint, param or answer, or a changed type,
+  makes a new major version.
+
 ## 5. Events
 
 ```
@@ -507,6 +553,7 @@ places where the spec is not yet precise.
 | `LOCK` | error | a bundle is not locked, or changed since it was locked (§4b) |
 | `UNSCOPED` | warning | inside a component, one of its own names is not written in braces |
 | `UNUSED` | warning | a declared component is never used |
+| `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
 | `LANGUAGE` | warning | the spec was written for an older language version |
 | `OVERRIDES_PROOF` | warning | a base example or `always` check is about something this spec overrides |
@@ -590,6 +637,9 @@ Each version below was added because a real spec needed it. Next candidates:
 
 ## Changelog
 
+- v18: contracts: `contract`, `answers <status> [Type]`, `implements`, endpoints by name only in
+  the implementation, `Problem`; checked by the checker, the TypeScript compiler (typed
+  handlers) and at run time; `intent client`; `{endpoint.body.x}` in `call` arguments.
 - v17: the api profile (`profile api`, `endpoint`, `call` / `see x.status|body…`), with a
   TypeScript/Node harness; the same domain bundle serves a screen and an API.
 - v16: the UI vocabulary is a profile spec (`lib/profile/ui.intent`): element kinds, what they

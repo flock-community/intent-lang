@@ -5,7 +5,7 @@ import { formatDiagnostics } from "./parse.ts";
 import { load as loadSpec, sha, writeLock } from "./load.ts";
 import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { printApp } from "./print.ts";
 import { compileApp } from "./twin.ts";
 import type { Target } from "./gen.ts";
@@ -76,6 +76,16 @@ switch (cmd) {
     const registry = resolve(flags.registry ?? readProject()?.registry ?? "registry");
     const r = await publish(file, registry, sha, fingerprints);
     console.log(`published ${r.name} ${r.version} to ${registry}\n  ${r.why.join("\n  ")}`);
+    process.exit(0);
+  }
+  case "client": {
+    // A typed client for a contract, for consumers (another service, a web app, a test).
+    const { app } = load(args[0]);
+    if (!app || app.kind !== "contract") (console.log("`intent client` takes a contract"), process.exit(1));
+    const { genClient } = await import("./api.ts");
+    const out = resolve(flags.out ?? `${basename(args[0], ".intent")}.client.ts`);
+    writeFileSync(out, genClient(app));
+    console.log(`typed client for ${app.name} → ${out}`);
     process.exit(0);
   }
   case "lock": {
@@ -152,6 +162,7 @@ switch (cmd) {
   intent lock <file.intent>...             pin the bundles these specs import (intent.lock)
   intent install [<file.intent>...]        download intent.project's requirements (minimal version selection)
   intent publish <lib/x/y.intent> [--registry dir]   publish with a computed version (needs its demo app)
+  intent client <contract.intent> [--out file.ts]    a typed client for a contract
   intent expand <file.intent>              print the canonical, expanded spec the compiler reads
   intent review <file.intent>              list what the spec leaves to defaults (one LLM call)
   intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off]

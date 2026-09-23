@@ -80,12 +80,12 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   roots.forEach((node, i) => {
     const t = node.text;
     let m: RegExpMatchArray | null;
-    if ((m = t.match(new RegExp(`^(app|bundle)\\s+(\\S+)$`)))) {
+    if ((m = t.match(new RegExp(`^(app|bundle|contract)\\s+(\\S+)$`)))) {
       if (i !== 0) err(node.line, "SYNTAX", `\`${m[1]}\` must be the first block`);
       if (app.name) err(node.line, "DUPLICATE", "only one `app` or `bundle` per file");
       const ok = m[1] === "app" ? new RegExp(`^${UPPER}$`).test(m[2]) : new RegExp(`^${BUNDLE_NAME}$`).test(m[2]);
-      if (!ok) err(node.line, "SYNTAX", m[1] === "app" ? "an app name is UpperCamel: `app Helpdesk`" : "a bundle name is lower case with dots: `bundle std.list`");
-      app.kind = m[1] as "app" | "bundle";
+      if (!ok) err(node.line, "SYNTAX", m[1] === "app" ? "an app name is UpperCamel: `app Helpdesk`" : `a ${m[1]} name is lower case with dots: \`${m[1]} std.list\``);
+      app.kind = m[1] as "app" | "bundle" | "contract";
       app.name = m[2];
       for (const c of node.children) {
         const str = parseString(c.text);
@@ -95,6 +95,9 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^import\\s+(${BUNDLE_NAME})(?:\\.(${UPPER}))?(?:\\s+as\\s+(${UPPER}))?$`)))) {
       if (m[3] && !m[2]) err(node.line, "SYNTAX", "`as` renames one imported name: `import std.list.Pager as TicketPager`");
       app.imports!.push({ bundle: m[1], name: m[2], alias: m[3], line: node.line });
+    } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
+      if (app.implements) err(node.line, "DUPLICATE", "an app implements one contract");
+      app.implements = { name: m[1], line: node.line };
     } else if ((m = t.match(new RegExp(`^extends\\s+(${BUNDLE_NAME})$`)))) {
       if (app.extends) err(node.line, "DUPLICATE", "a spec extends at most one base (compose components for more)");
       app.extends = { name: m[1], line: node.line };
@@ -107,8 +110,14 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^endpoint\\s+(${LOWER})\\s+(GET|POST|PUT|PATCH|DELETE)\\s+(${STR})$`)))) {
       app.endpoints ??= [];
       app.endpoints.push(parseEndpoint(node, m[1], m[2] as "GET", parseString(m[3])!, ctx));
+    } else if ((m = t.match(new RegExp(`^endpoint\\s+(${LOWER})$`)))) {
+      // In an app that implements a contract: the signature comes from the contract.
+      app.endpoints ??= [];
+      const ep = parseEndpoint(node, m[1], "GET", "", ctx);
+      ep.signatureOnly = true;
+      app.endpoints.push(ep);
     } else if (t.startsWith("endpoint")) {
-      err(node.line, "SYNTAX", 'expected `endpoint name GET|POST|PUT|PATCH|DELETE "/path/{id}"`');
+      err(node.line, "SYNTAX", 'expected `endpoint name GET|POST|PUT|PATCH|DELETE "/path/{id}"`, or `endpoint name` when the app implements a contract');
     } else if ((m = t.match(/^language\s+(v\d+)$/))) {
       // The language version the spec was written for: the checker says when the language moved on.
       language = m[1];
@@ -119,7 +128,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "contract", "implements", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -128,6 +137,15 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   if (app.kind === "bundle") {
     const behaviour = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.always.length || app.examples.length || app.rules.length;
     if (behaviour) err(1, "SYNTAX", "a bundle holds records, choices, components and a design; state, screens and behaviour go inside a component, examples in the bundle's demo app");
+  }
+  if (app.kind === "contract") {
+    // A contract says what goes over the wire, never how: types, endpoint signatures, answers, examples.
+    const behaviour = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.components.length || app.rules.length;
+    if (behaviour) err(1, "SYNTAX", "a contract holds records, choices, endpoint signatures (with `answers`) and examples; behaviour belongs in the app that `implements` it");
+    for (const ep of app.endpoints ?? []) {
+      if (ep.steps.length) err(ep.line, "SYNTAX", `endpoint ${ep.name}: a contract has no steps; the implementing app says what happens`);
+      if (!ep.answers?.length) err(ep.line, "SYNTAX", `endpoint ${ep.name}: a contract lists every status it may answer (\`answers 200 Ticket\`)`);
+    }
   }
   for (const w of ctx.pendingWaits) {
     if (!app.clockMs) continue; // reported by check()
@@ -235,14 +253,17 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
       const type = parseType(m[3]);
       if (!type) err(c.line, "SYNTAX", `\`${m[3]}\` is not a type`, c.indent + 1);
       else ep.params.push({ in: m[1] as "path", name: m[2], type, line: c.line });
+    } else if ((m = c.text.match(/^answers\s+([1-5]\d\d)(?:\s+(.+))?$/))) {
+      const type = m[2] ? parseType(m[2]) : undefined;
+      if (m[2] && !type) err(c.line, "SYNTAX", `\`${m[2]}\` is not a type`, c.indent + 1);
+      (ep.answers ??= []).push({ status: Number(m[1]), type, line: c.line });
     } else if ((m = c.text.match(/^returns\s+(.+)$/))) {
       const type = parseType(m[1]);
       if (!type) err(c.line, "SYNTAX", `\`${m[1]}\` is not a type`, c.indent + 1);
       else ep.returns = type;
     } else if (c.text.startsWith("- ")) ep.steps.push((c.text.slice(2) + flattenChildren(c)).trim());
-    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, or `- step`", c.indent + 1);
+    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, or `- step`", c.indent + 1);
   }
-  if (!ep.steps.length) err(node.line, "SYNTAX", `endpoint ${name} needs steps: what happens and what is answered`);
   return ep;
 }
 
@@ -663,7 +684,8 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     const args: { name: string; value: Literal }[] = [];
     for (const part of m[2] ? splitArgs(m[2]) : []) {
       const am = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
-      const lit = am && parseLiteral(am[2]);
+      // `{createTicket.body.id}`: a value from an earlier answer (kept as a text literal holding the reference).
+      const lit = am && (/^\{[a-z][\w.[\]]*\}$/i.test(am[2].trim()) ? ({ k: "text", v: am[2].trim() } as Literal) : parseLiteral(am[2]));
       if (!am || !lit) err(line, "SYNTAX", `\`${part}\` is not \`name = value\``, col);
       else args.push({ name: am[1], value: lit });
     }
@@ -1053,6 +1075,16 @@ function checkApi(
       if (p.in === "body" && ep.method === "GET") err(p.line, "BAD_BINDING", "a GET request has no body; use `query`");
     }
     if (ep.returns) ctx.checkType(ep.returns, ep.line);
+    for (const a of ep.answers ?? []) if (a.type) ctx.checkType(a.type, a.line);
+    if (app.kind !== "contract" && !ep.steps.length) err(ep.line, "SYNTAX", `endpoint ${ep.name} needs steps: what happens and what is answered`);
+    // Every status the steps answer must be in the endpoint's answers (the contract). The harness's own
+    // answers (400 for bad input, 404 unknown route, 405 wrong method) are always allowed.
+    if (ep.answers?.length) {
+      const declared = new Set(ep.answers.map((a) => a.status));
+      for (const st of ep.steps)
+        for (const m of st.matchAll(/\banswer\s+([1-5]\d\d)\b/g))
+          if (!declared.has(Number(m[1]))) err(ep.line, "CONTRACT", `endpoint ${ep.name} answers ${m[1]}, which its contract does not declare (${[...declared].join(", ")}); add \`answers ${m[1]} …\` to the contract, or answer differently`);
+    }
   }
   // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`.
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
