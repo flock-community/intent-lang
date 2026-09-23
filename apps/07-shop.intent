@@ -1,0 +1,168 @@
+app Shop
+  "A small shop: put products in the cart and see deals, discount and total."
+
+record Product
+  name: Text
+  price: Decimal
+  stock: Int
+
+record Line
+  name: Text
+  qty: Int
+
+state
+  products: List Product = table
+    name      | price | stock
+    "Apple"   | 0.40  | 10
+    "Bread"   | 2.35  | 3
+    "Cheese"  | 6.90  | 2
+    "Coffee"  | 8.50  | 5
+  cart: List Line = []
+  code: Text = ""
+  appliedCode: Text = ""
+  codeMessage: Text = ""
+
+derive
+  left = for a product: its stock minus the qty of its line in cart (its full stock when it is not in cart)
+  lineTotal = for a line: price of that product × the number of items paid for; for Apple every third apple is free, so you pay for qty minus (qty divided by 3, rounded down); for other products you pay for qty
+  subtotal = sum of all line totals
+  discount = when appliedCode is "SAVE10" and subtotal is at least 20.00: 10% of subtotal, rounded to cents; when appliedCode is "FIVER" and subtotal is at least 30.00: 5.00; otherwise 0
+  total = subtotal minus discount
+
+screen
+  heading "Products"
+  list products of Product
+    text name
+    text price = price as money
+    text left = "{left} left"
+    button add "Add"
+      enabled when left is above 0
+  heading "Cart"
+  list cart of Line
+    text name
+    text qty = "× {qty}"
+    text lineTotal = lineTotal as money
+    button plus "+"
+      enabled when the product of that line has something left
+    button minus "−"
+  text empty = "Your cart is empty"
+    visible when cart is empty
+  field code "Discount code"
+  button apply "Apply"
+    enabled when code is not blank
+  text codeMessage
+  text subtotalLine = "Subtotal {subtotal as money}"
+  text discountLine = "Discount -{discount as money}"
+    visible when discount is above 0
+  text totalLine = "Total {total as money}"
+
+on click add
+  - if cart has a line for that product, increase its qty by 1; otherwise add a Line with the product's name and qty 1 to the end of cart
+
+on click plus
+  - increase the qty of that line by 1
+
+on click minus
+  - decrease the qty of that line by 1; if it is now 0, remove the line from cart
+
+on click apply
+  - the entered code is code, trimmed and in capitals
+  - if the entered code is "SAVE10" or "FIVER", set appliedCode to it and codeMessage to "Code applied"
+  - otherwise set appliedCode to "" and codeMessage to "Unknown code"
+  - clear code
+
+example "the shop at the start"
+  see products has 4 rows
+  see name on row 4 of products = "Coffee"
+  see left on row 1 of products = "10 left"
+  see price on row 2 = "2.35"
+  see empty = "Your cart is empty"
+  see subtotalLine = "Subtotal 0.00"
+  see totalLine = "Total 0.00"
+  see discountLine is hidden
+  see apply is disabled
+  see codeMessage = ""
+
+example "adding to the cart"
+  click add on row 2
+  click add on row 2
+  see cart has 1 row
+  see name on row 1 of cart = "Bread"
+  see qty on row 1 = "× 2"
+  see lineTotal on row 1 = "4.70"
+  see left on row 2 = "1 left"
+  click add on row 1
+  see cart has 2 rows
+  see name on row 2 of cart = "Apple"
+  see empty is hidden
+  see subtotalLine = "Subtotal 5.10"
+
+example "stock runs out"
+  click add on row 3
+  click add on row 3
+  see add on row 3 is disabled
+  see left on row 3 = "0 left"
+  see plus on row 1 is disabled
+  click minus on row 1
+  see add on row 3 is enabled
+  see plus on row 1 is enabled
+  see qty on row 1 = "× 1"
+
+example "three apples for the price of two"
+  click add on row 1
+  click add on row 1
+  click add on row 1
+  see lineTotal on row 1 = "0.80"
+  click plus on row 1
+  see lineTotal on row 1 = "1.20"
+  click plus on row 1
+  click plus on row 1
+  see qty on row 1 = "× 6"
+  see lineTotal on row 1 = "1.60"
+
+example "save ten percent"
+  click add on row 4
+  click add on row 4
+  click add on row 4
+  type " save10 " into code
+  click apply
+  see codeMessage = "Code applied"
+  see code = ""
+  see discountLine = "Discount -2.55"
+  see totalLine = "Total 22.95"
+  type "bogus" into code
+  click apply
+  see codeMessage = "Unknown code"
+  see discountLine is hidden
+  see totalLine = "Total 25.50"
+
+example "discount rounds to cents"
+  click add on row 2
+  click add on row 2
+  click add on row 2
+  click add on row 4
+  click add on row 4
+  type "SAVE10" into code
+  click apply
+  see subtotalLine = "Subtotal 24.05"
+  see discountLine = "Discount -2.41"
+  see totalLine = "Total 21.64"
+
+example "fiver needs thirty"
+  click add on row 4
+  click add on row 4
+  click add on row 4
+  type "fiver" into code
+  click apply
+  see codeMessage = "Code applied"
+  see discountLine is hidden
+  see totalLine = "Total 25.50"
+  click add on row 4
+  see discountLine = "Discount -5.00"
+  see totalLine = "Total 29.00"
+
+example "the last minus removes the line"
+  click add on row 2
+  click minus on row 1
+  see cart has 0 rows
+  see empty is shown

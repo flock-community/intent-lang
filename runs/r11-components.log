@@ -1,0 +1,47 @@
+apps/10-helpdesk.intent: ok — 0 error(s), 0 warning(s)
+apps/11-storefront.intent: ok — 0 error(s), 0 warning(s)
+11-storefront ts-2: attempt 1: ok
+11-storefront ts-3: attempt 1: ok
+11-storefront ts-1: attempt 1: ok
+10-helpdesk ts-2: attempt 1: ok
+10-helpdesk ts-3: attempt 1: ok
+10-helpdesk ts-1: attempt 1: ok
+11-storefront ts-2: look attempt 1: ok (22 screens match)
+11-storefront ts-3: look attempt 1: ok (22 screens match)
+11-storefront elm-2: attempt 1: ok
+11-storefront ts-1: look attempt 1: ok (22 screens match)
+11-storefront elm-3: attempt 1: ok
+11-storefront elm-1: attempt 1: ok
+10-helpdesk elm-2: attempt 1: ok
+10-helpdesk elm-3: attempt 1: ok
+10-helpdesk elm-1: attempt 1: ok
+10-helpdesk ts-2: look attempt 1: ok (47 screens match)
+11-storefront elm-2: look attempt 1: ok (22 screens match)
+11-storefront elm-1: look attempt 1: ok (22 screens match)
+10-helpdesk ts-1: look attempt 1: ok (47 screens match)
+10-helpdesk ts-3: look attempt 1: ok (47 screens match)
+10-helpdesk elm-3: look attempt 1: ok (47 screens match)
+10-helpdesk elm-2: look attempt 1: ok (47 screens match)
+10-helpdesk elm-1: look attempt 1: ok (47 screens match)
+11-storefront elm-3: look attempt 1: ok (22 screens match)
+# Convergence report — v9-components
+
+3 builds per target (elm, ts), 30 random sessions × 20 actions per app.
+
+| App | Builds OK | First-try OK | `always` held | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Helpdesk | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 72% / 69% | $4.89 |
+| Storefront | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 66% / 54% | $2.66 |
+
+*Same app* = share of random sessions in which every build showed identical screens after every action.
+
+### Looks (styled builds)
+
+| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Boxes within 8px: Elm / TS / Elm↔TS | Median box offset (px) |
+|---|---|---|---|---|
+| Helpdesk | 6/6 | 0.0% / 0.2% / 0.1% | 99% / 97% / 98% | 0 / 0 / 0 |
+| Storefront | 6/6 | 0.1% / 0.1% / 0.1% | 90% / 92% / 91% | 0 / 0 / 0 |
+
+*Page = logic*: builds whose page showed exactly the logic's screen in every session. *Pixels differ*: average share of differing pixels between two builds' screenshots of the same state. *Boxes within 8px*: share of elements whose box is within 8px on every edge.
+
+full report: /Users/sjors/Develop/Personal/intentlang/runs/r11-components/report.md

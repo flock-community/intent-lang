@@ -1,0 +1,42 @@
+app Counter
+  "Count things up and down, never below zero."
+
+state
+  count: Int = 0
+
+screen
+  text count
+  button down "−"
+    enabled when count is above 0
+  button up "+"
+  button reset "Reset"
+
+on click up
+  - increase count by 1
+
+on click down
+  - decrease count by 1
+
+on click reset
+  - set count to 0
+
+example "counting up and down"
+  click up
+  click up
+  see count = 2
+  click down
+  see count = 1
+
+example "never below zero"
+  see down is disabled
+  click up
+  see down is enabled
+  click down
+  see count = 0
+  see down is disabled
+
+example "reset"
+  click up
+  click up
+  click reset
+  see count = 0

@@ -1,0 +1,74 @@
+app TipSplit
+  "Split a restaurant bill, tip included, between friends."
+
+choice Tip: NoTip | Ten | Fifteen | Twenty
+
+state
+  bill: Text = ""
+  people: Text = "2"
+  tip: Tip = Fifteen
+
+derive
+  amount = bill read as a decimal (Fmt.parseDecimal)
+  count = people read as a whole number (Fmt.parseInt)
+  percent = NoTip 0, Ten 10, Fifteen 15, Twenty 20
+  tipAmount = amount × percent / 100, rounded to whole cents (half away from zero)
+  total = amount + tipAmount
+  each = total divided by count, rounded UP to whole cents, so together they never pay too little
+  problem = the first that applies: "Enter the bill" when bill is blank; "The bill must be a number" when amount is not a number; "The bill cannot be negative" when amount is below 0; "People must be a whole number of at least 1" when count is not a whole number or is below 1; otherwise there is no problem
+
+screen
+  field bill "Bill"
+  field people "People"
+  select tip "Tip"
+  text problem
+    visible when there is a problem
+  section result
+    visible when there is no problem
+    text tipLine = "Tip {tipAmount as money}"
+    text totalLine = "Total {total as money}"
+    text eachLine = "Each {each as money}"
+
+example "empty bill"
+  see problem = "Enter the bill"
+  see tipLine is hidden
+
+example "even split"
+  type "100" into bill
+  see tipLine = "Tip 15.00"
+  see totalLine = "Total 115.00"
+  see eachLine = "Each 57.50"
+  see problem is hidden
+
+example "uneven split rounds up"
+  type "100" into bill
+  type "3" into people
+  choose Ten in tip
+  see totalLine = "Total 110.00"
+  see eachLine = "Each 36.67"
+
+example "comma and cents"
+  type "12,50" into bill
+  see tipLine = "Tip 1.88"
+  see totalLine = "Total 14.38"
+  see eachLine = "Each 7.19"
+
+example "no tip"
+  type "80" into bill
+  choose NoTip in tip
+  type "4" into people
+  see tipLine = "Tip 0.00"
+  see eachLine = "Each 20.00"
+
+example "bad input"
+  type "abc" into bill
+  see problem = "The bill must be a number"
+  type "-5" into bill
+  see problem = "The bill cannot be negative"
+  type "20" into bill
+  type "0" into people
+  see problem = "People must be a whole number of at least 1"
+  type "2.5" into people
+  see problem = "People must be a whole number of at least 1"
+  type "2" into people
+  see eachLine = "Each 11.50"

@@ -1,0 +1,195 @@
+app Storefront
+  "A small online shop: browse products by category, fill a cart, apply a code and check out."
+
+design
+  look "A fresh grocery shop: warm off-white page, white product cards with a hairline border, compact spacing, dark stone text, emerald as the brand for prices and main actions."
+  brand: emerald
+  neutral: stone
+  danger: red
+  font: sans
+  radius: small
+  density: compact
+
+component ProductCard as card "The product name in medium weight, the category as a small muted caption, the price large and bold in the brand color, the stock line muted, and the add button full width at the bottom."
+component SummaryLine as row "The label on the left and the amount right-aligned; the total line larger and bold."
+
+choice Category: AllProducts "All" | Fruit | Bakery | Dairy | Drinks
+
+record Product
+  name: Text
+  category: Category
+  price: Decimal
+  stock: Int
+
+record Line
+  name: Text
+  qty: Int
+
+state
+  products: List Product = table
+    name            | category | price | stock
+    "Apple"         | Fruit    | 0.40  | 10
+    "Banana"        | Fruit    | 0.25  | 12
+    "Sourdough"     | Bakery   | 3.95  | 3
+    "Croissant"     | Bakery   | 1.20  | 6
+    "Cheddar"       | Dairy    | 6.90  | 2
+    "Yoghurt"       | Dairy    | 1.45  | 5
+    "Coffee beans"  | Drinks   | 8.50  | 5
+    "Orange juice"  | Drinks   | 2.75  | 4
+  category: Category = AllProducts
+  cart: List Line = []
+  code: Text = ""
+  appliedCode: Text = ""
+  codeMessage: Text = ""
+  ordered: Bool = false
+
+derive
+  visibleProducts = the products whose category is category (AllProducts shows all), in table order
+  left = for a product: its stock minus the qty of its line in cart (its full stock when it is not in cart)
+  lineTotal = for a line: the price of that product × qty
+  itemCount = the sum of qty over cart
+  subtotal = the sum of all line totals
+  discount = when appliedCode is "FRESH10" and subtotal is at least 10.00: 10% of subtotal, rounded to cents; otherwise 0
+  total = subtotal minus discount
+
+screen
+  section top as header
+    heading "Green Grocer" as title
+    text cartCount = "{itemCount} items" as badge
+  select category as tabs
+  section body as row
+    look "the products take the remaining width; the cart panel is 20rem wide on the right"
+    list visibleProducts of Product as cards
+      section product as ProductCard
+        text name
+        text categoryName = the label of category as caption
+        text price = price as money
+        text stockLine = "{left} left" as caption
+        button add "Add to cart" as primary
+          enabled when left is above 0
+    section cartPanel "Your cart" as card
+      list cart of Line as menu
+        look "each row: the name on the left, then the quantity, the line total and the two icon buttons on the right"
+        text name
+        text qty = "× {qty}"
+        text lineTotal = lineTotal as money
+        button minus "Remove one" as icon
+        button plus "Add one" as icon
+          enabled when the product of that line has something left
+      text emptyCart = "Your cart is empty" as caption
+        visible when cart is empty
+      section codeForm as row
+        field code "Discount code"
+        button apply "Apply" as secondary
+          enabled when code is not blank
+      text codeMessage as caption
+        visible when codeMessage is not empty
+      section summary as form
+        section subtotalLine as SummaryLine
+          text subtotalLabel = "Subtotal"
+          text subtotalValue = subtotal as money
+        section discountLine as SummaryLine
+          visible when discount is above 0
+          text discountLabel = "Discount"
+          text discountValue = "-{discount as money}"
+        section totalLine as SummaryLine
+          text totalLabel = "Total"
+          text totalValue = total as money
+      button checkout "Check out" as primary
+        enabled when cart is not empty
+  text orderPlaced = "Thank you! Your order is on its way." as toast
+    visible when ordered
+
+on click add
+  - if cart has a line for that product, increase its qty by 1; otherwise add a Line with the product's name and qty 1 to the end of cart
+  - set ordered to false
+
+on click plus
+  - increase the qty of that line by 1
+
+on click minus
+  - decrease the qty of that line by 1; if it is now 0, remove the line from cart
+
+on click apply
+  - the entered code is code, trimmed and in capitals
+  - if the entered code is "FRESH10", set appliedCode to it and codeMessage to "Code applied"
+  - otherwise set appliedCode to "" and codeMessage to "Unknown code"
+  - clear code
+
+on click checkout
+  - clear cart, appliedCode and codeMessage
+  - set ordered to true
+
+on choose category
+  - set ordered to false
+
+always
+  see cart has at most 8 rows
+
+example "the shop"
+  see visibleProducts has 8 rows
+  see name on row 1 of visibleProducts = "Apple"
+  see price on row 3 = "3.95"
+  see stockLine on row 5 = "2 left"
+  see categoryName on row 7 = "Drinks"
+  see cartCount = "0 items"
+  see emptyCart = "Your cart is empty"
+  see totalValue = "0.00"
+  see discountLine is hidden
+  see checkout is disabled
+  see apply is disabled
+  snapshot "shop"
+
+example "categories"
+  choose Bakery in category
+  see visibleProducts has 2 rows
+  see name on row 2 of visibleProducts = "Croissant"
+  choose AllProducts in category
+  see visibleProducts has 8 rows
+
+example "filling the cart"
+  click add on row with "Sourdough"
+  click add on row with "Sourdough"
+  click add on row with "Apple"
+  see cart has 2 rows
+  see name on row 1 of cart = "Sourdough"
+  see qty on row 1 = "× 2"
+  see lineTotal on row 1 = "7.90"
+  see stockLine on row with "Sourdough" = "1 left"
+  see cartCount = "3 items"
+  see subtotalValue = "8.30"
+  see emptyCart is hidden
+  click plus on row 1
+  see plus on row 1 is disabled
+  see add on row with "Sourdough" is disabled
+  click minus on row 2
+  see cart has 1 row
+  snapshot "cart filled"
+
+example "a discount code"
+  click add on row with "Coffee beans"
+  click add on row with "Cheddar"
+  type " fresh10 " into code
+  click apply
+  see codeMessage = "Code applied"
+  see subtotalValue = "15.40"
+  see discountValue = "-1.54"
+  see totalValue = "13.86"
+  see code = ""
+  snapshot "discount applied"
+  type "free" into code
+  click apply
+  see codeMessage = "Unknown code"
+  see discountLine is hidden
+
+example "checking out"
+  click add on row with "Banana"
+  click checkout
+  see orderPlaced = "Thank you! Your order is on its way."
+  see cart has 0 rows
+  see cartCount = "0 items"
+  see checkout is disabled
+  see stockLine on row with "Banana" = "12 left"
+  snapshot "order placed"
+  click add on row with "Apple"
+  see orderPlaced is hidden

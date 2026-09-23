@@ -1,0 +1,11 @@
+node_modules/
+elm-stuff/
+tests/fmt-parity/probe.js
+tests/fmt-parity/probe.cjs
+# Run outputs: keep the logs, the history and the reports; not the builds themselves.
+runs/*/*
+!runs/*/report*.md
+# The final styled run's contact sheets are cited in the README.
+!runs/r11-components/*/
+runs/r11-components/*/*
+!runs/r11-components/*/sheets/

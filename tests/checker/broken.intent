@@ -1,0 +1,29 @@
+app Broken
+  "Errors on purpose."
+
+record Item
+  title: Txt
+
+state
+  count: Int = 1.5
+  name: Text
+
+scren
+  text x
+
+screen
+  text count
+  field count "Count"
+  buton go "Go"
+  button go "Go"
+  button stop "Stop"
+	text tabbed
+
+on click goo
+  - do things
+
+example "bad"
+  click count
+  see nope = 3
+  choose Red in count
+  wait 3s

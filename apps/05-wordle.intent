@@ -1,0 +1,104 @@
+app Wordle
+  "Guess the hidden five-letter word in six tries."
+
+record Guess
+  word: Text
+  marks: Text
+
+state
+  game: Int = 1
+  guesses: List Guess = []
+  draft: Text = ""
+  message: Text = ""
+
+derive
+  answer = the word at position (game - 1) modulo 5 in the list APPLE, EERIE, LLAMA, CRANE, SPOON; game 1 is APPLE
+  status = Won when the last guess equals answer; Lost when there are 6 guesses and none equals answer; otherwise Playing
+
+screen
+  text title = "Game {game}"
+  list guesses of Guess
+    text word
+    text marks
+  field draft "Guess"
+  button guess "Guess"
+    enabled when status is Playing
+  text message
+  text result = Won: "Solved in {number of guesses}", Lost: "The word was {answer}"
+    visible when status is not Playing
+  button next "Next game"
+
+on click guess
+  - the word is draft, trimmed and in capitals
+  - if the word is not exactly 5 letters from A to Z, set message to "Five letters, please" and stop
+  - if the word is already in guesses, set message to "Already tried" and stop
+  - add a Guess with that word and its marks to the end of guesses
+  - clear draft and message
+
+on click next
+  - increase game by 1
+  - clear guesses, draft and message
+
+rules
+  - marks has one character per letter of the word: "G" when answer has the same letter in the same place, "Y" when the letter is elsewhere in answer and not yet accounted for, "." otherwise.
+  - Accounting: first every G uses up its letter of answer; then, from left to right, a letter gets Y only while answer still has an unused copy of it, and that Y uses the copy up.
+
+example "marks with repeated letters"
+  type "paper" into draft
+  click guess
+  see word on row 1 = "PAPER"
+  see marks on row 1 = "YYGY."
+  type "puppy" into draft
+  click guess
+  see marks on row 2 = "Y.G.."
+  see draft = ""
+  see result is hidden
+
+example "winning"
+  type "apple" into draft
+  click guess
+  see marks on row 1 = "GGGGG"
+  see result = "Solved in 1"
+  see guess is disabled
+
+example "invalid and repeated guesses"
+  type "app" into draft
+  click guess
+  see message = "Five letters, please"
+  see guesses has 0 rows
+  see draft = "app"
+  type "ap1le" into draft
+  click guess
+  see message = "Five letters, please"
+  type " plane " into draft
+  click guess
+  see message = ""
+  see guesses has 1 row
+  type "PLANE" into draft
+  click guess
+  see message = "Already tried"
+  see guesses has 1 row
+
+example "losing and the next game"
+  type "hello" into draft
+  click guess
+  type "world" into draft
+  click guess
+  type "about" into draft
+  click guess
+  type "lemon" into draft
+  click guess
+  type "mango" into draft
+  click guess
+  see result is hidden
+  type "grape" into draft
+  click guess
+  see result = "The word was APPLE"
+  see guess is disabled
+  click next
+  see title = "Game 2"
+  see guesses has 0 rows
+  see guess is enabled
+  type "ember" into draft
+  click guess
+  see marks on row 1 = "G..YY"

@@ -1,0 +1,86 @@
+app Todo
+  "A short list of things to do today."
+
+record Item
+  title: Text
+  done: Bool = false
+
+choice Filter: All | Open | Finished
+
+state
+  items: List Item = []
+  draft: Text = ""
+  filter: Filter = All
+
+derive
+  shown = the items that match filter: All shows every item, Open the items not done, Finished the items that are done
+
+screen
+  heading "Today"
+  field draft "New item"
+  button add "Add"
+    enabled when draft is not blank
+  select filter "Show"
+  list shown of Item
+    checkbox done
+    text title
+    button remove "Delete"
+  text empty = "Nothing here"
+    visible when shown is empty
+  text remaining = "{number of items not done} left"
+
+on click add
+  - if an item with the same title (trimmed, ignoring case) exists, do not add anything
+  - otherwise add an Item with title = draft trimmed to the end of items
+  - clear draft in both cases
+
+on click remove
+  - remove that item from items
+
+example "adding an item"
+  type "  Milk " into draft
+  click add
+  see shown has 1 row
+  see title on row 1 = "Milk"
+  see draft = ""
+  see remaining = "1 left"
+
+example "blank drafts cannot be added"
+  see add is disabled
+  type "   " into draft
+  see add is disabled
+  type "Eggs" into draft
+  see add is enabled
+
+example "duplicates are ignored"
+  type "Milk" into draft
+  click add
+  type "milk" into draft
+  click add
+  see shown has 1 row
+  see draft = ""
+
+example "finishing and filtering"
+  type "Milk" into draft
+  click add
+  type "Bread" into draft
+  click add
+  toggle done on row 1
+  see done on row 1 is checked
+  see remaining = "1 left"
+  choose Open in filter
+  see shown has 1 row
+  see title on row 1 = "Bread"
+  choose Finished in filter
+  see title on row 1 = "Milk"
+  see filter = Finished
+
+example "removing and the empty message"
+  see empty = "Nothing here"
+  type "Milk" into draft
+  click add
+  see empty is hidden
+  click remove on row 1
+  see shown has 0 rows
+  see empty is shown
+  see remaining = "0 left"

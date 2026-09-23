@@ -1,0 +1,50 @@
+apps/01-counter.intent: ok — 0 error(s), 0 warning(s)
+apps/02-todo.intent: ok — 0 error(s), 0 warning(s)
+apps/03-tipsplit.intent: ok — 0 error(s), 0 warning(s)
+apps/04-pomodoro.intent: ok — 0 error(s), 0 warning(s)
+apps/05-wordle.intent: ok — 0 error(s), 0 warning(s)
+01-counter ts-2: attempt 1: ok
+01-counter ts-3: attempt 1: ok
+01-counter ts-1: attempt 1: ok
+01-counter elm-1: attempt 1: ok
+01-counter elm-2: attempt 1: ok
+01-counter elm-3: attempt 1: ok
+02-todo elm-1: attempt 1: ok
+02-todo elm-2: attempt 1: ok
+02-todo ts-1: attempt 1: ok
+02-todo elm-3: attempt 1: ok
+02-todo ts-2: attempt 1: ok
+02-todo ts-3: attempt 1: ok
+03-tipsplit ts-1: attempt 1: ok
+03-tipsplit elm-3: attempt 1: ok
+03-tipsplit elm-2: attempt 1: ok
+03-tipsplit ts-3: attempt 1: ok
+04-pomodoro elm-2: attempt 1: ok
+03-tipsplit elm-1: attempt 1: ok
+04-pomodoro elm-1: attempt 1: ok
+03-tipsplit ts-2: attempt 1: ok
+04-pomodoro ts-1: attempt 1: ok
+04-pomodoro ts-2: attempt 1: ok
+04-pomodoro ts-3: attempt 1: ok
+04-pomodoro elm-3: attempt 1: ok
+05-wordle ts-1: attempt 1: ok
+05-wordle elm-2: attempt 1: ok
+05-wordle ts-2: attempt 1: ok
+05-wordle ts-3: attempt 1: ok
+05-wordle elm-1: attempt 1: ok
+05-wordle elm-3: attempt 1: ok
+# Convergence report — v1-baseline
+
+3 builds per target (elm, ts), 40 random sessions × 25 actions per app.
+
+| App | Builds OK | First-try OK | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
+|---|---|---|---|---|---|---|---|---|
+| Counter | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 85% / 100% | $0.30 |
+| Todo | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 72% / 46% | $0.45 |
+| TipSplit | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 69% / 57% | $1.17 |
+| Pomodoro | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 100% / 92% | $0.41 |
+| Wordle | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 48% / 59% | $0.58 |
+
+*Same app* = share of random sessions in which every build showed identical screens after every action.
+
+full report: /Users/sjors/Develop/Personal/intentlang/runs/r1-baseline/report.md

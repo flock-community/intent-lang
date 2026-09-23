@@ -1,0 +1,56 @@
+app Errors
+  "Each line marked `expect` must produce that diagnostic."
+
+record Item
+  title: Txt                          # expect: UNKNOWN_NAME
+  done: Bool
+
+record Row
+  name: Text
+
+choice Color: Red | Green
+choice Mood: Happy | Red              # expect: DUPLICATE
+
+state
+  count: Int = 1.5                    # expect: BAD_BINDING
+  name: Text                          # expect: SYNTAX
+  color: Color = Blue                 # expect: BAD_BINDING
+  items: List Item = []
+  label: Int = 0
+  type: Text = ""                     # expect: RESERVED
+  rows: List Row = table
+    name    | size                    # expect: UNKNOWN_NAME
+    "a"     | 1
+  pick: Text = ""
+
+scren                                 # expect: SYNTAX
+  text x
+
+screen
+  text count
+  text count                          # expect: DUPLICATE
+  field label "Label"                 # expect: BAD_BINDING
+  buton go "Go"                       # expect: SYNTAX
+  button stop "Stop"
+  select color
+  select pick from items.done         # expect: BAD_BINDING
+  list items of Item
+    checkbox done
+    text title
+    button remove "x"
+  text ghost                          # expect: UNKNOWN_NAME
+
+on click goo                          # expect: UNKNOWN_NAME
+  - stop the count
+
+on toggle stop                        # expect: BAD_BINDING
+  - stop
+
+example "bad steps"
+  click count                         # expect: STEP
+  see nope = 3                        # expect: UNKNOWN_NAME
+  choose Purple in color              # expect: UNKNOWN_NAME
+  choose "Red" in color               # expect: STEP
+  click remove                        # expect: STEP
+  toggle done on row 1
+  wait 3s                             # expect: STEP

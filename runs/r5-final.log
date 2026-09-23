@@ -1,0 +1,121 @@
+apps/01-counter.intent: ok — 0 error(s), 0 warning(s)
+apps/02-todo.intent: ok — 0 error(s), 0 warning(s)
+apps/03-tipsplit.intent: ok — 0 error(s), 0 warning(s)
+apps/04-pomodoro.intent: ok — 0 error(s), 0 warning(s)
+apps/05-wordle.intent: ok — 0 error(s), 0 warning(s)
+apps/06-expenses.intent: ok — 0 error(s), 0 warning(s)
+apps/07-shop.intent: ok — 0 error(s), 0 warning(s)
+apps/08-calculator.intent: ok — 0 error(s), 0 warning(s)
+apps/09-board.intent:28:1: warning UNPROVEN: `text title` is never checked by a `see` step
+    28 |     text title
+       | ^
+apps/09-board.intent: ok — 0 error(s), 1 warning(s)
+01-counter ts-3: attempt 1: ok
+01-counter ts-2: attempt 1: ok
+01-counter ts-4: attempt 1: ok
+01-counter ts-1: attempt 1: ok
+01-counter ts-5: attempt 1: ok
+01-counter elm-2: attempt 1: ok
+01-counter elm-3: attempt 1: ok
+01-counter elm-1: attempt 1: ok
+01-counter elm-5: attempt 1: ok
+01-counter elm-4: attempt 1: ok
+02-todo elm-5: attempt 1: ok
+02-todo elm-4: attempt 1: ok
+02-todo elm-1: attempt 1: ok
+02-todo elm-2: attempt 1: ok
+02-todo elm-3: attempt 1: ok
+02-todo ts-1: attempt 1: ok
+02-todo ts-2: attempt 1: ok
+02-todo ts-3: attempt 1: ok
+02-todo ts-4: attempt 1: ok
+03-tipsplit ts-4: attempt 1: ok
+03-tipsplit ts-2: attempt 1: ok
+03-tipsplit ts-3: attempt 1: ok
+03-tipsplit ts-1: attempt 1: ok
+02-todo ts-5: attempt 1: ok
+03-tipsplit elm-5: attempt 1: ok
+03-tipsplit elm-3: attempt 1: ok
+03-tipsplit elm-4: attempt 1: ok
+03-tipsplit elm-1: attempt 1: ok
+03-tipsplit elm-2: attempt 1: ok
+03-tipsplit ts-5: attempt 1: ok
+04-pomodoro ts-3: attempt 1: ok
+04-pomodoro ts-2: attempt 1: ok
+04-pomodoro ts-1: attempt 1: ok
+04-pomodoro ts-4: attempt 1: ok
+04-pomodoro ts-5: attempt 1: ok
+04-pomodoro elm-3: attempt 1: ok
+04-pomodoro elm-2: attempt 1: ok
+04-pomodoro elm-1: attempt 1: ok
+04-pomodoro elm-4: attempt 1: ok
+04-pomodoro elm-5: attempt 1: ok
+05-wordle elm-1: attempt 1: ok
+05-wordle elm-3: attempt 1: ok
+05-wordle elm-2: attempt 1: ok
+05-wordle elm-4: attempt 1: ok
+05-wordle ts-5: attempt 1: ok
+05-wordle elm-5: attempt 1: ok
+05-wordle ts-2: attempt 1: ok
+05-wordle ts-4: attempt 1: ok
+05-wordle ts-1: attempt 1: ok
+05-wordle ts-3: attempt 1: ok
+06-expenses elm-2: attempt 1: ok
+06-expenses elm-1: attempt 1: ok
+06-expenses ts-1: attempt 1: ok
+06-expenses ts-4: attempt 1: ok
+06-expenses ts-5: attempt 1: ok
+06-expenses ts-2: attempt 1: ok
+06-expenses ts-3: attempt 1: ok
+06-expenses elm-4: attempt 1: ok
+06-expenses elm-3: attempt 1: ok
+06-expenses elm-5: attempt 1: ok
+07-shop elm-1: attempt 1: ok
+07-shop elm-2: attempt 1: ok
+07-shop elm-3: attempt 1: ok
+07-shop elm-4: attempt 1: ok
+07-shop elm-5: attempt 1: ok
+07-shop ts-2: attempt 1: ok
+07-shop ts-1: attempt 1: ok
+07-shop ts-5: attempt 1: ok
+07-shop ts-3: attempt 1: ok
+07-shop ts-4: attempt 1: ok
+08-calculator elm-4: attempt 1: ok
+08-calculator ts-2: attempt 1: ok
+08-calculator ts-1: attempt 1: ok
+08-calculator elm-3: attempt 1: ok
+08-calculator elm-2: attempt 1: ok
+08-calculator elm-1: attempt 1: ok
+08-calculator ts-4: attempt 1: ok
+08-calculator elm-5: attempt 1: ok
+08-calculator ts-3: attempt 1: ok
+08-calculator ts-5: attempt 1: ok
+09-board ts-1: attempt 1: ok
+09-board elm-1: attempt 1: ok
+09-board elm-3: attempt 1: ok
+09-board elm-2: attempt 1: ok
+09-board elm-5: attempt 1: ok
+09-board elm-4: attempt 1: ok
+09-board ts-2: attempt 1: ok
+09-board ts-3: attempt 1: ok
+09-board ts-4: attempt 1: ok
+09-board ts-5: attempt 1: ok
+# Convergence report — v4-final
+
+5 builds per target (elm, ts), 80 random sessions × 30 actions per app.
+
+| App | Builds OK | First-try OK | `always` held | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Counter | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 100% / 100% | $0.58 |
+| Todo | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 75% / 53% | $0.81 |
+| TipSplit | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 69% / 72% | $0.88 |
+| Pomodoro | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 96% / 85% | $0.76 |
+| Wordle | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 49% / 53% | $1.04 |
+| Expenses | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 42% / 48% | $1.62 |
+| Shop | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 70% / 40% | $1.28 |
+| Calculator | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 48% / 63% | $1.23 |
+| Board | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 45% / 46% | $0.97 |
+
+*Same app* = share of random sessions in which every build showed identical screens after every action.
+
+full report: /Users/sjors/Develop/Personal/intentlang/runs/r5-final/report.md

@@ -1,0 +1,25 @@
+{
+  "name": "intentlang",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "intent": "node compiler/cli.ts",
+    "check": "node compiler/cli.ts check apps/*.intent",
+    "test": "node tests/checker/run.ts && npm run test:fmt",
+    "test:fmt": "cd tests/fmt-parity && ../../node_modules/.bin/elm make src/Probe.elm --optimize --output=probe.js > /dev/null && cp probe.js probe.cjs && node parity.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^26.6.2",
+    "@types/pngjs": "^6.0.5",
+    "elm": "^0.19.2-0",
+    "esbuild": "^0.28.2",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.63.0",
+    "pngjs": "^7.0.0",
+    "preact": "^10.29.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
+  }
+}

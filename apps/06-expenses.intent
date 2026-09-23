@@ -1,0 +1,183 @@
+app Expenses
+  "Share costs within a group and see who should pay whom."
+
+record Person
+  name: Text
+
+record Expense
+  what: Text
+  payer: Text
+  amount: Decimal
+
+record Balance
+  name: Text
+  cents: Int
+
+record Transfer
+  line: Text
+
+state
+  people: List Person = []
+  newName: Text = ""
+  what: Text = ""
+  amount: Text = ""
+  payer: Text = ""
+  expenses: List Expense = []
+
+derive
+  shares = every expense is split over all people currently in people, in whole cents: each person gets the amount in cents divided by the number of people, rounded down; the remaining cents go one each to the first people in the order of people
+  balances = one Balance per person, in the order of people: the cents they paid minus the sum of their shares
+  transfers = settle up, starting from balances: while someone has a negative balance, take the person with the lowest balance (the debtor) and the person with the highest balance (the creditor), on a tie the one earlier in people; the debtor pays the creditor the smaller of the two amounts, and both balances change by that amount; one Transfer per payment, in that order, with line "<debtor> pays <creditor> <amount as money>"
+
+screen
+  section group "People"
+    field newName "Name"
+    button addPerson "Add"
+      enabled when newName is not blank and no person has that name (trimmed, ignoring case)
+    list people of Person
+      text name
+      button removePerson "Remove"
+        enabled when that person paid no expense
+  section spending "Add an expense"
+    visible when there are at least 2 people
+    field what "What"
+    field amount "Amount"
+    select payer "Paid by" from people.name
+    button addExpense "Add expense"
+      enabled when what is not blank, amount reads as a decimal above 0, and payer is the name of one of the people
+  list expenses of Expense
+    text what
+    text paidBy = "{payer} paid {amount as money}"
+    button removeExpense "Remove"
+  text total = "Total {sum of all expense amounts as money}"
+  list balances of Balance
+    text name
+    text balance = cents as money, with "+" in front when above 0: "+16.66", "-3.34", "0.00"
+  list transfers of Transfer
+    text line
+  text settled = "All settled"
+    visible when there are no transfers
+
+on click addPerson
+  - add a Person with name = newName trimmed to the end of people
+  - clear newName
+
+on click removePerson
+  - remove that person from people
+  - if payer is that person's name, set payer to ""
+
+on click addExpense
+  - add an Expense to the end of expenses with what = what trimmed, payer = payer, and amount = amount read as a decimal, rounded to cents
+  - clear what and amount; payer stays as it is
+
+on click removeExpense
+  - remove that expense from expenses
+
+example "adding people"
+  see what is hidden
+  type "Ann" into newName
+  click addPerson
+  see people has 1 row
+  see name on row 1 of people = "Ann"
+  see newName = ""
+  see what is hidden
+  type " Bob " into newName
+  click addPerson
+  see name on row 2 of people = "Bob"
+  see what is shown
+  type "ann" into newName
+  see addPerson is disabled
+  see settled = "All settled"
+
+example "sharing equally"
+  type "Ann" into newName
+  click addPerson
+  type "Bob" into newName
+  click addPerson
+  type "Cy" into newName
+  click addPerson
+  type "Dinner" into what
+  type "30" into amount
+  choose "Ann" in payer
+  click addExpense
+  see expenses has 1 row
+  see what on row 1 of expenses = "Dinner"
+  see paidBy on row 1 = "Ann paid 30.00"
+  see name on row 3 of balances = "Cy"
+  see total = "Total 30.00"
+  see balance on row 1 = "+20.00"
+  see balance on row 2 = "-10.00"
+  see balance on row 3 = "-10.00"
+  see transfers has 2 rows
+  see line on row 1 = "Bob pays Ann 10.00"
+  see line on row 2 = "Cy pays Ann 10.00"
+  see settled is hidden
+  see what = ""
+  see amount = ""
+  see payer = "Ann"
+
+example "remainder cents and settling up"
+  type "Ann" into newName
+  click addPerson
+  type "Bob" into newName
+  click addPerson
+  type "Cy" into newName
+  click addPerson
+  type "Taxi" into what
+  type "10" into amount
+  choose "Bob" in payer
+  click addExpense
+  see balance on row 1 = "-3.34"
+  see balance on row 2 = "+6.67"
+  see balance on row 3 = "-3.33"
+  see line on row 1 = "Ann pays Bob 3.34"
+  see line on row 2 = "Cy pays Bob 3.33"
+  type "Dinner" into what
+  type "30,00" into amount
+  choose "Ann" in payer
+  click addExpense
+  see total = "Total 40.00"
+  see balance on row 1 = "+16.66"
+  see balance on row 2 = "-3.33"
+  see balance on row 3 = "-13.33"
+  see line on row 1 = "Cy pays Ann 13.33"
+  see line on row 2 = "Bob pays Ann 3.33"
+
+example "payers cannot be removed"
+  type "Ann" into newName
+  click addPerson
+  type "Bob" into newName
+  click addPerson
+  type "Tea" into what
+  type "5" into amount
+  choose "Ann" in payer
+  click addExpense
+  see removePerson on row 1 is disabled
+  see removePerson on row 2 is enabled
+  click removeExpense on row 1
+  see removePerson on row 1 is enabled
+  see settled is shown
+
+example "checking the expense form"
+  type "Ann" into newName
+  click addPerson
+  type "Bob" into newName
+  click addPerson
+  type "Cy" into newName
+  click addPerson
+  type "Taxi" into what
+  type "12,5" into amount
+  see addExpense is disabled
+  choose "Cy" in payer
+  see addExpense is enabled
+  type "abc" into amount
+  see addExpense is disabled
+  type "0" into amount
+  see addExpense is disabled
+  type "12.345" into amount
+  click addExpense
+  see paidBy on row 1 = "Cy paid 12.35"
+  choose "Bob" in payer
+  click removePerson on row 2
+  see payer = ""
+  see people has 2 rows
