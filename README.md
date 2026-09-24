@@ -393,6 +393,14 @@ events. It built on the first attempt in Elm and TypeScript, twin-verified, and 
 sessions (with 286 calls by another client) were identical across the two targets. In
 Chromium, a second page showed a ticket added in the first.
 
+**Time** (v28): `Date` and `DateTime`, `@today` and `@now` in sentences, and a clock the tests
+control: every example starts at `examples start at …`, and `wait 1d` moves it on. Services get
+recurring work (`every 1m { … }`). Date arithmetic is in the standard helpers, identical in Elm
+and TypeScript (checked by the parity test, including leap years and dates before 1970).
+`apps/17-habits.intent` (streaks per day) and `apps/api/notices-api.intent` (notices that expire,
+at most three an hour) built on the first attempt and twin-verified; the habits screen is the
+same in Elm and TypeScript in 60 of 60 random sessions with 286 waits.
+
 **Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
 under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
 to the event stream. The layer is a verified spec of its own, run by the runtime for both

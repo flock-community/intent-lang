@@ -15,12 +15,20 @@ function lit(l: Literal, ind: string): string {
     case "emptyList": return "[]";
     case "nothing": return "nothing";
     case "value": return l.v;
+    case "date": return l.v;
+    case "dateTime": return l.v.replace("T", " ");
     case "table": {
       const rows = [l.columns, ...l.rows.map((r) => r.map((c) => lit(c, "")))];
       const w = l.columns.map((_, i) => Math.max(...rows.map((r) => r[i].length)));
       return "table\n" + rows.map((r) => `${ind}  ${r.map((c, i) => c.padEnd(w[i])).join(" | ").trimEnd()}`).join("\n");
     }
   }
+}
+
+/** A duration in its largest exact unit: 90000 → "90s", 86400000 → "1d". */
+function duration(ms: number): string {
+  for (const [u, n] of [["d", 86400000], ["h", 3600000], ["m", 60000], ["s", 1000]] as const) if (ms % n === 0) return `${ms / n}${u}`;
+  return `${ms}ms`;
 }
 
 export function stepText(s: Step): string {
@@ -30,7 +38,7 @@ export function stepText(s: Step): string {
     case "click": return `click ${s.target}${at}`;
     case "toggle": return `toggle ${s.target}${at}`;
     case "choose": return `choose ${s.quoted ? q(s.value) : s.value} in ${s.target}`;
-    case "tick": return `tick ${s.times} times`;
+    case "tick": return s.ms ? `wait ${duration(s.ms)}` : `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
     case "call": {
       const args = [...(s.headers ?? []).map((h) => `header ${h.name} = ${lit(h.value, "")}`), ...s.args.map((a) => `${a.name} = ${lit(a.value, "")}`)];
@@ -90,6 +98,7 @@ export function printApp(app: App): string {
   const block = (lines: string[]) => lines.length && out.push(...lines, "");
   block([`${app.kind ?? "app"} ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
   if (app.profile && app.profile !== "ui" && app.kind !== "layer") block([`profile ${app.profile}`]);
+  if (app.startsAt) block([`examples start at ${app.startsAt.replace("T", " ")}`]);
   // Layers the api runs behind, in order, with their bound params.
   for (const l of app.layers ?? [])
     block([
@@ -147,6 +156,7 @@ export function printApp(app: App): string {
       ...(ep.returns ? [`  returns ${typeToString(ep.returns)}`] : []),
       ...ep.steps.map((s) => `  - ${s}`),
     ]);
+  for (const j of app.jobs ?? []) block([`every ${j.name.slice(5)}`, ...j.steps.map((st) => `  - ${st}`)]);
   for (const h of app.handlers) block([`on ${h.verb}${h.target ? ` ${h.target}` : ""}${origin(app, h.line, h.note)}`, ...h.steps.map((s) => `  - ${s}`)]);
   block(app.rules.length ? ["rules", ...app.rules.map((r) => `  - ${r}`)] : []);
   block(app.always.length ? ["always", ...app.always.map((s) => `  ${stepText(s)}${origin(app, s.line)}`)] : []);

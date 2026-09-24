@@ -5,6 +5,8 @@
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { outgoing, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
+import { addMinutes } from "../runtime/ts/fmt.ts";
+import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
 import { varyOther } from "./fuzz.ts";
 import { createRequire } from "node:module";
@@ -18,6 +20,7 @@ export interface Action {
   on: "click" | "toggle" | "input" | "choose" | "tick" | "other";
   target: string; // element name ("" for tick; the endpoint for another client's call)
   call?: CallOut; // on "other": another client calls the provider
+  ms?: number; // on "tick" from a `wait`: how far the clock moves
   list?: string;
   row?: number; // 1-based
   rowWith?: string; // or: the first row showing this text
@@ -30,7 +33,7 @@ export interface Action {
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
   | { kind: "trace"; actions: Action[]; always?: Step[] }
-  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; always?: Step[] };
+  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; always?: Step[] };
 
 /** The first broken `always` check in a session: after `actions`, `check` failed on `screen`. */
 export interface Violation {
@@ -82,7 +85,27 @@ interface Session {
  * made since the previous one, so two builds that call differently are different apps.
  */
 async function openSession(dir: string, target: string): Promise<Session> {
-  const raw = await openRawSession(dir, target);
+  // Apps that read the clock (clock.json): the driver owns it. It starts at `examples start at`,
+  // moves with every tick and every `wait`, and comes with every event (and every call to a provider).
+  const clockSpec: { start: string; tickMs: number } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
+  let elapsed = 0; // ms since the start
+  const clockNow = () => (clockSpec ? clockAt(addMinutes(clockSpec.start, Math.floor(elapsed / 60000))) : undefined);
+  const inner = await openRawSession(dir, target, clockNow());
+  const raw: Session = !clockSpec
+    ? inner
+    : {
+        ...inner,
+        send: async (w) => {
+          const wire = w as { on?: string; ms?: number };
+          if (wire.on === "wait") {
+            // Time passes without an event: the screen is shown again at the new time.
+            elapsed += wire.ms ?? 0;
+            return inner.send({ on: "noop", target: "", clock: clockNow() });
+          }
+          if (wire.on === "tick") elapsed += clockSpec.tickMs;
+          return inner.send({ ...w, clock: clockNow() });
+        },
+      };
   if (!existsSync(join(dir, "providers.json"))) return raw;
   const { endpoints, providers } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string> };
   const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number }> = {};
@@ -158,15 +181,15 @@ async function openSession(dir: string, target: string): Promise<Session> {
 const stable = (v: unknown): string =>
   Array.isArray(v) ? `[${v.map(stable).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v ?? null);
 
-async function openRawSession(dir: string, target: string): Promise<Session> {
+async function openRawSession(dir: string, target: string, clock?: { now: string; today: string }): Promise<Session> {
   if (target === "ts") {
     const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
-    const s = mod.start();
+    const s = mod.start(clock);
     return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []), through: async () => (s.through ? s.through() : {}) };
   }
   const require = createRequire(import.meta.url);
   const { Elm } = require(join(dir, "worker.cjs"));
-  const app = Elm.Worker.init();
+  const app = clock ? Elm.Worker.init({ flags: clock }) : Elm.Worker.init();
   let last: Obs | undefined;
   let made: CallOut[] = [];
   let through: Record<string, Record<string, unknown>> = {};
@@ -290,7 +313,8 @@ export function describe(obs: Obs): string {
 
 /** Resolve an abstract action against the current screen. Returns the wire event(s), or a reason it is unavailable. */
 export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailable: string } {
-  if (a.on === "tick") return { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
+  // A `wait` in an app without a clock tick only moves the clock on; with one, it ticks that often.
+  if (a.on === "tick") return a.times === 0 && a.ms ? { wires: [{ on: "wait", target: "", ms: a.ms }] } : { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
   if (a.on === "other") return { wires: [{ on: "other", call: a.call }] }; // handled by the session: another client calls the provider
   const f = locate(obs, a.target, a.list, a.row, a.rowWith);
   if ("missing" in f) return { unavailable: f.missing };
@@ -314,7 +338,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "click": return { on: "click", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "choose": return { on: "choose", target: s.target, value: s.value };
-    case "tick": return { on: "tick", target: "", times: s.times };
+    case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}) } } : undefined;
     default: return undefined;
   }
@@ -404,6 +428,7 @@ function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => 
   walk(obs.c);
   if (job.ticks.length) out.push({ w: 3, a: { on: "tick", target: "", times: job.ticks[Math.floor(rnd() * job.ticks.length)] } });
   for (const o of job.others ?? []) out.push({ w: 1, a: varyOther(o, rnd) });
+  if (job.waits?.length) out.push({ w: 2, a: { on: "tick", target: "", times: 0, ms: job.waits[Math.floor(rnd() * job.waits.length)] } });
   return out;
 }
 

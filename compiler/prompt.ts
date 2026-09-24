@@ -21,7 +21,19 @@ Fmt.parseInt : String -> Maybe Int
 Fmt.roundTo : Int -> Float -> Float     -- round to n decimals, half away from zero
 Fmt.roundUpTo : Int -> Float -> Float   -- round up (towards +infinity) to n decimals
 Fmt.roundDownTo : Int -> Float -> Float -- round down (towards -infinity) to n decimals
-Fmt.cents : Float -> Int                -- whole cents, half away from zero: cents 12.345 == 1235`,
+Fmt.cents : Float -> Int                -- whole cents, half away from zero: cents 12.345 == 1235
+-- Dates ("YYYY-MM-DD") and moments ("YYYY-MM-DDTHH:MM") are Strings; compare and sort them as text.
+Fmt.addDays : Date -> Int -> Date               -- addDays "2026-02-27" 2 == "2026-03-01"
+Fmt.daysBetween : Date -> Date -> Int            -- daysBetween "2026-09-24" "2026-10-01" == 7
+Fmt.weekday : Date -> String                     -- weekday "2026-09-24" == "Thursday"
+Fmt.dateOf : DateTime -> Date                    -- dateOf "2026-09-24T09:30" == "2026-09-24"
+Fmt.timeOf : DateTime -> String                  -- timeOf "2026-09-24T09:30" == "09:30"
+Fmt.addMinutes : DateTime -> Int -> DateTime     -- addMinutes "2026-09-24T23:50" 15 == "2026-09-25T00:05"
+Fmt.minutesBetween : DateTime -> DateTime -> Int
+Fmt.formatDate : Date -> String                  -- formatDate "2026-09-04" == "4 Sep 2026"
+Fmt.formatDateTime : DateTime -> String          -- formatDateTime "2026-09-04T09:05" == "4 Sep 2026 09:05"
+Fmt.parseDate : String -> Maybe Date             -- only a date that exists
+Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-MM-DDTHH:MM"`,
   ts: `Fmt.fixed(places: number, x: number): string   // exactly n decimals, half away from zero: fixed(2, 1.005) === "1.01"
 Fmt.decimal(places: number, x: number): string // at most n decimals, trailing zeros removed: decimal(8, 0.1 + 0.2) === "0.3"
 Fmt.money(x: number): string                    // fixed(2, x)
@@ -32,7 +44,19 @@ Fmt.parseInt(text: string): number | null
 Fmt.roundTo(places: number, x: number): number      // round to n decimals, half away from zero
 Fmt.roundUpTo(places: number, x: number): number    // round up (towards +infinity) to n decimals
 Fmt.roundDownTo(places: number, x: number): number  // round down (towards -infinity) to n decimals
-Fmt.cents(x: number): number                        // whole cents, half away from zero: cents(12.345) === 1235`,
+Fmt.cents(x: number): number                        // whole cents, half away from zero: cents(12.345) === 1235
+// Dates ("YYYY-MM-DD") and moments ("YYYY-MM-DDTHH:MM") are strings; compare and sort them as text.
+Fmt.addDays(date, n): Date                    // addDays("2026-02-27", 2) === "2026-03-01"
+Fmt.daysBetween(from, to): number             // daysBetween("2026-09-24", "2026-10-01") === 7
+Fmt.weekday(date): string                     // weekday("2026-09-24") === "Thursday"
+Fmt.dateOf(dateTime): Date                    // dateOf("2026-09-24T09:30") === "2026-09-24"
+Fmt.timeOf(dateTime): string                  // timeOf("2026-09-24T09:30") === "09:30"
+Fmt.addMinutes(dateTime, n): DateTime         // addMinutes("2026-09-24T23:50", 15) === "2026-09-25T00:05"
+Fmt.minutesBetween(from, to): number
+Fmt.formatDate(date): string                  // formatDate("2026-09-04") === "4 Sep 2026"
+Fmt.formatDateTime(dateTime): string          // formatDateTime("2026-09-04T09:05") === "4 Sep 2026 09:05"
+Fmt.parseDate(text): Date | null              // only a date that exists
+Fmt.parseDateTime(text): DateTime | null      // "YYYY-MM-DD HH:MM" or "YYYY-MM-DDTHH:MM"`,
 };
 
 const TARGET_RULES = {
@@ -96,7 +120,17 @@ const THROUGH_RULE = {
   ts: "- Export `through(model: Model): Through` too: for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
 };
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false): string {
+/** Apis that read the clock or run recurring work. */
+const API_CLOCK_RULE = `This api reads the clock: every request carries \`now\` (@now, a DateTime) and \`today\` (@today, a Date); never read the time any other way.
+Each \`every <interval> { … }\` block is recurring work: export \`jobs\` typed \`Jobs<Model>\` from spec.ts, one function per block (\`every15m\` for \`every 15m\`), taking the model and the clock at its time and returning \`{ model, publish }\`. The module then exports Model, init, handlers and jobs.`;
+
+/** Apps that read the clock: the harness hands it in; the logic never asks for the time itself. */
+const CLOCK_RULE = {
+  elm: `Clock (this app reads @now or @today): \`init\`, \`update\` and \`view\` take the clock as their FIRST argument: \`init : Clock -> …\`, \`update : Clock -> Msg -> Model -> …\`, \`view : Clock -> Model -> Screen\`. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,
+  ts: `Clock (this app reads @now or @today): \`init(clock)\`, \`update(msg, model, clock)\` and \`view(model, clock)\` take the clock (type \`Clock\` from spec.ts) as their LAST argument. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,
+};
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
   if (api)
@@ -126,7 +160,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
+${clock ? `# Clock\n\n${API_CLOCK_RULE}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
   return `# Language reference
 
 ${language}
@@ -142,7 +176,7 @@ ${FMT_API[target]}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}
+${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}${clock && !api ? `\n${CLOCK_RULE[target]}\n` : ""}
 # Generated interface (${target === "elm" ? "src/Spec.elm" : "spec.ts"})
 
 \`\`\`${lang}

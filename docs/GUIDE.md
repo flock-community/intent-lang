@@ -600,14 +600,69 @@ layer refuses its event stream, in tests as in the browser.
 
 ---
 
-## 12. Examples: the steps you can use
+## 12. Time: days, moments and a clock you control
+
+`Date` is a day and `DateTime` a moment, to the minute. Every sentence can read the clock as
+`@today` and `@now`. In tests the clock is yours: every example starts at the same moment, and
+`wait` moves it on. From `apps/17-habits.intent`:
+
+```
+examples start at 2026-09-24 08:00
+
+record Done {
+  habit: Int                       # the id of the habit
+  day: Date
+}
+…
+    button done "Done today" {
+      enabled when this habit has no @Done on @today
+    }
+…
+example "the next day" {
+  click done on row 1
+  wait 1d
+  see date = "Friday 25 Sep 2026"
+  see done on row 1 is enabled
+  see streak on row 1 = "3 days"
+  click done on row 1
+  see streak on row 1 = "4 days"
+}
+```
+
+A service can do work on a timer. From `apps/api/notices-api.intent`, where a notice disappears
+when its time is up:
+
+```
+every 1m {
+  - every notice whose @expiresAt is at or before @now is removed from @notices, in the order of @notices, and for each one publish @noticeExpired with that notice
+}
+
+example "a notice lives for its minutes" {
+  call post with text = " Lunch at noon ", sender = "Ann", duration = 30
+  see post.status = 201
+  see post.body.expiresAt = 2026-09-24 09:30
+  wait 29m
+  call list
+  see list.body has 1 row
+  wait 1m
+  see noticeExpired.body.text = "Lunch at noon"
+}
+```
+
+- Dates and moments are text underneath (`"2026-09-24"`, `"2026-09-24T09:30"`), so they sort
+  and compare as you expect, and are the same in Elm, TypeScript and JSON. Computing with them
+  ("the day before", "30 minutes after", "the weekday of", "as a date") uses the standard helpers.
+- In the browser and on the server the clock is the local time; recurring work runs on a timer.
+- Random sessions let time pass too, so two builds that treat time differently are caught.
+
+## 13. Examples: the steps you can use
 
 ```
 type "Milk" into draft              choose Open in filter          toggle done on row 1
 click add                           click remove on row with "Milk"
 see count = 2                       see add is disabled            see empty is hidden
 see shown has 1 row                 see stock is at least 0        see every row of cart: qty is at least 1
-wait 3s / tick 5 times              snapshot "queue"               (screens)
+wait 3s / wait 1d / tick 5 times    snapshot "queue"               (screens and apis)
 call createTicket with a = 1        see createTicket.body.id = 9   see ticketCreated is absent   (apis)
 call x with header x-api-key = "…"  see x.header.vary = "origin"   request OPTIONS "/tickets" with header origin = "…"
 ```
@@ -615,7 +670,7 @@ call x with header x-api-key = "…"  see x.header.vary = "origin"   request OPT
 Write examples you could compute by hand. They are the only thing that says what "right" is:
 a literal compiler turns a vague spec into consistent, *unintended* behaviour.
 
-## 13. Working with it
+## 14. Working with it
 
 ```sh
 npm install
@@ -636,7 +691,7 @@ node compiler/cli.ts build apps/api/desk-api.intent  # → runs/single/desk-api/
 - **Open a UI build** by opening its `index.html`. A screen that uses an API reads its address
   from the URL: `index.html?api.desk=http://localhost:3000`.
 
-## 14. Where to look next
+## 15. Where to look next
 
 | File | What it shows |
 |---|---|
@@ -648,6 +703,8 @@ node compiler/cli.ts build apps/api/desk-api.intent  # → runs/single/desk-api/
 | `apps/10-helpdesk.intent` | a large styled app: sections, a drawer, a table, a chart |
 | `apps/12-helpdesk-bundled.intent` | the same app built from bundles |
 | `apps/14-supportdesk.intent` | refinement: `extends`, `override`, `add to`, `drop` |
+| `apps/17-habits.intent` | dates, `@today`, and `wait` in examples |
+| `apps/api/notices-api.intent` | `@now` in an API, and recurring work (`every 1m`) |
 | `apps/api/tickets-api.intent` | an API implementing a contract, publishing events |
 | `apps/api/desk-api.intent` | an API behind layers, with rules per caller |
 | `apps/15-tickets-ui.intent` | a screen calling an API, following events |

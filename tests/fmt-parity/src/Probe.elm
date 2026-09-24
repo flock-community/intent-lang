@@ -17,6 +17,26 @@ texts =
     [ "", " ", "12", " 12,50 ", "12.5", "-3", "-", ".5", "5.", "1,2,3", "1.2.3", "abc", "0012", "-0", "1e5", "+4", "3,75", "  -12.25 " ]
 
 
+dates : List String
+dates =
+    [ "2026-09-24", "2024-02-28", "2024-02-29", "2023-02-28", "2000-02-29", "2100-02-28", "1970-01-01", "1969-12-31", "1900-03-01", "2026-12-31", "0001-01-01" ]
+
+
+moments : List String
+moments =
+    [ "2026-09-24T09:00", "2026-09-24T23:50", "2024-02-28T23:59", "1970-01-01T00:00", "1969-12-31T23:30" ]
+
+
+dateTexts : List String
+dateTexts =
+    [ "2026-09-24", " 2026-09-24 ", "2026-02-30", "2024-02-29", "2023-02-29", "2026-13-01", "26-09-24", "2026-9-24", "", "2026-09-24T09:00", "2026-09-24 09:00", "2026-09-24 24:00", "2026-09-24T09:60", "2026-09-24T9:00" ]
+
+
+maybeString : Maybe String -> J.Value
+maybeString m =
+    Maybe.withDefault J.null (Maybe.map J.string m)
+
+
 main : Program () () ()
 main =
     Platform.worker
@@ -37,6 +57,16 @@ main =
                         , ( "cents", J.list J.int (List.map Fmt.cents floats) )
                         , ( "decimal", J.list J.string (List.map (Fmt.decimal 8) (floats ++ [ 1 / 3, -0.5, 100, 1.0e-9, -1.0e-9, 20 ])) )
                         , ( "int", J.list J.string (List.map Fmt.int [ 0, -3, 1200 ]) )
+                        , ( "addDays", J.list J.string (List.concatMap (\d -> List.map (Fmt.addDays d) [ -366, -1, 0, 1, 30, 365 ]) dates) )
+                        , ( "daysBetween", J.list J.int (List.map (Fmt.daysBetween "2026-09-24") dates) )
+                        , ( "weekday", J.list J.string (List.map Fmt.weekday dates) )
+                        , ( "formatDate", J.list J.string (List.map Fmt.formatDate dates) )
+                        , ( "addMinutes", J.list J.string (List.concatMap (\t -> List.map (Fmt.addMinutes t) [ -1441, -1, 15, 60, 1440 ]) moments) )
+                        , ( "minutesBetween", J.list J.int (List.map (Fmt.minutesBetween "2026-09-24T09:00") moments) )
+                        , ( "formatDateTime", J.list J.string (List.map Fmt.formatDateTime moments) )
+                        , ( "dateOf", J.list J.string (List.map (\t -> Fmt.dateOf t ++ " " ++ Fmt.timeOf t) moments) )
+                        , ( "parseDate", J.list maybeString (List.map Fmt.parseDate dateTexts) )
+                        , ( "parseDateTime", J.list maybeString (List.map Fmt.parseDateTime dateTexts) )
                         ]
                     )
                 )

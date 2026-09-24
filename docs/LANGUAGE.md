@@ -1,4 +1,4 @@
-# Intent — language reference (v27)
+# Intent — language reference (v28)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -83,7 +83,9 @@ always { … }                # invariants the harness checks after every action
 example "name" { … }        # proof (§6): steps
 ```
 
-Types: `Text`, `Int`, `Decimal`, `Bool`, `List T`, `Maybe T`, a record name, a choice name.
+Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `Maybe T`, a record
+name, a choice name. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
+(a DateTime, to the minute, in the app's own local time).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -118,6 +120,31 @@ type Price = Decimal from 0
 - An api answers a value that breaks the rule with `400 {"error": "<name> must be a valid Email"}`.
   A contract that answers a refined type is checked against it too.
 - Common ones are in bundles: `import std.text` gives `Email`.
+
+## 3b. Time
+
+A spec reads the clock with `@today` (a Date) and `@now` (a DateTime), in any sentence:
+
+```
+button done "Done today" {
+  enabled when this habit has no @Done on @today
+}
+text date = "{the weekday of @today} {@today as a date}"
+```
+
+- Dates and moments compare and sort as you would expect ("before", "after", "the latest").
+  "N days after", "the day before", "the weekday of", "minutes between", "as a date"
+  ("4 Sep 2026") and "as a moment" ("4 Sep 2026 09:05") are computed with the standard helpers,
+  the same in every target.
+- **In tests the clock is the harness's.** Every example and random session starts at the same
+  moment: `examples start at 2026-09-24 09:00` (a top-level line; without it, Monday 2026-01-05
+  09:00). `wait 1d`, `wait 2h`, `wait 15m` move the clock on and show the screen again. With a
+  `clock every …` tick, `wait` also ticks that often. Random sessions mix in waits too.
+- In the browser and on the server, the clock is the local time.
+
+**Recurring work** (apis): `every 15m { - … }` runs its steps on that interval, reading
+`@now`. On the server it runs on a timer; in tests, whenever a `wait` moves the clock past its
+next time (counted from the start), in order, before the next step.
 
 ## 4. Screen elements
 
@@ -735,7 +762,7 @@ click remove on row 2 [of visible]
 toggle done on row 1 [of visible]
 choose Done in filter
 choose "Ann" in payer       # select … from: options are texts
-wait 3s                     # = 3 ticks with `clock every 1s`
+wait 3s                     # = 3 ticks with `clock every 1s`; without a tick: the clock moves on (§3b)
 tick 5 times
 see count = "2"             # text/field value; numbers and choice values are allowed: see count = 2
 see title on row 1 [of visible] = "Milk"
@@ -874,7 +901,8 @@ something when it wants different behaviour.
    button does nothing.
 7. **Fields.** Typing only changes the field's state unless an `on type` handler says more.
    Nothing is cleared unless a sentence says "clear".
-8. **Time.** Only `clock` ticks move time. There is no wall clock and no randomness.
+8. **Time.** In tests only `clock` ticks and `wait` move time, from `examples start at` (§3b).
+   There is no randomness.
 9. **Durations** shown as time use `Fmt.clock` (`m:ss`, or `h:mm:ss` from one hour up).
    **Rounding words** map to fixed helpers: "rounded" is `Fmt.roundTo` (half away from
    zero), "rounded up" is `Fmt.roundUpTo`, and "rounded down" is `Fmt.roundDownTo`. Money in
@@ -899,6 +927,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v28: time: `Date` and `DateTime` types and literals, `@today` and `@now` in sentences,
+  `examples start at …`, `wait 1d` moves the clock in tests, date helpers in Fmt (the same in
+  every target), and `every 15m { … }` recurring work in apis.
 
 - v27: traceability: checker errors point at the step's own line; `see x.body… = value` must
   be a value the field can hold; the source map covers endpoints, steps, events, layers, rules

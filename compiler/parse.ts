@@ -4,7 +4,7 @@ import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import { fromBraces } from "./braces.ts";
-import { bareWords, declaredNames, refsIn, resolves, sentences } from "./refs.ts";
+import { bareWords, declaredNames, refsIn, resolves, sentences, usesClock } from "./refs.ts";
 import type { App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
@@ -169,6 +169,14 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       const type = parseType(m[2]);
       if (!type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
       else (app.events ??= []).push({ name: m[1], type, line: node.line, note: node.note });
+    } else if ((m = t.match(/^examples\s+start\s+at\s+(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)$/))) {
+      // The clock at the start of every example and random session (default 2026-01-05 09:00, a Monday).
+      app.startsAt = m[1].length === 10 ? `${m[1]}T09:00` : m[1].replace(" ", "T");
+    } else if ((m = t.match(/^every\s+(\d+(?:ms|s|m|h|d))$/))) {
+      // An api's recurring work: `every 15m { - … }`, run by the clock (and by `wait` in tests).
+      const ms = parseDuration(m[1])!;
+      const stepLines: number[] = [];
+      (app.jobs ??= []).push({ every: ms, name: `every${m[1]}`, steps: parseBullets(node, err, stepLines), stepLines, line: node.line });
     } else if ((m = t.match(/^every\s+endpoint\s+answers\s+([1-5]\d\d)(?:\s+(.+))?$/))) {
       // What any endpoint may answer (a layer's 401, a 429): \`every endpoint answers 401 Problem\`.
       const type = m[2] ? parseType(m[2]) : undefined;
@@ -554,9 +562,9 @@ export function parseString(s: string): string | undefined {
 }
 
 function parseDuration(s: string): number | undefined {
-  const m = s.match(/^(\d+)(ms|s|m|h)$/);
+  const m = s.match(/^(\d+)(ms|s|m|h|d)$/);
   if (!m) return undefined;
-  return Number(m[1]) * { ms: 1, s: 1000, m: 60000, h: 3600000 }[m[2] as "ms"];
+  return Number(m[1]) * { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000 }[m[2] as "ms"];
 }
 
 function parseType(s: string): Type | undefined {
@@ -570,7 +578,7 @@ function parseType(s: string): Type | undefined {
     const of = parseType(m[1]);
     return of && { k: "Maybe", of };
   }
-  if (s === "Text" || s === "Int" || s === "Decimal" || s === "Bool") return { k: s };
+  if (s === "Text" || s === "Int" || s === "Decimal" || s === "Bool" || s === "Date" || s === "DateTime") return { k: s };
   if (new RegExp(`^${UPPER}$`).test(s)) return { k: "Named", name: s };
   return undefined;
 }
@@ -592,6 +600,8 @@ function parseLiteral(s: string): Literal | undefined {
   if (s === "true" || s === "false") return { k: "bool", v: s === "true" };
   if (s === "[]") return { k: "emptyList" };
   if (s === "nothing") return { k: "nothing" };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { k: "date", v: s };
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}$/.test(s)) return { k: "dateTime", v: s.replace(" ", "T") };
   if (new RegExp(`^${UPPER}$`).test(s)) return { k: "value", v: s };
   return undefined;
 }
@@ -889,7 +899,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
       err(line, "SYNTAX", "expected a duration such as `3s`", col);
       return;
     }
-    return { step: { do: "tick", times: 0, line }, waitMs: ms };
+    return { step: { do: "tick", times: 0, ms, line }, waitMs: ms };
   }
   // Inside a component the row count may be a param: `see rows has at most size rows`.
   if ((m = t.match(new RegExp(`^see\\s+(${QN})\\s+has\\s+(at\\s+most\\s+|at\\s+least\\s+)?(\\d+|${inComponent ? LOWER : "\\d+"})\\s+rows?$`)))) {
@@ -1182,7 +1192,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     if (!ex.steps.length) err(ex.line, "SYNTAX", "an example needs steps");
     for (const s of ex.steps) {
       if (s.do === "tick") {
-        if (!app.clockMs) err(s.line, "STEP", "`tick`/`wait` needs a `clock every …` block");
+        // `tick` needs a clock tick; `wait` needs one, or an app that reads the clock (@now, @today).
+        if (!app.clockMs && !(s.ms && usesClock(app))) err(s.line, "STEP", s.ms ? "`wait` moves the clock on: it needs `clock every …`, or sentences that read `@now` or `@today`" : "`tick` needs a `clock every …` block");
         continue;
       }
       if (s.do === "call" && s.endpoint.includes(".")) {
@@ -1371,10 +1382,10 @@ function checkApi(
     ctx.checkType(e.type, e.line);
     if (eps.has(e.name)) err(e.line, "DUPLICATE", `\`${e.name}\` is both an endpoint and an event`);
   }
-  for (const ep of eps.values())
+  for (const ep of [...eps.values(), ...(app.jobs ?? [])])
     for (const [i, st] of ep.steps.entries())
       for (const m of st.matchAll(/\bpublish(?:es)?\s+@?([a-z]\w*)/gi))
-        if (!events.has(m[1])) err(ep.stepLines?.[i] ?? ep.line, "UNKNOWN_NAME", `endpoint ${ep.name} publishes \`${m[1]}\`, which is not a declared event${suggest(m[1], [...events.keys()])}; declare it with \`event ${m[1]}: <Type>\``);
+        if (!events.has(m[1])) err(ep.stepLines?.[i] ?? ep.line, "UNKNOWN_NAME", `${"every" in ep ? `every ${ep.name.slice(5)}` : `endpoint ${ep.name}`} publishes \`${m[1]}\`, which is not a declared event${suggest(m[1], [...events.keys()])}; declare it with \`event ${m[1]}: <Type>\``);
   // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`; `see <event>.body…` (what the latest call published).
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
     for (const s of ex.steps) {
@@ -1437,7 +1448,9 @@ function checkApi(
               err(s.line, "STEP", `\`${target}${s.every ? `: ${s.target}` : ""}\` is ${typeToString(found[0])}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
           }
         }
-      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\` and \`see\`, not \`${s.do}\``);
+      } else if (s.do === "tick" && s.ms) {
+        if (!usesClock(app)) err(s.line, "STEP", "`wait` moves the clock on: this api reads no `@now` or `@today`, and has no `every …` work");
+      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\`, \`see\` and \`wait\`, not \`${s.do}\``);
     }
   }
   for (const ep of eps.values()) if (!app.examples.some((ex) => ex.steps.some((s) => s.do === "call" && s.endpoint === ep.name))) warn(ep.line, "UNPROVEN", `endpoint \`${ep.name}\` is never called in an example`);
@@ -1450,6 +1463,8 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
     case "Int": return l.k === "number" && Number.isInteger(l.v) && !l.raw.includes(".");
     case "Decimal": return l.k === "number";
     case "Bool": return l.k === "bool";
+    case "Date": return l.k === "date";
+    case "DateTime": return l.k === "dateTime";
     case "List": return l.k === "emptyList" || l.k === "table";
     case "Maybe": return l.k === "nothing" || literalFits(l, t.of, choices);
     case "Named": {
@@ -1470,6 +1485,8 @@ function valueFits(t: Type, v: string, choices: Map<string, ChoiceDecl>): boolea
   if (t.k === "Int") return /^-?\d+$/.test(v);
   if (t.k === "Decimal") return /^-?\d+(\.\d+)?$/.test(v);
   if (t.k === "Bool") return v === "true" || v === "false";
+  if (t.k === "Date") return /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (t.k === "DateTime") return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v);
   if (t.k === "Named" && choices.has(t.name)) return choices.get(t.name)!.values.includes(v);
   if (t.k === "List") return v.startsWith("[");
   return true; // text, and refined types (their rule is checked at run time)

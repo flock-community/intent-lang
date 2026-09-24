@@ -5,6 +5,8 @@ export type Type =
   | { k: "Int" }
   | { k: "Decimal" }
   | { k: "Bool" }
+  | { k: "Date" } // a day: "2026-09-24"
+  | { k: "DateTime" } // a moment, to the minute: "2026-09-24T09:00"
   | { k: "List"; of: Type }
   | { k: "Maybe"; of: Type }
   | { k: "Named"; name: string };
@@ -16,6 +18,8 @@ export type Literal =
   | { k: "emptyList" }
   | { k: "nothing" }
   | { k: "value"; v: string } // a choice value
+  | { k: "date"; v: string } // 2026-09-24
+  | { k: "dateTime"; v: string } // 2026-09-24 09:00, kept as "2026-09-24T09:00"
   | { k: "table"; columns: string[]; rows: Literal[][] }; // seed data for List Record
 
 export interface Field {
@@ -91,7 +95,7 @@ export type Step =
   | { do: "click"; target: string; at?: RowRef; line: number }
   | { do: "toggle"; target: string; at?: RowRef; line: number }
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
-  | { do: "tick"; times: number; line: number }
+  | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
   | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
   // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.
@@ -173,6 +177,8 @@ export interface App {
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
   endpoints?: Endpoint[];
   events?: EventDecl[];
+  startsAt?: string; // `examples start at 2026-09-24 09:00`: the clock at the start of every example and session
+  jobs?: { every: number; name: string; steps: string[]; stepLines?: number[]; line: number }[]; // api: `every 15m { … }`
   everyAnswer?: { status: number; type?: Type; line: number }[]; // `every endpoint answers 401 Problem`: added to every endpoint's answers // what an api (or contract) announces: `event ticketCreated: Ticket`
   name: string;
   imports?: Import[];

@@ -101,6 +101,7 @@ function elmDecoder(app: App, t: Type): string {
     case "Int": return "D.int";
     case "Decimal": return "D.float";
     case "Bool": return "D.bool";
+    case "Date": case "DateTime": return "D.string";
     case "List": return `(D.list ${elmDecoder(app, t.of)})`;
     case "Maybe": return `(D.nullable ${elmDecoder(app, t.of)})`;
     case "Named": {
@@ -117,6 +118,7 @@ function elmEncoder(app: App, t: Type, v: string, d = 0): string {
     case "Int": return `J.int ${v}`;
     case "Decimal": return `J.float ${v}`;
     case "Bool": return `J.bool ${v}`;
+    case "Date": case "DateTime": return `J.string ${v}`;
     case "List": return `J.list (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v}`;
     case "Maybe": return `Maybe.withDefault J.null (Maybe.map (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v})`;
     case "Named": {

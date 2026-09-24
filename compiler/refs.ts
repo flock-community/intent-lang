@@ -59,15 +59,25 @@ export function sentences(app: App): { text: string; line: number; where: string
     }
   };
   walk(app.screen);
+  for (const j of app.jobs ?? []) j.steps.forEach((s, i) => out.push({ text: s, line: j.stepLines?.[i] ?? j.line, where: `every ${j.name.slice(5)}` }));
   for (const ep of app.endpoints ?? []) ep.steps.forEach((s, i) => out.push({ text: s, line: ep.stepLines?.[i] ?? ep.line, where: `endpoint ${ep.name}` }));
   for (const [b, where] of [[app.before, "before every request"], [app.after, "after every answer"], [app.beforeCall, "before every call"]] as const)
     (b?.steps ?? []).forEach((s, i) => out.push({ text: s, line: b!.stepLines?.[i] ?? b!.line, where }));
   return out;
 }
 
+/** The clock every sentence may read: `@now` (a DateTime) and `@today` (a Date). */
+export const CLOCK_NAMES = ["now", "today"];
+
+/** Does this app read the clock (`@now`, `@today`), or run recurring work? Then its logic gets the clock. */
+export function usesClock(app: App): boolean {
+  if (app.jobs?.length) return true;
+  return sentences(app).some((s) => refsIn(s.text).some((r) => CLOCK_NAMES.includes(r.split(".")[0])));
+}
+
 /** Every name a sentence of this app may refer to. */
 export function declaredNames(app: App): Set<string> {
-  const names = new Set<string>();
+  const names = new Set<string>(CLOCK_NAMES);
   for (const f of app.state) names.add(f.name);
   for (const d of app.derive) names.add(d.name);
   const walk = (els: Element[]) => {

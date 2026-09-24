@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v27** (see the changelog at the end of
+Language version this skill matches: **v28** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -221,6 +221,15 @@ a field and a button that sets that state. The contract says `every endpoint ans
 Problem`, so the screen can show the refusal's message. Examples: a wrong key, the right key,
 and "before signing in, nothing arrives" (events from another client do not reach a screen
 that is not signed in).
+
+## 5h. Time
+
+Use `Date` for days and `DateTime` for moments, and read the clock as `@today` / `@now`; never
+invent a day counter or a "next day" button to fake time. Put `examples start at …` at the top
+so every example has a known "now", and prove time-dependent behaviour with `wait 1d`,
+`wait 30m`: the day after, the moment something expires, the edge ("exactly 60 minutes later"
+is either in or out: say which). Recurring work in a service is an `every 15m { … }` block,
+proven with a `wait` that passes its time.
 
 ## 5f. A screen that uses an API
 

@@ -12,7 +12,7 @@ export type Node =
   | { k: "list"; n: string; rows: { key: string; c: Node[] }[] }
   | { k: "section"; n: string; label: string; c: Node[] };
 
-export type Wire = { on: string; target: string; key?: string; text?: string; value?: string; answer?: unknown; event?: unknown };
+export type Wire = { on: string; target: string; key?: string; text?: string; value?: string; answer?: unknown; event?: unknown; clock?: unknown };
 
 export interface Program<M> {
   init: () => M;

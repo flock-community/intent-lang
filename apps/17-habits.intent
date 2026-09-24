@@ -1,0 +1,97 @@
+app Habits {
+  "Small daily habits: tick each one off once a day, and keep a streak going."
+}
+
+examples start at 2026-09-24 08:00
+
+record Habit {
+  id: Int
+  name: Text
+}
+
+record Done {
+  habit: Int                       # the id of the habit
+  day: Date
+}
+
+state {
+  habits: List Habit = table {
+    id | name
+    1  | "Walk"
+    2  | "Read"
+  }
+  dones: List Done = table {
+    habit | day
+    1     | 2026-09-22
+    1     | 2026-09-23
+    2     | 2026-09-20
+  }
+  draft: Text = ""
+}
+
+screen {
+  text date = "{the weekday of @today} {@today as a date}"
+  field draft "New habit"
+  button add "Add" {
+    enabled when @draft is not blank
+  }
+  list habits of Habit {
+    text name
+    text streak = "{the number of days in a row that have a @Done of this habit, counting back from @today, or from the day before @today when this habit has no @Done on @today} days"
+    button done "Done today" {
+      enabled when this habit has no @Done on @today
+    }
+  }
+}
+
+on click add {
+  - add a @Habit to the end of @habits with @id = the highest @id in @habits + 1 and @name = @draft trimmed
+  - clear @draft
+}
+
+on click done {
+  - add a @Done to the end of @dones with @habit = the @id of that habit and @day = @today
+}
+
+always {
+  see every row of habits: streak is at least 0
+}
+
+example "today" {
+  see date = "Thursday 24 Sep 2026"
+  see streak on row 1 = "2 days"
+  see streak on row 2 = "0 days"
+  see done on row 1 is enabled
+}
+
+example "ticking a habit off" {
+  click done on row 1
+  see streak on row 1 = "3 days"
+  see done on row 1 is disabled
+}
+
+example "the next day" {
+  click done on row 1
+  wait 1d
+  see date = "Friday 25 Sep 2026"
+  see done on row 1 is enabled
+  see streak on row 1 = "3 days"
+  click done on row 1
+  see streak on row 1 = "4 days"
+}
+
+example "a missed day ends the streak" {
+  wait 2d
+  see date = "Saturday 26 Sep 2026"
+  see streak on row 1 = "0 days"
+}
+
+example "a new habit" {
+  see add is disabled
+  type " Stretch " into draft
+  click add
+  see habits has 3 rows
+  see name on row 3 = "Stretch"
+  see streak on row 3 = "0 days"
+  see draft = ""
+}

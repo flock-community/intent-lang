@@ -1,11 +1,15 @@
 // The API runtime: routing, input validation and response helpers. Shared by every API build;
 // the LLM writes only the handlers. Messages are fixed, so every build answers bad input the same way.
 
+import { parseDate, parseDateTime } from "./fmt.ts";
+
 export type TypeDesc =
   | { k: "Text" }
   | { k: "Int" }
   | { k: "Decimal" }
   | { k: "Bool" }
+  | { k: "Date" }
+  | { k: "DateTime" }
   | { k: "List"; of: TypeDesc }
   | { k: "Maybe"; of: TypeDesc }
   | { k: "Choice"; name: string; values: string[] }
@@ -42,7 +46,7 @@ export function conforms(answers: Record<number, TypeDesc | null> | undefined, r
 }
 
 const describe = (t: TypeDesc): string =>
-  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
+  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
 
 /** Check a JSON value against a type; returns the value or an error message. */
 function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error: string } {
@@ -54,6 +58,11 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
     case "Int": return typeof v === "number" && Number.isInteger(v) ? { ok: v } : bad;
     case "Decimal": return typeof v === "number" && Number.isFinite(v) ? { ok: v } : bad;
     case "Bool": return typeof v === "boolean" ? { ok: v } : bad;
+    case "Date": return typeof v === "string" && parseDate(v) === v ? { ok: v } : bad;
+    case "DateTime": {
+      const dt = typeof v === "string" ? parseDateTime(v) : null;
+      return dt !== null ? { ok: dt } : bad;
+    }
     case "Choice": return typeof v === "string" && t.values.includes(v) ? { ok: v } : bad;
     case "Refined": {
       const b = check(v, t.base, name);

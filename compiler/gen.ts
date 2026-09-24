@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
+import { usesClock } from "./refs.ts";
 import { callDescs, elmAnswerMsgs, eventsByAlias, genElmCalls, genTsCalls, hasClients, hasThrough, throughs, tsAnswerMsgs } from "./calls.ts";
 
 export type Target = "elm" | "ts";
@@ -80,6 +81,8 @@ function elmLiteral(l: Literal, t: Type): string {
     case "emptyList": return "[]";
     case "nothing": return "Nothing";
     case "value": return l.v;
+    case "date": return q(l.v);
+    case "dateTime": return q(l.v);
     case "table": return "[]";
   }
 }
@@ -92,6 +95,8 @@ function tsLiteral(l: Literal): string {
     case "emptyList": return "[]";
     case "nothing": return "null";
     case "value": return q(l.v);
+    case "date": return q(l.v);
+    case "dateTime": return q(l.v);
     case "table": return "[]";
   }
 }
@@ -104,6 +109,8 @@ export function elmType(t: Type): string {
     case "Int": return "Int";
     case "Decimal": return "Float";
     case "Bool": return "Bool";
+    case "Date": return "Date";
+    case "DateTime": return "DateTime";
     case "List": return `List ${elmAtom(t.of)}`;
     case "Maybe": return `Maybe ${elmAtom(t.of)}`;
     case "Named": return t.name;
@@ -126,6 +133,7 @@ export function genElmSpec(app: App): string {
 ${hasClients(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
+  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec. -}\ntype alias Clock =\n    { now : DateTime, today : Date }\n\n\n`);
   for (const r of app.refined ?? []) {
     // A refined type is its base type plus a generated check: `isEmail : String -> Bool`.
     const lc = lowerFirst(r.name);
@@ -254,9 +262,25 @@ main =
 `;
 }
 
-/** Apps that make calls: ports carry calls out (`request`) and answers in (`answer`); glue.js performs them with fetch. */
-function genElmMainCalls(app: App): string {
+/**
+ * The browser entry of an app that makes calls or reads the clock: ports carry calls out
+ * (`request`), answers and events in, the client layers' config out (`through`), and the local
+ * time in (`clockTicks`); glue.js does the JavaScript side.
+ */
+function genElmMainPorts(app: App): string {
+  const calls = hasClients(app);
   const th = hasThrough(app);
+  const c = usesClock(app);
+  const clk = c ? " model.clock" : "";
+  const withClock = (fn: string) => (c ? `(${fn} model.clock)` : fn);
+  const send = th
+    ? `{-| The calls, each with the config its api's client layer gets from this state; and that config, for the event streams. -}
+send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
+send ( m, calls ) =
+    ( m, Cmd.batch (through (Spec.encodeThrough (App.through m)) :: List.map (\\c -> request (Spec.callOut (App.through m) c)) calls) )`
+    : `send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
+send ( m, calls ) =
+    ( m, Cmd.batch (List.map (\\c -> request (Spec.callToJson c)) calls) )`;
   return `port module Main exposing (main)
 
 import App
@@ -266,7 +290,7 @@ import Json.Decode as D
 import Json.Encode as J
 import Spec
 ${app.clockMs ? "import Time\n" : ""}import Ui
-
+${calls ? `
 
 port request : J.Value -> Cmd msg
 
@@ -275,54 +299,91 @@ port answer : (D.Value -> msg) -> Sub msg
 
 
 port events : (D.Value -> msg) -> Sub msg
-${th ? "\n\nport through : J.Value -> Cmd msg\n" : ""}
+` : ""}${th ? `
+
+port through : J.Value -> Cmd msg
+` : ""}${c ? `
+
+port clockTicks : (D.Value -> msg) -> Sub msg
+` : ""}
 
 type In
-    = FromUi Ui.Wire
+    = FromUi Ui.Wire${calls ? `
     | FromApi D.Value
-    | FromEvent D.Value
+    | FromEvent D.Value` : ""}${c ? `
+    | NewClock D.Value` : ""}
 
 
-${th ? `{-| The calls, each with the config its api's client layer gets from this state; and that config, for the event streams. -}
-send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
-send ( m, calls ) =
-    ( m, Cmd.batch (through (Spec.encodeThrough (App.through m)) :: List.map (\\c -> request (Spec.callOut (App.through m) c)) calls) )` : `send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
-send ( m, calls ) =
-    ( m, Cmd.batch (List.map (\\c -> request (Spec.callToJson c)) calls) )`}
+type alias Model =
+    { app : App.Model${c ? ", clock : Spec.Clock" : ""} }
 
 
-main : Program () App.Model In
+{-| The clock JavaScript sends: { now, today }; the one before when it cannot be read. -}
+decodeClock : D.Value -> Spec.Clock -> Spec.Clock
+decodeClock v before =
+    Result.withDefault before (D.decodeValue (D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string)) v)
+
+${calls ? send : `send : App.Model -> ( App.Model, Cmd In )
+send m =
+    ( m, Cmd.none )`}
+
+
+main : Program D.Value Model In
 main =
     Browser.element
-        { init = \\_ -> send App.init
+        { init =
+            \\flags ->
+                let
+                    model =
+                        { app = Tuple.first (send ${c ? "(App.init start)" : "App.init"}) ${c ? ", clock = start " : ""}}
+
+                    start =
+                        decodeClock flags { now = "2026-01-05T09:00", today = "2026-01-05" }
+                in
+                ( model, Tuple.second (send ${c ? "(App.init start)" : "App.init"}) )
         , update =
-            \\i m ->
+            \\i model ->
                 let
                     msg =
                         case i of
                             FromUi w ->
                                 Spec.fromWire w
-
+${calls ? `
                             FromApi v ->
                                 Spec.fromAnswer v
 
                             FromEvent v ->
                                 Spec.fromEvent v
+` : ""}${c ? `
+                            NewClock _ ->
+                                Nothing
+` : ""}
+                    moved =
+                        ${c ? `case i of
+                            NewClock v ->
+                                { model | clock = decodeClock v model.clock }
+
+                            _ ->
+                                model` : "model"}
                 in
                 case msg of
                     Just e ->
-                        send (App.update e m)
+                        Tuple.mapFirst (\\a -> { moved | app = a }) (send (${withClock("App.update")} e moved.app))
 
                     Nothing ->
-                        ( m, Cmd.none )
-        , view = \\m -> Html.map FromUi (Ui.render (Spec.toNode (App.view m)))
-        , subscriptions = \\_ -> Sub.batch [ answer FromApi, events FromEvent${app.clockMs ? `, Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", text = "", value = "" })` : ""} ]
+                        ( moved, Cmd.none )
+        , view = \\model -> Html.map FromUi (Ui.render (Spec.toNode (App.view${clk} model.app)))
+        , subscriptions = \\_ -> Sub.batch [ ${[calls ? "answer FromApi, events FromEvent" : "", c ? "clockTicks NewClock" : "", app.clockMs ? `Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", text = "", value = "" })` : ""].filter(Boolean).join(", ")} ]
         }
 `;
 }
 
-/** The test worker of an app that makes calls: each observation also carries the calls made since the last one. */
-const elmWorkerCalls = (app: App) => `port module Worker exposing (main)
+/** The test worker of an app that makes calls or reads the clock: the driver sends the clock with every event. */
+const elmWorkerPorts = (app: App) => {
+  const calls = hasClients(app);
+  const c = usesClock(app);
+  const upd = c ? "App.update clock" : "App.update";
+  return `port module Worker exposing (main)
 
 import App
 import Json.Decode as D
@@ -338,28 +399,45 @@ port act : (D.Value -> msg) -> Sub msg
 
 
 type alias Model =
-    { app : App.Model, pending : List Spec.Call }
+    { app : App.Model${calls ? ", pending : List Spec.Call" : ""}${c ? ", clock : Spec.Clock" : ""} }
 
 
-main : Program () Model D.Value
+decodeClock : D.Value -> Spec.Clock -> Spec.Clock
+decodeClock v before =
+    Result.withDefault before (D.decodeValue (D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string)) v)
+
+
+main : Program D.Value Model D.Value
 main =
     Platform.worker
-        { init = \\_ -> ( { app = Tuple.first App.init, pending = Tuple.second App.init }, Cmd.none )
+        { init =
+            \\flags ->
+                let
+                    start =
+                        decodeClock flags { now = "2026-01-05T09:00", today = "2026-01-05" }
+
+                    first =
+                        ${c ? "App.init start" : "App.init"}
+                in
+                ( { app = ${calls ? "Tuple.first first" : "first"}${calls ? ", pending = Tuple.second first" : ""}${c ? ", clock = start" : ""} }, Cmd.none )
         , update =
             \\v m ->
                 let
+                    clock =
+                        ${c ? `Result.withDefault m.clock (D.decodeValue (D.field "clock" D.value) v |> Result.map (\\cv -> decodeClock cv m.clock))` : "()"}
+
                     on =
                         Result.withDefault "" (D.decodeValue (D.field "on" D.string) v)
 
                     msg =
-                        if on == "answer" then
+                        ${calls ? `if on == "answer" then
                             Result.toMaybe (D.decodeValue (D.field "answer" D.value) v) |> Maybe.andThen Spec.fromAnswer
 
                         else if on == "event" then
                             Result.toMaybe (D.decodeValue (D.field "event" D.value) v) |> Maybe.andThen Spec.fromEvent
 
                         else
-                            case D.decodeValue Ui.wireDecoder v of
+                            ` : ""}case D.decodeValue Ui.wireDecoder v of
                                 Ok w ->
                                     Spec.fromWire w
 
@@ -369,17 +447,21 @@ main =
                     ( next, calls ) =
                         case msg of
                             Just e ->
-                                App.update e m.app
+                                ${calls ? `${upd} e m.app` : `( ${upd} e m.app, [] )`}
 
                             Nothing ->
                                 ( m.app, [] )
+
+                    screen =
+                        Ui.encode (Spec.toNode (App.view${c ? " clock" : ""} next))
                 in
-                ( { app = next, pending = [] }
-                , observe (J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}( "screen", Ui.encode (Spec.toNode (App.view next)) ), ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) ) ])
+                ( { app = next${calls ? ", pending = []" : ""}${c ? ", clock = clock" : ""} }
+                , observe ${calls ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}( "screen", screen ), ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) ) ])` : "screen"}
                 )
         , subscriptions = \\_ -> act identity
         }
 `;
+};
 
 const ELM_WORKER = `port module Worker exposing (main)
 
@@ -489,6 +571,8 @@ export function tsType(t: Type): string {
     case "Int":
     case "Decimal": return "number";
     case "Bool": return "boolean";
+    case "Date": return "Date";
+    case "DateTime": return "DateTime";
     case "List": return `${tsAtom(t.of)}[]`;
     case "Maybe": return `${tsType(t.of)} | null`;
     case "Named": return t.name;
@@ -499,6 +583,7 @@ const tsAtom = (t: Type) => (t.k === "Maybe" ? `(${tsType(t)})` : tsType(t));
 /** Records, choices and table seeds: the domain, shared by every profile. */
 export function tsDomain(app: App): string {
   const out: string[] = [];
+  out.push(`/** A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. */\nexport type Date = string;\nexport type DateTime = string;\n/** The clock: @now and @today in the spec. */\nexport type Clock = { now: DateTime; today: Date };\n\n`);
   for (const r of app.refined ?? []) {
     out.push(`/** A ${r.base === "Text" ? "text" : "number"} with a rule: see is${r.name}. */\nexport type ${r.name} = ${r.base === "Text" ? "string" : "number"};\n`);
     if (r.pattern !== undefined) out.push(`/** Whether a text is a valid ${r.name}. */\nexport function is${r.name}(s: string): boolean {\n  return new RegExp(${q(`^(?:${r.pattern})$`)}).test(s);\n}\n\n`);
@@ -623,13 +708,14 @@ export function through(model: Model): Through { /* … */ }
 /** Entry points of an app that makes calls: the browser performs them with fetch; tests hand them to the driver. */
 function genTsEntriesCalls(app: App): { main: string; test: string } {
   const th = hasThrough(app);
+  const c = usesClock(app);
   const configOf = th ? `(App.through(current) as Record<string, Record<string, unknown>>)[alias]` : "undefined";
   const main = `import * as App from "./app.ts";
 import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
 import { fetchCall, listen, type Outgoing } from "./calls.ts";
 import { apply } from "./through.ts";
-
+${c ? `import { localClock } from "./clock.ts";\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
@@ -643,7 +729,7 @@ const perform = (calls: Call[]) => {
 let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
-    const r = App.init();
+    const r = App.init(${c ? "localClock()" : ""});
     current = r.model;
     perform(r.calls);
     return r.model;
@@ -651,23 +737,23 @@ dispatch = mount(document.getElementById("app")!, {
   step: (w, m) => {
     const e = fromWire(w);
     if (!e) return m;
-    const r = App.update(e, m);
+    const r = App.update(e, m${c ? ", localClock()" : ""});
     current = r.model;
     perform(r.calls);
     stream?.refresh();
     return r.model;
   },
-  render: (m) => toNode(App.view(m)),
+  render: (m) => toNode(App.view(m${c ? ", localClock()" : ""})),
   clockMs: ${app.clockMs ?? 0},
 });
 // Events from each api (Server-Sent Events at /events), for the events this app handles.
-stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, event: e }), via);
+stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, event: e }), via);${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}
 `;
   const test = `import * as App from "./app.ts";
 import { callToJson, fromWire, toNode, type Call } from "./spec.ts";
 import type { CallOut } from "./calls.ts";
 import type { Wire } from "./ui.ts";
-
+${c ? `import type { Clock } from "./clock.ts";\n` : ""}
 /** A call as data, with the config its client layer gets from the state after the step that made it. */
 const out = (c: Call, current: App.Model): CallOut => {
   const j = callToJson(c);
@@ -675,12 +761,12 @@ const out = (c: Call, current: App.Model): CallOut => {
   return { ...j, config: ${configOf} } as CallOut;
 };
 
-export function start() {
-  const first = App.init();
+export function start(${c ? "initial: Clock" : ""}) {
+${c ? "  let clock = initial;\n" : ""}  const first = App.init(${c ? "clock" : ""});
   let m = first.model;
   let pending: CallOut[] = first.calls.map((c) => out(c, m));
   return {
-    observe: () => JSON.parse(JSON.stringify(toNode(App.view(m)))),
+    observe: () => JSON.parse(JSON.stringify(toNode(App.view(m${c ? ", clock" : ""})))),
     /** What the client layers get from the current state, per api. */
     through: () => ${hasThrough(app) ? "JSON.parse(JSON.stringify(App.through(m)))" : "({})"},
     /** The calls made since the last time this was asked, in order. */
@@ -690,9 +776,9 @@ export function start() {
       return JSON.parse(JSON.stringify(made));
     },
     send(w: Wire) {
-      const e = fromWire(w);
+${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}      const e = fromWire(w);
       if (!e) return;
-      const r = App.update(e, m);
+      const r = App.update(e, m${c ? ", clock" : ""});
       m = r.model;
       pending.push(...r.calls.map((c) => out(c, m)));
     },
@@ -727,34 +813,36 @@ export function apply(alias: string, req: Outgoing, config: Record<string, unkno
 
 function genTsEntries(app: App): { main: string; test: string } {
   if (hasClients(app)) return genTsEntriesCalls(app);
+  const c = usesClock(app);
   const main = `import * as App from "./app.ts";
 import { fromWire, toNode } from "./spec.ts";
 import { mount, STYLE } from "./ui.ts";
-
+${c ? `import { localClock } from "./clock.ts";\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
-mount(document.getElementById("app")!, {
-  init: App.init,
+${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
+  init: () => App.init(${c ? "localClock()" : ""}),
   step: (w, m) => {
     const e = fromWire(w);
-    return e ? App.update(e, m) : m;
+    return e ? App.update(e, m${c ? ", localClock()" : ""}) : m;
   },
-  render: (m) => toNode(App.view(m)),
+  render: (m) => toNode(App.view(m${c ? ", localClock()" : ""})),
   clockMs: ${app.clockMs ?? 0},
-});
+});${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}
 `;
   const test = `import * as App from "./app.ts";
 import { fromWire, toNode } from "./spec.ts";
 import type { Wire } from "./ui.ts";
-
-export function start() {
-  let m = App.init();
+${c ? `import type { Clock } from "./clock.ts";\n` : ""}
+/** The app under test. ${c ? "The driver owns the clock: it comes with every wire event." : ""} */
+export function start(${c ? "initial: Clock" : ""}) {
+${c ? "  let clock = initial;\n" : ""}  let m = App.init(${c ? "clock" : ""});
   return {
-    observe: () => JSON.parse(JSON.stringify(toNode(App.view(m)))),
+    observe: () => JSON.parse(JSON.stringify(toNode(App.view(m${c ? ", clock" : ""})))),
     send(w: Wire) {
-      const e = fromWire(w);
-      if (e) m = App.update(e, m);
+${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}      const e = fromWire(w);
+      if (e) m = App.update(e, m${c ? ", clock" : ""});
     },
   };
 }
@@ -781,20 +869,26 @@ export function scaffold(app: App, target: Target, dir: string, layerDirs: Recor
     copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
     const spec = genElmSpec(app);
     writeFileSync(join(dir, "src/Spec.elm"), spec);
-    if (hasClients(app)) {
-      writeFileSync(join(dir, "src/Main.elm"), genElmMainCalls(app));
-      writeFileSync(join(dir, "src/Worker.elm"), elmWorkerCalls(app));
+    if (hasClients(app) || usesClock(app)) {
+      writeFileSync(join(dir, "src/Main.elm"), genElmMainPorts(app));
+      writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+      copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
       writeThrough(app, dir, layerDirs);
       writeFileSync(
         join(dir, "glue.ts"),
-        `// Performs the app's calls with fetch (through each api's client layer) and sends the answers back in; passes the apis' events in.
+        `// The JavaScript side of the Elm app: calls with fetch (through each api's client layer), answers and
+// events in, and the local clock (at the start, then every 15 seconds).
 import { fetchCall, listen, type CallDesc, type Outgoing } from "./calls.ts";
 import { apply } from "./through.ts";
+import { localClock } from "./clock.ts";
 
 const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
 
+(globalThis as any).intentClock = localClock;
 (globalThis as any).intentConnect = (app: any) => {
+  if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(localClock()), 15000);
+  if (!app.ports.request) return;
   let latest: Record<string, Record<string, unknown>> = {};
   let stream: { refresh: () => void } | undefined;
   // The client layers' config arrives from the app after every update (and after init): reopen the streams it changes.
@@ -808,7 +902,7 @@ const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
 };
 `,
       );
-      writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script src="glue.js"></script><script>intentConnect(Elm.Main.init({ node: document.getElementById("app") }))</script>`, true));
+      writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script src="glue.js"></script><script>intentConnect(Elm.Main.init({ node: document.getElementById("app"), flags: intentClock() }))</script>`, true));
     } else {
       writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
       writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER);
@@ -819,6 +913,7 @@ const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
     mkdirSync(dir, { recursive: true });
     copyFileSync(join(ROOT, "runtime/ts/ui.ts"), join(dir, "ui.ts"));
     copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
+    if (usesClock(app)) copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
     if (hasClients(app)) {
       copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));

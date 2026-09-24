@@ -1,14 +1,17 @@
 // The api profile's harness (TypeScript/Node): generated types and endpoint descriptions, a fixed
 // router with validation, a server, and a test driver. The LLM writes only `init` and `handle`.
 // Observations are responses: { endpoint, status, body } after every call.
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Endpoint } from "./ast.ts";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LINE_BASE, type App, type Check, type Example, type Literal, type Step, type Type } from "./ast.ts";
 import { ROOT, tsDomain, tsType } from "./gen.ts";
+import { usesClock } from "./refs.ts";
 import { toHttp } from "../runtime/ts/calls.ts";
 import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
+import { addMinutes } from "../runtime/ts/fmt.ts";
+import { clockAt } from "../runtime/ts/clock.ts";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 const q = (s: string) => JSON.stringify(s);
@@ -17,7 +20,7 @@ const q = (s: string) => JSON.stringify(s);
 
 export function typeDesc(app: App, t: Type): string {
   switch (t.k) {
-    case "Text": case "Int": case "Decimal": case "Bool": return `{ k: ${q(t.k)} }`;
+    case "Text": case "Int": case "Decimal": case "Bool": case "Date": case "DateTime": return `{ k: ${q(t.k)} }`;
     case "List": return `{ k: "List", of: ${typeDesc(app, t.of)} }`;
     case "Maybe": return `{ k: "Maybe", of: ${typeDesc(app, t.of)} }`;
     case "Named": {
@@ -42,7 +45,12 @@ export function specLine(app: App, line: number): string {
 export function genApiSpec(app: App): string {
   const eps = app.endpoints ?? [];
   // What the layers hand to every endpoint (\`provides caller: Text\` in std.http.apiKey).
-  const provided = (app.layers ?? []).flatMap((l) => (l.spec?.provides ?? []).map((p) => ({ ...p, from: l.alias })));
+  const provided = [
+    ...(app.layers ?? []).flatMap((l) => (l.spec?.provides ?? []).map((p) => ({ ...p, from: `layer ${l.alias}` }))),
+    // The clock (@now, @today) comes with every request of an api that reads it.
+    ...(usesClock(app) ? [{ name: "now", type: { k: "DateTime" } as Type, note: "the time of the request", from: "the clock", line: 0 }, { name: "today", type: { k: "Date" } as Type, note: "its day", from: "the clock", line: 0 }] : []),
+  ];
+  const jobs = app.jobs ?? [];
   const respType = (e: Endpoint) =>
     e.answers?.length
       ? e.answers.map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`).join(" | ")
@@ -51,7 +59,7 @@ export function genApiSpec(app: App): string {
 import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
 
-${tsDomain(app)}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from layer ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
+${tsDomain(app)}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
 ${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
 
@@ -68,6 +76,9 @@ ${(app.events ?? []).length ? `/** An event this api announces (\\\`publish x\\\
 export type Handlers<M> = {
 ${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model: M; response: ${typeName(e)}Response; publish?: Published[] };`).join("\n")}
 };
+
+${jobs.length ? `/** Recurring work (\\\`every …\\\` in the spec): the model and the clock at its time in; the new model and the events it publishes out. */\nexport type Jobs<M> = {\n${jobs.map((j) => `  ${j.name}: (model: M, clock: Clock) => { model: M; publish?: Published[] };`).join("\n")}\n};\n\n` : ""}/** Recurring work and how often it runs (ms). */
+export const jobList: { name: string; every: number }[] = ${JSON.stringify(jobs.map((j) => ({ name: j.name, every: j.every })))};
 
 /** The endpoints, for the router: methods, paths and parameter types. */
 export const endpoints: EndpointDesc[] = [
@@ -111,6 +122,7 @@ export const handlers: Handlers<Model> = {
 const PIPELINE = `import * as App from "./app.ts";
 import { route } from "./api.ts";
 import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
+import type { Clock } from "./clock.ts";
 import { answerSources, endpoints, sources } from "./spec.ts";
 import { layers } from "./layers.ts";
 
@@ -120,7 +132,15 @@ export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: 
 
 export function pipeline() {
   let model = App.init();
-  return (req: HttpRequest): Handled => {
+  /** Recurring work (\`every …\`): runs with the clock at its time; returns the events it published. */
+  const runJob = (name: string, clock: Clock): { event: string; body: unknown }[] => {
+    const job = (App as any).jobs?.[name];
+    if (!job) return [];
+    const out = job(copy(model), clock);
+    model = out.model;
+    return copy(out.publish ?? []);
+  };
+  const handle = (req: HttpRequest, clock?: Clock): Handled => {
     const passed: typeof layers = [];
     const provided: Record<string, unknown> = {};
     let res: HttpResponse | undefined;
@@ -146,7 +166,7 @@ export function pipeline() {
       else {
         endpoint = r.request.endpoint as string;
         source = \`\${sources[endpoint]} (endpoint \${endpoint})\`;
-        const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided }, model);
+        const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided, ...(clock ? { now: clock.now, today: clock.today } : {}) }, model);
         model = out.model;
         appAnswer = copy({ status: out.response.status, body: out.response.body });
         events = copy(out.publish ?? []);
@@ -158,11 +178,14 @@ export function pipeline() {
     for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
     return { ...normalize(res), endpoint, appAnswer, events, source };
   };
+  return Object.assign(handle, { runJob });
 }
 `;
 
 const SERVER = `import { createServer } from "node:http";
 import { pipeline } from "./pipeline.ts";
+import { jobList } from "./spec.ts";
+import { localClock } from "./clock.ts";
 
 const handle = pipeline();
 // Events go to every open \`GET /events\` stream (Server-Sent Events), as \`{ "event": name, "body": payload }\`.
@@ -197,7 +220,7 @@ createServer((req, res) => {
     }
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k.toLowerCase()] = v;
-    const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body });
+    const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body }, localClock());
     for (const ev of out.events) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
     const noBody = out.status === 204 || out.status === 304 || req.method === "HEAD";
     // INTENT_TRACE=1: every answer says which spec line gave it (never on in production: it names files).
@@ -206,11 +229,16 @@ createServer((req, res) => {
     res.end(noBody ? undefined : JSON.stringify(out.body));
   });
 }).listen(Number(process.env.PORT ?? 3000), () => console.log("listening on " + (process.env.PORT ?? 3000)));
+// Recurring work on timers; what it publishes goes to the open event streams.
+for (const j of jobList) setInterval(() => {
+  for (const ev of handle.runJob(j.name, localClock())) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
+}, j.every);
 `;
 
 const TEST_ENTRY = `import { conforms } from "./api.ts";
 import { answers, eventTypes } from "./spec.ts";
 import { pipeline } from "./pipeline.ts";
+import type { Clock } from "./clock.ts";
 
 /** A client for tests: the same layers, routing and validation as the server, without the network. */
 export function start() {
@@ -220,8 +248,12 @@ export function start() {
     stream(headers: Record<string, string> = {}, query: Record<string, string> = {}) {
       return handle({ method: "GET", path: "/events", query, headers, body: undefined, stream: true } as any).status;
     },
-    send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}) {
-      const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) });
+    /** Recurring work, run by the driver when a \`wait\` moves the clock past its time. */
+    runJob(name: string, clock: Clock) {
+      return handle.runJob(name, clock);
+    },
+    send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}, clock?: Clock) {
+      const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) }, clock);
       const response = { status: out.status, body: out.body, headers: out.headers, events: out.events, source: out.source };
       // The contract is checked on every answer of the app (a status it does not declare, or a body of the wrong shape) and on every event it publishes.
       let problem = out.endpoint && out.appAnswer ? conforms(answers[out.endpoint], out.appAnswer) : undefined;
@@ -240,6 +272,7 @@ export function scaffoldApi(app: App, dir: string, layerDirs: Record<string, str
   mkdirSync(dir, { recursive: true });
   copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
   copyFileSync(join(ROOT, "runtime/ts/http.ts"), join(dir, "http.ts"));
+  copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
   // Each layer's verified module, as built once for that layer spec, and the composition with the bound config.
   for (const l of app.layers ?? []) {
     mkdirSync(join(dir, "layers", l.alias), { recursive: true });
@@ -306,6 +339,8 @@ export function literalJson(l: Literal): unknown {
     case "nothing": return null;
     case "emptyList": return [];
     case "value": return l.v;
+    case "date": return l.v;
+    case "dateTime": return l.v;
     default: return null;
   }
 }
@@ -377,9 +412,25 @@ export function checkSeeApi(responses: Responses, s: Extract<Step, { do: "see" }
 export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]> {
   const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
   const eps: EpDesc[] = JSON.parse(readFileSync(join(dir, "endpoints.json"), "utf8"));
+  // Apis that read the clock: it starts at `examples start at` and moves with `wait`; recurring work
+  // runs at start + k × its interval, in time order (ties: declaration order), when a wait passes it.
+  const clockSpec: { start: string; jobs: { name: string; every: number }[] } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
   const out: unknown[] = [];
   for (const job of jobs) {
     const client = mod.start();
+    let elapsed = 0;
+    const clockAtMs = (ms: number) => (clockSpec ? clockAt(addMinutes(clockSpec.start, Math.floor(ms / 60000))) : undefined);
+    const wait = (ms: number) => {
+      const fires: { at: number; order: number; name: string }[] = [];
+      (clockSpec?.jobs ?? []).forEach((j, order) => {
+        for (let at = (Math.floor(elapsed / j.every) + 1) * j.every; at <= elapsed + ms; at += j.every) fires.push({ at, order, name: j.name });
+      });
+      fires.sort((a, b) => a.at - b.at || a.order - b.order);
+      const published: { event: string; body: unknown }[] = [];
+      for (const f of fires) published.push(...client.runJob(f.name, clockAtMs(f.at)));
+      elapsed += ms;
+      return published;
+    };
     const responses: Responses = new Map();
     // Events as the latest call published them: \`see ticketCreated.body…\`; a call that publishes none clears them.
     let published: string[] = [];
@@ -393,7 +444,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
     };
     const call = (c: Call) => {
       const h = toHttp(eps, c);
-      const res = client.send(h.method, h.path, h.query, h.body, c.headers ?? {});
+      const res = client.send(h.method, h.path, h.query, h.body, c.headers ?? {}, clockAtMs(elapsed));
       responses.set(c.endpoint, res);
       record(res);
       return res;
@@ -431,10 +482,13 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
             const v = broken(job.always);
             if (v) (failure = { line: s.line, message: `after this call, \`always\` (line ${v.line}) is broken: ${v.message}`, screen: dump(responses) }), true;
             if (failure) break;
+          } else if (s.do === "tick" && s.ms) {
+            // Time passes: recurring work that falls in it runs; what it publishes is what this step published.
+            record({ events: wait(s.ms) });
           } else if (s.do === "request") {
             // A raw request, through the layers and the router: its answer is \`request.…\`.
             const r = requestOf(s);
-            const res = client.send(r.method, r.path, r.query, r.body, r.headers);
+            const res = client.send(r.method, r.path, r.query, r.body, r.headers, clockAtMs(elapsed));
             responses.set("request", res);
             record(res);
           } else if (s.do === "see") {
@@ -450,6 +504,10 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         const steps: string[] = [];
         let violation: { line: number; message: string; actions: Call[]; screen: string } | undefined;
         for (const [i, c] of job.calls.entries()) {
+          if (c.endpoint === "(wait)") {
+            steps.push(JSON.stringify({ wait: c.args.ms, events: wait(c.args.ms as number) }));
+            continue;
+          }
           const res = call(c);
           steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body, headers: Object.fromEntries(Object.entries(res.headers ?? {}).sort()), events: res.events ?? [] }));
           const v = res.contractError ? { line: 0, message: `the answer breaks the contract: ${res.contractError}` } : broken(job.always);
@@ -511,9 +569,14 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
   };
   const eps = app.endpoints ?? [];
   const traces: Call[][] = [];
+  const waits = usesClock(app) ? [...new Set([...app.examples.flatMap((e) => e.steps).flatMap((s) => (s.do === "tick" && s.ms ? [s.ms] : [])), 60000, 15 * 60000, 3600000, 86400000])] : [];
   for (let i = 0; i < count; i++) {
     const calls: Call[] = [];
     for (let j = 0; j < length; j++) {
+      if (waits.length && rnd() < 0.15) {
+        calls.push({ endpoint: "(wait)", args: { ms: pick(waits) } });
+        continue;
+      }
       const ep = pick(eps);
       const args: Record<string, unknown> = {};
       for (const p of ep.params) if (rnd() > 0.05) args[p.name] = valueFor(p.name, p.type);
@@ -528,6 +591,7 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
 }
 
 export const callText = (c: Call) => {
+  if (c.endpoint === "(wait)") return `wait ${Number(c.args.ms) / 60000}m`;
   const args = [...Object.entries(c.headers ?? {}).map(([k, v]) => `header ${k} = ${JSON.stringify(v)}`), ...Object.entries(c.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`)];
   return `call ${c.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
 };

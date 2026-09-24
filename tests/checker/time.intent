@@ -1,0 +1,24 @@
+app TimeChecks {
+  "Dates and the clock: wrong literals, and waits without a clock, are errors."
+}
+
+state {
+  due: Date = 2026-09-24
+  at: DateTime = 2026-09-24 09:00
+  wrong: Date = "tomorrow"                 # expect: BAD_BINDING
+  count: Int = 0
+}
+
+screen {
+  text due
+  button up "+"
+}
+
+on click up {
+  - increase @count by 1
+}
+
+example "no clock" {
+  wait 1d                                  # expect: STEP
+  see due = 2026-09-24
+}
