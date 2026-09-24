@@ -48,6 +48,9 @@ export function conforms(answers: Record<number, TypeDesc | null> | undefined, r
 const describe = (t: TypeDesc): string =>
   t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
 
+/** Does a JSON value fit a type (kept data read back, for example)? */
+export const fits = (v: unknown, t: TypeDesc): boolean => !("error" in check(v, t, "the value"));
+
 /** Check a JSON value against a type; returns the value or an error message. */
 function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error: string } {
   if (t.k === "Maybe") return v === null || v === undefined ? { ok: null } : check(v, t.of, name);

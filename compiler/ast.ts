@@ -28,6 +28,7 @@ export interface Field {
   default?: Literal;
   line: number;
   note?: string;
+  stored?: boolean; // `stored name: T = …` in `state`: survives a restart
 }
 
 /** `type Email = Text matching /re/`, `type Age = Int from 0 to 150`: a base type with a rule. */
@@ -108,6 +109,7 @@ export type Step =
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
+  | { do: "restart"; line: number } // the app starts again: stored state keeps its values, the rest starts from its default
   | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
   // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.
   // In a layer's examples: a param's value from here on (\`given key = ""\`).

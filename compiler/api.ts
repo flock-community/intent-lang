@@ -1,12 +1,13 @@
 // The api profile's harness (TypeScript/Node): generated types and endpoint descriptions, a fixed
 // router with validation, a server, and a test driver. The LLM writes only `init` and `handle`.
 // Observations are responses: { endpoint, status, body } after every call.
+import { difference } from "./diff.ts";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Endpoint } from "./ast.ts";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LINE_BASE, type App, type Check, type Example, type Literal, type Step, type Type } from "./ast.ts";
-import { ROOT, tsData, tsDomain, tsType } from "./gen.ts";
+import { ROOT, hasData, tsData, tsDomain, tsStoredFields, tsType } from "./gen.ts";
 import { usesClock } from "./refs.ts";
 import { toHttp } from "../runtime/ts/calls.ts";
 import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
@@ -59,7 +60,7 @@ export function genApiSpec(app: App): string {
 import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
 
-${tsDomain(app)}${app.invariants?.length ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
+${tsDomain(app)}${hasData(app) ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
 ${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
 
@@ -79,6 +80,7 @@ ${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model
 
 ${jobs.length ? `/** Recurring work (\\\`every …\\\` in the spec): the model and the clock at its time in; the new model and the events it publishes out. */\nexport type Jobs<M> = {\n${jobs.map((j) => `  ${j.name}: (model: M, clock: Clock) => { model: M; publish?: Published[] };`).join("\n")}\n};\n\n` : ""}/** Recurring work and how often it runs (ms). */
 export const jobList: { name: string; every: number }[] = ${JSON.stringify(jobs.map((j) => ({ name: j.name, every: j.every })))};
+${tsStoredFields(app)}
 
 /** The endpoints, for the router: methods, paths and parameter types. */
 export const endpoints: EndpointDesc[] = [
@@ -178,18 +180,43 @@ export function pipeline() {
     for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
     return { ...normalize(res), endpoint, appAnswer, events, source };
   };
-  /** The app's data, for the checks in \`always\`. */
+  /** The app's data, for the checks in \`always\` and to keep what is stored. */
   const data = () => ((App as any).data ? copy((App as any).data(model)) : undefined);
-  return Object.assign(handle, { runJob, data });
+  /** Stored state: the api starts again with the stored fields of its data (a restart, or the data file on the server). */
+  const restore = (saved: unknown) => {
+    model = (App as any).restore(copy(saved), App.init());
+  };
+  return Object.assign(handle, { runJob, data, restore });
 }
 `;
 
 const SERVER = `import { createServer } from "node:http";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pipeline } from "./pipeline.ts";
-import { jobList } from "./spec.ts";
+import { jobList, storedFields } from "./spec.ts";
+import { fits } from "./api.ts";
 import { localClock } from "./clock.ts";
 
 const handle = pipeline();
+// Stored state (\`stored\` in the spec) lives in a JSON file (INTENT_DATA, default data.json): read at the
+// start, written after every request and every run of recurring work.
+const DATA_FILE = process.env.INTENT_DATA ?? "data.json";
+const stored = Object.keys(storedFields);
+const pick = (d: any) => Object.fromEntries(stored.map((f) => [f, d?.[f]]));
+if (stored.length && existsSync(DATA_FILE)) {
+  let saved: any;
+  try {
+    saved = JSON.parse(readFileSync(DATA_FILE, "utf8"));
+  } catch (e) {
+    console.error(\`\${DATA_FILE} cannot be read (\${(e as Error).message}); starting from the spec's defaults\`);
+  }
+  const wrong = saved === undefined ? undefined : stored.find((f) => !fits(saved?.[f], storedFields[f]));
+  if (wrong) console.error(\`\${DATA_FILE}: \${wrong} does not fit the spec's type; starting from the spec's defaults\`);
+  else if (saved !== undefined) handle.restore(saved);
+}
+const keep = () => {
+  if (stored.length) writeFileSync(DATA_FILE, JSON.stringify(pick(handle.data())));
+};
 // Events go to every open \`GET /events\` stream (Server-Sent Events), as \`{ "event": name, "body": payload }\`.
 const streams = new Set<import("node:http").ServerResponse>();
 createServer((req, res) => {
@@ -223,6 +250,7 @@ createServer((req, res) => {
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k.toLowerCase()] = v;
     const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body }, localClock());
+    keep();
     for (const ev of out.events) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
     const noBody = out.status === 204 || out.status === 304 || req.method === "HEAD";
     // INTENT_TRACE=1: every answer says which spec line gave it (never on in production: it names files).
@@ -234,6 +262,7 @@ createServer((req, res) => {
 // Recurring work on timers; what it publishes goes to the open event streams.
 for (const j of jobList) setInterval(() => {
   for (const ev of handle.runJob(j.name, localClock())) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
+  keep();
 }, j.every);
 `;
 
@@ -253,6 +282,10 @@ export function start() {
     /** The app's data, for the checks in \`always\`. */
     data() {
       return handle.data();
+    },
+    /** Stored state: the api starts again with these stored fields (a \`restart\` in an example). */
+    restart(saved: unknown) {
+      handle.restore(saved);
     },
     /** Recurring work, run by the driver when a \`wait\` moves the clock past its time. */
     runJob(name: string, clock: Clock) {
@@ -424,9 +457,19 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
   const inv = existsSync(join(dir, "invariants.mjs"))
     ? { checks: (await import(pathToFileURL(join(dir, "invariants.mjs")).href + `?t=${Date.now()}`)).invariants as { line: number; holds: (d: unknown, c: unknown) => boolean }[], texts: JSON.parse(readFileSync(join(dir, "invariants.json"), "utf8")) as { text: string }[] }
     : undefined;
+  // Stored state: a restart keeps these fields of the data, and they must come back unchanged.
+  const stored: { field: string; line: number }[] = existsSync(join(dir, "stored.json")) ? JSON.parse(readFileSync(join(dir, "stored.json"), "utf8")) : [];
   const out: unknown[] = [];
   for (const job of jobs) {
     const client = mod.start();
+    const restart = (): { line: number; message: string } | undefined => {
+      const pick = (d: any) => Object.fromEntries(stored.map((s) => [s.field, d?.[s.field]]));
+      const saved = pick(client.data?.());
+      client.restart(saved);
+      const back = pick(client.data?.());
+      const wrong = stored.find((s) => JSON.stringify(saved[s.field]) !== JSON.stringify(back[s.field]));
+      if (wrong) return { line: wrong.line, message: `after a restart, stored \`${wrong.field}\` (line ${wrong.line}) did not come back as it was saved: ${difference(saved[wrong.field], back[wrong.field])}` };
+    };
     let elapsed = 0;
     const clockAtMs = (ms: number) => (clockSpec ? clockAt(addMinutes(clockSpec.start, Math.floor(ms / 60000))) : undefined);
     const wait = (ms: number) => {
@@ -513,6 +556,13 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
               failure = { line: s.line, message: `after this wait, \`always\` (line ${v.line}) is broken: ${v.message}`, screen: dump(responses) };
               break;
             }
+          } else if (s.do === "restart") {
+            const lost = restart();
+            const v = lost ? undefined : broken(job.always);
+            if (lost || v) {
+              failure = { line: s.line, message: lost ? lost.message : `after this restart, \`always\` (line ${v!.line}) is broken: ${v!.message}`, screen: dump(responses) };
+              break;
+            }
           } else if (s.do === "request") {
             // A raw request, through the layers and the router: its answer is \`request.…\`.
             const r = requestOf(s);
@@ -532,6 +582,12 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         const steps: string[] = [];
         let violation: { line: number; message: string; actions: Call[]; screen: string } | undefined;
         for (const [i, c] of job.calls.entries()) {
+          if (c.endpoint === "(restart)") {
+            steps.push(JSON.stringify({ restart: true }));
+            const v = restart() ?? broken(job.always);
+            if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
+            continue;
+          }
           if (c.endpoint === "(wait)") {
             steps.push(JSON.stringify({ wait: c.args.ms, events: wait(c.args.ms as number) }));
             const v = broken(job.always);
@@ -607,6 +663,10 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
         calls.push({ endpoint: "(wait)", args: { ms: pick(waits) } });
         continue;
       }
+      if (app.state.some((f) => f.stored) && rnd() < 0.08) {
+        calls.push({ endpoint: "(restart)", args: {} });
+        continue;
+      }
       const ep = pick(eps);
       const args: Record<string, unknown> = {};
       for (const p of ep.params) if (rnd() > 0.05) args[p.name] = valueFor(p.name, p.type);
@@ -622,6 +682,7 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
 
 export const callText = (c: Call) => {
   if (c.endpoint === "(wait)") return `wait ${Number(c.args.ms) / 60000}m`;
+  if (c.endpoint === "(restart)") return "restart";
   const args = [...Object.entries(c.headers ?? {}).map(([k, v]) => `header ${k} = ${JSON.stringify(v)}`), ...Object.entries(c.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`)];
   return `call ${c.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
 };

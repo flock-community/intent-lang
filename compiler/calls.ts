@@ -95,7 +95,7 @@ export const tsAnswerMsgs = (app: App) => [
 
 // ---------------------------------------------------------------- Elm
 
-function elmDecoder(app: App, t: Type): string {
+export function elmDecoder(app: App, t: Type): string {
   switch (t.k) {
     case "Text": return "D.string";
     case "Int": return "D.int";

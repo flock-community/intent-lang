@@ -694,6 +694,45 @@ example "a notice lives for its minutes" {
 - In the browser and on the server the clock is the local time; recurring work runs on a timer.
 - Random sessions let time pass too, so two builds that treat time differently are caught.
 
+### What survives a restart
+
+State is gone when the app starts again, unless a field is `stored`. Mark what the user would
+be upset to lose, not what belongs to one visit. From `apps/17-habits.intent`:
+
+```
+state {
+  stored habits: List Habit = table {
+    id | name
+    1  | "Walk"
+    2  | "Read"
+  }
+  stored dones: List Done = table {
+    habit | day
+    1     | 2026-09-22
+    1     | 2026-09-23
+    2     | 2026-09-20
+  }
+  draft: Text = ""
+}
+…
+example "kept after a restart" {
+  type "Stretch" into draft
+  click add
+  click done on row 1
+  type "half a" into draft
+  restart
+  see habits has 3 rows
+  see name on row 3 = "Stretch"
+  see done on row 1 is disabled
+  see draft = ""
+}
+```
+
+The harness keeps stored fields (in the browser, or in a data file for an API) and, in tests,
+checks after every `restart` that they came back exactly as they were. An API does the same:
+`apps/api/tickets-api.intent` keeps its tickets, and a new ticket after a restart still gets
+the next id.
+
 ## 13. Examples: the steps you can use
 
 ```
@@ -701,7 +740,7 @@ type "Milk" into draft              choose Open in filter          toggle done o
 click add                           click remove on row with "Milk"
 see count = 2                       see add is disabled            see empty is hidden
 see shown has 1 row                 see stock is at least 0        see every row of cart: qty is at least 1
-wait 3s / wait 1d / tick 5 times    snapshot "queue"               (screens and apis)
+wait 3s / wait 1d / tick 5 times    snapshot "queue"               restart   (screens and apis)
 call createTicket with a = 1        see createTicket.body.id = 9   see ticketCreated is absent   (apis)
 call x with header x-api-key = "…"  see x.header.vary = "origin"   request OPTIONS "/tickets" with header origin = "…"
 ```

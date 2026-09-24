@@ -9,6 +9,7 @@ import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
 import { varyOther } from "./fuzz.ts";
+import { difference, stable } from "./diff.ts";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -17,7 +18,7 @@ import type { Check, Example, Step } from "./ast.ts";
 export type Obs = any; // Ui Node as JSON
 
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick" | "other";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart";
   target: string; // element name ("" for tick; the endpoint for another client's call)
   call?: CallOut; // on "other": another client calls the provider
   ms?: number; // on "tick" from a `wait`: how far the clock moves
@@ -33,12 +34,13 @@ export interface Action {
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
   | { kind: "trace"; actions: Action[]; always?: Step[] }
-  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; always?: Step[] };
+  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; always?: Step[] };
 
 /** The first broken `always` check in a session: after `actions`, `check` failed on `screen`. */
 export interface Violation {
   line: number;
   message: string;
+  restart?: boolean; // not an \`always\` rule: stored state that did not survive a restart
   actions: Action[];
   screen: string;
 }
@@ -64,7 +66,7 @@ export interface TraceResult {
 /** Invariants only apply to what is on the screen: a check on an absent element is skipped. */
 function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]): Violation | undefined {
   // A sentence in `always` over the data (checked by openSession).
-  if (obs?.dataViolation) return { line: obs.dataViolation.line, message: obs.dataViolation.message, actions: [...actions], screen: `${describe(obs)}\n\nThe app's data (from data(model)):\n${JSON.stringify(obs.dataViolation.data, null, 1).slice(0, 2500)}` };
+  if (obs?.dataViolation) return { line: obs.dataViolation.line, message: obs.dataViolation.message, restart: obs.dataViolation.restart, actions: [...actions], screen: `${describe(obs)}\n\nThe app's data (from data(model)):\n${JSON.stringify(obs.dataViolation.data, null, 1).slice(0, 2500)}` };
   for (const s of always ?? []) {
     if (s.do !== "see") continue;
     if (!s.every && s.check.is !== "hidden" && s.check.is !== "shown" && "missing" in locate(obs, s.target)) continue;
@@ -94,7 +96,7 @@ interface Session {
  * on the observation, where the `always` handling picks it up.
  */
 async function openSession(dir: string, target: string): Promise<Session> {
-  const session = await openSessionInner(dir, target);
+  const session = await restartable(dir, await openSessionInner(dir, target));
   if (!existsSync(join(dir, "invariants.mjs"))) return session;
   const mod = await import(pathToFileURL(join(dir, "invariants.mjs")).href + `?t=${Date.now()}`);
   const texts: { line: number; text: string }[] = JSON.parse(readFileSync(join(dir, "invariants.json"), "utf8"));
@@ -114,6 +116,35 @@ async function openSession(dir: string, target: string): Promise<Session> {
         if (!holds) return { ...obs, dataViolation: { line: check.line, message: `"${texts[i].text}" does not hold`, data } };
       }
       return obs;
+    },
+  };
+}
+
+/**
+ * Stored state (`stored.json` in the build): a `restart` saves the stored fields of the app's data,
+ * starts the app again with them, and checks that they came back unchanged.
+ */
+async function restartable(dir: string, session: Session): Promise<Session> {
+  if (!existsSync(join(dir, "stored.json"))) return session;
+  const stored: { field: string; line: number }[] = JSON.parse(readFileSync(join(dir, "stored.json"), "utf8"));
+  const pick = (d: any) => Object.fromEntries(stored.map((s) => [s.field, d?.[s.field]]));
+  let lost: { line: number; message: string; data: unknown; restart: boolean } | undefined;
+  return {
+    ...session,
+    send: async (w) => {
+      if ((w as { on?: string }).on !== "restart") return session.send(w);
+      const saved = pick(await session.data?.());
+      await session.send({ ...w, saved });
+      const back = pick(await session.data?.());
+      const wrong = stored.find((s) => stable(saved[s.field]) !== stable(back[s.field]));
+      if (wrong) lost = { line: wrong.line, restart: true, message: `after a restart, stored \`${wrong.field}\` did not come back as it was saved: ${difference(saved[wrong.field], back[wrong.field])}`, data: { saved: saved[wrong.field], afterRestart: back[wrong.field] } };
+    },
+    observe: async () => {
+      const obs = await session.observe();
+      if (!lost) return obs;
+      const v = lost;
+      lost = undefined;
+      return { ...obs, dataViolation: v };
     },
   };
 }
@@ -214,9 +245,6 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
   };
 }
 
-/** JSON with sorted keys: the same call reads the same from every build. */
-const stable = (v: unknown): string =>
-  Array.isArray(v) ? `[${v.map(stable).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v ?? null);
 
 async function openRawSession(dir: string, target: string, clock?: { now: string; today: string }): Promise<Session> {
   if (target === "ts") {
@@ -358,6 +386,7 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   // A `wait` in an app without a clock tick only moves the clock on; with one, it ticks that often.
   if (a.on === "tick") return a.times === 0 && a.ms ? { wires: [{ on: "wait", target: "", ms: a.ms }] } : { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
   if (a.on === "other") return { wires: [{ on: "other", call: a.call }] }; // handled by the session: another client calls the provider
+  if (a.on === "restart") return { wires: [{ on: "restart", target: "" }] }; // handled by the session: saves, restarts, checks
   const f = locate(obs, a.target, a.list, a.row, a.rowWith);
   if ("missing" in f) return { unavailable: f.missing };
   const n = f.node;
@@ -381,6 +410,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "choose": return { on: "choose", target: s.target, value: s.value };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
+    case "restart": return { on: "restart", target: "" };
     case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}) } } : undefined;
     default: return undefined;
   }
@@ -471,6 +501,7 @@ function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => 
   if (job.ticks.length) out.push({ w: 3, a: { on: "tick", target: "", times: job.ticks[Math.floor(rnd() * job.ticks.length)] } });
   for (const o of job.others ?? []) out.push({ w: 1, a: varyOther(o, rnd) });
   if (job.waits?.length) out.push({ w: 2, a: { on: "tick", target: "", times: 0, ms: job.waits[Math.floor(rnd() * job.waits.length)] } });
+  if (job.restarts) out.push({ w: 1, a: { on: "restart", target: "" } });
   return out;
 }
 
@@ -540,7 +571,7 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
           obs = await s.observe();
           const v = brokenInvariant(obs, job.always, []);
           if (v) {
-            failure = { line: step.line, message: `after this step, the rule \`always\` (line ${v.line}) is broken: ${v.message}`, screen: v.screen };
+            failure = { line: step.line, message: v.restart ? `${v.message} (stored at line ${v.line})` : `after this step, the rule \`always\` (line ${v.line}) is broken: ${v.message}`, screen: v.screen };
             break;
           }
         }

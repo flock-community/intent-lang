@@ -85,8 +85,8 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    done, ~~v24 blocks with braces~~ done, ~~v25 `@` references in sentences~~ done, ~~v26 import what
    you use~~ done, ~~v27 traceability for apis~~ done, ~~v28 time and a steerable clock~~ done,
    ~~v29 structure for control words~~ done, ~~v30 `T or nothing`~~ done, ~~v31 invariants over
-   the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`). Next: stored
-   state (survives a restart), then effects on actions (approval, permissions, outbox,
+   the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`), ~~v32 stored
+   state (survives a restart)~~ done. Next: effects on actions (approval, permissions, outbox,
    compensation) with a `std.actions` layer. Later (the language is alpha): diagnostics that
    carry their fix and `intent fix` with pinned `language vN`; identity and references for stored
    records, then unions of records and several targets per app. Also

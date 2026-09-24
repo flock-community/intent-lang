@@ -7,7 +7,7 @@ import support.tickets
 implements support.ticketsApi
 
 state {
-  tickets: List Ticket = table {
+  stored tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     2  | "Invoice shows wrong VAT"      | "Piet de Vries" | High     | Open    | "Alex"
@@ -18,7 +18,7 @@ state {
     7  | "Password rules unclear"       | "Iris de Boer"  | Normal   | Open    | "Alex"
     8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | ""
   }
-  comments: List Comment = table {
+  stored comments: List Comment = table {
     ticket | author         | body
     1      | "Mara Jansen"  | "I reset my password but the login page keeps rejecting it."
     1      | "Sam"          | "Thanks Mara, looking into it now."
@@ -153,4 +153,14 @@ example "commenting" {
   see listComments.body[1].author = "Mara Jansen"
   call addComment with id = 7, author = "Sam", text = ""
   see addComment.status = 400
+}
+
+example "kept after a restart" {
+  call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
+  restart
+  call getTicket with id = 9
+  see getTicket.status = 200
+  see getTicket.body.subject = "Printer on fire"
+  call createTicket with subject = "Scanner too", customer = "Ann", priority = Low
+  see createTicket.body.id = 10
 }

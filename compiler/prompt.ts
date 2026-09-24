@@ -136,7 +136,13 @@ const DATA_RULE = {
   ts: "Data (this spec has sentences in `always`): also export `data(model: Model): Data` (the `Data` type in spec.ts: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
 };
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false): string {
+/** Apps with `stored` state: the harness keeps it (localStorage, a file on the server) and puts it back after a restart. */
+const STORED_RULE = {
+  elm: "Stored state (this spec has `stored` fields): also expose `data : Model -> Data` and `restore : Stored -> Model -> Model`. `restore saved model` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
+  ts: "Stored state (this spec has `stored` fields): also export `data(model: Model): Data` and `restore(saved: Stored, model: Model): Model`. `restore(saved, model)` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
+};
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
   if (api)
@@ -166,7 +172,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${clock ? `# Clock\n\n${API_CLOCK_RULE}\n\n` : ""}${data ? `# Data\n\n${DATA_RULE.ts}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
+${clock ? `# Clock\n\n${API_CLOCK_RULE}\n\n` : ""}${data ? `# Data\n\n${stored ? STORED_RULE.ts : DATA_RULE.ts}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
   return `# Language reference
 
 ${language}
@@ -182,7 +188,7 @@ ${FMT_API[target]}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}${clock && !api ? `\n${CLOCK_RULE[target]}\n` : ""}${data && !api ? `\n${DATA_RULE[target]}\n` : ""}
+${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}${clock && !api ? `\n${CLOCK_RULE[target]}\n` : ""}${data && !api ? `\n${stored ? STORED_RULE[target] : DATA_RULE[target]}\n` : ""}
 # Generated interface (${target === "elm" ? "src/Spec.elm" : "spec.ts"})
 
 \`\`\`${lang}

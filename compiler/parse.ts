@@ -296,8 +296,9 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     app.components.push(parseComponent(node, m[1], m[2], m[3], ctx));
   } else if (t === "state") {
     for (const c of node.children) {
-      const f = parseField(c, err, true);
-      if (f) app.state.push(f);
+      const stored = /^stored\s+/.test(c.text);
+      const f = parseField(stored ? { ...c, text: c.text.replace(/^stored\s+/, "") } : c, err, true);
+      if (f) app.state.push(stored ? { ...f, stored } : f);
     }
   } else if ((m = t.match(/^clock\s+every\s+(\S+)$/))) {
     onlyTop("clock");
@@ -1037,6 +1038,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     const target = m[1].replace(/header\s+/, "header.");
     return { step: { do: "see", target, check: m[3] !== undefined ? { is: "eq", value: parseString(m[3])! } : { is: "hidden" }, line } };
   }
+  if (t === "restart") return { step: { do: "restart", line } };
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
   if ((m = t.match(/^wait\s+(\d+)\s+(seconds?|minutes?|hours?|days?)$/))) {
     err(line, "SYNTAX", `write the time as \`wait ${m[1]}${m[2][0] === "s" ? "s" : m[2][0]}\` (s, m, h or d)`, col);
@@ -1086,7 +1088,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: "eq", value }, line } };
   }
   const word = t.split(/\s+/)[0];
-  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot"])}`, col);
+  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart"])}`, col);
 }
 
 // ---------------------------------------------------------------- semantic checks
@@ -1367,6 +1369,11 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         err(s.line, "STEP", `\`${s.do}\` belongs to the api profile (add \`profile api\`); a screen is driven with click, type, toggle and choose`);
         continue;
       }
+      if (s.do === "restart") {
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
+        else if (!app.state.some((f) => f.stored)) warn(s.line, "STEP", "`restart` starts the app again, but no state is `stored`: everything starts from its default");
+        continue;
+      }
       if (s.do === "snapshot") {
         if (snapshots.has(s.name)) err(s.line, "DUPLICATE", `snapshot "${s.name}" is already used`);
         snapshots.add(s.name);
@@ -1599,7 +1606,9 @@ function checkApi(
         }
       } else if (s.do === "tick" && s.ms) {
         if (!usesClock(app)) err(s.line, "STEP", "`wait` moves the clock on: this api reads no `@now` or `@today`, and has no `every …` work");
-      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\`, \`see\` and \`wait\`, not \`${s.do}\``);
+      } else if (s.do === "restart") {
+        if (!app.state.some((f) => f.stored)) warn(s.line, "STEP", "`restart` starts the api again, but no state is `stored`: everything starts from its default");
+      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\`, \`see\`, \`wait\` and \`restart\`, not \`${s.do}\``);
     }
   }
   for (const ep of eps.values()) if (!app.examples.some((ex) => ex.steps.some((s) => s.do === "call" && s.endpoint === ep.name))) warn(ep.line, "UNPROVEN", `endpoint \`${ep.name}\` is never called in an example`);

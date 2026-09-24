@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
 import { usesClock } from "./refs.ts";
-import { elmEncoder as elmEncode, genElmJson } from "./calls.ts";
+import { elmDecoder, elmEncoder as elmEncode, genElmJson } from "./calls.ts";
+import { typeDesc } from "./api.ts";
 import { callDescs, elmAnswerMsgs, eventsByAlias, genElmCalls, genTsCalls, hasClients, hasThrough, throughs, tsAnswerMsgs } from "./calls.ts";
 
 export type Target = "elm" | "ts";
@@ -106,17 +107,46 @@ function tsLiteral(l: Literal): string {
 
 /** Apps with sentences in `always`: the harness checks them on the app's data after every step. */
 export const hasInvariants = (app: App) => !!app.invariants?.length;
+/** State that survives a restart (`stored name: T = …`). */
+export const hasStored = (app: App) => app.state.some((f) => f.stored);
+/** The app hands over its data: for the checks in `always`, and to save its stored state. */
+export const hasData = (app: App) => hasInvariants(app) || hasStored(app);
 /** A state field's name in the data: `pager.page` → `pagerPage`. */
 export const dataField = (name: string) => name.replace(/\.([a-z])/g, (_, c: string) => c.toUpperCase());
 
 /** The app's data as TypeScript: every state field, for the checks in `always`. */
 export function tsData(app: App): string {
-  return `/** The app's data, for the checks in \`always\`: every state field, as in the spec. \`data(model)\` in the app module fills it. */\nexport type Data = { ${app.state.map((f) => `${dataField(f.name)}: ${tsType(f.type)}`).join("; ")} };\n\n`;
+  const stored = app.state.filter((f) => f.stored);
+  return `/** The app's data${hasInvariants(app) ? ", for the checks in \`always\`" : ""}${stored.length ? `${hasInvariants(app) ? " and" : ","} to save what is stored` : ""}: every state field, as in the spec. \`data(model)\` in the app module fills it. */\nexport type Data = { ${app.state.map((f) => `${dataField(f.name)}: ${tsType(f.type)}`).join("; ")} };\n\n${
+    stored.length
+      ? `/** The state that survives a restart (\`stored\` in the spec). \`restore(saved, model)\` in the app module puts it into a freshly started model. */\nexport type Stored = { ${stored.map((f) => `${dataField(f.name)}: ${tsType(f.type)}`).join("; ")} };\n\n`
+      : ""
+  }`;
 }
+
+/** Which fields of the data a restart keeps (for the harness: localStorage, a data file). */
+export const tsStoredFields = (app: App) => `/** The stored fields and their types: kept data that does not fit is not restored. */\nexport const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };\n\n`;
+const storedTypes = (app: App) => app.state.filter((f) => f.stored).map((f) => `${dataField(f.name)}: ${typeDesc(app, f.type)}`).join(", ");
 
 /** The app's data as the checks see it: every state field, typed as in the spec. */
 function genElmData(app: App): string {
-  return `{-| The app's data, for the checks in \`always\`: every state field, as in the spec. \`data\` in the app module fills it. -}
+  const stored = app.state.filter((f) => f.stored);
+  const storedPart = stored.length
+    ? `{-| The state that survives a restart (\`stored\` in the spec). \`restore saved model\` in the app module puts it into a freshly started model. -}
+type alias Stored =
+    { ${stored.map((f) => `${dataField(f.name)} : ${elmType(f.type)}`).join("\n    , ")}
+    }
+
+
+decodeStored : D.Decoder Stored
+decodeStored =
+    D.succeed Stored
+${stored.map((f) => `        |> jsonAndMap (D.field ${q(dataField(f.name))} ${elmDecoder(app, f.type)})`).join("\n")}
+
+
+`
+    : "";
+  return `${storedPart}{-| The app's data${hasInvariants(app) ? ", for the checks in \`always\`" : ""}${stored.length ? `${hasInvariants(app) ? " and" : ","} to save what is stored` : ""}: every state field, as in the spec. \`data\` in the app module fills it. -}
 type alias Data =
     { ${app.state.map((f) => `${dataField(f.name)} : ${elmType(f.type)}`).join("\n    , ")}
     }
@@ -159,7 +189,7 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-${hasClients(app) || hasInvariants(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
+${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
   out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec. -}\ntype alias Clock =\n    { now : DateTime, today : Date }\n\n\n`);
@@ -258,8 +288,8 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     return `        ${pat} ->\n            ${body}\n`;
   });
   out.push(`fromWire : Ui.Wire -> Maybe Msg\nfromWire w =\n    case ( w.on, w.target ) of\n${cases.join("\n")}\n        _ ->\n            Nothing\n`);
-  if (hasClients(app) || hasInvariants(app)) out.push(`\n\n${genElmJson(app)}`);
-  if (hasInvariants(app)) out.push(genElmData(app));
+  if (hasClients(app) || hasData(app)) out.push(`\n\n${genElmJson(app)}`);
+  if (hasData(app)) out.push(genElmData(app));
   if (hasClients(app)) out.push(`\n\n${genElmCalls(app)}`);
   return out.join("");
 }
@@ -302,7 +332,11 @@ function genElmMainPorts(app: App): string {
   const calls = hasClients(app);
   const th = hasThrough(app);
   const c = usesClock(app);
+  const st = hasStored(app);
   const clk = c ? " model.clock" : "";
+  const first = c ? "(App.init start)" : "App.init";
+  // Stored state: what this browser kept comes in with the flags, and the data goes out after every update.
+  const init = st ? (calls ? `(Tuple.mapFirst (restoreFrom flags) ${first})` : `(restoreFrom flags ${first})`) : first;
   const withClock = (fn: string) => (c ? `(${fn} model.clock)` : fn);
   const send = th
     ? `{-| The calls, each with the config its api's client layer gets from this state; and that config, for the event streams. -}
@@ -333,6 +367,9 @@ port events : (D.Value -> msg) -> Sub msg
 ` : ""}${th ? `
 
 port through : J.Value -> Cmd msg
+` : ""}${st ? `
+
+port save : J.Value -> Cmd msg
 ` : ""}${c ? `
 
 port clockTicks : (D.Value -> msg) -> Sub msg
@@ -354,7 +391,18 @@ decodeClock : D.Value -> Spec.Clock -> Spec.Clock
 decodeClock v before =
     Result.withDefault before (D.decodeValue (D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string)) v)
 
-${calls ? send : `send : App.Model -> ( App.Model, Cmd In )
+${st ? `
+{-| The model with what this browser kept (the stored fields), when there is any. -}
+restoreFrom : D.Value -> App.Model -> App.Model
+restoreFrom flags m =
+    case D.decodeValue (D.field "saved" Spec.decodeStored) flags of
+        Ok saved ->
+            App.restore saved m
+
+        Err _ ->
+            m
+
+` : ""}${calls ? send : `send : App.Model -> ( App.Model, Cmd In )
 send m =
     ( m, Cmd.none )`}
 
@@ -366,12 +414,12 @@ main =
             \\flags ->
                 let
                     model =
-                        { app = Tuple.first (send ${c ? "(App.init start)" : "App.init"}) ${c ? ", clock = start " : ""}}
+                        { app = Tuple.first (send ${init}) ${c ? ", clock = start " : ""}}
 
                     start =
                         decodeClock flags { now = "2026-01-05T09:00", today = "2026-01-05" }
                 in
-                ( model, Tuple.second (send ${c ? "(App.init start)" : "App.init"}) )
+                ( model, Tuple.second (send ${init}) )
         , update =
             \\i model ->
                 let
@@ -399,7 +447,11 @@ ${calls ? `
                 in
                 case msg of
                     Just e ->
-                        Tuple.mapFirst (\\a -> { moved | app = a }) (send (${withClock("App.update")} e moved.app))
+                        ${st ? `let
+                            ( a, cmd ) =
+                                send (${withClock("App.update")} e moved.app)
+                        in
+                        ( { moved | app = a }, Cmd.batch [ cmd, save (Spec.encodeData (App.data a)) ] )` : `Tuple.mapFirst (\\a -> { moved | app = a }) (send (${withClock("App.update")} e moved.app))`}
 
                     Nothing ->
                         ( moved, Cmd.none )
@@ -413,7 +465,8 @@ ${calls ? `
 const elmWorkerPorts = (app: App) => {
   const calls = hasClients(app);
   const c = usesClock(app);
-  const inv = hasInvariants(app);
+  const inv = hasData(app);
+  const st = hasStored(app);
   const upd = c ? "App.update clock" : "App.update";
   return `port module Worker exposing (main)
 
@@ -477,7 +530,21 @@ main =
                                     Nothing
 
                     ( next, calls ) =
-                        case msg of
+                        ${st ? `if on == "restart" then
+                            -- The app starts again with what the driver saved (the stored fields of its data).
+                            let
+                                ( fresh, first ) =
+                                    ${calls ? (c ? "App.init clock" : "App.init") : `( ${c ? "App.init clock" : "App.init"}, [] )`}
+                            in
+                            case D.decodeValue (D.field "saved" Spec.decodeStored) v of
+                                Ok saved ->
+                                    ( App.restore saved fresh, first )
+
+                                Err _ ->
+                                    ( fresh, first )
+
+                        else
+                        ` : ""}case msg of
                             Just e ->
                                 ${calls ? `${upd} e m.app` : `( ${upd} e m.app, [] )`}
 
@@ -639,10 +706,11 @@ export function genTsSpec(app: App): string {
   const out: string[] = [];
   out.push(`// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 import type { Node, Wire } from "./ui.ts";
-${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : ""}
+${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : hasStored(app) ? `import type { TypeDesc } from "./api.ts";\n` : ""}
 `);
   out.push(tsDomain(app));
-  if (hasInvariants(app)) out.push(tsData(app));
+  if (hasData(app)) out.push(tsData(app));
+  if (hasStored(app)) out.push(tsStoredFields(app));
   const evs = events(app);
   out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${[...evs
     .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)]
@@ -742,13 +810,14 @@ export function through(model: Model): Through { /* … */ }
 function genTsEntriesCalls(app: App): { main: string; test: string } {
   const th = hasThrough(app);
   const c = usesClock(app);
+  const st = hasStored(app);
   const configOf = th ? `(App.through(current) as Record<string, Record<string, unknown>>)[alias]` : "undefined";
   const main = `import * as App from "./app.ts";
-import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call } from "./spec.ts";
+import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
 import { fetchCall, listen, type Outgoing } from "./calls.ts";
 import { apply } from "./through.ts";
-${c ? `import { localClock } from "./clock.ts";\n` : ""}
+${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
@@ -763,7 +832,7 @@ let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
     const r = App.init(${c ? "localClock()" : ""});
-    current = r.model;
+${st ? "    const saved = load(KEY, storedFields);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
     perform(r.calls);
     return r.model;
   },
@@ -771,7 +840,7 @@ dispatch = mount(document.getElementById("app")!, {
     const e = fromWire(w);
     if (!e) return m;
     const r = App.update(e, m${c ? ", localClock()" : ""});
-    current = r.model;
+${st ? "    save(KEY, App.data(r.model), storedFields);\n" : ""}    current = r.model;
     perform(r.calls);
     stream?.refresh();
     return r.model;
@@ -800,7 +869,7 @@ ${c ? "  let clock = initial;\n" : ""}  const first = App.init(${c ? "clock" : "
   let pending: CallOut[] = first.calls.map((c) => out(c, m));
   return {
     observe: () => JSON.parse(JSON.stringify(toNode(App.view(m${c ? ", clock" : ""})))),
-${hasInvariants(app) ? "    /** The app's data, for the checks in `always`. */\n    data: () => JSON.parse(JSON.stringify(App.data(m))),\n" : ""}    /** What the client layers get from the current state, per api. */
+${hasData(app) ? "    /** The app's data, for the checks in `always` and to keep what is stored. */\n    data: () => JSON.parse(JSON.stringify(App.data(m))),\n" : ""}    /** What the client layers get from the current state, per api. */
     through: () => ${hasThrough(app) ? "JSON.parse(JSON.stringify(App.through(m)))" : "({})"},
     /** The calls made since the last time this was asked, in order. */
     calls() {
@@ -809,7 +878,14 @@ ${hasInvariants(app) ? "    /** The app's data, for the checks in `always`. */\n
       return JSON.parse(JSON.stringify(made));
     },
     send(w: Wire) {
-${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}      const e = fromWire(w);
+${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The app starts again with what the driver saved (the stored fields of its data); its first calls go out again.
+      if (w.on === "restart") {
+        const again = App.init(${c ? "clock" : ""});
+        m = App.restore(JSON.parse(JSON.stringify((w as { saved?: unknown }).saved)), again.model);
+        pending.push(...again.calls.map((c) => out(c, m)));
+        return;
+      }
+` : ""}      const e = fromWire(w);
       if (!e) return;
       const r = App.update(e, m${c ? ", clock" : ""});
       m = r.model;
@@ -847,18 +923,25 @@ export function apply(alias: string, req: Outgoing, config: Record<string, unkno
 function genTsEntries(app: App): { main: string; test: string } {
   if (hasClients(app)) return genTsEntriesCalls(app);
   const c = usesClock(app);
+  const st = hasStored(app);
   const main = `import * as App from "./app.ts";
-import { fromWire, toNode } from "./spec.ts";
+import { fromWire, toNode${st ? ", storedFields, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE } from "./ui.ts";
-${c ? `import { localClock } from "./clock.ts";\n` : ""}
+${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
 ${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
-  init: () => App.init(${c ? "localClock()" : ""}),
+  init: () => ${st ? `{
+    const m = App.init(${c ? "localClock()" : ""});
+    const saved = load(KEY, storedFields);
+    return saved ? App.restore(saved as Stored, m) : m;
+  }` : `App.init(${c ? "localClock()" : ""})`},
   step: (w, m) => {
     const e = fromWire(w);
-    return e ? App.update(e, m${c ? ", localClock()" : ""}) : m;
+    ${st ? `const next = e ? App.update(e, m${c ? ", localClock()" : ""}) : m;
+    save(KEY, App.data(next), storedFields);
+    return next;` : `return e ? App.update(e, m${c ? ", localClock()" : ""}) : m;`}
   },
   render: (m) => toNode(App.view(m${c ? ", localClock()" : ""})),
   clockMs: ${app.clockMs ?? 0},
@@ -873,8 +956,13 @@ export function start(${c ? "initial: Clock" : ""}) {
 ${c ? "  let clock = initial;\n" : ""}  let m = App.init(${c ? "clock" : ""});
   return {
     observe: () => JSON.parse(JSON.stringify(toNode(App.view(m${c ? ", clock" : ""})))),
-${hasInvariants(app) ? "    /** The app's data, for the checks in `always`. */\n    data: () => JSON.parse(JSON.stringify(App.data(m))),\n" : ""}    send(w: Wire) {
-${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}      const e = fromWire(w);
+${hasData(app) ? "    /** The app's data, for the checks in `always` and to keep what is stored. */\n    data: () => JSON.parse(JSON.stringify(App.data(m))),\n" : ""}    send(w: Wire) {
+${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The app starts again with what the driver saved (the stored fields of its data).
+      if (w.on === "restart") {
+        m = App.restore(JSON.parse(JSON.stringify((w as { saved?: unknown }).saved)), App.init(${c ? "clock" : ""}));
+        return;
+      }
+` : ""}      const e = fromWire(w);
       if (e) m = App.update(e, m${c ? ", clock" : ""});
     },
   };
@@ -902,13 +990,14 @@ export function scaffold(app: App, target: Target, dir: string, layerDirs: Recor
     copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
     const spec = genElmSpec(app);
     writeFileSync(join(dir, "src/Spec.elm"), spec);
-    if (!hasClients(app) && !usesClock(app) && hasInvariants(app)) {
+    if (!hasClients(app) && !usesClock(app) && !hasStored(app) && hasInvariants(app)) {
       // Checks in `always` need the data from the test worker; the browser entry stays plain.
       writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
       writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
       writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
-    } else if (hasClients(app) || usesClock(app)) {
+    } else if (hasClients(app) || usesClock(app) || hasStored(app)) {
       writeFileSync(join(dir, "src/Main.elm"), genElmMainPorts(app));
+      for (const f of ["store.ts", "api.ts", "fmt.ts"]) copyFileSync(join(ROOT, "runtime/ts", f), join(dir, f));
       writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
       copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
@@ -920,12 +1009,19 @@ export function scaffold(app: App, target: Target, dir: string, layerDirs: Recor
 import { fetchCall, listen, type CallDesc, type Outgoing } from "./calls.ts";
 import { apply } from "./through.ts";
 import { localClock } from "./clock.ts";
+import { load, save } from "./store.ts";
+import type { TypeDesc } from "./api.ts";
 
 const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
+// Stored state lives in this browser (localStorage), under the app's name.
+const KEY = ${q(`intent:${app.name}`)};
+const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };
 
-(globalThis as any).intentClock = localClock;
+// The flags: the local clock, and what this browser kept of the stored state.
+(globalThis as any).intentClock = () => ({ ...localClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields) ?? null } : {}) });
 (globalThis as any).intentConnect = (app: any) => {
   if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(localClock()), 15000);
+  if (app.ports.save) app.ports.save.subscribe((data: Record<string, unknown>) => save(KEY, data, storedFields));
   if (!app.ports.request) return;
   let latest: Record<string, Record<string, unknown>> = {};
   let stream: { refresh: () => void } | undefined;
@@ -952,6 +1048,7 @@ const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
     copyFileSync(join(ROOT, "runtime/ts/ui.ts"), join(dir, "ui.ts"));
     copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
     if (usesClock(app)) copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
+    if (hasStored(app)) for (const f of ["store.ts", "api.ts"]) copyFileSync(join(ROOT, "runtime/ts", f), join(dir, f));
     if (hasClients(app)) {
       copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));

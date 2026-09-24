@@ -356,7 +356,9 @@ A and compiler B read, and the sentence or example to add. Two *identical* compi
 enough: on a deliberately vague word counter they agreed, because the same model reads the same
 way. The probe found three open questions (what separates words, punctuation at the edges,
 apostrophes and decimal points inside a word). A twin-verified build is cached by the canonical
-spec plus the pinned compiler, so building an unchanged spec again is instant and free.
+spec plus the pinned compiler (language reference, model, and a digest of the harness: generators,
+prompts, drivers and runtime files), so building an unchanged spec again is instant and free,
+and a harness change builds anew.
 
 **Dependencies:** `intent.project` lists a registry and requirements. `intent install` resolves
 them with minimal version selection, downloads into `.intent/deps/` and pins versions and
@@ -407,6 +409,19 @@ and TypeScript (checked by the parity test, including leap years and dates befor
 `apps/17-habits.intent` (streaks per day) and `apps/api/notices-api.intent` (notices that expire,
 at most three an hour) built on the first attempt and twin-verified; the habits screen is the
 same in Elm and TypeScript in 60 of 60 random sessions with 286 waits.
+
+**Checked rules and stored state** (v31, v32). A sentence in `always` (`- no two @dones have the
+same @habit and the same @day`) is compiled once per spec by a separate stage and checked on
+the app's data after every step; a planted bug (a habit done tomorrow) was caught at its line. A
+state field marked `stored` survives a restart: in the browser's local storage, or in a data file
+on the server. `restart` in an example starts the app again, random sessions restart now and
+then, and after every restart the harness checks that the stored fields came back unchanged.
+Habits and the tickets API built on the first attempt with it, twin-verified. A `restore` that
+drops a row was caught by the examples and by random sessions. In Chromium the habits survived a
+reload in both targets, the Elm build read what the TypeScript build had saved, and unreadable
+saved data fell back to the spec's defaults (in the first TypeScript run it did not; the saved
+data is now checked against the spec's types). The tickets server kept a new ticket across a
+restart, and the next id continued.
 
 **Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
 under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
@@ -471,13 +486,14 @@ runs/                 build outputs and reports (history.jsonl is kept)
   `grid`, `row` and `sidebar`, but sizes are still words in `look`.
 - The Kit's drawer has no backdrop and overlaps the page: consistent in every build, but a
   design flaw. Stable is not the same as good.
-- One screen per app. No navigation, persistence or randomness yet. HTTP calls (v20) show
-  the pattern for each: the harness owns the effect, and the spec names it.
+- One screen per app. No navigation or randomness yet. HTTP calls (v20) and stored state
+  (v32) show the pattern for each: the harness owns the effect, and the spec names it.
 - Styled builds of screens that make calls are not in the harness yet.
 - Behaviour sentences are natural language. Stability comes from the typed interface,
   the defaults, the examples and the invariants, not from a formal semantics. The
   pipeline measures what that buys, and so far it buys a lot.
-- `always` supports `see` checks (including row counts). Richer properties, such as sums
-  or relations between elements, would need a small expression form.
+- `always` holds `see` checks on the screen and sentences over the data (v31). Those sentences
+  are compiled by a separate stage, so a check is only as right as its reading of the sentence;
+  it is compiled once per spec and shared by every build, never by the app's own compiler.
 - Stability across *spec edits* (rebuild only what changed, keep the rest) is not tested.
   Every build here is from scratch.

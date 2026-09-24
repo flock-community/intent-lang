@@ -1,4 +1,4 @@
-# Intent — language reference (v31)
+# Intent — language reference (v32)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -75,7 +75,7 @@ choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is w
 type Email = Text matching /…/  # a refined type: a base type with one precise rule (§3a)
 design                      # optional: how the app looks (§4a)
 component Name "look"       # optional: a reusable look for sections/elements (§4a)
-state { … }                 # what the app remembers: `field: Type = default` lines
+state { … }                 # what the app remembers: `[stored] field: Type = default` lines
 clock every 1s              # optional: the app receives a tick every interval
 derive { … }                # named values computed from state: `name = sentence`
 screen { … }                # what the user sees, top to bottom (§4)
@@ -96,6 +96,24 @@ warns (`UNGUARDED`) when it does not. Literals of the time types: `2026-09-24` (
 (a DateTime, to the minute, in the app's own local time).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
+
+**Stored state.** A field marked `stored` survives a restart; every other field starts from its
+default each time the app starts. Mark what the user would be upset to lose (their habits, their
+tickets), not what belongs to one visit (a draft, a filter, an open drawer):
+
+```
+state {
+  stored habits: List Habit = []
+  draft: Text = ""
+}
+```
+
+The harness keeps stored fields: a screen in the browser's local storage, an api in a data file
+on the server (`INTENT_DATA`, default `data.json`). The spec's default is used the first time,
+and whenever the kept data cannot be read. In examples, `restart` starts the app again (§6), and
+random sessions restart now and then; after every restart the harness checks that the stored
+fields came back exactly as they were. Stored fields live in the app's own state, not in a
+component's.
 
 Seed data for a `List <Record>` is written as a table. Columns are record fields; omitted
 fields take the record's defaults:
@@ -808,6 +826,7 @@ click remove on row with "Milk"   # the first row showing that exact text
 see visible has 2 rows
 see add is disabled         # also: enabled, hidden, shown, checked, unchecked
 snapshot "dialog open"      # a visual checkpoint: every build must look the same here
+restart                     # the app starts again: `stored` fields keep their values, the rest starts from its default (§3)
 ```
 
 `always` holds `see` checks that must be true after every action, in every session, not
@@ -977,7 +996,7 @@ Each version below was added because a real spec needed it. Next candidates:
 
 - fields, selects and nested lists inside list rows (inline editing, sub-items);
 - `clock` in styled apps;
-- several screens with navigation, and state that survives a reload;
+- several screens with navigation;
 - effects the harness owns, such as HTTP and randomness with a seed;
 - invariants across rows ("no table is booked twice") and over state that is not on screen;
 - restyling a bundle component's elements from the app;
@@ -986,6 +1005,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v32: `stored` state fields survive a restart (a screen keeps them in the browser, an api in a
+  data file); `restart` in examples, also in random sessions, and a check that stored fields come
+  back unchanged. The app hands over `data` and a `restore` for them (generated interface).
 
 - v31: `- sentence` lines in `always`: invariants over the data, checked after every step by a
   separately compiled check; the app hands over its data (`Data`); `UNCHECKED` hint for rules that

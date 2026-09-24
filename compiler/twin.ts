@@ -1,7 +1,7 @@
 // `intent build`: a verified build is a cache hit; anything new is compiled twice, independently.
 // When the two compilers build different apps, the spec is ambiguous: stop and say where,
 // instead of shipping whichever way one compiler happened to fall.
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App } from "./ast.ts";
 import { buildOnce, writeProviders, type BuildResult } from "./build.ts";
@@ -42,9 +42,23 @@ export interface TwinResult {
   costUsd: number;
 }
 
-/** What makes two builds the same build: the canonical spec, the compiler, the target and options. */
+/**
+ * The harness a build was made with: the generators, prompts and drivers, and the runtime files
+ * copied into builds. A change there (a new generated interface, a fixed runtime) is a new build.
+ */
+let harness: string | undefined;
+function harnessDigest(): string {
+  const files = [
+    ...["gen.ts", "calls.ts", "api.ts", "layer.ts", "prompt.ts", "build.ts", "exec.ts", "diff.ts", "invariants.ts"].map((f) => join(ROOT, "compiler", f)),
+    ...readdirSync(join(ROOT, "runtime/ts")).map((f) => join(ROOT, "runtime/ts", f)),
+    ...readdirSync(join(ROOT, "runtime/elm")).map((f) => join(ROOT, "runtime/elm", f)),
+  ];
+  return (harness ??= sha(files.map((f) => readFileSync(f, "utf8")).join("\0")));
+}
+
+/** What makes two builds the same build: the canonical spec, the compiler (language, model, harness), the target and options. */
 export function cacheKey(specText: string, target: Target, o: Pick<TwinOptions, "styled" | "kit">): string {
-  return sha(JSON.stringify({ specText, compiler: compilerPins(), target, styled: !!o.styled, kit: !!o.kit }));
+  return sha(JSON.stringify({ specText, compiler: compilerPins(), harness: harnessDigest(), target, styled: !!o.styled, kit: !!o.kit }));
 }
 
 const providerBuilds = new Map<string, Promise<TwinResult>>();

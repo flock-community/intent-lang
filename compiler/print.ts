@@ -40,6 +40,7 @@ export function stepText(s: Step): string {
     case "choose": return `choose ${s.quoted ? q(s.value) : s.value} in ${s.target}`;
     case "tick": return s.ms ? `wait ${duration(s.ms)}` : `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
+    case "restart": return "restart";
     case "call": {
       const args = [...(s.headers ?? []).map((h) => `header ${h.name} = ${lit(h.value, "")}`), ...s.args.map((a) => `${a.name} = ${lit(a.value, "")}`)];
       return `call ${s.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
@@ -163,7 +164,7 @@ export function printApp(app: App): string {
     if (app.beforeCall) block(["before every call", ...body(app.beforeCall, "  ")]);
     if (app.exampleConfig?.length) block(["examples with", ...app.exampleConfig.flatMap((b) => binding(b, "  "))]);
   }
-  block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
+  block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.stored ? "stored " : ""}${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
   block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
   if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);

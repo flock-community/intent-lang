@@ -15,7 +15,7 @@ import { compilerPins, sourceMap, where } from "./load.ts";
 import { callDescs, hasClients, hasThrough } from "./calls.ts";
 import { usesClock } from "./refs.ts";
 import { prepareInvariants } from "./invariants.ts";
-import { hasInvariants } from "./gen.ts";
+import { dataField, hasData, hasInvariants, hasStored } from "./gen.ts";
 import { readLayerConfig, scaffoldLayer } from "./layer.ts";
 
 export interface BuildResult {
@@ -65,6 +65,8 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   // Apps that read the clock: where it starts in tests, and how far one clock tick moves it.
   if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })) }));
+  // Stored state: which fields of the data a restart keeps (the driver saves them, restarts, and checks they came back).
+  if (hasStored(app) && !layer) writeFileSync(join(dir, "stored.json"), JSON.stringify(app.state.filter((f) => f.stored).map((f) => ({ field: dataField(f.name), line: f.line }))));
   mkdirSync(join(dir, "log"), { recursive: true });
   // Sentences in `always` over the data: their checks are compiled once per spec, apart from the app.
   if (hasInvariants(app) && !layer) {
@@ -76,7 +78,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       return res;
     }
   }
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasInvariants(app));
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app));
 
   let code = "";
   let problems = "";

@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v31** (see the changelog at the end of
+Language version this skill matches: **v32** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -237,6 +237,12 @@ so every example has a known "now", and prove time-dependent behaviour with `wai
 `wait 30m`: the day after, the moment something expires, the edge ("exactly 60 minutes later"
 is either in or out: say which). Recurring work in a service is an `every 15m { … }` block,
 proven with a `wait` that passes its time.
+
+**What survives a restart:** mark the state the user would be upset to lose as `stored` (their
+items, their history, an API's records), and leave what belongs to one visit (a draft, a
+filter, an open drawer) unmarked. Prove it with an example that changes both kinds, says
+`restart`, and sees the stored part kept and the rest back at its default. For an API, also
+check that new ids continue after a restart.
 
 ## 5f. A screen that uses an API
 

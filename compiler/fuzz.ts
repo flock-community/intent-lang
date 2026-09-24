@@ -71,6 +71,8 @@ export function actionTemplates(app: App): { weight: number; make: (rnd: () => n
   if (waits.length) out.push({ weight: 2, make: (r) => ({ on: "tick", target: "", times: 0, ms: pick(r, waits) }) });
   // Another client's calls, as the examples make them (with whole numbers varied: another ticket).
   for (const a of otherCalls(app)) out.push({ weight: 1, make: (r) => varyOther(a, r) });
+  // Stored state: the app starts again now and then.
+  if (app.state.some((f) => f.stored)) out.push({ weight: 1, make: () => ({ on: "restart", target: "" }) });
   if (app.clockMs) {
     const perMinute = Math.max(1, Math.round(60_000 / app.clockMs));
     out.push({ weight: 3, make: (r) => ({ on: "tick", target: "", times: pick(r, [1, 1, 2, 5, 10, perMinute, 5 * perMinute, 25 * perMinute]) }) });
@@ -98,7 +100,7 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
       const ex = examples[Math.floor(rnd() * examples.length)];
       prefix = ex.slice(0, 1 + Math.floor(rnd() * ex.length));
     }
-    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), always: app.always });
+    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), always: app.always });
   }
   return jobs;
 }
@@ -128,6 +130,7 @@ export function actionText(a: Action): string {
     case "toggle": return `toggle ${a.target}${at}`;
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}` : `choose ${a.value} in ${a.target}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
+    case "restart": return "restart";
     case "other": return `call ${a.call!.endpoint}${Object.keys(a.call!.args).length ? ` with ${Object.entries(a.call!.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}  # another client`;
   }
 }
