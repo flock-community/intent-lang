@@ -1,4 +1,4 @@
-# Intent — language reference (v33)
+# Intent — language reference (v34)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -631,10 +631,15 @@ endpoint sendReceipt POST "/charges/{id}/receipt" {
   calls that can (`PIVOT`): what can still fail goes first.
 - The effects a handler can cause are not written; they follow from the endpoints it calls, and
   the source map lists them per handler (`effects`).
-- The harness's part (a key per call, sending again when an answer is lost, recognising a repeat,
-  undo, agreement before an external call) is designed in `docs/design/effects.md` and comes in
-  the next versions. The guarantee it aims for is *effectively once*: delivered at least once, and
-  recognised when repeated. No system can promise "exactly once" over a network.
+- **Effectively once.** A service recognises a repeated request: a request with a non-safe method
+  and an `idempotency-key` header that it answered before gets the same answer again (with
+  `idempotent-replayed: true`), and the endpoint does not run twice. The same key with a different
+  request is refused (422); an `effect external` endpoint refuses a request without a key (400).
+  Keys are kept per caller for 24 hours, with the stored state. Screens send a key with every call
+  (the same for every attempt). "Exactly once" is not promised: no system can over a network; this
+  is delivered at least once, and recognised when repeated.
+- Undo and agreement before an external call are designed in `docs/design/effects.md` and come
+  next.
 
 ## 4g. Calling an API from a screen
 
@@ -677,7 +682,12 @@ on answer tickets.createTicket {
 - `on answer <alias>.<endpoint>` handles the answer. "its status" is the status; "its body" is
   the body, typed by the contract for that status. An answer the contract does not allow (the
   network is down, or the body has the wrong shape) is not any declared status: an `else`
-  covers it.
+  covers it, and "the error" (also "the error in its body") is the harness's message for it.
+- A call is sent again, with the same idempotency key, when its answer is lost, or is a 5xx or
+  a 429, up to three attempts in all; the app sees only the last answer. A call to an
+  `effect external` endpoint that still has no answer may or may not have happened: its answer is
+  **unknown** (`if its status is unknown { … }`), not a failure. Say what the screen shows then;
+  don't offer to do it again as if it failed.
 - `on start` runs once when the app starts.
 - Where a service is hosted is not in the spec: in the browser, calls to `<alias>` go to the
   `api.<alias>` query parameter, else `api`, else the page's own origin
@@ -864,7 +874,14 @@ see visible has 2 rows
 see add is disabled         # also: enabled, hidden, shown, checked, unchecked
 snapshot "dialog open"      # a visual checkpoint: every build must look the same here
 restart                     # the app starts again: `stored` fields keep their values, the rest starts from its default (§3)
+steer pay lose answer       # the next call to the api `pay` is done, but its answer is lost (a screen's provider)
 ```
+
+`steer <api> lose request | lose answer | duplicate | fail <n>` makes the way to an api go wrong
+for its next attempts: the request never arrives; it is done but the answer is lost; it arrives
+twice; or the next `n` attempts answer 503. The screen's calls are sent again as in the browser,
+so an example can prove what the screen shows after a lost answer, and that nothing happened
+twice. Random sessions steer too.
 
 `always` holds `see` checks that must be true after every action, in every session, not
 only in the examples. A check on an element that is not on the screen is skipped. For
@@ -1044,6 +1061,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v34: effectively once. Services recognise a repeated request by its idempotency key (IETF
+  draft, Stripe): the same answer again, 422 for another request, 400 without a key for `effect
+  external`, kept 24 hours with the stored state. Screens send a key per call and send it again on a
+  lost answer, 5xx or 429 (three attempts in all); an external call with no answer is `unknown`.
+  `steer <api> …` in examples and random sessions; api sessions deliver keyed requests twice.
 
 - v33: effects on contract endpoints: `effect external` and `undone by <endpoint> with …`; the
   checker (`EFFECT`, `PIVOT`); effects per handler in the source map. `lib/pay` (payments: charge,

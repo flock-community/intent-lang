@@ -61,7 +61,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   }
   const { appFile, specSource } = layer ? scaffoldLayer(app, dir) : api ? scaffoldApi(app, dir, opts.layers) : scaffold(app, target, dir, opts.layers);
   if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
-  if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })) }))));
+  if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })), ...(e.effect ? { external: true } : {}) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   // Apps that read the clock: where it starts in tests, and how far one clock tick moves it.
   if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })) }));

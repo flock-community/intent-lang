@@ -86,9 +86,10 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    you use~~ done, ~~v27 traceability for apis~~ done, ~~v28 time and a steerable clock~~ done,
    ~~v29 structure for control words~~ done, ~~v30 `T or nothing`~~ done, ~~v31 invariants over
    the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`), ~~v32 stored
-   state (survives a restart)~~ done, ~~v33 effects declared on contracts~~ done. Next, per
-   `docs/design/effects.md` (grounded in Stripe, IETF, AWS, sagas, Temporal): v34 once (keys,
-   durable outbox, retries, `steer` faults), v35 undo and agreement (`std.actions`). Later (the language is alpha): diagnostics that
+   state (survives a restart)~~ done, ~~v33 effects declared on contracts~~ done, ~~v34 effectively once (keys, retries, `unknown`,
+   `steer` faults)~~ done. Next, per `docs/design/effects.md` (grounded in Stripe, IETF, AWS, sagas,
+   Temporal): the durable outbox (pending calls survive a restart), then v35 undo and agreement
+   (`std.actions`). Later (the language is alpha): diagnostics that
    carry their fix and `intent fix` with pinned `language vN`; identity and references for stored
    records, then unions of records and several targets per app. Also
    open: styled builds of screens that make calls, and Kotlin as a second API target. Wire

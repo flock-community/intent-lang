@@ -80,7 +80,9 @@ ${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model
 
 ${jobs.length ? `/** Recurring work (\\\`every …\\\` in the spec): the model and the clock at its time in; the new model and the events it publishes out. */\nexport type Jobs<M> = {\n${jobs.map((j) => `  ${j.name}: (model: M, clock: Clock) => { model: M; publish?: Published[] };`).join("\n")}\n};\n\n` : ""}/** Recurring work and how often it runs (ms). */
 export const jobList: { name: string; every: number }[] = ${JSON.stringify(jobs.map((j) => ({ name: j.name, every: j.every })))};
-${tsStoredFields(app)}
+${tsStoredFields(app)}/** Endpoints with \\\`effect external\\\`: a request without an idempotency key is refused (400). */
+export const externalEndpoints: string[] = ${JSON.stringify((app.endpoints ?? []).filter((e) => e.effect).map((e) => e.name))};
+
 
 /** The endpoints, for the router: methods, paths and parameter types. */
 export const endpoints: EndpointDesc[] = [
@@ -125,8 +127,9 @@ const PIPELINE = `import * as App from "./app.ts";
 import { route } from "./api.ts";
 import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
 import type { Clock } from "./clock.ts";
-import { answerSources, endpoints, sources } from "./spec.ts";
+import { answerSources, endpoints, externalEndpoints, sources } from "./spec.ts";
 import { layers } from "./layers.ts";
+import { fingerprint, keyed, KEY_HEADER, recall, remember, type Keys } from "./once.ts";
 
 const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
 
@@ -134,6 +137,8 @@ export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: 
 
 export function pipeline() {
   let model = App.init();
+  /** Answers remembered by idempotency key (once.ts): kept with the stored state, and across a restart. */
+  let keys: Keys = {};
   /** Recurring work (\`every …\`): runs with the clock at its time; returns the events it published. */
   const runJob = (name: string, clock: Clock): { event: string; body: unknown }[] => {
     const job = (App as any).jobs?.[name];
@@ -164,8 +169,24 @@ export function pipeline() {
     if (!res && (req as { stream?: boolean }).stream) res = { status: 200, headers: {}, body: null };
     if (!res) {
       const r = route(endpoints, req.method, req.path, req.query, req.body === undefined ? undefined : copy(req.body));
+      // Effectively once: a request with a key the service answered before gets that answer again.
+      const key = keyed(req.method) ? req.headers[KEY_HEADER] : undefined;
+      const caller = typeof provided.caller === "string" ? provided.caller : "";
+      const fp = fingerprint(req.method, req.path, req.body);
+      const earlier = key ? recall(keys, caller, key, fp, clock?.now) : undefined;
       if ("response" in r) res = { ...r.response, headers: {} };
-      else {
+      else if (earlier && "conflict" in earlier) {
+        res = { status: 422, headers: {}, body: { error: earlier.conflict } };
+        source = \`the idempotency key \${JSON.stringify(key)} (harness)\`;
+      } else if (earlier) {
+        endpoint = earlier.replay.endpoint;
+        appAnswer = copy({ status: earlier.replay.status, body: earlier.replay.body });
+        res = { status: earlier.replay.status, headers: { "idempotent-replayed": "true" }, body: copy(earlier.replay.body) };
+        source = \`the answer to the idempotency key \${JSON.stringify(key)}, replayed (endpoint \${endpoint})\`;
+      } else if (!key && externalEndpoints.includes(r.request.endpoint as string)) {
+        res = { status: 400, headers: {}, body: { error: "An idempotency-key header is required" } };
+        source = \`\${sources[r.request.endpoint as string]} (endpoint \${r.request.endpoint}: effect external)\`;
+      } else {
         endpoint = r.request.endpoint as string;
         source = \`\${sources[endpoint]} (endpoint \${endpoint})\`;
         const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided, ...(clock ? { now: clock.now, today: clock.today } : {}) }, model);
@@ -173,6 +194,8 @@ export function pipeline() {
         appAnswer = copy({ status: out.response.status, body: out.response.body });
         events = copy(out.publish ?? []);
         res = { status: out.response.status, headers: {}, body: out.response.body };
+        // Remembered together with the change it made (one update of the service's state).
+        if (key) remember(keys, caller, key, { fingerprint: fp, endpoint, status: appAnswer!.status, body: appAnswer!.body, at: clock?.now ?? "" });
         const step = answerSources[endpoint]?.[out.response.status];
         if (step) source = \`\${step} (endpoint \${endpoint})\`;
       }
@@ -186,7 +209,9 @@ export function pipeline() {
   const restore = (saved: unknown) => {
     model = (App as any).restore(copy(saved), App.init());
   };
-  return Object.assign(handle, { runJob, data, restore });
+  /** The remembered answers, for the data file on the server. */
+  const remembered = { get: () => copy(keys), set: (k: Keys) => (keys = copy(k ?? {})) };
+  return Object.assign(handle, { runJob, data, restore, remembered });
 }
 `;
 
@@ -212,10 +237,14 @@ if (stored.length && existsSync(DATA_FILE)) {
   }
   const wrong = saved === undefined ? undefined : stored.find((f) => !fits(saved?.[f], storedFields[f]));
   if (wrong) console.error(\`\${DATA_FILE}: \${wrong} does not fit the spec's type; starting from the spec's defaults\`);
-  else if (saved !== undefined) handle.restore(saved);
+  else if (saved !== undefined) {
+    handle.restore(saved);
+    handle.remembered.set(saved.idempotencyKeys);
+  }
 }
+// The stored fields and the answers remembered by idempotency key, in one write.
 const keep = () => {
-  if (stored.length) writeFileSync(DATA_FILE, JSON.stringify(pick(handle.data())));
+  if (stored.length) writeFileSync(DATA_FILE, JSON.stringify({ ...pick(handle.data()), idempotencyKeys: handle.remembered.get() }));
 };
 // Events go to every open \`GET /events\` stream (Server-Sent Events), as \`{ "event": name, "body": payload }\`.
 const streams = new Set<import("node:http").ServerResponse>();
@@ -312,6 +341,7 @@ export function scaffoldApi(app: App, dir: string, layerDirs: Record<string, str
   copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
   copyFileSync(join(ROOT, "runtime/ts/http.ts"), join(dir, "http.ts"));
   copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
+  copyFileSync(join(ROOT, "runtime/ts/once.ts"), join(dir, "once.ts"));
   // Each layer's verified module, as built once for that layer spec, and the composition with the bound config.
   for (const l of app.layers ?? []) {
     mkdirSync(join(dir, "layers", l.alias), { recursive: true });
@@ -368,6 +398,7 @@ interface EpDesc {
   method: string;
   path: string;
   params: { in: string; name: string }[];
+  external?: boolean; // \`effect external\`: needs an idempotency key
 }
 
 export function literalJson(l: Literal): unknown {
@@ -494,9 +525,14 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         published.push(ev.event);
       }
     };
+    // Like a real client, the driver gives every call to an \`effect external\` endpoint its own
+    // idempotency key, unless the example sends one itself.
+    let made = 0;
     const call = (c: Call) => {
       const h = toHttp(eps, c);
-      const res = client.send(h.method, h.path, h.query, h.body, c.headers ?? {}, clockAtMs(elapsed));
+      const external = eps.find((e) => e.name === c.endpoint)?.external;
+      const headers = external && !Object.keys(c.headers ?? {}).some((k) => k.toLowerCase() === "idempotency-key") ? { ...c.headers, "idempotency-key": `call-${++made}` } : (c.headers ?? {});
+      const res = client.send(h.method, h.path, h.query, h.body, headers, clockAtMs(elapsed));
       responses.set(c.endpoint, res);
       record(res);
       return res;
@@ -667,13 +703,21 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
         calls.push({ endpoint: "(restart)", args: {} });
         continue;
       }
+      // A request delivered twice: the last keyed call again, with its key (the service must recognise it).
+      const last = [...calls].reverse().find((c) => c.headers?.["idempotency-key"]);
+      if (last && rnd() < 0.1) {
+        calls.push(JSON.parse(JSON.stringify(last)));
+        continue;
+      }
       const ep = pick(eps);
       const args: Record<string, unknown> = {};
       for (const p of ep.params) if (rnd() > 0.05) args[p.name] = valueFor(p.name, p.type);
       // Headers the examples send (an API key, an origin): mostly one of theirs, sometimes none or another.
       const headers: Record<string, string> = {};
       for (const [h, vs] of headerValues) if (rnd() < 0.85) headers[h] = rnd() < 0.9 ? pick(vs) : pick(TEXTS);
-      calls.push({ endpoint: ep.name, args, ...(headerValues.size ? { headers } : {}) });
+      // Every non-safe call carries its own key, as the runtime's clients send it.
+      if (ep.method !== "GET") headers["idempotency-key"] = `r${i}-${j}`;
+      calls.push({ endpoint: ep.name, args, ...(Object.keys(headers).length ? { headers } : {}) });
     }
     traces.push(calls);
   }

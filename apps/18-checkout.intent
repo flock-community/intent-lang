@@ -1,0 +1,68 @@
+app Checkout {
+  "Buy a class pass: one payment per click, never two, even when the connection drops."
+}
+
+import pay.payments
+
+uses pay.paymentsApi as pay {
+  tested with "apps/api/payments-api.intent"
+}
+
+state {
+  message: Text = ""
+  paying: Bool = false
+}
+
+screen {
+  text pass = "Yoga, 10 classes: € 125.00"
+  button buy "Pay" {
+    enabled when not @paying
+  }
+  text message {
+    visible when @message is not empty
+  }
+}
+
+on click buy {
+  - set @paying to true
+  - call @pay.charge with @amount = 12500 and @description = "Yoga, 10 classes"
+}
+
+on answer pay.charge {
+  - set @paying to false
+  if its status is 201 {
+    - set @message to "Paid: charge {the @id in its body}"
+  } else if its status is unknown {
+    - set @message to "We could not confirm the payment yet. Please don't pay again; we will let you know."
+  } else {
+    - set @message to "Payment failed: {the error}"
+  }
+}
+
+example "paying" {
+  click buy
+  see message = "Paid: charge 1"
+  click buy
+  see message = "Paid: charge 2"
+}
+
+example "a lost answer does not charge twice" {
+  steer pay lose answer
+  click buy
+  see message = "Paid: charge 1"
+  click buy
+  see message = "Paid: charge 2"
+}
+
+example "the service is down" {
+  steer pay fail 3
+  click buy
+  see message = "We could not confirm the payment yet. Please don't pay again; we will let you know."
+  see buy is enabled
+}
+
+example "the service is down for a moment" {
+  steer pay fail 2
+  click buy
+  see message = "Paid: charge 1"
+}

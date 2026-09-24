@@ -47,6 +47,7 @@ export function stepText(s: Step): string {
     case "tick": return s.ms ? `wait ${duration(s.ms)}` : `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
     case "restart": return "restart";
+    case "steer": return `steer ${s.api} ${s.fault}${s.fault === "fail" ? ` ${s.times}` : ""}`;
     case "call": {
       const args = [...(s.headers ?? []).map((h) => `header ${h.name} = ${lit(h.value, "")}`), ...s.args.map((a) => `${a.name} = ${lit(a.value, "")}`)];
       return `call ${s.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;

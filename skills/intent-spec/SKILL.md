@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v33** (see the changelog at the end of
+Language version this skill matches: **v34** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -251,6 +251,12 @@ what takes it back: `undone by refund with id = @charge.body.id`. If nothing can
 (an email, a message to another company), leave out `undone by`: it is a point of no return, and
 in a handler it goes after every call that can still fail. Don't mark endpoints that only change
 the service's own data, and never annotate handlers: their effects follow from what they call.
+
+The harness makes calls effectively once (keys, sending again, recognising repeats); you don't
+write any of that. What you do write: what the screen shows when the outcome of an external
+call is **unknown** (`else if its status is unknown { … }`: "don't pay again, we'll let you
+know"), and examples that make the way go wrong: `steer pay lose answer` then two clicks prove
+nothing was charged twice; `steer pay fail 3` proves the unknown message (`apps/18-checkout.intent`).
 
 ## 5f. A screen that uses an API
 

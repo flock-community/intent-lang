@@ -1,7 +1,7 @@
 // Differential testing: random user sessions generated from the spec alone (not from any build),
 // replayed on every build; screens are compared step by step.
 import type { App, Element } from "./ast.ts";
-import { describe, stepToAction, type Action, type Job } from "./exec.ts";
+import { describe, steerAction, stepToAction, type Action, type Job } from "./exec.ts";
 import { usesClock } from "./refs.ts";
 
 function mulberry32(seed: number) {
@@ -43,6 +43,9 @@ export function varyOther(a: Action, rnd: () => number): Action {
   return { ...a, call: { ...a.call!, args } };
 }
 
+/** The apis a screen calls that have a real provider to go wrong with. */
+export const steeredApis = (app: App): string[] => (app.clients ?? []).filter((c) => c.testedWith).map((c) => c.alias);
+
 export function actionTemplates(app: App): { weight: number; make: (rnd: () => number) => Action }[] {
   const typed = new Set<string>();
   for (const ex of app.examples) for (const s of ex.steps) if (s.do === "type") typed.add(s.text);
@@ -73,6 +76,8 @@ export function actionTemplates(app: App): { weight: number; make: (rnd: () => n
   for (const a of otherCalls(app)) out.push({ weight: 1, make: (r) => varyOther(a, r) });
   // Stored state: the app starts again now and then.
   if (app.state.some((f) => f.stored)) out.push({ weight: 1, make: () => ({ on: "restart", target: "" }) });
+  // Faults on the way to each api with a real provider: a lost request or answer, a duplicate, 503s.
+  for (const api of steeredApis(app)) out.push({ weight: 1, make: (r) => steerAction(api, r) });
   if (app.clockMs) {
     const perMinute = Math.max(1, Math.round(60_000 / app.clockMs));
     out.push({ weight: 3, make: (r) => ({ on: "tick", target: "", times: pick(r, [1, 1, 2, 5, 10, perMinute, 5 * perMinute, 25 * perMinute]) }) });
@@ -100,7 +105,7 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
       const ex = examples[Math.floor(rnd() * examples.length)];
       prefix = ex.slice(0, 1 + Math.floor(rnd() * ex.length));
     }
-    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), always: app.always });
+    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), steers: steeredApis(app), always: app.always });
   }
   return jobs;
 }
@@ -131,6 +136,7 @@ export function actionText(a: Action): string {
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}` : `choose ${a.value} in ${a.target}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
     case "restart": return "restart";
+    case "steer": return `steer ${a.target} ${a.value}${a.value === "fail" ? ` ${a.times}` : ""}`;
     case "other": return `call ${a.call!.endpoint}${Object.keys(a.call!.args).length ? ` with ${Object.entries(a.call!.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}  # another client`;
   }
 }

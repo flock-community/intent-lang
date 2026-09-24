@@ -741,6 +741,7 @@ click add                           click remove on row with "Milk"
 see count = 2                       see add is disabled            see empty is hidden
 see shown has 1 row                 see stock is at least 0        see every row of cart: qty is at least 1
 wait 3s / wait 1d / tick 5 times    snapshot "queue"               restart   (screens and apis)
+steer pay lose answer / lose request / duplicate / fail 3               (a screen's api)
 call createTicket with a = 1        see createTicket.body.id = 9   see ticketCreated is absent   (apis)
 call x with header x-api-key = "…"  see x.header.vary = "origin"   request OPTIONS "/tickets" with header origin = "…"
 ```

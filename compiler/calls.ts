@@ -61,7 +61,7 @@ export function eventsByAlias(app: App): Record<string, string[]> {
 
 /** Method, path and params per callable endpoint: how a call becomes an HTTP request. */
 export function callDescs(app: App): CallDesc[] {
-  return clientEndpoints(app).map((c) => ({ name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name })) }));
+  return clientEndpoints(app).map((c) => ({ name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name })), ...(c.ep.effect ? { external: true } : {}) }));
 }
 
 // ---------------------------------------------------------------- TypeScript
@@ -72,7 +72,8 @@ export function genTsCalls(app: App): string {
   out.push(`/** A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message. */\nexport type Call =\n${eps.map((c) => `  | { call: ${q(c.name)}${c.ep.params.length ? `; args: { ${c.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`).join("\n")};\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`);
-    out.push(`/** What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Status 0: no answer the contract allows (network down, or a body of the wrong shape). */\nexport type ${c.tag}Answer = ${[...variants, "{ status: 0; error: string }"].join(" | ")};\n`);
+    const unknown = c.ep.effect ? [`{ status: "unknown"; error: string }`] : [];
+    out.push(`/** What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Status 0: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? ' "unknown": still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed.' : ""} */\nexport type ${c.tag}Answer = ${[...variants, "{ status: 0; error: string }", ...unknown].join(" | ")};\n`);
   }
   out.push(`\n/** Endpoints as data, for sending calls. */\nexport const callEndpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n`);
   out.push(`/** The contract's answers per endpoint (status → body type): an answer that does not fit arrives as status 0. */\nexport const callAnswers: Record<string, Record<number, TypeDesc | null>> = {\n${eps.map((c) => `  ${q(c.name)}: { ${(c.ep.answers ?? []).map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}\n};\n\n`);
@@ -84,7 +85,7 @@ export function genTsCalls(app: App): string {
   out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
   out.push(`/** Per alias, the events of its api this app handles. */\nexport const eventsByAlias: Record<string, string[]> = ${JSON.stringify(eventsByAlias(app))};\n\n`);
   out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: e.body } as Msg;\n}\n\n`);
-  out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as Msg;\n}\n`);
+  out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n  if (a.unknown && callEndpoints.some((e) => e.name === a.endpoint && e.external)) return { tag, answer: { status: "unknown", error: a.error ?? "no answer" } } as Msg;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as Msg;\n}\n`);
   return out.join("");
 }
 
@@ -155,7 +156,8 @@ export function genElmCalls(app: App): string {
   out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message. -}\ntype Call\n    = ${eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")} }` : ""}`).join("\n    | ")}\n\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);
-    out.push(`{-| What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape). -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`].join("\n    | ")}\n\n\n`);
+    const unknown = c.ep.effect ? [`${c.tag}Unknown String`] : [];
+    out.push(`{-| What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? " Unknown: still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed." : ""} -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`, ...unknown].join("\n    | ")}\n\n\n`);
   }
   const th = throughs(app);
   if (th.length) {
@@ -169,10 +171,11 @@ export function genElmCalls(app: App): string {
       return `        ${c.tag}${c.ep.params.length ? " a" : ""} ->\n            J.object [ ( "endpoint", J.string ${q(c.name)} ), ( "args", J.object [ ${args.join(", ")} ] ) ]\n`;
     })
     .join("\n")}\n\n`);
-  out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault ("unexpected answer " ++ String.fromInt status) (D.decodeValue (D.field "error" D.string) v)\n\n        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err e ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit: " ++ D.errorToString e)\n    in\n    case endpoint of\n${eps
+  out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault ("unexpected answer " ++ String.fromInt status) (D.decodeValue (D.field "error" D.string) v)\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err e ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit: " ++ D.errorToString e)\n    in\n    case endpoint of\n${eps
     .map((c) => {
       const cases = (c.ep.answers ?? []).map((a) => `                        ${a.status} ->\n                            ${a.type ? `body ${elmDecoder(app, a.type)} ${c.tag}${a.status} ${c.tag}Failed` : `${c.tag}${a.status}`}\n`);
-      return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    (case status of\n${cases.join("\n")}\n                        _ ->\n                            ${c.tag}Failed failure\n                    )\n                )\n`;
+      const byStatus = `(case status of\n${cases.join("\n")}\n                        _ ->\n                            ${c.tag}Failed failure\n                    )`;
+      return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    ${c.ep.effect ? `(if unknown then\n                        ${c.tag}Unknown failure\n\n                     else\n                        ${byStatus.replace(/\n/g, "\n    ")}\n                    )` : byStatus}\n                )\n`;
     })
     .join("\n")}\n        _ ->\n            Nothing\n`);
   const evs = clientEvents(app);

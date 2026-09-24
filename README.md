@@ -431,6 +431,18 @@ use it. The first build showed a trap in the runtime (`answer(204)` took its bod
 surrounding answers, and both compilers stumbled on it the same way); after the fix both built on
 the first attempt, twin-verified.
 
+**Effectively once** (v34). A service recognises a repeated request by its idempotency key and
+answers it again without running the endpoint twice (following the IETF draft and Stripe: 422 for
+the same key with another request, 400 without a key on an `effect external` endpoint, keys kept
+24 hours with the stored state). Screens send a key with every call and send it again when the
+answer is lost, on a 5xx or a 429, up to three attempts; an external call that still has no
+answer is `unknown`, not failed. `steer pay lose answer` in an example makes the way to the api
+go wrong, and random sessions do it too. `apps/18-checkout.intent` proves that a lost answer
+does not charge twice. It and its payments API built on the first attempt, twin-verified. With
+the provider's replay switched off, that example failed at its line (charge 2 instead of 1).
+The tickets and desk screens and the notices and desk APIs rebuilt twin-verified with faults and
+duplicate requests in their random sessions.
+
 **Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
 under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
 to the event stream. The layer is a verified spec of its own, run by the runtime for both

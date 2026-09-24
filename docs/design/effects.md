@@ -1,6 +1,11 @@
 # Design: effects on actions
 
-Status: design (for v33 and later). Nothing here is built yet. This design follows the
+Status: v33 built the declarations (`effect external`, `undone by`, the checks). v34 built
+"once": the service remembers keys, screens send a key per call and send it again, `unknown`
+answers, and the faults `lose request`, `lose answer`, `duplicate` and `fail n`. Not built yet:
+the durable outbox (a pending call and its key surviving a restart of the screen), the faults
+`slow`, `restart after effect` and `expire keys`, retries over 409-while-running (a service here
+answers one request at a time, so it never happens), undo and agreement. This design follows the
 practice of people and systems that handle effects for a living (sources at the end); where it
 departs from them, it says why.
 

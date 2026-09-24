@@ -109,6 +109,7 @@ export type Step =
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
+  | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail"; times: number; line: number } // a fault on the way to an api (a screen's provider)
   | { do: "restart"; line: number } // the app starts again: stored state keeps its values, the rest starts from its default
   | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
   // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.

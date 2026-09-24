@@ -1114,6 +1114,14 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target, check: m[3] !== undefined ? { is: "eq", value: parseString(m[3])! } : { is: "hidden" }, line } };
   }
   if (t === "restart") return { step: { do: "restart", line } };
+  if ((m = t.match(/^steer\s+([a-z]\w*)\s+(lose\s+request|lose\s+answer|duplicate|fail(?:\s+(\d+))?)$/))) {
+    const fault = m[2].startsWith("fail") ? "fail" : (m[2].replace(/\s+/, " ") as "lose request");
+    return { step: { do: "steer", api: m[1], fault, times: fault === "fail" ? Number(m[3] ?? 1) : 1, line } };
+  }
+  if (/^steer\b/.test(t)) {
+    err(line, "SYNTAX", "expected `steer <api> lose request`, `lose answer`, `duplicate` or `fail <n>`", col);
+    return;
+  }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
   if ((m = t.match(/^wait\s+(\d+)\s+(seconds?|minutes?|hours?|days?)$/))) {
     err(line, "SYNTAX", `write the time as \`wait ${m[1]}${m[2][0] === "s" ? "s" : m[2][0]}\` (s, m, h or d)`, col);
@@ -1163,7 +1171,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: "eq", value }, line } };
   }
   const word = t.split(/\s+/)[0];
-  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart"])}`, col);
+  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart", "steer"])}`, col);
 }
 
 // ---------------------------------------------------------------- semantic checks
@@ -1442,6 +1450,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       if (s.do === "call" || s.do === "request") {
         err(s.line, "STEP", `\`${s.do}\` belongs to the api profile (add \`profile api\`); a screen is driven with click, type, toggle and choose`);
+        continue;
+      }
+      if (s.do === "steer") {
+        const client = app.clients?.find((c) => c.alias === s.api);
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
+        else if (!client) err(s.line, "STEP", `\`steer\` goes wrong on the way to an api this screen uses; there is no \`${s.api}\`${app.clients?.length ? ` (${app.clients.map((c) => c.alias).join(", ")})` : ""}`);
+        else if (!client.testedWith) err(s.line, "STEP", `\`steer ${s.api}\` needs a real provider to go wrong with: add \`tested with "…"\` to its \`uses\``);
         continue;
       }
       if (s.do === "restart") {

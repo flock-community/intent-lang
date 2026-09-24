@@ -6,10 +6,43 @@ export interface CallDesc {
   method: string;
   path: string;
   params: { in: string; name: string }[];
+  external?: boolean; // `effect external` in the contract
 }
 
-export type CallOut = { endpoint: string; args: Record<string, unknown>; headers?: Record<string, string>; config?: Record<string, unknown> };
-export type Answer = { endpoint: string; status: number; body?: unknown; error?: string };
+/** A call as data. `key`: its idempotency key, made when the call was made; every attempt sends the same one. */
+export type CallOut = { endpoint: string; args: Record<string, unknown>; headers?: Record<string, string>; config?: Record<string, unknown>; key?: string };
+/** An answer. `unknown`: no answer after the last attempt, for a call that may have had its effect. */
+export type Answer = { endpoint: string; status: number; body?: unknown; error?: string; unknown?: boolean };
+
+// ---------------------------------------------------------------- effectively once (docs/design/effects.md)
+
+/** Attempts per call, in all (Google SRE: after three, give the failure back). */
+export const MAX_ATTEMPTS = 3;
+/** Sent again: no answer, 5xx and 429. Never another 4xx: the request itself is wrong (AWS, Stripe). */
+export const retryable = (status: number) => status === 0 || status === 429 || status >= 500;
+const safe = (method: string) => ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+
+/** A new idempotency key for a call that is being made (the same one for all its attempts). */
+export const newKey = (): string => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+
+/**
+ * Send a call until it is answered or its attempts run out. `attempt(n)` sends it once (n = 1, 2, 3);
+ * `pause(n)` waits before attempt n + 1 (backoff with jitter in the browser, nothing in tests). A
+ * non-safe call to an `effect external` endpoint that still has no answer (or a 5xx) at the end may
+ * have happened: its answer is `unknown`, never a plain failure (Stripe treats a 500 as indeterminate).
+ */
+export async function persist(desc: CallDesc | undefined, attempt: (n: number) => Promise<Answer>, pause: (n: number) => Promise<void> = async () => {}): Promise<Answer> {
+  let a = await attempt(1);
+  for (let n = 2; n <= MAX_ATTEMPTS && retryable(a.status); n++) {
+    await pause(n - 1);
+    a = await attempt(n);
+  }
+  if (desc?.external && !safe(desc.method) && (a.status === 0 || a.status >= 500)) return { endpoint: a.endpoint, status: 0, error: a.error ?? `no answer after ${MAX_ATTEMPTS} attempts (last: ${a.status})`, unknown: true };
+  return a;
+}
+
+/** Exponential backoff with full jitter (Brooker): up to 200 ms, 400 ms, … before each retry. */
+export const backoff = (n: number) => new Promise<void>((r) => setTimeout(r, Math.random() * 200 * 2 ** (n - 1)));
 
 /** A call as HTTP: method, path (with path params filled in), query and JSON body. */
 export function toHttp(eps: { name: string; method: string; path: string; params: { in: string; name: string }[] }[], c: CallOut) {
@@ -34,12 +67,12 @@ export function toHttp(eps: { name: string; method: string; path: string; params
 /** A call as it leaves: method, path, query, headers and body (what a client layer may change). */
 export type Outgoing = { method: string; path: string; query: Record<string, string>; headers: Record<string, string>; body: unknown };
 
-/** Client layers per alias (\`uses … through std.http.sendKey\`): the call, and the layer's config from the app's state. */
+/** Client layers per alias (`uses … through std.http.sendKey`): the call, and the layer's config from the app's state. */
 export type Via = (alias: string, req: Outgoing) => Outgoing;
 
 export function outgoing(eps: CallDesc[], c: CallOut, via?: Via): Outgoing {
   const h = toHttp(eps, c);
-  const req: Outgoing = { method: h.method, path: h.path, query: h.query, headers: { ...(c.headers ?? {}) }, body: h.body };
+  const req: Outgoing = { method: h.method, path: h.path, query: h.query, headers: { ...(c.headers ?? {}), ...(c.key && !safe(h.method) ? { "idempotency-key": c.key } : {}) }, body: h.body };
   return via ? via(c.endpoint.split(".")[0], req) : req;
 }
 
@@ -105,8 +138,15 @@ export function listen(events: Record<string, string[]>, deliver: (e: { event: s
   return { refresh };
 }
 
-/** Perform a call over HTTP. Never throws: a network failure is an answer with status 0 and an error. */
+/**
+ * Perform a call over HTTP: sent again (with the same idempotency key) when the answer is lost, a
+ * 5xx or a 429, up to three attempts. Never throws: no answer is status 0 with an error.
+ */
 export async function fetchCall(eps: CallDesc[], c: CallOut, via?: Via): Promise<Answer> {
+  return persist(eps.find((e) => e.name === c.endpoint), () => fetchOnce(eps, c, via), backoff);
+}
+
+async function fetchOnce(eps: CallDesc[], c: CallOut, via?: Via): Promise<Answer> {
   try {
     const h = outgoing(eps, c, via);
     const qs = new URLSearchParams(h.query).toString();

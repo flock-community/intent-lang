@@ -4,7 +4,7 @@
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { outgoing, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
+import { outgoing, persist, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
@@ -18,7 +18,7 @@ import type { Check, Example, Step } from "./ast.ts";
 export type Obs = any; // Ui Node as JSON
 
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer";
   target: string; // element name ("" for tick; the endpoint for another client's call)
   call?: CallOut; // on "other": another client calls the provider
   ms?: number; // on "tick" from a `wait`: how far the clock moves
@@ -34,7 +34,7 @@ export interface Action {
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
   | { kind: "trace"; actions: Action[]; always?: Step[] }
-  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; always?: Step[] };
+  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; steers?: string[]; always?: Step[] };
 
 /** The first broken `always` check in a session: after `actions`, `check` failed on `screen`. */
 export interface Violation {
@@ -179,15 +179,39 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
   const layers: { apply: (alias: string, req: Outgoing, config: Record<string, unknown> | undefined) => Outgoing } | undefined = existsSync(join(dir, "through.mjs")) ? await import(pathToFileURL(join(dir, "through.mjs")).href + `?t=${Date.now()}`) : undefined;
   for (const [alias, pdir] of Object.entries(providers)) clients[alias] = (await import(pathToFileURL(join(pdir, "test.mjs")).href + `?t=${Date.now()}`)).start();
   const log: string[] = [];
-  // A call from this screen goes through its api's client layer; another client's call (\`mine = false\`) does not.
-  const send = (c: CallOut, mine = true) => {
+  // Faults the examples (\`steer tickets lose answer\`) and random sessions inject, per api, in order.
+  const faults: Record<string, { kind: string; left: number }[]> = {};
+  let made = 0; // idempotency keys in tests: one per call, the same for all its attempts
+  // A call from this screen goes through its api's client layer and the runtime's rule for sending
+  // again (persist: the same as in the browser); another client's call (\`mine = false\`) is sent once.
+  const send = async (c: CallOut, mine = true): Promise<{ alias: string; answer: Answer; events: { event: string; body: unknown }[]; note: string }> => {
     const alias = c.endpoint.split(".")[0];
     const client = clients[alias];
     if (!client) throw new Error(`a call to ${c.endpoint}, but no provider for \`${alias}\` (add \`tested with "…"\` to its \`uses\`)`);
-    const h = outgoing(endpoints, c, mine && layers ? (a, req) => layers.apply(a, req, c.config) : undefined);
-    const res = client.send(h.method, h.path, h.query, h.body, h.headers);
-    if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
-    return { alias, res };
+    const call = { ...c, key: c.key ?? `${alias}-${++made}` };
+    const h = outgoing(endpoints, call, mine && layers ? (a, req) => layers.apply(a, req, c.config) : undefined);
+    const events: { event: string; body: unknown }[] = [];
+    const notes: string[] = [];
+    const deliver = () => {
+      const res = client.send(h.method, h.path, h.query, h.body, h.headers);
+      if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
+      events.push(...(res.events ?? [])); // events travel on their own stream: they arrive even when the answer is lost
+      return res;
+    };
+    const attempt = async (): Promise<Answer> => {
+      const queue = mine ? faults[alias] : undefined;
+      const f = queue?.[0];
+      if (f && --f.left <= 0) queue!.shift();
+      if (f?.kind === "lose request") return notes.push("request lost"), { endpoint: c.endpoint, status: 0, error: "no answer (request lost)" };
+      if (f?.kind === "fail") return notes.push("503"), { endpoint: c.endpoint, status: 503, body: { error: "Service unavailable" } };
+      let res = deliver();
+      if (f?.kind === "duplicate") (res = deliver()), notes.push("delivered twice");
+      if (f?.kind === "lose answer") return notes.push(`${res.status}, answer lost`), { endpoint: c.endpoint, status: 0, error: "no answer (answer lost)" };
+      if (res.headers?.["idempotent-replayed"] === "true") notes.push("replayed");
+      return { endpoint: c.endpoint, status: res.status, body: res.body };
+    };
+    const answer = mine ? await persist(endpoints.find((e) => e.name === c.endpoint), attempt) : await attempt();
+    return { alias, answer, events, note: notes.length ? ` (${notes.join(", ")})` : "" };
   };
   // The events a call published go to the screen right after its answer, in the order published.
   const deliverEvents = async (alias: string, events: { event: string; body: unknown }[] | undefined) => {
@@ -215,11 +239,11 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     for (let n = 0; queue.length; n++) {
       if (n >= 100) throw new Error("the calls do not settle: 100 answers in a row led to new calls");
       const c = queue.shift()!;
-      const { alias, res } = send(c);
-      log.push(`${c.endpoint} ${stable(c.args)} → ${res.status}`);
-      await raw.send({ on: "answer", target: c.endpoint, answer: { endpoint: c.endpoint, status: res.status, body: res.body } });
+      const { alias, answer, events, note } = await send(c);
+      log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${note}`);
+      await raw.send({ on: "answer", target: c.endpoint, answer });
       const made = await raw.calls!();
-      queue.push(...(await deliverEvents(alias, res.events)), ...made);
+      queue.push(...(await deliverEvents(alias, events)), ...made);
     }
   };
   await settle();
@@ -235,9 +259,16 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     send: async (w) => {
       const other = (w as { on?: string; call?: CallOut }).on === "other" ? (w as { call: CallOut }).call : undefined;
       if (other) {
-        const { alias, res } = send(other, false);
-        log.push(`(another client) ${other.endpoint} ${stable(other.args)} → ${res.status}`);
-        return settle(await deliverEvents(alias, res.events));
+        const { alias, answer, events } = await send(other, false);
+        log.push(`(another client) ${other.endpoint} ${stable(other.args)} → ${answer.status}`);
+        return settle(await deliverEvents(alias, events));
+      }
+      // \`steer <api> …\`: the next attempts to that api go wrong in this way.
+      const steer = w as { on?: string; target?: string; value?: string; times?: number };
+      if (steer.on === "steer") {
+        (faults[steer.target!] ??= []).push({ kind: steer.value!, left: steer.value === "fail" ? (steer.times ?? 1) : 1 });
+        log.push(`(steer ${steer.target} ${steer.value}${steer.value === "fail" ? ` ${steer.times ?? 1}` : ""})`);
+        return;
       }
       await raw.send(w);
       await settle();
@@ -387,6 +418,7 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   if (a.on === "tick") return a.times === 0 && a.ms ? { wires: [{ on: "wait", target: "", ms: a.ms }] } : { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
   if (a.on === "other") return { wires: [{ on: "other", call: a.call }] }; // handled by the session: another client calls the provider
   if (a.on === "restart") return { wires: [{ on: "restart", target: "" }] }; // handled by the session: saves, restarts, checks
+  if (a.on === "steer") return { wires: [{ on: "steer", target: a.target, value: a.value, times: a.times }] }; // handled by the session: the next attempts to that api go wrong
   const f = locate(obs, a.target, a.list, a.row, a.rowWith);
   if ("missing" in f) return { unavailable: f.missing };
   const n = f.node;
@@ -403,6 +435,13 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   return { wires: [{ on: a.on, target, key: f.rowKey ?? "", text: a.text ?? "", value: value ?? "" }] };
 }
 
+/** A random fault on the way to an api: what random sessions steer. */
+export function steerAction(api: string, rnd: () => number): Action {
+  const kinds = ["lose request", "lose answer", "duplicate", "fail"];
+  const kind = kinds[Math.floor(rnd() * kinds.length)];
+  return { on: "steer", target: api, value: kind, times: kind === "fail" ? 1 + Math.floor(rnd() * 3) : 1 };
+}
+
 export function stepToAction(s: Step): Action | undefined {
   switch (s.do) {
     case "type": return { on: "input", target: s.target, text: s.text };
@@ -411,6 +450,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "choose": return { on: "choose", target: s.target, value: s.value };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "restart": return { on: "restart", target: "" };
+    case "steer": return { on: "steer", target: s.api, value: s.fault, times: s.times };
     case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}) } } : undefined;
     default: return undefined;
   }
@@ -502,6 +542,7 @@ function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => 
   for (const o of job.others ?? []) out.push({ w: 1, a: varyOther(o, rnd) });
   if (job.waits?.length) out.push({ w: 2, a: { on: "tick", target: "", times: 0, ms: job.waits[Math.floor(rnd() * job.waits.length)] } });
   if (job.restarts) out.push({ w: 1, a: { on: "restart", target: "" } });
+  for (const api of job.steers ?? []) out.push({ w: 1, a: steerAction(api, rnd) });
   return out;
 }
 
