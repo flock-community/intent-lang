@@ -43,8 +43,23 @@ example "the limit"
   see start on row with "D" is disabled
 ```
 
+**New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md), Intent by example:** a counter, a
+todo list, `always` rules, reusable components and designs, improving someone else's app, an
+HTTP API with a contract, layers for CORS and API keys, a screen that talks to the API and
+follows other people's changes, and signing in with a key. Every snippet is from a real spec.
+
+What the language covers today:
+
+| | |
+|---|---|
+| Screens | state, derived values, lists, sections, templates, handlers, examples, `always` rules, a clock |
+| Looks | a `design`, presentations (`as table`, `as sidebar`), `look "…"` in words, styled builds checked in a browser |
+| Reuse | bundles, behaviour components (`use pager = Pager`), refinement (`extends`, `override`), a registry with versions |
+| APIs | `profile api`, endpoints, contracts with every answer and event, layers (`std.http.cors`, `std.http.apiKey`, `std.http.secure`) |
+| Screens + APIs | `uses <contract>`, calls and answers, events from other clients, client layers (`through std.http.sendKey`) |
+
 - Language reference: [`docs/LANGUAGE.md`](docs/LANGUAGE.md) (also the compiler's prompt: one source of truth).
-- Nine example apps of increasing difficulty: [`apps/`](apps).
+- Example specs of increasing difficulty: [`apps/`](apps) (16 screens) and [`apps/api/`](apps/api) (2 APIs).
 - `language.md` is the earlier, broader v0.1 design (in Dutch). This project is its app profile.
 
 ## For LLMs: the spec-writing skill
@@ -61,7 +76,9 @@ reference on purpose: whoever changes the language updates the skill in the same
 npm install
 node compiler/cli.ts check apps/*.intent            # syntax + consistency checker (add --json for editors)
 node compiler/cli.ts review apps/09-board.intent    # what does the spec leave to defaults? (1 LLM call)
+node compiler/cli.ts expand apps/14-supportdesk.intent   # the spec exactly as the compiler reads it
 node compiler/cli.ts build apps/02-todo.intent      # → runs/single/02-todo/{elm,ts}/index.html
+node compiler/cli.ts build apps/16-desk-ui.intent   # builds the desk API (and its layers) first, then the screen
 node compiler/cli.ts converge apps/*.intent --builds 5 --tag my-run
 node compiler/cli.ts converge apps/10-helpdesk.intent --styled --kit --builds 3   # styled, in Chromium
 npm test                                            # checker regression + Elm/TS Fmt parity
