@@ -85,7 +85,7 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    order: ~~v22 events and subscriptions~~ done, ~~v23 client layers (keys from screens)~~
    done, ~~v24 blocks with braces~~ done, ~~v25 `@` references in sentences~~ done, ~~v26 import what
    you use~~ done, ~~v27 traceability for apis~~ done, ~~v28 time and a steerable clock~~ done,
-   v29 structure for control words (if / otherwise / stop), v30 effects on actions
+   ~~v29 structure for control words~~ done, v30 effects on actions
    (approval, permissions, outbox, compensation) with a `std.actions` layer, then stored state
    with identity and references, then unions of records and several targets per app. Also
    open: styled builds of screens that make calls, and Kotlin as a second API target. Wire

@@ -205,7 +205,9 @@ on click close {
 
 on click send {
   - add a @Comment to the end of @comments with @ticket = @selected, @author = "Sam" and @body = @reply trimmed
-  - if @current is @Open, set its @status to @Pending
+  if @current is @Open {
+    - set its @status to @Pending
+  }
   - clear @reply
   - set @toast.message to "Reply sent"
 }

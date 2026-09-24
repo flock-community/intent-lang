@@ -1,0 +1,31 @@
+app StructureApi {
+  "An endpoint must answer on every path."
+}
+
+profile api
+
+state {
+  count: Int = 0
+}
+
+endpoint bump POST "/bump" {               # expect: NO_ANSWER
+  returns Int
+  if @count is above 10 {
+    answer 409 "Too many"
+  }
+  - increase @count by 1
+}
+
+endpoint read GET "/count" {
+  returns Int
+  else {                                   # expect: SYNTAX
+    answer 200 with @count
+  }
+  answer 200 with @count
+}
+
+example "bump" {
+  call bump
+  call read
+  see read.status = 200
+}

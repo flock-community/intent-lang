@@ -4,8 +4,8 @@ import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import { fromBraces } from "./braces.ts";
-import { bareWords, declaredNames, refsIn, resolves, sentences, usesClock } from "./refs.ts";
-import type { App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import { bareWords, CLOCK_NAMES, declaredNames, refsIn, resolves, sentences, usesClock } from "./refs.ts";
+import type { Stmt, App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
@@ -131,16 +131,13 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       if (f) (app.provides ??= []).push(f);
     } else if (app.kind === "layer" && /^before\s+every\s+request$/.test(t)) {
       if (app.before) err(node.line, "DUPLICATE", "one `before every request` per layer");
-      const stepLines: number[] = [];
-      app.before = { steps: parseBullets(node, err, stepLines), line: node.line, stepLines };
+      app.before = { ...parseBody(node, err), line: node.line };
     } else if (app.kind === "layer" && /^after\s+every\s+answer$/.test(t)) {
       if (app.after) err(node.line, "DUPLICATE", "one `after every answer` per layer");
-      const stepLines: number[] = [];
-      app.after = { steps: parseBullets(node, err, stepLines), line: node.line, stepLines };
+      app.after = { ...parseBody(node, err), line: node.line };
     } else if (app.kind === "layer" && /^before\s+every\s+call$/.test(t)) {
       if (app.beforeCall) err(node.line, "DUPLICATE", "one `before every call` per layer");
-      const stepLines: number[] = [];
-      app.beforeCall = { steps: parseBullets(node, err, stepLines), line: node.line, stepLines };
+      app.beforeCall = { ...parseBody(node, err), line: node.line };
     } else if (app.kind === "layer" && /^examples\s+with$/.test(t)) {
       app.exampleConfig = node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b);
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
@@ -175,8 +172,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(/^every\s+(\d+(?:ms|s|m|h|d))$/))) {
       // An api's recurring work: `every 15m { - … }`, run by the clock (and by `wait` in tests).
       const ms = parseDuration(m[1])!;
-      const stepLines: number[] = [];
-      (app.jobs ??= []).push({ every: ms, name: `every${m[1]}`, steps: parseBullets(node, err, stepLines), stepLines, line: node.line });
+      (app.jobs ??= []).push({ every: ms, name: `every${m[1]}`, ...parseBody(node, err), line: node.line });
     } else if ((m = t.match(/^every\s+endpoint\s+answers\s+([1-5]\d\d)(?:\s+(.+))?$/))) {
       // What any endpoint may answer (a layer's 401, a 429): \`every endpoint answers 401 Problem\`.
       const type = m[2] ? parseType(m[2]) : undefined;
@@ -314,8 +310,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if (t === "screen") {
     app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
   } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS}|answer|event)\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS}|start)$`)))) {
-    const stepLines: number[] = [];
-    const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err, stepLines), stepLines, line: node.line, note: node.note };
+    const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", ...parseBody(node, err), line: node.line, note: node.note };
     app.handlers.push(h);
   } else if (t.startsWith("on ")) {
     err(node.line, "SYNTAX", `expected \`on ${VERBS} <element>\` or \`on ${CLOCK_VERBS}\``);
@@ -351,6 +346,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
 function parseEndpoint(node: Line, name: string, method: Endpoint["method"], path: string, ctx: Ctx): Endpoint {
   const { err } = ctx;
   const ep: Endpoint = { name, method, path, params: [], steps: [], line: node.line, note: node.note };
+  const stmts: Line[] = [];
   for (const c of node.children) {
     let m: RegExpMatchArray | null;
     if ((m = c.text.match(new RegExp(`^(path|query|body)\\s+(${LOWER})\\s*:\\s*(.+)$`)))) {
@@ -365,11 +361,14 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
       const type = parseType(m[1]);
       if (!type) err(c.line, "SYNTAX", `\`${m[1]}\` is not a type`, c.indent + 1);
       else ep.returns = type;
-    } else if (c.text.startsWith("- ")) {
-      ep.steps.push((c.text.slice(2) + flattenChildren(c)).trim());
-      (ep.stepLines ??= []).push(c.line);
-    }
-    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, or `- step`", c.indent + 1);
+    } else if (/^(- |if\s|else\b|answer\s|stop$)/.test(c.text)) stmts.push(c);
+    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, `- step`, `if … {`, `answer …` or `stop`", c.indent + 1);
+  }
+  if (stmts.length) {
+    ep.body = parseStmts(stmts, err);
+    const flat = flattenBody(ep.body);
+    ep.steps = flat.steps;
+    ep.stepLines = flat.lines;
   }
   return ep;
 }
@@ -396,8 +395,7 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
     return { op: "override-state", field: f, line: c.line };
   }
   if ((m = t.match(new RegExp(`^override\\s+on\\s+(${VERBS})\\s+(${QN})$`)))) {
-    const stepLines: number[] = [];
-    return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], steps: parseBullets(node, err, stepLines), stepLines, line: node.line, note: node.note }, line: node.line };
+    return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], ...parseBody(node, err), line: node.line, note: node.note }, line: node.line };
   }
   if ((m = t.match(new RegExp(`^override\\s+component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
     return { op: "override-component", component: parseComponent(node, m[1], m[2], m[3], ctx), line: node.line };
@@ -450,6 +448,8 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
   else if (app.name && app.kind !== "bundle") {
     const used = expandUses(app, err, warn);
     check(app, err, warn, clockLine, used);
+    checkRefs(app, err, warn);
+    checkBodies(app, err, warn);
   }
   diagnostics.sort((a, b) => a.line - b.line || a.col - b.col);
   return { app: diagnostics.some((d) => d.level === "error") ? undefined : app, diagnostics };
@@ -462,7 +462,39 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
   check(app, err, warn, clockLine, used);
   checkRefs(app, err, warn);
+  checkBodies(app, err, warn);
   return diags;
+}
+
+/**
+ * Structure in bodies: an endpoint answers on every path; nothing follows `answer` or `stop` in
+ * its block; `answer` only where there is a request to answer. Control words written as prose
+ * ("- if …, … and stop") get a hint with the structured form.
+ */
+function checkBodies(app: App, err: Err, warn: Err) {
+  const ends = (s: Stmt, withStop: boolean): boolean =>
+    s.k === "answer" || (withStop && s.k === "stop") || (s.k === "step" && /^answer\s/.test(s.text)) || (s.k === "if" && s.branches.some((b) => b.cond === undefined) && s.branches.every((b) => endsBlock(b.body, withStop)));
+  const endsBlock = (b: Stmt[], withStop: boolean) => b.some((s) => ends(s, withStop));
+  const lineOf = (s: Stmt) => (s.k === "if" ? s.branches[0].line : s.line);
+  const walk = (b: Stmt[], where: string, canAnswer: boolean) => {
+    b.forEach((s, i) => {
+      if (i > 0 && ends(b[i - 1], true)) err(lineOf(s), "UNREACHABLE", `this never runs: the step before it ${b[i - 1].k === "stop" ? "stops" : "answers"} (${where})`);
+      if (s.k === "answer" && !canAnswer) err(s.line, "STEP", `\`answer\` is for an endpoint (or a layer's \`before every request\`); ${where} has no request to answer`);
+      if (s.k === "step" && s.line < LINE_BASE && (/^(if|when)\s/i.test(s.text) || /^otherwise\b/i.test(s.text) || /\band stop\b/.test(s.text)))
+        warn(s.line, "UNSTRUCTURED", `write control words as structure: \`if <condition> { … } else { … }\`, \`answer …\` and \`stop\` instead of "${s.text.slice(0, 40)}${s.text.length > 40 ? "…" : ""}"`);
+      if (s.k === "if") s.branches.forEach((br) => walk(br.body, where, canAnswer));
+    });
+  };
+  for (const h of app.handlers) if (h.body) walk(h.body, `on ${h.verb}${h.target ? " " + h.target : ""}`, false);
+  for (const j of app.jobs ?? []) if (j.body) walk(j.body, `every ${j.name.slice(5)}`, false);
+  if (app.before?.body) walk(app.before.body, "before every request", true);
+  if (app.after?.body) walk(app.after.body, "after every answer", false);
+  if (app.beforeCall?.body) walk(app.beforeCall.body, "before every call", false);
+  for (const ep of app.endpoints ?? []) {
+    if (!ep.body) continue;
+    walk(ep.body, `endpoint ${ep.name}`, true);
+    if (ep.line < LINE_BASE && !endsBlock(ep.body, false)) err(ep.line, "NO_ANSWER", `endpoint ${ep.name} does not answer on every path: end it with \`answer …\`, or give every \`if\` an \`else\` that answers`);
+  }
 }
 
 /**
@@ -478,7 +510,7 @@ function checkRefs(app: App, err: Err, warn: Err) {
   const walk = (els: App["screen"]) => els.forEach((el) => (elements.add(el.name), walk(el.children)));
   walk(app.screen);
   const data = new Set([...app.state.map((f) => f.name), ...app.derive.map((d) => d.name)]);
-  const hinted = new Set([...names].filter((n) => (!elements.has(n) || data.has(n)) && n !== "error"));
+  const hinted = new Set([...names].filter((n) => (!elements.has(n) || data.has(n)) && n !== "error" && !CLOCK_NAMES.includes(n)));
   const rowItems = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
   for (const s of sentences(app)) {
     if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
@@ -538,6 +570,55 @@ function stripComment(s: string): string {
 
 function flattenChildren(n: Line): string {
   return n.children.map((c) => " " + c.text + flattenChildren(c)).join("");
+}
+
+/**
+ * A body: `- step` lines, `if … { } else if … { } else { }`, `answer …` and `stop`. Returns the
+ * structure, and its flat text (conditions as "if …", answers as "answer …") with a line per entry.
+ */
+function parseBody(node: Line, err: (l: number, c: string, m: string, col?: number) => void): { body: Stmt[]; steps: string[]; stepLines: number[] } {
+  const body = parseStmts(node.children, err);
+  if (!node.children.length) err(node.line, "SYNTAX", "expected at least one step");
+  const { steps, lines } = flattenBody(body);
+  return { body, steps, stepLines: lines };
+}
+
+function parseStmts(children: Line[], err: (l: number, c: string, m: string, col?: number) => void): Stmt[] {
+  const out: Stmt[] = [];
+  for (const c of children) {
+    let m: RegExpMatchArray | null;
+    if (c.text.startsWith("- ")) out.push({ k: "step", text: (c.text.slice(2) + flattenChildren(c)).trim(), line: c.line });
+    else if ((m = c.text.match(/^if\s+(.+)$/))) {
+      if (!c.children.length) err(c.line, "SYNTAX", "`if …` needs a block: `if <condition> {` with the steps inside, then `}`", c.indent + 1);
+      out.push({ k: "if", branches: [{ cond: m[1], body: parseStmts(c.children, err), line: c.line }] });
+    } else if ((m = c.text.match(/^else(?:\s+if\s+(.+))?$/))) {
+      const prev = out[out.length - 1];
+      if (!prev || prev.k !== "if" || prev.branches[prev.branches.length - 1].cond === undefined) err(c.line, "SYNTAX", "`else` belongs right after an `if` block: `} else {`", c.indent + 1);
+      else prev.branches.push({ cond: m[1], body: parseStmts(c.children, err), line: c.line });
+    } else if ((m = c.text.match(/^answer\s+(.+)$/))) out.push({ k: "answer", text: m[1], line: c.line });
+    else if (c.text === "stop") out.push({ k: "stop", line: c.line });
+    else err(c.line, "SYNTAX", "a step is `- sentence`, `if <condition> {`, `} else {`, `answer …` or `stop`", c.indent + 1);
+  }
+  return out;
+}
+
+/** The flat text of a body: every step, every condition ("if …"), every answer ("answer …"), with its line. */
+export function flattenBody(body: Stmt[]): { steps: string[]; lines: number[] } {
+  const steps: string[] = [];
+  const lines: number[] = [];
+  const walk = (b: Stmt[]) => {
+    for (const s of b) {
+      if (s.k === "step") (steps.push(s.text), lines.push(s.line));
+      else if (s.k === "answer") (steps.push(`answer ${s.text}`), lines.push(s.line));
+      else if (s.k === "if")
+        for (const br of s.branches) {
+          if (br.cond !== undefined) (steps.push(`if ${br.cond}`), lines.push(br.line));
+          walk(br.body);
+        }
+    }
+  };
+  walk(body);
+  return { steps, lines };
 }
 
 /** The `- step` lines of a block; `lines` receives the line of each step. */
@@ -1310,7 +1391,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     ...(app.clients ?? []).flatMap((c) => [c.alias, ...(c.contract.endpoints ?? []).map((e) => e.name)]),
   ]);
   const anchored = (s: string) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).some((w) => names.has(w));
-  for (const h of app.handlers) h.steps.forEach((s, i) => !anchored(s) && !/nothing|initial state/i.test(s) && warn(h.stepLines?.[i] ?? h.line, "UNANCHORED", `"${s}" mentions no declared name`));
+  for (const h of app.handlers) h.steps.forEach((s, i) => !anchored(s) && !/nothing|initial state/i.test(s) && !/^(if|answer)\s/.test(s) && warn(h.stepLines?.[i] ?? h.line, "UNANCHORED", `"${s}" mentions no declared name`));
   app.rules.forEach((r, i) => !anchored(r) && warn(app.ruleLines?.[i] ?? 1, "UNANCHORED", `rule "${r}" mentions no declared name`));
 }
 

@@ -427,7 +427,7 @@ function implementContract(app: App, contract: App, err: (line: number, code: st
       if (!same) err(impl.line, "CONTRACT", `endpoint \`${sig.name}\` differs from its contract (${sig.method} ${sig.path}); write only \`endpoint ${sig.name}\` and its steps`);
     }
     if (impl.params.length && impl.signatureOnly) err(impl.line, "CONTRACT", `endpoint \`${sig.name}\`: its params come from the contract`);
-    merged.push({ ...sig, steps: impl.steps, stepLines: impl.stepLines, line: impl.line, note: impl.note ?? sig.note, returns: sig.returns ?? sig.answers?.find((a) => a.status < 300 && a.type)?.type });
+    merged.push({ ...sig, steps: impl.steps, stepLines: impl.stepLines, body: impl.body, line: impl.line, note: impl.note ?? sig.note, returns: sig.returns ?? sig.answers?.find((a) => a.status < 300 && a.type)?.type });
   }
   for (const extra of own.values()) err(extra.line, "CONTRACT", `endpoint \`${extra.name}\` is not in the contract; a contract is the whole public surface. Add it to the contract first`);
   app.endpoints = merged;

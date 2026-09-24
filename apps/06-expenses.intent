@@ -83,7 +83,9 @@ on click addPerson {
 
 on click removePerson {
   - remove that person from @people
-  - if @payer is that person's @name, set @payer to ""
+  if @payer is that person's @name {
+    - set @payer to ""
+  }
 }
 
 on click addExpense {

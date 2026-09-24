@@ -71,7 +71,11 @@ screen {
 }
 
 on click add {
-  - if @cart has a line for that product, increase its @qty by 1; otherwise add a @Line with the product's @name and @qty 1 to the end of @cart
+  if @cart has a line for that product {
+    - increase its @qty by 1
+  } else {
+    - add a @Line with the product's @name and @qty 1 to the end of @cart
+  }
 }
 
 on click plus {
@@ -84,8 +88,11 @@ on click minus {
 
 on click apply {
   - the entered @code is @code, trimmed and in capitals
-  - if the entered @code is "SAVE10" or "FIVER", set @appliedCode to it and @codeMessage to "Code applied"
-  - otherwise set @appliedCode to "" and @codeMessage to "Unknown code"
+  if the entered @code is "SAVE10" or "FIVER" {
+    - set @appliedCode to it and @codeMessage to "Code applied"
+  } else {
+    - set @appliedCode to "" and @codeMessage to "Unknown code"
+  }
   - clear @code
 }
 

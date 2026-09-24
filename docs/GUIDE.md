@@ -94,7 +94,8 @@ Reading it top to bottom:
 - **`screen`** lists what the user sees. `text count` shows the state `count`. A button has a
   name (`down`) and a label (`"−"`). `enabled when …` is a condition, written as a sentence.
 - **`on click up`** says what a click does. Each `- …` line is one step, in plain English,
-  using the names you declared.
+  using the names you declared. Choices are structure: `if <condition> { … } else { … }`, and
+  `stop` ends a handler early.
 - **`example`** is a test: steps a user takes (`click`, `type`, `choose`, `toggle`) and what
   they then see (`see …`). Every example starts from the initial state.
 
@@ -146,9 +147,10 @@ screen {
 }
 
 on click add {
-  - if an item with the same @title (trimmed, ignoring case) exists, do not add anything
-  - otherwise add an @Item with @title = @draft trimmed to the end of @items
-  - clear @draft in both cases
+  if no item in @items has the same @title as @draft (both trimmed, ignoring case) {
+    - add an @Item with @title = @draft trimmed to the end of @items
+  }
+  - clear @draft
 }
 
 on click remove {
@@ -361,11 +363,15 @@ state {
 }
 
 endpoint createTicket {
-  - if @subject, trimmed, is blank, answer 400 "Subject is required" and stop
-  - if @customer, trimmed, is blank, answer 400 "Customer is required" and stop
+  if @subject, trimmed, is blank {
+    answer 400 "Subject is required"
+  }
+  if @customer, trimmed, is blank {
+    answer 400 "Customer is required"
+  }
   - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, @subject and @customer trimmed, the given @priority, @status @Open and @assignee ""
   - publish @ticketCreated with the new ticket
-  - answer 201 with the new ticket
+  answer 201 with the new ticket
 }
 
 example "creating a ticket" {
@@ -379,8 +385,10 @@ example "creating a ticket" {
 }
 ```
 
-- Endpoint steps are sentences, like handlers. "answer 400 "…" and stop" refuses; the body
-  is always `{ "error": "…" }`.
+- Endpoint steps are sentences, like handlers, with the structure written as language:
+  `if <condition> { … } else { … }` and `answer 400 "…"`, which ends the endpoint. A refusal's
+  body is always `{ "error": "…" }`, and the checker reports an endpoint that does not answer
+  on every path.
 - The harness routes requests and checks their input before your steps run, with fixed
   messages (`400 "priority must be one of Urgent, High, Normal, Low"`).
 - Examples `call` endpoints and `see` the answer: `status`, `body.<path>`, and headers.
@@ -449,8 +457,12 @@ use auth = std.http.apiKey {
 }
 
 endpoint solveTicket {
-  - if no ticket has that @id, answer 404 "No such ticket" and stop
-  - if that ticket's @assignee is not the @caller, answer 403 "Only the assignee can solve this ticket" and stop
+  if no ticket has that @id {
+    answer 404 "No such ticket"
+  }
+  if that ticket's @assignee is not the @caller {
+    answer 403 "Only the assignee can solve this ticket"
+  }
   - …
 }
 ```
@@ -508,7 +520,9 @@ on start {
 }
 
 on answer tickets.listTickets {
-  - if its status is 200, set @rows to its body
+  if its status is 200 {
+    - set @rows to its body
+  }
 }
 
 on click add {
@@ -516,12 +530,17 @@ on click add {
 }
 
 on answer tickets.createTicket {
-  - if its status is 201, clear @draft and @problem
-  - otherwise set @problem to the error in its body
+  if its status is 201 {
+    - clear @draft and @problem
+  } else {
+    - set @problem to the error in its body
+  }
 }
 
 on event tickets.ticketCreated {
-  - if no row in @rows has the @id of its body, add its body at the start of @rows
+  if no row in @rows has the @id of its body {
+    - add its body at the start of @rows
+  }
 }
 
 example "another agent adds a ticket" {
@@ -576,9 +595,13 @@ screen {
 }
 
 on answer desk.myTickets {
-  - if its status is 200, set @mine to its body and clear @problem
-  - if its status is 401, clear @mine and set @problem to the error in its body
-  - if its status is neither 200 nor 401 (no answer), set @problem to "Could not load your tickets"
+  if its status is 200 {
+    - set @mine to its body and clear @problem
+  } else if its status is 401 {
+    - clear @mine and set @problem to the error in its body
+  } else {
+    - set @problem to "Could not load your tickets"
+  }
 }
 
 example "a wrong key" {

@@ -198,21 +198,41 @@ on click pick {
 }
 
 on click signUp {
-  - if @name is blank, set @toast.message to "Please enter a name." and do nothing else
-  - if @emailIsValid is false, set @toast.message to "Please enter a valid email address." and do nothing else
-  - if a signup for @chosenEvent already has the @email (both trimmed, compared ignoring upper and lower case), set @toast.message to "{@email, trimmed} is already on the list for {chosenEvent}." and do nothing else
-  - if @placesLeft is above 0, add a @Signup with workshop @chosenEvent, @name trimmed, @email trimmed and @status @Confirmed to @signups, and set @toast.message to "{@name, trimmed} is signed up for {chosenEvent}."
-  - otherwise add a @Signup with workshop @chosenEvent, @name trimmed, @email trimmed and @status @Waiting to @signups, and set @toast.message to "{chosenEvent} is full. {@name, trimmed} is number {n} on the waiting list." where n is the number of @waitingList after adding
+  if @name is blank {
+    - set @toast.message to "Please enter a name."
+    stop
+  }
+  if @emailIsValid is false {
+    - set @toast.message to "Please enter a valid email address."
+    stop
+  }
+  if a signup for @chosenEvent already has the @email (both trimmed, compared ignoring upper and lower case) {
+    - set @toast.message to "{@email, trimmed} is already on the list for {chosenEvent}."
+    stop
+  }
+  if @placesLeft is above 0 {
+    - add a @Signup with workshop @chosenEvent, @name trimmed, @email trimmed and @status @Confirmed to @signups, and set @toast.message to "{@name, trimmed} is signed up for {chosenEvent}."
+  } else {
+    - add a @Signup with workshop @chosenEvent, @name trimmed, @email trimmed and @status @Waiting to @signups, and set @toast.message to "{chosenEvent} is full. {@name, trimmed} is number {n} on the waiting list." where n is the number of @waitingList after adding
+  }
   - clear @name and @email
-  - if @pager.page is above @pager.pageCount, set @pager.page to @pager.pageCount
+  if @pager.page is above @pager.pageCount {
+    - set @pager.page to @pager.pageCount
+  }
 }
 
 on click cancel {
   - find the signup for @chosenEvent whose @email equals @cancelEmail, both trimmed, compared ignoring upper and lower case
-  - if there is none, set @toast.message to "No sign-up for {@cancelEmail, trimmed} on {chosenEvent}." and do nothing else
+  if there is none {
+    - set @toast.message to "No sign-up for {@cancelEmail, trimmed} on {chosenEvent}."
+    stop
+  }
   - remove that signup from @signups
-  - if it was @Confirmed and @waitingList is not empty, set the @status of the first signup in @waitingList to @Confirmed and set @toast.message to "Cancelled {a}. {b} moved up from the waiting list." where a is the @name of the removed signup and b the @name of the promoted one
-  - otherwise set @toast.message to "Cancelled {a}'s sign-up for {chosenEvent}." where a is the @name of the removed signup
+  if it was @Confirmed and @waitingList is not empty {
+    - set the @status of the first signup in @waitingList to @Confirmed and set @toast.message to "Cancelled {a}. {b} moved up from the waiting list." where a is the @name of the removed signup and b the @name of the promoted one
+  } else {
+    - set @toast.message to "Cancelled {a}'s sign-up for {chosenEvent}." where a is the @name of the removed signup
+  }
   - clear @cancelEmail
 }
 

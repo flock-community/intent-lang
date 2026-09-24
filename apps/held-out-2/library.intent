@@ -196,10 +196,21 @@ on click clearMember {
 }
 
 on click lend {
-  - if @chosen is empty, do nothing and stop
-  - if @chosenLoans has a loan whose book is that book's @title, set @toast.message to "Cannot lend {that book's @title}: {chosen} already has it" and stop
-  - if that book's @copies minus the number of @loans whose book is that book's @title is 0 or less, set @toast.message to "Cannot lend {that book's @title}: no copies left" and stop
-  - if @chosenCount is 3 or more, set @toast.message to "Cannot lend {that book's @title}: {chosen} already has 3 books out" and stop
+  if @chosen is empty {
+    stop
+  }
+  if @chosenLoans has a loan whose book is that book's @title {
+    - set @toast.message to "Cannot lend {that book's @title}: {chosen} already has it"
+    stop
+  }
+  if that book's @copies minus the number of @loans whose book is that book's @title is 0 or less {
+    - set @toast.message to "Cannot lend {that book's @title}: no copies left"
+    stop
+  }
+  if @chosenCount is 3 or more {
+    - set @toast.message to "Cannot lend {that book's @title}: {chosen} already has 3 books out"
+    stop
+  }
   - add a @Loan to @loans with @id @nextLoanId, book that book's @title, member the @number of @chosenMember, @lentOn @today and @due @today + 14
   - increase @nextLoanId by 1
   - set @toast.message to "Lent {that book's @title} to {chosen}, due day {@today + 14}"

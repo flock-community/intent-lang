@@ -153,11 +153,26 @@ screen {
 }
 
 on click book {
-  - if @guestName is blank, set @toast.message to "Enter the guest's name" and stop
-  - if @phoneNumber is blank or contains no digit, set @toast.message to "Enter a phone number" and stop
-  - if @partySize is not a whole number from 1 to 6, set @toast.message to "Party size must be a whole number from 1 to 6" and stop
-  - if @slotChoice is empty, set @toast.message to "Choose a time slot" and stop
-  - if @bestTable is 0, set @toast.message to "No free table for a party of {partySize} at {slotChoice}" and stop
+  if @guestName is blank {
+    - set @toast.message to "Enter the guest's name"
+    stop
+  }
+  if @phoneNumber is blank or contains no digit {
+    - set @toast.message to "Enter a phone number"
+    stop
+  }
+  if @partySize is not a whole number from 1 to 6 {
+    - set @toast.message to "Party size must be a whole number from 1 to 6"
+    stop
+  }
+  if @slotChoice is empty {
+    - set @toast.message to "Choose a time slot"
+    stop
+  }
+  if @bestTable is 0 {
+    - set @toast.message to "No free table for a party of {partySize} at {slotChoice}"
+    stop
+  }
   - set @toast.message to "Booked table {bestTable} for {cleanName} at {slotChoice}"
   - add a @Reservation to the end of @reservations with @id @nextId, @guest @cleanName, @phone @cleanPhone, @party @partySize, @time @slotChoice, @tableNo @bestTable (as computed before adding) and @status @Booked
   - increase @nextId by 1

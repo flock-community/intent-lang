@@ -44,7 +44,9 @@ screen {
 }
 
 on click press {
-  - if @failed, do nothing
+  if @failed {
+    stop
+  }
   - a digit: if @typing, append it to @display (but a @display of "0" is replaced by the digit, and at most 12 digits are kept: more are ignored); if not @typing, @display becomes the digit and @typing becomes true
   - ".": if @typing and @display has no ".", append it; if @typing and @display has a ".", ignore it; if not @typing, @display becomes "0." and @typing becomes true
   - an operator (÷ × − +): if @pending is set and @typing, first compute @acc <@pending> @display and show the result; if @pending is not set, @acc becomes the number on @display; then @pending becomes this operator and @typing becomes false (so pressing two operators in a row just replaces @pending)

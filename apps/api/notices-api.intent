@@ -25,16 +25,22 @@ endpoint post POST "/notices" {
   body sender: Text
   body duration: Int                 # how many minutes the notice stays
   returns Notice
-  - if @text, trimmed, is blank, answer 400 "Text is required" and stop
-  - if @duration is below 1 or above 1440, answer 400 "Duration must be between 1 and 1440 minutes" and stop
-  - if 3 or more of the @notices have this @sender and a @sentAt less than 60 minutes before @now, answer 429 "At most 3 notices an hour" and stop
+  if @text, trimmed, is blank {
+    answer 400 "Text is required"
+  }
+  if @duration is below 1 or above 1440 {
+    answer 400 "Duration must be between 1 and 1440 minutes"
+  }
+  if 3 or more of the @notices have this @sender and a @sentAt less than 60 minutes before @now {
+    answer 429 "At most 3 notices an hour"
+  }
   - add a @Notice to the end of @notices with @id = the highest @id in @notices + 1 (1 when there are none), @text trimmed, the given @sender, @sentAt = @now and @expiresAt = @duration minutes after @now
-  - answer 201 with the new notice
+  answer 201 with the new notice
 }
 
 endpoint list GET "/notices" {
   returns List Notice
-  - answer 200 with the @notices, the latest @sentAt first, and on the same @sentAt the highest @id first
+  answer 200 with the @notices, the latest @sentAt first, and on the same @sentAt the highest @id first
 }
 
 every 1m {

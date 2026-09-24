@@ -27,9 +27,13 @@ on click startStop {
 }
 
 on tick {
-  - if not @running, do nothing
+  if not @running {
+    stop
+  }
   - decrease @remaining by 1
-  - if @remaining is now 0, move to the next @phase; @running stays true
+  if @remaining is now 0 {
+    - move to the next @phase; @running stays true
+  }
 }
 
 on click skip {

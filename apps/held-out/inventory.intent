@@ -147,7 +147,10 @@ on choose sortBy {
 }
 
 on click receive {
-  - if @quantity is not a number or is not above 0, set @toast.message to "Enter a whole number above 0" and skip all remaining steps (@parts, @history and @amount stay unchanged)
+  if @quantity is not a number or is not above 0 {
+    - set @toast.message to "Enter a whole number above 0"
+    stop  # @parts, @history and @amount stay unchanged
+  }
   - increase the @stock of the part in @parts whose @name is @partChoice by @quantity
   - put a new @Movement with part = @partChoice, @quantity = @quantity and @direction = @In at the front of @history, then keep only the first 8 items of @history
   - set @toast.message to "Received {quantity} × {partChoice}"
@@ -155,8 +158,14 @@ on click receive {
 }
 
 on click pick {
-  - if @quantity is not a number or is not above 0, set @toast.message to "Enter a whole number above 0" and skip all remaining steps (@parts, @history and @amount stay unchanged)
-  - if @quantity is above the @stock of the part in @parts whose @name is @partChoice, set @toast.message to "Cannot pick {quantity} × {partChoice}: only {that @stock} in stock" and skip all remaining steps (@stock never goes below 0; @parts, @history and @amount stay unchanged)
+  if @quantity is not a number or is not above 0 {
+    - set @toast.message to "Enter a whole number above 0"
+    stop  # @parts, @history and @amount stay unchanged
+  }
+  if @quantity is above the @stock of the part in @parts whose @name is @partChoice {
+    - set @toast.message to "Cannot pick {quantity} × {partChoice}: only {that @stock} in stock"
+    stop  # @stock never goes below 0; @parts, @history and @amount stay unchanged
+  }
   - decrease the @stock of the part in @parts whose @name is @partChoice by @quantity
   - put a new @Movement with part = @partChoice, @quantity = @quantity and @direction = @Out at the front of @history, then keep only the first 8 items of @history
   - set @toast.message to "Picked {quantity} × {partChoice}"

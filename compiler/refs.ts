@@ -2,7 +2,7 @@
 // In a sentence (a step, a condition, a derived value, a rule), a name from the spec is marked
 // with `@`, so people, the checker and the compiler all see what is intent and what is prose.
 // Inside a string, a template hole `{…}` holds a lone name, or a phrase with `@` references.
-import type { App, Element } from "./ast.ts";
+import type { App, Element, Stmt } from "./ast.ts";
 
 const STRING = /"(?:[^"\\]|\\.)*"/g;
 const REF = /(?<![\w@])@([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*)/g;
@@ -18,6 +18,13 @@ export function codeParts(text: string): string[] {
   }
   parts.push(text.slice(last));
   return parts;
+}
+
+/** The same body with every sentence (steps, conditions, answers) rewritten. */
+export function mapBody(body: Stmt[], f: (text: string) => string): Stmt[] {
+  return body.map((s) =>
+    s.k === "step" || s.k === "answer" ? { ...s, text: f(s.text) } : s.k === "if" ? { k: "if" as const, branches: s.branches.map((b) => ({ ...b, cond: b.cond === undefined ? undefined : f(b.cond), body: mapBody(b.body, f) })) } : s,
+  );
 }
 
 /** Every `@name` in a sentence (outside strings, and inside template holes). */

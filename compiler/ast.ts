@@ -75,9 +75,20 @@ export interface Element {
 
 export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer" | "event";
 
+/**
+ * The body of a handler, an endpoint, recurring work or a layer: steps (prose), and the structure
+ * the language owns: `if … { } else if … { } else { }`, `answer …` (ends an endpoint), `stop`.
+ */
+export type Stmt =
+  | { k: "step"; text: string; line: number }
+  | { k: "if"; branches: { cond?: string; body: Stmt[]; line: number }[] } // cond undefined: `else`
+  | { k: "answer"; text: string; line: number } // `answer 404 "No such ticket"`, `answer 200 with the ticket`
+  | { k: "stop"; line: number };
+
 export interface Handler {
   verb: Verb;
   target: string; // "" for tick
+  body?: Stmt[]; // the structure; `steps` is its flat text (conditions and answers included), for checks
   steps: string[];
   stepLines?: number[]; // the line of each step, for diagnostics and the source map
   line: number;
@@ -157,6 +168,7 @@ export interface Endpoint {
   returns?: Type; // undefined: the answer has no body
   answers?: { status: number; type?: Type; line: number }[]; // the contract: every status it may answer, with its body type
   signatureOnly?: boolean; // `endpoint name` in an app that implements a contract: method, path and params come from it
+  body?: Stmt[];
   steps: string[];
   stepLines?: number[];
   line: number;
@@ -168,9 +180,9 @@ export interface App {
   // A layer (kind "layer"): what an app configures, what it hands to endpoints, and its two steps lists.
   params?: LayerParam[];
   provides?: Field[];
-  before?: { steps: string[]; line: number; stepLines?: number[] };
-  after?: { steps: string[]; line: number; stepLines?: number[] };
-  beforeCall?: { steps: string[]; line: number; stepLines?: number[] }; // a client layer: changes every outgoing call (adds a key, …)
+  before?: { steps: string[]; line: number; stepLines?: number[]; body?: Stmt[] };
+  after?: { steps: string[]; line: number; stepLines?: number[]; body?: Stmt[] };
+  beforeCall?: { steps: string[]; line: number; stepLines?: number[]; body?: Stmt[] }; // a client layer: changes every outgoing call (adds a key, …)
   exampleConfig?: Binding[]; // `examples with`: the params the layer's own examples run with
   // An api app: the layers it runs behind, in order (`use cors = std.http.cors`).
   layers?: LayerUse[];
@@ -178,7 +190,7 @@ export interface App {
   endpoints?: Endpoint[];
   events?: EventDecl[];
   startsAt?: string; // `examples start at 2026-09-24 09:00`: the clock at the start of every example and session
-  jobs?: { every: number; name: string; steps: string[]; stepLines?: number[]; line: number }[]; // api: `every 15m { … }`
+  jobs?: { every: number; name: string; steps: string[]; stepLines?: number[]; body?: Stmt[]; line: number }[]; // api: `every 15m { … }`
   everyAnswer?: { status: number; type?: Type; line: number }[]; // `every endpoint answers 401 Problem`: added to every endpoint's answers // what an api (or contract) announces: `event ticketCreated: Ticket`
   name: string;
   imports?: Import[];

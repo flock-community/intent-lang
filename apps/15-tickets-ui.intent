@@ -37,7 +37,9 @@ on start {
 }
 
 on answer tickets.listTickets {
-  - if its status is 200, set @rows to its body
+  if its status is 200 {
+    - set @rows to its body
+  }
 }
 
 on click add {
@@ -45,8 +47,11 @@ on click add {
 }
 
 on answer tickets.createTicket {
-  - if its status is 201, clear @draft and @problem
-  - otherwise set @problem to the error in its body
+  if its status is 201 {
+    - clear @draft and @problem
+  } else {
+    - set @problem to the error in its body
+  }
 }
 
 on click solve {
@@ -54,12 +59,17 @@ on click solve {
 }
 
 on answer tickets.solveTicket {
-  - if its status is 200, clear @problem
-  - otherwise set @problem to the error in its body
+  if its status is 200 {
+    - clear @problem
+  } else {
+    - set @problem to the error in its body
+  }
 }
 
 on event tickets.ticketCreated {
-  - if no row in @rows has the @id of its body, add its body at the start of @rows
+  if no row in @rows has the @id of its body {
+    - add its body at the start of @rows
+  }
 }
 
 on event tickets.ticketSolved {

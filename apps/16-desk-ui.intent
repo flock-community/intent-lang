@@ -40,9 +40,13 @@ on click signIn {
 }
 
 on answer desk.myTickets {
-  - if its status is 200, set @mine to its body and clear @problem
-  - if its status is 401, clear @mine and set @problem to the error in its body
-  - if its status is neither 200 nor 401 (no answer), set @problem to "Could not load your tickets"
+  if its status is 200 {
+    - set @mine to its body and clear @problem
+  } else if its status is 401 {
+    - clear @mine and set @problem to the error in its body
+  } else {
+    - set @problem to "Could not load your tickets"
+  }
 }
 
 on click solve {
@@ -50,9 +54,13 @@ on click solve {
 }
 
 on answer desk.solveTicket {
-  - if its status is 200, clear @problem
-  - if its status is 401, 403, 404 or 409, set @problem to the error in its body
-  - if its status is none of those (no answer), set @problem to "Could not solve the ticket"
+  if its status is 200 {
+    - clear @problem
+  } else if its status is 401, 403, 404 or 409 {
+    - set @problem to the error in its body
+  } else {
+    - set @problem to "Could not solve the ticket"
+  }
 }
 
 on event desk.ticketSolved {

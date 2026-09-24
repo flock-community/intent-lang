@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v28** (see the changelog at the end of
+Language version this skill matches: **v29** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -86,8 +86,10 @@ Habits that make builds identical *and* correct:
   look sentence only describes the difference. The look shows only what the spec names.
 - **End-of-line comments are notes the compiler reads.** Use them to explain a field's
   meaning (`remaining: Int = 1500  # seconds left`).
-- **Stop explicitly:** a validation step ends with "… and stop", otherwise later steps still
-  run. Use "otherwise" for the other branch, "that <item>" for the clicked row in a handler,
+- **Structure, not prose, for choices:** `if <condition> { … } else if … { … } else { … }`;
+  `stop` ends a handler, `answer …` ends an endpoint. Give a chain of statuses one `if … else if
+  … else`, never separate `if`s (with separate ones, more than one can apply). Use "that <item>"
+  for the clicked row in a handler,
   and "its" for the row's item in a row expression (§5 of the reference).
 - **Name intermediate values** in `derive` (`quantity = amount read as a whole number`)
   and use the name in templates and sentences, instead of repeating phrases.
@@ -234,7 +236,7 @@ proven with a `wait` that passes its time.
 ## 5f. A screen that uses an API
 
 `uses <contract> as <alias>` plus `tested with "<provider spec>"` (§4g). Load data `on start`,
-and handle every call's answer with `on answer`: the success status, and `otherwise` for the
+and handle every call's answer with `on answer`: the success status, and `else` for the
 rest (show the Problem's error). The screen's examples run against the real provider with
 its seed data, so write them from that data (`see rows has 8 rows`, the provider's newest
 first). After a change (add, solve), call the list endpoint again instead of editing the list

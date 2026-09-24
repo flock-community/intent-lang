@@ -1,7 +1,7 @@
 // Instantiating behaviour components: `use pager = Pager` + bindings becomes plain spec,
 // deterministically. Names of the component become `pager.<name>`; `{local}` anchors in its
 // sentences become `{pager.local}`; `{param}` anchors become the bound value.
-import { mapRefs } from "./refs.ts";
+import { mapBody, mapRefs } from "./refs.ts";
 import type { App, Component, Element, Handler, Step } from "./ast.ts";
 
 type Err = (l: number, c: string, m: string, col?: number) => void;
@@ -108,7 +108,7 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
     app.rules.push(`(${inst}) ${rwAll(r)}`);
   });
   for (const h of body.handlers) {
-    const handler: Handler = { ...h, target: h.verb === "tick" ? "" : renameRef(h.target), steps: h.steps.map((s) => rwAll(s)!) };
+    const handler: Handler = { ...h, target: h.verb === "tick" ? "" : renameRef(h.target), steps: h.steps.map((s) => rwAll(s)!), body: h.body && mapBody(h.body, (t) => rwAll(t)!) };
     app.handlers.push(handler);
   }
   for (const a of body.always) {

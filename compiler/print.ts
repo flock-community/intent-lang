@@ -1,6 +1,6 @@
 // Canonical printer: an (expanded) app back to Intent text. The LLM always reads this form, so
 // the same spec — whatever its formatting or imports — gives the same bytes. `intent expand`.
-import type { App, Binding, Element, Literal, Step } from "./ast.ts";
+import type { App, Binding, Element, Literal, Step, Stmt } from "./ast.ts";
 import { LINE_BASE } from "./ast.ts";
 import { typeToString } from "./parse.ts";
 import { toBraces } from "./braces.ts";
@@ -87,6 +87,26 @@ function element(app: App, el: Element, ind: string): string[] {
   return out;
 }
 
+/** A body in its indented form (the canonical print adds the braces): steps, `if`/`else`, `answer`, `stop`. */
+function body(b: { body?: Stmt[]; steps: string[] }, ind: string): string[] {
+  if (!b.body) return b.steps.map((s) => `${ind}- ${s}`);
+  const out: string[] = [];
+  const walk = (stmts: Stmt[], i: string) => {
+    for (const s of stmts) {
+      if (s.k === "step") out.push(`${i}- ${s.text}`);
+      else if (s.k === "answer") out.push(`${i}answer ${s.text}`);
+      else if (s.k === "stop") out.push(`${i}stop`);
+      else
+        s.branches.forEach((br, n) => {
+          out.push(`${i}${br.cond === undefined ? "else" : `${n ? "else if" : "if"} ${br.cond}`}`);
+          walk(br.body, i + "  ");
+        });
+    }
+  };
+  walk(b.body, ind);
+  return out;
+}
+
 function binding(b: Binding, ind: string): string[] {
   if (Array.isArray(b.value)) return [`${ind}${b.name} = ${b.value.map((v) => lit(v, "")).join(", ")}`];
   const text = lit(b.value, ind);
@@ -138,9 +158,9 @@ export function printApp(app: App): string {
   if (app.kind === "layer") {
     block((app.params ?? []).map((f) => `param ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${(Array.isArray(f.default) ? f.default : [f.default]).map((v) => lit(v, "")).join(", ")}` : ""}${origin(app, f.line, f.note)}`));
     block((app.provides ?? []).map((f) => `provides ${f.name}: ${typeToString(f.type)}${origin(app, f.line, f.note)}`));
-    if (app.before) block(["before every request", ...app.before.steps.map((st) => `  - ${st}`)]);
-    if (app.after) block(["after every answer", ...app.after.steps.map((st) => `  - ${st}`)]);
-    if (app.beforeCall) block(["before every call", ...app.beforeCall.steps.map((st) => `  - ${st}`)]);
+    if (app.before) block(["before every request", ...body(app.before, "  ")]);
+    if (app.after) block(["after every answer", ...body(app.after, "  ")]);
+    if (app.beforeCall) block(["before every call", ...body(app.beforeCall, "  ")]);
     if (app.exampleConfig?.length) block(["examples with", ...app.exampleConfig.flatMap((b) => binding(b, "  "))]);
   }
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
@@ -154,10 +174,10 @@ export function printApp(app: App): string {
       `endpoint ${ep.name} ${ep.method} ${q(ep.path)}${origin(app, ep.line, ep.note)}`,
       ...ep.params.map((p) => `  ${p.in} ${p.name}: ${typeToString(p.type)}`),
       ...(ep.returns ? [`  returns ${typeToString(ep.returns)}`] : []),
-      ...ep.steps.map((s) => `  - ${s}`),
+      ...body(ep, "  "),
     ]);
-  for (const j of app.jobs ?? []) block([`every ${j.name.slice(5)}`, ...j.steps.map((st) => `  - ${st}`)]);
-  for (const h of app.handlers) block([`on ${h.verb}${h.target ? ` ${h.target}` : ""}${origin(app, h.line, h.note)}`, ...h.steps.map((s) => `  - ${s}`)]);
+  for (const j of app.jobs ?? []) block([`every ${j.name.slice(5)}`, ...body(j, "  ")]);
+  for (const h of app.handlers) block([`on ${h.verb}${h.target ? ` ${h.target}` : ""}${origin(app, h.line, h.note)}`, ...body(h, "  ")]);
   block(app.rules.length ? ["rules", ...app.rules.map((r) => `  - ${r}`)] : []);
   block(app.always.length ? ["always", ...app.always.map((s) => `  ${stepText(s)}${origin(app, s.line)}`)] : []);
   for (const ex of app.examples) block([`example ${q(ex.name)}`, ...ex.steps.map((s) => `  ${stepText(s)}`)]);

@@ -393,6 +393,13 @@ events. It built on the first attempt in Elm and TypeScript, twin-verified, and 
 sessions (with 286 calls by another client) were identical across the two targets. In
 Chromium, a second page showed a ticket added in the first.
 
+**Choices as structure** (v29): `if <condition> { … } else if … { … } else { … }`, `answer …`
+(ends an endpoint) and `stop` (ends a handler) are language; the conditions and steps stay
+prose. The checker reports steps that can never run and endpoints that do not answer on every
+path. All specs moved over; todo, shop, pomodoro, library (a held-out author's), both API
+screens with their APIs and layers, and the notices API rebuilt on the first attempt with it,
+twin-verified.
+
 **Time** (v28): `Date` and `DateTime`, `@today` and `@now` in sentences, and a clock the tests
 control: every example starts at `examples start at …`, and `wait 1d` moves it on. Services get
 recurring work (`every 1m { … }`). Date arithmetic is in the standard helpers, identical in Elm

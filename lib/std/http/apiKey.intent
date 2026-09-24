@@ -14,12 +14,18 @@ param public: List Text = []                       # paths anyone may call witho
 provides caller: Text                              # the owner of the key; "" on a public path and for OPTIONS
 
 before every request {
-  - a request whose method is OPTIONS passes with @caller "": browsers send preflights without @keys
-  - a request whose path is in @public passes with @caller ""
-  - when the request has no @keyHeader header, or its value is blank: answer 401 "Missing API key" with header www-authenticate = "ApiKey", and stop
   - secrets are compared in constant time, so the time an answer takes does not reveal how much of a key was right
-  - when no key in @keys has exactly that value as its @secret: answer 401 "Unknown API key" with header www-authenticate = "ApiKey", and stop
-  - otherwise the request passes with @caller = the @owner of the key with that @secret
+  if the request's method is OPTIONS {
+    - it passes with @caller "": browsers send preflights without an API key
+  } else if the request's path is in @public {
+    - it passes with @caller ""
+  } else if the request has no @keyHeader header, or its value is blank {
+    answer 401 "Missing API key" with header www-authenticate = "ApiKey"
+  } else if no key in @keys has exactly that value as its @secret {
+    answer 401 "Unknown API key" with header www-authenticate = "ApiKey"
+  } else {
+    - it passes with @caller = the @owner of the key with that @secret
+  }
 }
 
 examples with {

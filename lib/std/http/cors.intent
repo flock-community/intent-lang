@@ -9,17 +9,23 @@ param maxAge: Int = 600                            # seconds a browser may remem
 
 before every request {
   - a header whose value is blank counts as absent, here and in after every answer
-  - each request is judged by its own method and @headers only
+  - each request is judged by its own method and header values only
   - an origin is allowed when @origins is empty, or when @origins contains it exactly
   - a request is a preflight when its method is OPTIONS and it has both an origin header and an access-control-request-method header
-  - a preflight from an origin that is not allowed: answer 403 "Origin not allowed" and stop
-  - a preflight from an allowed origin: answer 204 without a body, with header access-control-allow-methods = "GET, POST, PUT, PATCH, DELETE", header access-control-allow-headers = the @headers joined by ", ", and header access-control-max-age = @maxAge; stop
+  if it is a preflight from an origin that is not allowed {
+    answer 403 "Origin not allowed"
+  } else if it is a preflight from an allowed origin {
+    answer 204 without a body, with header access-control-allow-methods = "GET, POST, PUT, PATCH, DELETE", header access-control-allow-headers = the @headers joined by ", ", and header access-control-max-age = @maxAge
+  }
   - every other request passes on
 }
 
 after every answer {
-  - when the request has an origin header and that origin is allowed: set header access-control-allow-origin to that origin, and header vary to "origin"
-  - otherwise the answer is unchanged: without these @headers, the browser does not hand the answer to the page
+  if the request has an origin header and that origin is allowed {
+    - set header access-control-allow-origin to that origin, and header vary to "origin"
+  } else {
+    - the answer is unchanged: without them, the browser does not hand the answer to the page
+  }
 }
 
 examples with {

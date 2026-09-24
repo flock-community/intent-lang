@@ -38,8 +38,14 @@ screen {
 
 on click guess {
   - the @word is @draft, trimmed and in capitals
-  - if the @word is not exactly 5 letters from A to Z, set @message to "Five letters, please" and stop
-  - if the @word is already in @guesses, set @message to "Already tried" and stop
+  if the @word is not exactly 5 letters from A to Z {
+    - set @message to "Five letters, please"
+    stop
+  }
+  if the @word is already in @guesses {
+    - set @message to "Already tried"
+    stop
+  }
   - add a @Guess with that @word and its @marks to the end of @guesses
   - clear @draft and @message
 }

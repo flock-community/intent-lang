@@ -21,7 +21,7 @@ const opens = (c: string) => c.endsWith("{");
 export function usesBraces(src: string): boolean {
   return src.split(/\r?\n/).some((l) => {
     const c = code(l);
-    return c === "}" || opens(c);
+    return c === "}" || opens(c) || c.startsWith("} ");
   });
 }
 
@@ -38,6 +38,16 @@ export function fromBraces(src: string, keepLines = true): { text: string; error
   src.split(/\r?\n/).forEach((raw, i) => {
     const [c0, comment] = splitComment(raw);
     const c = c0.trim();
+    // `} else {` / `} else if … {`: close the block, and open the next one at the same depth.
+    if (c.startsWith("} ") && opens(c)) {
+      if (!openedAt.length) errors.push({ line: i + 1, message: "`}` closes a block that was never opened" });
+      else openedAt.pop();
+      const content = c.slice(2).slice(0, -1).trim();
+      const gap = c0.match(/\s*$/)![0] || "  ";
+      out.push(" ".repeat(openedAt.length * 2) + content + (comment ? gap + comment : ""));
+      openedAt.push(i + 1);
+      return;
+    }
     const depth = openedAt.length;
     if (c === "}") {
       if (!openedAt.length) errors.push({ line: i + 1, message: "`}` closes a block that was never opened" });
@@ -83,6 +93,17 @@ export function toBraces(src: string): string {
       continue;
     }
     const me = indent(l);
+    // `else …` right after its `if` block closes: `} else … {` on one line.
+    const isElse = /^else\b/.test(code(l));
+    if (isElse && !pending.some((x) => x.trim()) && open.length && open[open.length - 1] === me) {
+      closeTo(me + 1);
+      open.pop();
+      const [c, comment] = splitComment(l);
+      out.push(" ".repeat(me) + "} " + c.trim() + " {" + (comment ? "  " + comment : ""));
+      open.push(me);
+      pending = [];
+      continue;
+    }
     closeTo(me);
     out.push(...pending);
     pending = [];

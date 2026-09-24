@@ -1,0 +1,33 @@
+app StructureChecks {
+  "if / else / answer / stop: misplaced or unreachable steps are errors, prose control words a hint."
+}
+
+state {
+  count: Int = 0
+}
+
+screen {
+  text count
+  button up "+"
+  button down "-"
+}
+
+on click up {
+  if @count is 3 {
+    stop
+    - set @count to 0                      # expect: UNREACHABLE
+  } else {
+    - increase @count by 1
+  }
+  answer 200 with @count                   # expect: STEP
+}
+
+on click down {
+  - if @count is 0, do nothing and stop    # expect: UNSTRUCTURED
+  - decrease @count by 1
+}
+
+example "up" {
+  click up
+  see count = 1
+}

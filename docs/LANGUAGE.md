@@ -1,4 +1,4 @@
-# Intent — language reference (v28)
+# Intent — language reference (v29)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -44,7 +44,9 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
 
   ```
   on click add {
-    - otherwise add an @Item with @title = @draft trimmed to the end of @items
+    if no item in @items has the same @title as @draft {
+      - add an @Item with @title = @draft trimmed to the end of @items
+    }
   }
   ```
 
@@ -476,9 +478,11 @@ endpoint createTicket POST "/tickets" {
   body customer: Text
   body priority: Priority
   returns Ticket
-  - if @subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  if @subject, trimmed, is blank {
+    answer 400 "Subject is required"
+  }
   - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, …
-  - answer 201 with the new ticket
+  answer 201 with the new ticket
 }
 
 example "creating a ticket" {
@@ -491,7 +495,7 @@ example "creating a ticket" {
 
 - `path x: T` (appears in the path as `{x}`), `query x: T` and `body x: T` are the input;
   `returns T` is the answer's body. Steps are sentences, as in handlers: "answer 200 with …",
-  "answer 404 \"…\" and stop".
+  `answer 404 "…"` (which ends the endpoint), inside `if <condition> { … }` where it applies.
 - The harness routes requests and checks their input before the service sees them. It answers
   these itself, with fixed messages: `404 {"error":"Not found"}`, `405 {"error":"Method not
   allowed"}`, `400 {"error":"<name> is required"}` and `400 {"error":"<name> must be <type>"}`.
@@ -542,9 +546,11 @@ app TicketsApi
 implements support.ticketsApi
 
 endpoint createTicket {  # the signature comes from the contract
-  - if @subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  if @subject, trimmed, is blank {
+    answer 400 "Subject is required"
+  }
   - …
-  - answer 201 with the new ticket
+  answer 201 with the new ticket
 }
 ```
 
@@ -585,7 +591,9 @@ on start {
 }
 
 on answer tickets.listTickets {
-  - if its status is 200, set @rows to its body
+  if its status is 200 {
+    - set @rows to its body
+  }
 }
 
 on click add {
@@ -593,8 +601,11 @@ on click add {
 }
 
 on answer tickets.createTicket {
-  - if its status is 201, clear @draft and @problem, and call @tickets.listTickets
-  - otherwise set @problem to the error in its body
+  if its status is 201 {
+    - clear @draft and @problem, and call @tickets.listTickets
+  } else {
+    - set @problem to the error in its body
+  }
 }
 ```
 
@@ -604,7 +615,7 @@ on answer tickets.createTicket {
   argument that is not given is absent.
 - `on answer <alias>.<endpoint>` handles the answer. "its status" is the status; "its body" is
   the body, typed by the contract for that status. An answer the contract does not allow (the
-  network is down, or the body has the wrong shape) is not any declared status: `otherwise`
+  network is down, or the body has the wrong shape) is not any declared status: an `else`
   covers it.
 - `on start` runs once when the app starts.
 - Where a service is hosted is not in the spec: in the browser, calls to `<alias>` go to the
@@ -665,7 +676,9 @@ use auth = std.http.apiKey {  # who calls; provides `caller`
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
   path id: Int
-  - if that ticket's @assignee is not the @caller, answer 403 "Only the assignee can solve this ticket" and stop
+  if that ticket's @assignee is not the @caller {
+    answer 403 "Only the assignee can solve this ticket"
+  }
 }
 ```
 
@@ -686,7 +699,7 @@ cache-control, content-security-policy), `std.http.cors` (`origins`, `headers`, 
 constant time).
 
 **Writing a layer** (`layer std.http.cors`): `param name: Type [= default]`, `provides name:
-Type`, `before every request` (steps that may answer and stop, or pass the request on) and
+Type`, `before every request` (steps that may `answer`, which stops the request, or pass it on) and
 `after every answer` (steps that change the answer on its way out, usually its headers; this
 runs for every answer, including the harness's 404 and 400). Examples send raw requests and
 check the answer with `see status = 204`, `see header vary = "origin"`, `see body.error = "…"`.
@@ -738,9 +751,28 @@ Sentences may be conditional ("if draft is blank, do nothing").
 
 Idioms the compiler reads the same way every time:
 
-- **Stop early:** `- if @quantity is not a whole number above 0, set @toast.message to "…" and stop`.
-  "and stop" skips the remaining steps. Without it, the next steps still run.
-- **Otherwise:** an `otherwise …` step applies only when the step before it did not.
+- **Choices are structure, not prose.** The conditions are sentences; which steps they guard,
+  and where that ends, is language:
+
+  ```
+  on click lend {
+    if @chosen is empty {
+      stop
+    } else if @chosenCount is 3 or more {
+      - set @toast.message to "{chosen} already has 3 books out"
+      stop
+    }
+    - add a @Loan to @loans with …
+  }
+  ```
+
+  Of an `if … else if … else` chain exactly one branch runs: the first whose condition holds
+  (`else` when none does). Without an `else`, nothing runs when no condition holds. Steps after
+  the chain run in any case, unless a branch ended with `stop` (a handler) or `answer …` (an
+  endpoint, or a layer's `before every request`). A step after `stop` or `answer` in the same
+  block never runs, and is an error. An endpoint must `answer` on every path.
+- A step written as prose control ("- if …, … and stop", "- otherwise …") still reads, but the
+  checker hints (`UNSTRUCTURED`) to write it as structure.
 - **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
   ticket") is the item of the clicked row. In an expression inside a row, "its" and "this
   <item>" refer to the row's item: `text left = its @capacity minus its number of sign-ups`.
@@ -835,6 +867,9 @@ places where the spec is not yet precise.
 | `LOCK` | error | a bundle is not locked, or changed since it was locked (§4b) |
 | `UNSCOPED` | warning | inside a component, one of its own names is not written with `@` |
 | `IMPORT` | error | a name comes from a spec this file does not import itself (add the `import` it names) |
+| `UNREACHABLE` | error | a step after `stop` or `answer` in the same block |
+| `NO_ANSWER` | error | an endpoint that does not `answer` on every path |
+| `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNUSED` | warning | a declared component is never used |
 | `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
@@ -927,6 +962,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v29: control words are structure: `if <condition> { … } else if … { … } else { … }`, `answer …`
+  (ends an endpoint), `stop` (ends a handler). Unreachable steps and endpoints that do not answer
+  on every path are errors; prose "and stop" / "otherwise" gets a hint.
 
 - v28: time: `Date` and `DateTime` types and literals, `@today` and `@now` in sentences,
   `examples start at …`, `wait 1d` moves the clock in tests, date helpers in Fmt (the same in

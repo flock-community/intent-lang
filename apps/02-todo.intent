@@ -38,9 +38,10 @@ screen {
 }
 
 on click add {
-  - if an item with the same @title (trimmed, ignoring case) exists, do not add anything
-  - otherwise add an @Item with @title = @draft trimmed to the end of @items
-  - clear @draft in both cases
+  if no item in @items has the same @title as @draft (both trimmed, ignoring case) {
+    - add an @Item with @title = @draft trimmed to the end of @items
+  }
+  - clear @draft
 }
 
 on click remove {
