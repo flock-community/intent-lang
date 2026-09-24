@@ -8,7 +8,7 @@ event ticketCreated: Ticket          # a ticket was created, by anyone
 event ticketSolved: Ticket           # a ticket was solved, by anyone
 
 endpoint listTickets GET "/tickets" {
-  query status: Maybe Status        # only tickets with this status; all when absent
+  query status: Status or nothing       # only tickets with this status; all when absent
   answers 200 List Ticket
 }
 

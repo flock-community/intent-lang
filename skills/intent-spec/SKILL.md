@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v29** (see the changelog at the end of
+Language version this skill matches: **v30** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -91,6 +91,8 @@ Habits that make builds identical *and* correct:
   … else`, never separate `if`s (with separate ones, more than one can apply). Use "that <item>"
   for the clicked row in a handler,
   and "its" for the row's item in a row expression (§5 of the reference).
+- **Absent is `nothing`:** a value that may be missing is `T or nothing` with default `nothing`;
+  never a stand-in like `0` or `""` with a comment explaining it.
 - **Name intermediate values** in `derive` (`quantity = amount read as a whole number`)
   and use the name in templates and sentences, instead of repeating phrases.
 - **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `

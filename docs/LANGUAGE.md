@@ -1,4 +1,4 @@
-# Intent — language reference (v29)
+# Intent — language reference (v30)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -85,8 +85,10 @@ always { … }                # invariants the harness checks after every action
 example "name" { … }        # proof (§6): steps
 ```
 
-Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `Maybe T`, a record
-name, a choice name. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
+Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `T or nothing`, a
+record name, a choice name. `T or nothing` is a value that may be absent: say so instead of
+using a stand-in such as `0` or `""` (`selected: Int or nothing = nothing`, then
+`visible when there is a @selected` and `set @selected to nothing`). `Maybe T` still reads. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
@@ -962,6 +964,9 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v30: `T or nothing` for a value that may be absent (was `Maybe T`, which still reads); the
+  helpdesk's "0 for none" became `Int or nothing`.
 
 - v29: control words are structure: `if <condition> { … } else if … { … } else { … }`, `answer …`
   (ends an endpoint), `stop` (ends a handler). Unreachable steps and endpoints that do not answer

@@ -30,7 +30,7 @@ state {
   }
   display: Text = "0"
   acc: Decimal = 0          # the running result
-  pending: Maybe Op = nothing
+  pending: Op or nothing = nothing
   typing: Bool = false      # true while the user is typing a number
   failed: Bool = false
 }

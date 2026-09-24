@@ -661,7 +661,8 @@ function parseType(s: string): Type | undefined {
     const of = parseType(m[1]);
     return of && { k: "List", of };
   }
-  if ((m = s.match(/^Maybe\s+(.+)$/))) {
+  // `Ticket or nothing` (and the older `Maybe Ticket`): a value that may be absent.
+  if ((m = s.match(/^(.+?)\s+or\s+nothing$/)) || (m = s.match(/^Maybe\s+(.+)$/))) {
     const of = parseType(m[1]);
     return of && { k: "Maybe", of };
   }
@@ -673,7 +674,7 @@ function parseType(s: string): Type | undefined {
 export function typeToString(t: Type): string {
   switch (t.k) {
     case "List": return `List ${typeToString(t.of)}`;
-    case "Maybe": return `Maybe ${typeToString(t.of)}`;
+    case "Maybe": return `${typeToString(t.of)} or nothing`;
     case "Named": return t.name;
     default: return t.k;
   }

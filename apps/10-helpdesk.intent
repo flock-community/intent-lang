@@ -69,7 +69,7 @@ state {
   statusFilter: StatusFilter = AllTickets
   sort: Sort = Newest
   pageNumber: Int = 1
-  selected: Int = 0          # id of the ticket open in the drawer; 0 for none
+  selected: Int or nothing = nothing   # id of the ticket open in the drawer
   reply: Text = ""
   showNew: Bool = false
   newSubject: Text = ""
@@ -184,7 +184,7 @@ screen {
     }
   }
   section detail as drawer {
-    visible when @selected is not 0
+    visible when there is a @selected
     text detailSubject = the @subject of @current as title
     text detailMeta = "#{@id of @current} · {@customer of @current}" as caption
     text detailPriority = the @priority of @current as PriorityBadge
@@ -234,7 +234,7 @@ on choose sort {
 }
 
 on choose page {
-  - set @selected to 0
+  - set @selected to nothing
 }
 
 on click previous {
@@ -251,7 +251,7 @@ on click open {
 }
 
 on click close {
-  - set @selected to 0
+  - set @selected to nothing
 }
 
 on click send {
