@@ -38,6 +38,14 @@ export function layerConfig(layer: App, bindings: Binding[]): Record<string, unk
 export function genLayerSpec(app: App): string {
   const params = app.params ?? [];
   const provides = app.provides ?? [];
+  if (app.beforeCall)
+    return `// Generated from layer ${app.name} — do not edit. The interface the layer module must satisfy.
+import type { HttpRequest } from "./http.ts";
+export type { HttpRequest } from "./http.ts";
+
+${tsDomain(app)}/** The params, as a screen binds them (to its state, or literals; defaults filled in). */
+export type Config = { ${params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };
+`;
   return `// Generated from layer ${app.name} — do not edit. The interface the layer module must satisfy.
 import type { HttpRequest, HttpResponse } from "./http.ts";
 export type { HttpRequest, HttpResponse } from "./http.ts";
@@ -62,6 +70,21 @@ export function before(req: HttpRequest, config: Config): Before { /* … */ }
 /** Runs last, for every answer: the app's, the harness's (404, 400, 405) and any layer's. */
 export function after(req: HttpRequest, res: HttpResponse, config: Config): HttpResponse { /* … */ }
 `;
+
+/** A client's layer: one function over every call as it leaves the screen (and the event stream's request). */
+export const CLIENT_LAYER_SKELETON = `import type { Config, HttpRequest } from "./spec.ts";
+import { … } from "./http.ts"; // what you use of: header, lower
+
+/** Runs for every call a screen makes through this layer, and for its event stream: returns the call as it leaves. */
+export function before(req: HttpRequest, config: Config): HttpRequest { /* … */ }
+`;
+
+export const CLIENT_LAYER_RULES = `Target: TypeScript (strict mode), a layer around a client's calls. You write \`layer.ts\`.
+- Export exactly \`before(req, config)\`, which returns the call as it leaves: the same method, path, query and body unless the spec says otherwise, with the headers the spec says. Header names are lower case.
+- It runs in the browser and in tests, for every call and for the event stream (\`GET /events\`). Config values come from the screen's state and change over time: never cache them.
+- Available: the standard library, "./spec.ts", "./http.ts" and "./fmt.ts". No I/O, no timers, no randomness, no Date. Import with explicit extensions.
+- Pure function: never mutate the request you receive; return a new object.
+- Every example must pass. Walk through each one step by step before you answer. Write plain code, no comments.`;
 
 export const LAYER_RULES = `Target: TypeScript (strict mode), a layer around an HTTP API. You write \`layer.ts\`.
 - Export exactly \`before\` and \`after\` with the signatures below. Without \`before every request\`, \`before\` passes every request on: \`{ pass: {} }\` (plus what the layer provides). Without \`after every answer\`, \`after\` returns the answer unchanged.
@@ -88,13 +111,29 @@ export function start(config: any) {
 }
 `;
 
+/** A client's layer in its examples: \`request …\` is a call the screen makes; what is seen is the call as it leaves. */
+const CLIENT_TEST_ENTRY = `import * as L from "./layer.ts";
+import { lower, type HttpRequest, type HttpResponse } from "./http.ts";
+
+const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
+
+export function start(config: any) {
+  return {
+    send(req: HttpRequest): HttpResponse {
+      const out = L.before(copy(req), copy(config));
+      return { status: 200, headers: lower(out.headers ?? {}), body: copy({ method: out.method, path: out.path, query: out.query ?? {}, body: out.body ?? null }) };
+    },
+  };
+}
+`;
+
 export function scaffoldLayer(app: App, dir: string): { appFile: string; specSource: string } {
   mkdirSync(dir, { recursive: true });
   copyFileSync(join(ROOT, "runtime/ts/http.ts"), join(dir, "http.ts"));
   copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
   const spec = genLayerSpec(app);
   writeFileSync(join(dir, "spec.ts"), spec);
-  writeFileSync(join(dir, "test-entry.ts"), TEST_ENTRY);
+  writeFileSync(join(dir, "test-entry.ts"), app.beforeCall ? CLIENT_TEST_ENTRY : TEST_ENTRY);
   writeFileSync(join(dir, "config.json"), JSON.stringify(layerConfig(app, app.exampleConfig ?? []), null, 2));
   writeFileSync(
     join(dir, "tsconfig.json"),
@@ -129,14 +168,20 @@ export async function runLayerJobs(dir: string, jobs: LayerJob[]): Promise<unkno
   const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
   const out: unknown[] = [];
   for (const job of jobs) {
-    const layer = mod.start(job.config);
+    let config = job.config as Record<string, unknown>;
+    let layer = mod.start(config);
     const responses: Responses = new Map();
     const dump = () => [...responses].map(([k, r]) => `${k} → ${r.status} ${JSON.stringify(r.headers ?? {})} ${JSON.stringify(r.body)}`).join("\n");
     try {
       if (job.kind === "layer-example") {
         let failure: { line: number; message: string; screen: string } | undefined;
         for (const s of job.example.steps) {
-          if (s.do === "request") responses.set("request", layer.send(requestOf(s)));
+          if (s.do === "given") {
+            // A param's value from here on; a list param given one value is a list of one.
+            const v = literalJson(s.value);
+            config = { ...config, [s.name]: Array.isArray(config[s.name]) && !Array.isArray(v) ? (s.value.k === "emptyList" ? [] : [v]) : v };
+            layer = mod.start(config);
+          } else if (s.do === "request") responses.set("request", layer.send(requestOf(s)));
           else if (s.do === "see") {
             const msg = checkSeeApi(responses, rawTarget(s));
             if (msg) {

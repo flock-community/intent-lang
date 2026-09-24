@@ -80,7 +80,7 @@ const layerBuilds = new Map<string, Promise<TwinResult>>();
 async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<string, string> } | { problem: string; costUsd: number }> {
   const layers: Record<string, string> = {};
   let costUsd = 0;
-  for (const l of app.layers ?? []) {
+  for (const l of [...(app.layers ?? []), ...(app.clients ?? []).flatMap((c) => (c.through?.spec ? [c.through] : []))]) {
     const dir = join(PROJECT_ROOT, ".intent/layers", `${l.layer}-${l.digest}`);
     if (!layerBuilds.has(dir)) {
       o.log(`building the layer ${l.layer} first`);
@@ -96,7 +96,7 @@ async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<
 
 export async function compileApp(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions): Promise<TwinResult> {
   let layerDirs: Record<string, string> | undefined;
-  if (app.layers?.length) {
+  if (app.layers?.length || app.clients?.some((c) => c.through)) {
     const r = await ensureLayers(app, o);
     if ("problem" in r) {
       o.log(r.problem);

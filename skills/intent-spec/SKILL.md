@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v22** (see the changelog at the end of
+Language version this skill matches: **v23** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -200,6 +200,13 @@ spec are test keys. Examples then send `header x-api-key = "…"`, and cover: no
 key, a public path, each role doing what it may and what it may not, and a preflight from the
 allowed origin. If a concern repeats across APIs and no layer covers it, write a new layer
 (with its own examples against the stub app) instead of copying steps.
+
+A screen that calls such an API sends the user's key through a client layer: under its `uses`,
+`through std.http.sendKey` with `key = <the state that holds the key>`. Signing in is then just
+a field and a button that sets that state. The contract says `every endpoint answers 401
+Problem`, so the screen can show the refusal's message. Examples: a wrong key, the right key,
+and "before signing in, nothing arrives" (events from another client do not reach a screen
+that is not signed in).
 
 ## 5f. A screen that uses an API
 

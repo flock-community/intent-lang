@@ -82,11 +82,12 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    specs in `lib/std/http/`).
 7. **Lessons from a real app** (`docs/reviews/openouros.md`, three openouros slices written as
    specs in `runs/openouros/`), kept general: every construct must serve many apps, not one. In
-   order: ~~v22 events and subscriptions~~ done (wire names for choice values still open), v23 time and a steerable clock in api apps, v24 effects on actions
+   order: ~~v22 events and subscriptions~~ done, ~~v23 client layers (keys from screens)~~
+   done, v24 time and a steerable clock in api apps, v25 effects on actions
    (approval, permissions, outbox, compensation) with a `std.actions` layer, then stored state
    with identity and references, then unions of records and several targets per app. Also
-   open: headers in contracts, screens that call an API behind a key, styled builds of screens
-   that make calls, and Kotlin as a second API target.
+   open: styled builds of screens that make calls, and Kotlin as a second API target. Wire
+   names for choice values wait until a spec must match an existing API.
 
 ## Lessons from the experiments (keep applying them)
 

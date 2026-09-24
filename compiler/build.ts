@@ -12,7 +12,7 @@ import { apiTraces, callText, scaffoldApi, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
-import { callDescs, hasClients } from "./calls.ts";
+import { callDescs, hasClients, hasThrough } from "./calls.ts";
 import { readLayerConfig, scaffoldLayer } from "./layer.ts";
 
 export interface BuildResult {
@@ -56,12 +56,12 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: "styled builds of apps that make calls are not in the harness yet" });
     return res;
   }
-  const { appFile, specSource } = layer ? scaffoldLayer(app, dir) : api ? scaffoldApi(app, dir, opts.layers) : scaffold(app, target, dir);
+  const { appFile, specSource } = layer ? scaffoldLayer(app, dir) : api ? scaffoldApi(app, dir, opts.layers) : scaffold(app, target, dir, opts.layers);
   if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
   if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app));
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app));
 
   let code = "";
   let problems = "";

@@ -19,6 +19,11 @@ export async function compile(target: Target, dir: string): Promise<string> {
     copyFileSync(join(dir, "worker.js"), join(dir, "worker.cjs"));
     const m = await run(bin("elm"), ["make", "src/Main.elm", "--optimize", "--output=main.js"], dir);
     if (!m.ok) return clean(m.out);
+    if (existsSync(join(dir, "through.ts"))) {
+      // The client layers, for the test driver.
+      const t = await run(bin("esbuild"), ["through.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=through.mjs", "--log-level=error"], dir);
+      if (!t.ok) return clean(t.out);
+    }
     if (existsSync(join(dir, "glue.ts"))) {
       // Apps that make calls: the fetch glue for the browser.
       const g = await run(bin("esbuild"), ["glue.ts", "--bundle", "--format=iife", "--outfile=glue.js", "--log-level=error"], dir);
@@ -31,7 +36,13 @@ export async function compile(target: Target, dir: string): Promise<string> {
   const b1 = await run(bin("esbuild"), ["main.ts", "--bundle", "--format=iife", "--outfile=main.js", "--log-level=error"], dir);
   if (!b1.ok) return clean(b1.out);
   const b2 = await run(bin("esbuild"), ["test-entry.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=test.mjs", "--log-level=error"], dir);
-  return b2.ok ? "" : clean(b2.out);
+  if (!b2.ok) return clean(b2.out);
+  if (existsSync(join(dir, "through.ts"))) {
+    // The client layers, for the test driver.
+    const t = await run(bin("esbuild"), ["through.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=through.mjs", "--log-level=error"], dir);
+    if (!t.ok) return clean(t.out);
+  }
+  return "";
 }
 
 // Drop progress noise, keep the messages.

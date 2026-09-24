@@ -3,7 +3,7 @@ import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
-import type { App, Binding, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import type { App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
@@ -100,12 +100,18 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^uses\\s+(${BUNDLE_NAME})\\s+as\\s+(${LOWER})$`)))) {
       // A client of a contract; `tested with "<provider spec>"` names the implementation examples run against.
       let testedWith: string | undefined;
+      let through: LayerUse | undefined;
       for (const c of node.children) {
         const tm = c.text.match(new RegExp(`^tested\\s+with\\s+(${STR})$`));
+        const lm = c.text.match(new RegExp(`^through\\s+(${LOWER}(?:\\.${LOWER})+)$`));
         if (tm) testedWith = parseString(tm[1]);
-        else err(c.line, "SYNTAX", 'under `uses`: `tested with "path/to/provider.intent"`', c.indent + 1);
+        else if (lm) {
+          // A client's layer: every call (and the event stream) goes through it; params bind to state or literals.
+          if (through) err(c.line, "DUPLICATE", "one `through` per `uses`");
+          through = { alias: m[2], layer: lm[1], bindings: c.children.map((b) => parseBinding(b, err, true)).filter((b): b is Binding => !!b), line: c.line };
+        } else err(c.line, "SYNTAX", 'under `uses`: `tested with "path/to/provider.intent"` or `through <client layer>`', c.indent + 1);
       }
-      (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, line: node.line });
+      (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, through, line: node.line });
     } else if ((m = t.match(new RegExp(`^use\\s+(${LOWER})\\s*=\\s*(${LOWER}(?:\\.${LOWER})+)$`)))) {
       // An api app runs behind a layer: \`use cors = std.http.cors\`, params bound in indented lines.
       (app.layers ??= []).push({ alias: m[1], layer: m[2], bindings: node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b), line: node.line });
@@ -124,6 +130,9 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if (app.kind === "layer" && /^after\s+every\s+answer$/.test(t)) {
       if (app.after) err(node.line, "DUPLICATE", "one `after every answer` per layer");
       app.after = { steps: parseBullets(node, err), line: node.line };
+    } else if (app.kind === "layer" && /^before\s+every\s+call$/.test(t)) {
+      if (app.beforeCall) err(node.line, "DUPLICATE", "one `before every call` per layer");
+      app.beforeCall = { steps: parseBullets(node, err), line: node.line };
     } else if (app.kind === "layer" && /^examples\s+with$/.test(t)) {
       app.exampleConfig = node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b);
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
@@ -152,6 +161,13 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       const type = parseType(m[2]);
       if (!type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
       else (app.events ??= []).push({ name: m[1], type, line: node.line, note: node.note });
+    } else if ((m = t.match(/^every\s+endpoint\s+answers\s+([1-5]\d\d)(?:\s+(.+))?$/))) {
+      // What any endpoint may answer (a layer's 401, a 429): \`every endpoint answers 401 Problem\`.
+      const type = m[2] ? parseType(m[2]) : undefined;
+      if (m[2] && !type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
+      else (app.everyAnswer ??= []).push({ status: Number(m[1]), type, line: node.line });
+    } else if (t.startsWith("every ")) {
+      err(node.line, "SYNTAX", "expected `every endpoint answers 401 Problem`");
     } else if (t.startsWith("event ")) {
       err(node.line, "SYNTAX", "expected `event name: Type` (the payload), for example `event ticketCreated: Ticket`");
     } else if (t.startsWith("endpoint")) {
@@ -172,6 +188,8 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   });
 
   if (!app.name) err(1, "SYNTAX", "a spec starts with `app Name` (or a library with `bundle name`)");
+  for (const a of app.everyAnswer ?? [])
+    for (const ep of app.endpoints ?? []) if (ep.answers?.length && !ep.answers.some((x) => x.status === a.status)) ep.answers.push({ ...a });
   if (app.kind === "bundle") {
     const behaviour = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.always.length || app.examples.length || app.rules.length;
     if (behaviour) err(1, "SYNTAX", "a bundle holds records, choices, components and a design; state, screens and behaviour go inside a component, examples in the bundle's demo app");
@@ -180,7 +198,9 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     // A layer wraps every request of an api: no state, no endpoints, no screen.
     const other = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.components.length || app.endpoints?.length || app.layers?.length;
     if (other) err(1, "SYNTAX", "a layer holds records, choices, `param`, `provides`, `before every request`, `after every answer`, `examples with` and examples");
-    if (!app.before && !app.after) err(1, "SYNTAX", "a layer needs `before every request` or `after every answer` (or both)");
+    if (!app.before && !app.after && !app.beforeCall) err(1, "SYNTAX", "a layer needs `before every request` or `after every answer` (a service's layer), or `before every call` (a client's layer)");
+    if (app.beforeCall && (app.before || app.after)) err(app.beforeCall.line, "SYNTAX", "a layer wraps either a service (`before every request`, `after every answer`) or a client (`before every call`), not both");
+    if (app.beforeCall && app.provides?.length) err(1, "SYNTAX", "a client's layer provides nothing; it changes the calls that go out");
   }
   if (app.kind === "contract") {
     // A contract says what goes over the wire, never how: types, endpoint signatures, answers, examples.
@@ -579,7 +599,7 @@ function parseTable(c: Line, err: (l: number, c: string, m: string, col?: number
 }
 
 /** A param binding: \`origins = "https://a.example", "https://b.example"\`, \`size = 5\`, or \`keys = table\` with rows. */
-function parseBinding(c: Line, err: (l: number, c: string, m: string, col?: number) => void): Binding | undefined {
+function parseBinding(c: Line, err: (l: number, c: string, m: string, col?: number) => void, stateAllowed = false): Binding | undefined {
   const m = c.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
   if (!m) {
     err(c.line, "SYNTAX", "a binding looks like `name = value` (a literal, literals separated by commas, or `table`)", c.indent + 1);
@@ -590,6 +610,7 @@ function parseBinding(c: Line, err: (l: number, c: string, m: string, col?: numb
     return t && { name: m[1], value: t, line: c.line };
   }
   if (c.children.length) err(c.children[0].line, "INDENT", "a binding has no indented lines (except a `table`)");
+  if (stateAllowed && new RegExp(`^${LOWER}$`).test(m[2].trim()) && !["true", "false", "nothing"].includes(m[2].trim())) return { name: m[1], value: { k: "nothing" }, state: m[2].trim(), line: c.line };
   const parts = splitArgs(m[2]).map((p) => parseLiteral(p));
   if (parts.some((p) => !p) || !parts.length) {
     err(c.line, "SYNTAX", `\`${m[2]}\` is not a literal or a list of literals`, c.indent + 1);
@@ -785,7 +806,14 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     }
     return { step: { do: "call", endpoint: m[1], args, ...(headers.length ? { headers } : {}), line } };
   }
-  // A raw request: \`request OPTIONS "/tickets" with header origin = "https://a.example", query status = Open\`.
+  // In a layer's example: `given key = ""` changes a param from here on.
+  if ((m = t.match(new RegExp(`^given\\s+(${LOWER})\\s*=\\s*(.+)$`)))) {
+    const v = parseLiteral(m[2]);
+    if (!v) err(line, "SYNTAX", `\`${m[2]}\` is not a literal`, col);
+    else return { step: { do: "given", name: m[1], value: v, line } };
+    return;
+  }
+  // A raw request: `request OPTIONS "/tickets" with header origin = "https://a.example", query status = Open`.
   if ((m = t.match(new RegExp(`^request\\s+(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\\s+(${STR})(?:\\s+with\\s+(.+))?$`)))) {
     const args: { in: "header" | "query" | "body"; name: string; value: Literal }[] = [];
     for (const part of m[3] ? splitArgs(m[3]) : []) {
@@ -1123,6 +1151,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
         continue;
       }
+      if (s.do === "given") {
+        err(s.line, "STEP", "`given` belongs to a layer's examples");
+        continue;
+      }
       if (s.do === "call" || s.do === "request") {
         err(s.line, "STEP", `\`${s.do}\` belongs to the api profile (add \`profile api\`); a screen is driven with click, type, toggle and choose`);
         continue;
@@ -1236,6 +1268,10 @@ function checkLayer(app: App, err: Err, warn: Err, checkType: (t: Type, line: nu
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }])
     for (const s of ex.steps) {
       if (s.do === "request") continue;
+      if (s.do === "given") {
+        if (!params.has(s.name)) err(s.line, "UNKNOWN_NAME", `the layer has no param \`${s.name}\`${suggest(s.name, [...params.keys()])}`);
+        continue;
+      }
       if (s.do === "see" && RAW_TARGET.test(s.target)) continue;
       if (s.do === "see") err(s.line, "UNKNOWN_NAME", `a layer's example sees the answer: \`see status = 200\`, \`see header vary = "origin"\`, \`see body.reached = true\``);
       else err(s.line, "STEP", `a layer's example sends \`request METHOD "/path" with header name = "…"\` and checks with \`see\`, not \`${s.do}\``);

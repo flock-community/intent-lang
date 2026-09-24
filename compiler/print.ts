@@ -35,6 +35,7 @@ export function stepText(s: Step): string {
       const args = [...(s.headers ?? []).map((h) => `header ${h.name} = ${lit(h.value, "")}`), ...s.args.map((a) => `${a.name} = ${lit(a.value, "")}`)];
       return `call ${s.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
     }
+    case "given": return `given ${s.name} = ${lit(s.value, "")}`;
     case "request": return `request ${s.method} ${q(s.path)}${s.args.length ? ` with ${s.args.map((a) => `${a.in} ${a.name} = ${lit(a.value, "")}`).join(", ")}` : ""}`;
     case "see": {
       const c = s.check;
@@ -101,6 +102,13 @@ export function printApp(app: App): string {
     block([
       `uses ${c.contract.name} as ${c.alias}`,
       ...(c.testedWith ? [`  tested with ${q(c.testedWith)}${c.providerDigest ? `  # provider ${c.providerDigest}` : ""}`] : []),
+      ...(c.through
+        ? [
+            `  through ${c.through.layer}${c.through.digest ? `  # layer ${c.through.digest}` : ""}`,
+            ...(c.through.spec?.purpose ?? []).map((p) => `    # ${p}`),
+            ...c.through.bindings.flatMap((b) => (b.state ? [`    ${b.name} = ${b.state}  # from state`] : binding(b, "    "))),
+          ]
+        : []),
       ...(c.contract.endpoints ?? []).flatMap((ep) => [
         `  endpoint ${ep.name} ${ep.method} ${q(ep.path)}${ep.note ? `  # ${ep.note}` : ""}`,
         ...ep.params.map((p) => `    ${p.in} ${p.name}: ${typeToString(p.type)}`),
@@ -122,12 +130,14 @@ export function printApp(app: App): string {
     block((app.provides ?? []).map((f) => `provides ${f.name}: ${typeToString(f.type)}${origin(app, f.line, f.note)}`));
     if (app.before) block(["before every request", ...app.before.steps.map((st) => `  - ${st}`)]);
     if (app.after) block(["after every answer", ...app.after.steps.map((st) => `  - ${st}`)]);
+    if (app.beforeCall) block(["before every call", ...app.beforeCall.steps.map((st) => `  - ${st}`)]);
     if (app.exampleConfig?.length) block(["examples with", ...app.exampleConfig.flatMap((b) => binding(b, "  "))]);
   }
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
   block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
   if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
+  block((app.everyAnswer ?? []).map((a) => `every endpoint answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`));
   block((app.events ?? []).map((e) => `event ${e.name}: ${typeToString(e.type)}${origin(app, e.line, e.note)}`));
   for (const ep of app.endpoints ?? [])
     block([

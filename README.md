@@ -360,6 +360,15 @@ events. It built on the first attempt in Elm and TypeScript, twin-verified, and 
 sessions (with 286 calls by another client) were identical across the two targets. In
 Chromium, a second page showed a ticket added in the first.
 
+**Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
+under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
+to the event stream. The layer is a verified spec of its own, run by the runtime for both
+targets. `apps/16-desk-ui.intent` signs in to the desk API, shows the agent's tickets, and
+follows changes made in another tab. Before signing in, the provider's key layer refuses the
+screen's event stream, in tests as in the browser. The contract declares
+`every endpoint answers 401 Problem`, so a wrong key shows the service's message. Each api
+has its own address in the browser (`?api.desk=…`), because hosting is deployment, not intent.
+
 **Layers** (v21) are the parts of an HTTP service nobody wants to think through again:
 `std.http.secure` (safe headers), `std.http.cors` (which web pages may call) and
 `std.http.apiKey` (who calls; provides `caller` to every endpoint). Each is a spec of its own

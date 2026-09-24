@@ -4,7 +4,7 @@
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { toHttp, type CallDesc, type CallOut } from "../runtime/ts/calls.ts";
+import { outgoing, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
 import { literalJson } from "./api.ts";
 import { varyOther } from "./fuzz.ts";
 import { createRequire } from "node:module";
@@ -72,6 +72,7 @@ interface Session {
   observe(): Promise<Obs>;
   send(w: object): Promise<void>;
   calls?(): Promise<CallOut[]>;
+  through?(): Promise<Record<string, Record<string, unknown>>>;
 }
 
 /**
@@ -84,22 +85,36 @@ async function openSession(dir: string, target: string): Promise<Session> {
   const raw = await openRawSession(dir, target);
   if (!existsSync(join(dir, "providers.json"))) return raw;
   const { endpoints, providers } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string> };
-  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown) => any }> = {};
+  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number }> = {};
+  // The client layers (\`through\` under \`uses\`), as the build composed them: calls and event streams go through them.
+  const layers: { apply: (alias: string, req: Outgoing, config: Record<string, unknown> | undefined) => Outgoing } | undefined = existsSync(join(dir, "through.mjs")) ? await import(pathToFileURL(join(dir, "through.mjs")).href + `?t=${Date.now()}`) : undefined;
   for (const [alias, pdir] of Object.entries(providers)) clients[alias] = (await import(pathToFileURL(join(pdir, "test.mjs")).href + `?t=${Date.now()}`)).start();
   const log: string[] = [];
-  const send = (c: CallOut) => {
+  // A call from this screen goes through its api's client layer; another client's call (\`mine = false\`) does not.
+  const send = (c: CallOut, mine = true) => {
     const alias = c.endpoint.split(".")[0];
     const client = clients[alias];
     if (!client) throw new Error(`a call to ${c.endpoint}, but no provider for \`${alias}\` (add \`tested with "…"\` to its \`uses\`)`);
-    const h = toHttp(endpoints, c);
-    const res = client.send(h.method, h.path, h.query, h.body);
+    const h = outgoing(endpoints, c, mine && layers ? (a, req) => layers.apply(a, req, c.config) : undefined);
+    const res = client.send(h.method, h.path, h.query, h.body, h.headers);
     if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
     return { alias, res };
   };
   // The events a call published go to the screen right after its answer, in the order published.
   const deliverEvents = async (alias: string, events: { event: string; body: unknown }[] | undefined) => {
     const made: CallOut[] = [];
-    for (const ev of events ?? []) {
+    if (!events?.length) return made;
+    // Only a stream the provider's layers let through gets events (a screen that is not signed in gets none).
+    if (clients[alias].stream) {
+      const config = (await raw.through?.())?.[alias];
+      const req = layers ? layers.apply(alias, { method: "GET", path: "/events", query: {}, headers: {}, body: undefined }, config) : { headers: {}, query: {} };
+      const status = clients[alias].stream!(req.headers, req.query);
+      if (status !== 200) {
+        log.push(`(event stream refused: ${status})`);
+        return made;
+      }
+    }
+    for (const ev of events) {
       log.push(`event ${alias}.${ev.event}`);
       await raw.send({ on: "event", target: `${alias}.${ev.event}`, event: { event: `${alias}.${ev.event}`, body: ev.body } });
       made.push(...(await raw.calls!()));
@@ -129,7 +144,7 @@ async function openSession(dir: string, target: string): Promise<Session> {
     send: async (w) => {
       const other = (w as { on?: string; call?: CallOut }).on === "other" ? (w as { call: CallOut }).call : undefined;
       if (other) {
-        const { alias, res } = send(other);
+        const { alias, res } = send(other, false);
         log.push(`(another client) ${other.endpoint} ${stable(other.args)} → ${res.status}`);
         return settle(await deliverEvents(alias, res.events));
       }
@@ -147,18 +162,20 @@ async function openRawSession(dir: string, target: string): Promise<Session> {
   if (target === "ts") {
     const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
     const s = mod.start();
-    return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []) };
+    return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []), through: async () => (s.through ? s.through() : {}) };
   }
   const require = createRequire(import.meta.url);
   const { Elm } = require(join(dir, "worker.cjs"));
   const app = Elm.Worker.init();
   let last: Obs | undefined;
   let made: CallOut[] = [];
+  let through: Record<string, Record<string, unknown>> = {};
   let waiting: ((v: Obs) => void) | undefined;
   app.ports.observe.subscribe((v: Obs) => {
     // Apps that make calls observe { screen, calls }.
     if (v && v.screen) {
       made.push(...v.calls);
+      if (v.through) through = v.through;
       v = v.screen;
     }
     last = v;
@@ -189,6 +206,7 @@ async function openRawSession(dir: string, target: string): Promise<Session> {
       made = [];
       return out;
     },
+    through: async () => through,
   };
 }
 
@@ -297,7 +315,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "choose": return { on: "choose", target: s.target, value: s.value };
     case "tick": return { on: "tick", target: "", times: s.times };
-    case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])) } } : undefined;
+    case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}) } } : undefined;
     default: return undefined;
   }
 }

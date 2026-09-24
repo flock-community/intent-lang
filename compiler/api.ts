@@ -191,6 +191,10 @@ import { pipeline } from "./pipeline.ts";
 export function start() {
   const handle = pipeline();
   return {
+    /** Would an event stream with these headers open (GET /events through the layers)? Its status. */
+    stream(headers: Record<string, string> = {}, query: Record<string, string> = {}) {
+      return handle({ method: "GET", path: "/events", query, headers, body: undefined, stream: true } as any).status;
+    },
     send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}) {
       const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) });
       const response = { status: out.status, body: out.body, headers: out.headers, events: out.events };

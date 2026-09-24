@@ -1,4 +1,4 @@
-# Intent — language reference (v22)
+# Intent — language reference (v23)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -511,6 +511,9 @@ on answer tickets.createTicket
   network is down, or the body has the wrong shape) is not any declared status: `otherwise`
   covers it.
 - `on start` runs once when the app starts.
+- Where a service is hosted is not in the spec: in the browser, calls to `<alias>` go to the
+  `api.<alias>` query parameter, else `api`, else the page's own origin
+  (`index.html?api.desk=https://desk.example/api`).
 - `on event <alias>.<event>` handles an event of the contract, whoever caused it: this screen,
   or another client. "its body" is the payload. Events the screen does not handle are ignored.
   In the browser, the screen listens to the service's `/events` stream.
@@ -587,7 +590,32 @@ Type`, `before every request` (steps that may answer and stop, or pass the reque
 runs for every answer, including the harness's 404 and 400). Examples send raw requests and
 check the answer with `see status = 204`, `see header vary = "origin"`, `see body.error = "…"`.
 They run the layer around a stub app that answers `200 { "reached": true, … }` with what the
-layer provided (`see body.caller = "Sam"`). `examples with` binds the params the examples use.
+layer provided (`see body.caller = "Sam"`). `examples with` binds the params the examples use;
+`given key = ""` changes one from that step on.
+
+**A client's layer** wraps the calls a screen makes instead of a service: it has only
+`before every call`, which changes each call as it leaves (usually: adds a header). It also
+runs for the screen's event stream. `std.http.sendKey` sends the user's key in `x-api-key`,
+the client side of `std.http.apiKey`. Its examples send `request …` and see the call as it
+leaves: `see header x-api-key = "…"`, `see body.path = "/tickets/mine"`.
+
+```
+uses support.deskApi as desk
+  tested with "apps/api/desk-api.intent"
+  through std.http.sendKey
+    key = apiKey                    # bound to the screen's state: the key the user typed
+```
+
+A client layer's params bind to the screen's **state** (a name) or to literals. The harness
+gives each call the values of the state after the step that made the call, and reopens the
+event stream when they change, so signing in is just setting `apiKey`. In tests, events reach
+the screen only if its event stream would pass the provider's layers: a screen that is not
+signed in gets none, as in the browser.
+
+**What every endpoint may answer.** A service behind layers answers things its endpoints do not
+(a 401 from `std.http.apiKey`). The contract says so once, and every endpoint's answers include
+it, so a screen gets the Problem's message instead of a failed call:
+`every endpoint answers 401 Problem`.
 
 ## 5. Events
 
@@ -789,6 +817,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v23: a client's layers: `before every call` in a layer, `through <layer>` under `uses` with
+  params bound to state or literals (`std.http.sendKey`); `given` in a layer's examples;
+  `every endpoint answers 401 Problem` in contracts; a base URL per api in the browser
+  (`api.<alias>`); event streams in tests only reach a screen the provider's layers let through.
 
 - v22: events: `event name: Type` in contracts and apis, `publish x with …` in endpoint steps,
   `see x.body…` / `see x is absent` on what a call published, `on event <alias>.<event>` in

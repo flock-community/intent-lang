@@ -8,7 +8,7 @@ export interface CallDesc {
   params: { in: string; name: string }[];
 }
 
-export type CallOut = { endpoint: string; args: Record<string, unknown> };
+export type CallOut = { endpoint: string; args: Record<string, unknown>; headers?: Record<string, string>; config?: Record<string, unknown> };
 export type Answer = { endpoint: string; status: number; body?: unknown; error?: string };
 
 /** A call as HTTP: method, path (with path params filled in), query and JSON body. */
@@ -31,35 +31,86 @@ export function toHttp(eps: { name: string; method: string; path: string; params
   return { method: ep.method, path, query, body: hasBody || ep.params.some((p) => p.in === "body") ? body : undefined };
 }
 
-/** The API's base URL in the browser: the `api` query parameter, or the page's own origin. */
-export function apiBase(): string {
-  const fromQuery = typeof location !== "undefined" ? new URLSearchParams(location.search).get("api") : null;
-  return (fromQuery ?? "").replace(/\/$/, "");
+/** A call as it leaves: method, path, query, headers and body (what a client layer may change). */
+export type Outgoing = { method: string; path: string; query: Record<string, string>; headers: Record<string, string>; body: unknown };
+
+/** Client layers per alias (\`uses … through std.http.sendKey\`): the call, and the layer's config from the app's state. */
+export type Via = (alias: string, req: Outgoing) => Outgoing;
+
+export function outgoing(eps: CallDesc[], c: CallOut, via?: Via): Outgoing {
+  const h = toHttp(eps, c);
+  const req: Outgoing = { method: h.method, path: h.path, query: h.query, headers: { ...(c.headers ?? {}) }, body: h.body };
+  return via ? via(c.endpoint.split(".")[0], req) : req;
 }
 
 /**
- * Listen to the api's events (Server-Sent Events at /events): each \`{ event, body }\` goes to
- * \`deliver\` once per alias whose contract declares it, as \`<alias>.<event>\`.
+ * Where an api lives, in the browser: the \`api.<alias>\` query parameter, else \`api\`, else the
+ * page's own origin. Where a service is hosted is deployment, not intent: it is never in the spec.
  */
-export function listen(aliases: Record<string, string[]>, deliver: (e: { event: string; body: unknown }) => void): void {
-  if (!Object.keys(aliases).length || typeof EventSource === "undefined") return;
-  const source = new EventSource(apiBase() + "/events");
-  source.onmessage = (m) => {
+export function apiBase(alias = ""): string {
+  const q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+  return (q.get(`api.${alias}`) ?? q.get("api") ?? "").replace(/\/$/, "");
+}
+
+/**
+ * Listen to each api's events (Server-Sent Events at <base>/events), for the events this app
+ * handles. The stream is read with fetch, so client layers can add headers (a key); \`refresh\`
+ * reopens a stream when what the layers would send has changed (the user signed in).
+ */
+export function listen(events: Record<string, string[]>, deliver: (e: { event: string; body: unknown }) => void, via?: Via): { refresh: () => void } {
+  const open = new Map<string, { key: string; stop: AbortController }>();
+  const connect = (alias: string) => {
+    let req: Outgoing;
     try {
-      const d = JSON.parse(m.data) as { event: string; body: unknown };
-      for (const alias of aliases[d.event] ?? []) deliver({ event: `${alias}.${d.event}`, body: d.body });
+      req = via ? via(alias, { method: "GET", path: "/events", query: {}, headers: {}, body: undefined }) : { method: "GET", path: "/events", query: {}, headers: {}, body: undefined };
     } catch {
-      // not an event: ignore
+      return; // the client layer has no config yet (the app has not told it its state): open the stream later
     }
+    const key = JSON.stringify(req);
+    if (open.get(alias)?.key === key) return;
+    open.get(alias)?.stop.abort();
+    const stop = new AbortController();
+    open.set(alias, { key, stop });
+    const qs = new URLSearchParams(req.query).toString();
+    fetch(apiBase(alias) + req.path + (qs ? "?" + qs : ""), { headers: { ...req.headers, accept: "text/event-stream" }, signal: stop.signal })
+      .then(async (res) => {
+        if (!res.ok || !res.body) return;
+        const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          buf += value;
+          let cut: number;
+          while ((cut = buf.indexOf("\n\n")) >= 0) {
+            const chunk = buf.slice(0, cut);
+            buf = buf.slice(cut + 2);
+            const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("\n");
+            if (!data) continue;
+            try {
+              const d = JSON.parse(data) as { event: string; body: unknown };
+              if (events[alias].includes(d.event)) deliver({ event: `${alias}.${d.event}`, body: d.body });
+            } catch {
+              // not an event: ignore
+            }
+          }
+        }
+      })
+      .catch(() => {});
   };
+  const refresh = () => {
+    for (const alias of Object.keys(events)) if (events[alias].length) connect(alias);
+  };
+  refresh();
+  return { refresh };
 }
 
 /** Perform a call over HTTP. Never throws: a network failure is an answer with status 0 and an error. */
-export async function fetchCall(eps: CallDesc[], c: CallOut): Promise<Answer> {
+export async function fetchCall(eps: CallDesc[], c: CallOut, via?: Via): Promise<Answer> {
   try {
-    const h = toHttp(eps, c);
+    const h = outgoing(eps, c, via);
     const qs = new URLSearchParams(h.query).toString();
-    const res = await fetch(apiBase() + h.path + (qs ? "?" + qs : ""), { method: h.method, headers: { "content-type": "application/json" }, body: h.body && JSON.stringify(h.body) });
+    const res = await fetch(apiBase(c.endpoint.split(".")[0]) + h.path + (qs ? "?" + qs : ""), { method: h.method, headers: { "content-type": "application/json", ...h.headers }, body: h.body === undefined ? undefined : JSON.stringify(h.body) });
     const text = await res.text();
     return { endpoint: c.endpoint, status: res.status, body: text ? JSON.parse(text) : null };
   } catch (e) {

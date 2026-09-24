@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { LINE_BASE, type App, type Component, type Diagnostic, type Design } from "./ast.ts";
 import { expandUses } from "./expand.ts";
 import { PROJECT_ROOT, ROOT } from "./gen.ts";
-import { checkApp, parseSyntax } from "./parse.ts";
+import { checkApp, parseSyntax, typeToString } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
 import { MODEL } from "./llm.ts";
 import { printApp } from "./print.ts";
@@ -229,7 +229,36 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     for (const r of parsed.app.refined ?? []) (app.refined ??= []).push(r);
     app.records.push(...parsed.app.records.filter((r) => !app.records.some((x) => x.name === r.name)));
     app.choices.push(...parsed.app.choices.filter((c) => !app.choices.some((x) => x.name === c.name)));
-    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest });
+    // A client's layer (`through std.http.sendKey`): checked and locked like a service's layer; its params bind to state or literals.
+    if (u.through) {
+      const l = u.through;
+      const lpath = bundlePath(l.layer);
+      const loaded = existsSync(lpath) ? load(lpath, opts) : undefined;
+      if (!loaded) err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${relative(PROJECT_ROOT, lpath)})`);
+      else if (!loaded.app) err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${relative(PROJECT_ROOT, lpath)}\``);
+      else if (!loaded.app.beforeCall) err(l.line, "BAD_BINDING", `${l.layer} is not a client's layer (it has no \`before every call\`)`);
+      else {
+        const text = readFileSync(lpath, "utf8");
+        bundles.push({ name: l.layer, file: relative(PROJECT_ROOT, lpath), sha: sha(text) });
+        if (!opts.ignoreLock) {
+          const locked = lock.get(l.layer);
+          if (!locked) err(l.line, "LOCK", `the layer \`${l.layer}\` is not locked; run \`intent lock ${sources[0].file}\``);
+          else if (locked !== sha(text)) err(l.line, "LOCK", `the layer \`${l.layer}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
+        }
+        l.spec = loaded.app;
+        l.digest = sha(printApp(loaded.app)).slice(0, 12);
+        const params = new Map((loaded.app.params ?? []).map((p) => [p.name, p]));
+        for (const b of l.bindings) {
+          const p = params.get(b.name);
+          const st = b.state ? app.state.find((f) => f.name === b.state) : undefined;
+          if (!p) err(b.line, "UNKNOWN_NAME", `layer ${l.layer} has no param \`${b.name}\` (${[...params.keys()].join(", ") || "none"})`);
+          else if (b.state && !st) err(b.line, "UNKNOWN_NAME", `no state \`${b.state}\` to bind \`${b.name}\` to`);
+          else if (st && JSON.stringify(st.type) !== JSON.stringify(p.type)) err(b.line, "BAD_BINDING", `\`${b.name}\` is ${typeToString(p.type)}, but state \`${b.state}\` is ${typeToString(st.type)}`);
+        }
+        for (const p of params.values()) if (p.default === undefined && !l.bindings.some((b) => b.name === p.name)) err(l.line, "BAD_BINDING", `layer ${l.layer} needs \`${p.name}\`: bind it in an indented line (\`${p.name} = <state or literal>\`)`);
+      }
+    }
+    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through });
   }
 
   // Load bundles depth-first; every bundle once.

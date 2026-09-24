@@ -32,7 +32,7 @@ export function otherCalls(app: App): Action[] {
 /** The same call with its whole-number arguments sometimes changed (1–10): the same kind of change, to something else. */
 export function varyOther(a: Action, rnd: () => number): Action {
   const args = Object.fromEntries(Object.entries(a.call!.args).map(([k, v]) => [k, typeof v === "number" && Number.isInteger(v) && rnd() < 0.5 ? 1 + Math.floor(rnd() * 10) : v]));
-  return { ...a, call: { endpoint: a.call!.endpoint, args } };
+  return { ...a, call: { ...a.call!, args } };
 }
 
 export function actionTemplates(app: App): { weight: number; make: (rnd: () => number) => Action }[] {

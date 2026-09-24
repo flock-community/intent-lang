@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
-import { callDescs, elmAnswerMsgs, eventAliases, genElmCalls, genTsCalls, hasClients, tsAnswerMsgs } from "./calls.ts";
+import { callDescs, elmAnswerMsgs, eventsByAlias, genElmCalls, genTsCalls, hasClients, hasThrough, throughs, tsAnswerMsgs } from "./calls.ts";
 
 export type Target = "elm" | "ts";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), ".."); // the Intent installation
@@ -256,6 +256,7 @@ main =
 
 /** Apps that make calls: ports carry calls out (`request`) and answers in (`answer`); glue.js performs them with fetch. */
 function genElmMainCalls(app: App): string {
+  const th = hasThrough(app);
   return `port module Main exposing (main)
 
 import App
@@ -274,7 +275,7 @@ port answer : (D.Value -> msg) -> Sub msg
 
 
 port events : (D.Value -> msg) -> Sub msg
-
+${th ? "\n\nport through : J.Value -> Cmd msg\n" : ""}
 
 type In
     = FromUi Ui.Wire
@@ -282,15 +283,18 @@ type In
     | FromEvent D.Value
 
 
-send : List Spec.Call -> Cmd In
-send calls =
-    Cmd.batch (List.map (\\c -> request (Spec.callToJson c)) calls)
+${th ? `{-| The calls, each with the config its api's client layer gets from this state; and that config, for the event streams. -}
+send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
+send ( m, calls ) =
+    ( m, Cmd.batch (through (Spec.encodeThrough (App.through m)) :: List.map (\\c -> request (Spec.callOut (App.through m) c)) calls) )` : `send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
+send ( m, calls ) =
+    ( m, Cmd.batch (List.map (\\c -> request (Spec.callToJson c)) calls) )`}
 
 
 main : Program () App.Model In
 main =
     Browser.element
-        { init = \\_ -> Tuple.mapSecond send App.init
+        { init = \\_ -> send App.init
         , update =
             \\i m ->
                 let
@@ -307,7 +311,7 @@ main =
                 in
                 case msg of
                     Just e ->
-                        Tuple.mapSecond send (App.update e m)
+                        send (App.update e m)
 
                     Nothing ->
                         ( m, Cmd.none )
@@ -318,7 +322,7 @@ main =
 }
 
 /** The test worker of an app that makes calls: each observation also carries the calls made since the last one. */
-const ELM_WORKER_CALLS = `port module Worker exposing (main)
+const elmWorkerCalls = (app: App) => `port module Worker exposing (main)
 
 import App
 import Json.Decode as D
@@ -371,7 +375,7 @@ main =
                                 ( m.app, [] )
                 in
                 ( { app = next, pending = [] }
-                , observe (J.object [ ( "screen", Ui.encode (Spec.toNode (App.view next)) ), ( "calls", J.list Spec.callToJson (m.pending ++ calls) ) ])
+                , observe (J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}( "screen", Ui.encode (Spec.toNode (App.view next)) ), ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) ) ])
                 )
         , subscriptions = \\_ -> act identity
         }
@@ -440,6 +444,14 @@ update msg model =
 
 view : Model -> Screen
 view model =
+    { ... }
+`;
+
+export const ELM_APP_SKELETON_THROUGH = `
+
+{-| What the client layers need from the state (the params bound under \`through\`). -}
+through : Model -> Through
+through model =
     { ... }
 `;
 
@@ -603,23 +615,36 @@ export function update(msg: Msg, model: Model): { model: Model; calls: Call[] } 
 export function view(model: Model): Screen { /* … */ }
 `;
 
+export const TS_APP_SKELETON_THROUGH = `
+/** What the client layers need from the state (the params bound under \`through\`). */
+export function through(model: Model): Through { /* … */ }
+`;
+
 /** Entry points of an app that makes calls: the browser performs them with fetch; tests hand them to the driver. */
 function genTsEntriesCalls(app: App): { main: string; test: string } {
+  const th = hasThrough(app);
+  const configOf = th ? `(App.through(current) as Record<string, Record<string, unknown>>)[alias]` : "undefined";
   const main = `import * as App from "./app.ts";
-import { callEndpoints, callToJson, eventAliases, fromWire, toNode, type Call } from "./spec.ts";
+import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
-import { fetchCall, listen } from "./calls.ts";
+import { fetchCall, listen, type Outgoing } from "./calls.ts";
+import { apply } from "./through.ts";
 
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
 let dispatch: (w: Wire) => void = () => {};
+let current: App.Model;
+// Every call and event stream goes through its api's client layer, with the config from the current state.
+const via = (alias: string, req: Outgoing) => apply(alias, req, ${configOf});
 const perform = (calls: Call[]) => {
-  for (const c of calls) fetchCall(callEndpoints, callToJson(c)).then((a) => dispatch({ on: "answer", target: a.endpoint, answer: a }));
+  for (const c of calls) fetchCall(callEndpoints, callToJson(c), via).then((a) => dispatch({ on: "answer", target: a.endpoint, answer: a }));
 };
+let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
     const r = App.init();
+    current = r.model;
     perform(r.calls);
     return r.model;
   },
@@ -627,43 +652,77 @@ dispatch = mount(document.getElementById("app")!, {
     const e = fromWire(w);
     if (!e) return m;
     const r = App.update(e, m);
+    current = r.model;
     perform(r.calls);
+    stream?.refresh();
     return r.model;
   },
   render: (m) => toNode(App.view(m)),
   clockMs: ${app.clockMs ?? 0},
 });
-// Events from the api (Server-Sent Events at /events), for the events this app handles.
-listen(eventAliases, (e) => dispatch({ on: "event", target: e.event, event: e }));
+// Events from each api (Server-Sent Events at /events), for the events this app handles.
+stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, event: e }), via);
 `;
   const test = `import * as App from "./app.ts";
-import { callToJson, fromWire, toNode } from "./spec.ts";
+import { callToJson, fromWire, toNode, type Call } from "./spec.ts";
 import type { CallOut } from "./calls.ts";
 import type { Wire } from "./ui.ts";
+
+/** A call as data, with the config its client layer gets from the state after the step that made it. */
+const out = (c: Call, current: App.Model): CallOut => {
+  const j = callToJson(c);
+  const alias = j.endpoint.split(".")[0];
+  return { ...j, config: ${configOf} } as CallOut;
+};
 
 export function start() {
   const first = App.init();
   let m = first.model;
-  let pending: CallOut[] = first.calls.map(callToJson);
+  let pending: CallOut[] = first.calls.map((c) => out(c, m));
   return {
     observe: () => JSON.parse(JSON.stringify(toNode(App.view(m)))),
+    /** What the client layers get from the current state, per api. */
+    through: () => ${hasThrough(app) ? "JSON.parse(JSON.stringify(App.through(m)))" : "({})"},
     /** The calls made since the last time this was asked, in order. */
     calls() {
-      const out = pending;
+      const made = pending;
       pending = [];
-      return JSON.parse(JSON.stringify(out));
+      return JSON.parse(JSON.stringify(made));
     },
     send(w: Wire) {
       const e = fromWire(w);
       if (!e) return;
       const r = App.update(e, m);
       m = r.model;
-      pending.push(...r.calls.map(callToJson));
+      pending.push(...r.calls.map((c) => out(c, m)));
     },
   };
 }
 `;
   return { main, test };
+}
+
+/** The client layers of an app's apis (\`through\` under \`uses\`), with their fixed params: used in the browser and in tests. */
+export function genThrough(app: App): string {
+  const th = throughs(app);
+  return `// Generated — do not edit. Each api's client layer, as verified once for its layer spec.
+import type { Outgoing } from "./calls.ts";
+${th.map((t) => `import * as ${t.alias} from "./layers/${t.alias}/layer.ts";`).join("\n")}
+
+const layers: Record<string, { before: (req: any, config: any) => any; fixed: Record<string, unknown> }> = {
+${th.map((t) => `  ${t.alias}: { before: ${t.alias}.before, fixed: ${JSON.stringify(t.fixed)} },`).join("\n")}
+};
+
+const lower = (h: Record<string, string>) => Object.fromEntries(Object.entries(h ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
+
+/** A call as it leaves through its api's client layer; config is what the app's state gives the layer. */
+export function apply(alias: string, req: Outgoing, config: Record<string, unknown> | undefined): Outgoing {
+  const l = layers[alias];
+  if (!l) return req;
+  const out = l.before(JSON.parse(JSON.stringify(req)), { ...l.fixed, ...(config ?? {}) });
+  return { ...out, headers: lower(out.headers) };
+}
+`;
 }
 
 function genTsEntries(app: App): { main: string; test: string } {
@@ -705,7 +764,16 @@ export function start() {
 
 // ---------------------------------------------------------------- scaffold a build directory
 
-export function scaffold(app: App, target: Target, dir: string): { appFile: string; specSource: string } {
+/** Apps that call apis: the client layers' verified modules (built once per layer spec) and their composition. */
+function writeThrough(app: App, dir: string, layerDirs: Record<string, string>) {
+  for (const t of throughs(app)) {
+    mkdirSync(join(dir, "layers", t.alias), { recursive: true });
+    for (const f of ["layer.ts", "spec.ts", "http.ts", "fmt.ts"]) copyFileSync(join(layerDirs[t.alias], f), join(dir, "layers", t.alias, f));
+  }
+  writeFileSync(join(dir, "through.ts"), genThrough(app));
+}
+
+export function scaffold(app: App, target: Target, dir: string, layerDirs: Record<string, string> = {}): { appFile: string; specSource: string } {
   if (target === "elm") {
     mkdirSync(join(dir, "src"), { recursive: true });
     copyFileSync(join(ROOT, "runtime/elm/elm.json"), join(dir, "elm.json"));
@@ -715,9 +783,31 @@ export function scaffold(app: App, target: Target, dir: string): { appFile: stri
     writeFileSync(join(dir, "src/Spec.elm"), spec);
     if (hasClients(app)) {
       writeFileSync(join(dir, "src/Main.elm"), genElmMainCalls(app));
-      writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER_CALLS);
+      writeFileSync(join(dir, "src/Worker.elm"), elmWorkerCalls(app));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
-      writeFileSync(join(dir, "glue.ts"), `// Performs the app's calls with fetch and sends the answers back in; passes the api's events in.\nimport { fetchCall, listen, type CallDesc } from "./calls.ts";\n\nconst endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n(globalThis as any).intentConnect = (app: any) => {\n  app.ports.request.subscribe((c: any) => fetchCall(endpoints, c).then((a) => app.ports.answer.send(a)));\n  listen(${JSON.stringify(eventAliases(app))}, (e) => app.ports.events.send(e));\n};\n`);
+      writeThrough(app, dir, layerDirs);
+      writeFileSync(
+        join(dir, "glue.ts"),
+        `// Performs the app's calls with fetch (through each api's client layer) and sends the answers back in; passes the apis' events in.
+import { fetchCall, listen, type CallDesc, type Outgoing } from "./calls.ts";
+import { apply } from "./through.ts";
+
+const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
+
+(globalThis as any).intentConnect = (app: any) => {
+  let latest: Record<string, Record<string, unknown>> = {};
+  let stream: { refresh: () => void } | undefined;
+  // The client layers' config arrives from the app after every update (and after init): reopen the streams it changes.
+  if (app.ports.through)
+    app.ports.through.subscribe((t: Record<string, Record<string, unknown>>) => {
+      latest = t;
+      stream?.refresh();
+    });
+  app.ports.request.subscribe((c: any) => fetchCall(endpoints, c, (alias: string, req: Outgoing) => apply(alias, req, c.config ?? undefined)).then((a) => app.ports.answer.send(a)));
+  stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias]));
+};
+`,
+      );
       writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script src="glue.js"></script><script>intentConnect(Elm.Main.init({ node: document.getElementById("app") }))</script>`, true));
     } else {
       writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
@@ -732,6 +822,7 @@ export function scaffold(app: App, target: Target, dir: string): { appFile: stri
     if (hasClients(app)) {
       copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+      writeThrough(app, dir, layerDirs);
     }
     const spec = genTsSpec(app);
     writeFileSync(join(dir, "spec.ts"), spec);
@@ -740,7 +831,7 @@ export function scaffold(app: App, target: Target, dir: string): { appFile: stri
     writeFileSync(join(dir, "test-entry.ts"), test);
     writeFileSync(
       join(dir, "tsconfig.json"),
-      JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, noUnusedLocals: false }, include: ["*.ts"] }, null, 2),
+      JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, noUnusedLocals: false }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
     );
     writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script>`, false));
     return { appFile: join(dir, "app.ts"), specSource: spec };

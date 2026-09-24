@@ -1,0 +1,43 @@
+contract support.deskApi
+  "The support desk's API for agents: every call carries an agent's API key (std.http.sendKey)."
+
+import support.tickets
+
+record Health
+  status: Text
+
+every endpoint answers 401 Problem       # without a known key (std.http.apiKey)
+
+event ticketAssigned: Ticket             # a ticket got an assignee
+event ticketSolved: Ticket               # a ticket was solved
+
+endpoint health GET "/health"
+  answers 200 Health
+
+endpoint myTickets GET "/tickets/mine"
+  answers 200 List Ticket
+
+endpoint takeTicket POST "/tickets/{id}/take"
+  path id: Int
+  answers 200 Ticket
+  answers 404 Problem
+  answers 409 Problem                    # someone else has it
+
+endpoint solveTicket POST "/tickets/{id}/solve"
+  path id: Int
+  answers 200 Ticket
+  answers 403 Problem                    # only the assignee solves
+  answers 404 Problem
+  answers 409 Problem                    # already solved
+
+endpoint addComment POST "/tickets/{id}/comments"
+  path id: Int
+  body text: Text
+  answers 201 Comment
+  answers 400 Problem
+  answers 404 Problem
+
+example "anyone may ask whether the desk is up"
+  call health
+  see health.status = 200
+  see health.body.status = "ok"

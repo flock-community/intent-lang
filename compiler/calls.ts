@@ -3,9 +3,10 @@
 // contract declares it) and an answer message. Calls leave the app as data,
 // `{ endpoint: "tickets.createTicket", args: {…} }`; answers come back as the wire event
 // `{ on: "answer", target: <endpoint>, answer: { endpoint, status, body | error } }`.
-import type { App, Endpoint, Type } from "./ast.ts";
+import type { App, Endpoint, LayerUse, Type } from "./ast.ts";
 import { elmAtom, elmType, tsType } from "./gen.ts";
 import { typeDesc } from "./api.ts";
+import { layerConfig } from "./layer.ts";
 import type { CallDesc } from "../runtime/ts/calls.ts";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
@@ -38,10 +39,23 @@ export function clientEvents(app: App): ClientEvent[] {
   return (app.clients ?? []).flatMap((c) => (c.contract.events ?? []).filter((e) => handled.has(`${c.alias}.${e.name}`)).map((e) => ({ alias: c.alias, name: `${c.alias}.${e.name}`, tag: cap(c.alias) + cap(e.name), type: e.type })));
 }
 
-/** Per event name on the wire, the aliases whose contract declares it (an event stream is per api). */
-export function eventAliases(app: App): Record<string, string[]> {
+/** Per alias with a client layer: its params bound to state (the app computes them) and to literals (fixed). */
+export function throughs(app: App): { alias: string; use: LayerUse; state: { param: string; field: string; type: Type }[]; fixed: Record<string, unknown> }[] {
+  return (app.clients ?? []).filter((c) => c.through?.spec).map((c) => {
+    const use = c.through!;
+    const params = use.spec!.params ?? [];
+    const state = use.bindings.filter((b) => b.state).map((b) => ({ param: b.name, field: b.state!, type: params.find((p) => p.name === b.name)?.type ?? ({ k: "Text" } as Type) }));
+    return { alias: c.alias, use, state, fixed: layerConfig(use.spec!, use.bindings.filter((b) => !b.state)) };
+  });
+}
+
+export const hasThrough = (app: App) => throughs(app).length > 0;
+
+/** Per alias, the events of its api this app handles (each api has its own event stream). */
+export function eventsByAlias(app: App): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const e of clientEvents(app)) (out[e.name.split(".")[1]] ??= []).push(e.alias);
+  for (const c of app.clients ?? []) out[c.alias] = [];
+  for (const e of clientEvents(app)) out[e.alias].push(e.name.split(".")[1]);
   return out;
 }
 
@@ -62,11 +76,13 @@ export function genTsCalls(app: App): string {
   }
   out.push(`\n/** Endpoints as data, for sending calls. */\nexport const callEndpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n`);
   out.push(`/** The contract's answers per endpoint (status → body type): an answer that does not fit arrives as status 0. */\nexport const callAnswers: Record<string, Record<number, TypeDesc | null>> = {\n${eps.map((c) => `  ${q(c.name)}: { ${(c.ep.answers ?? []).map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}\n};\n\n`);
+  const th = throughs(app);
+  if (th.length) out.push(`/** What the client layers need from the app's state, per api (through, under uses): through(model) in the app module computes it. */\nexport type Through = { ${th.map((t) => `${t.alias}: { ${t.state.map((x) => `${x.param}: ${tsType(x.type)} /* state ${x.field} */`).join("; ")} }`).join("; ")} };\n\n`);
   out.push(`export function callToJson(c: Call): CallOut {\n  return { endpoint: c.call, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
   out.push(`const ANSWERED: Record<string, string> = { ${eps.map((c) => `${q(c.name)}: ${q(c.tag + "Answered")}`).join(", ")} };\n\n`);
   const evs = clientEvents(app);
   out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
-  out.push(`/** Per event name on the wire, the aliases whose contract declares it. */\nexport const eventAliases: Record<string, string[]> = ${JSON.stringify(eventAliases(app))};\n\n`);
+  out.push(`/** Per alias, the events of its api this app handles. */\nexport const eventsByAlias: Record<string, string[]> = ${JSON.stringify(eventsByAlias(app))};\n\n`);
   out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: e.body } as Msg;\n}\n\n`);
   out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as Msg;\n}\n`);
   return out.join("");
@@ -132,6 +148,12 @@ export function genElmCalls(app: App): string {
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);
     out.push(`{-| What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape). -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`].join("\n    | ")}\n\n\n`);
+  }
+  const th = throughs(app);
+  if (th.length) {
+    out.push(`{-| What the client layers need from the app's state, per api (\`through\` in \`uses\`): \`through model\` in the app module computes it. -}\ntype alias Through =\n    { ${th.map((t) => `${t.alias} : { ${t.state.map((x) => `${x.param} : ${elmType(x.type)}`).join(", ")} }`).join("\n    , ")}\n    }\n\n\n`);
+    out.push(`{-| A call as it leaves, with the config of its api's client layer. -}\ncallOut : Through -> Call -> J.Value\ncallOut th c =\n    let\n        v =\n            callToJson c\n\n        alias =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v) |> String.split "." |> List.head |> Maybe.withDefault ""\n\n        config =\n            case alias of\n${th.map((t) => `                ${q(t.alias)} ->\n                    J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${t.alias}.${x.param}`)} )`).join(", ")} ]\n`).join("\n")}\n                _ ->\n                    J.null\n    in\n    J.object [ ( "endpoint", D.decodeValue (D.field "endpoint" D.value) v |> Result.withDefault J.null ), ( "args", D.decodeValue (D.field "args" D.value) v |> Result.withDefault J.null ), ( "config", config ) ]\n\n\n`);
+    out.push(`{-| The client layers' config from the app's state, for the event streams. -}\nencodeThrough : Through -> J.Value\nencodeThrough th =\n    J.object [ ${th.map((t) => `( ${q(t.alias)}, J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${t.alias}.${x.param}`)} )`).join(", ")} ] )`).join(", ")} ]\n\n\n`);
   }
   out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${eps
     .map((c) => {

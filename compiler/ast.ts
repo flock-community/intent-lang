@@ -94,6 +94,8 @@ export type Step =
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
   | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
   // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.
+  // In a layer's examples: a param's value from here on (\`given key = ""\`).
+  | { do: "given"; name: string; value: Literal; line: number }
   | { do: "request"; method: string; path: string; args: { in: "header" | "query" | "body"; name: string; value: Literal }[]; line: number }
   | { do: "see"; target: string; at?: RowRef; every?: string; check: Check; line: number }; // every: check each row of that list
 
@@ -162,18 +164,20 @@ export interface App {
   provides?: Field[];
   before?: { steps: string[]; line: number };
   after?: { steps: string[]; line: number };
+  beforeCall?: { steps: string[]; line: number }; // a client layer: changes every outgoing call (adds a key, …)
   exampleConfig?: Binding[]; // `examples with`: the params the layer's own examples run with
   // An api app: the layers it runs behind, in order (`use cors = std.http.cors`).
   layers?: LayerUse[];
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
   endpoints?: Endpoint[];
-  events?: EventDecl[]; // what an api (or contract) announces: `event ticketCreated: Ticket`
+  events?: EventDecl[];
+  everyAnswer?: { status: number; type?: Type; line: number }[]; // `every endpoint answers 401 Problem`: added to every endpoint's answers // what an api (or contract) announces: `event ticketCreated: Ticket`
   name: string;
   imports?: Import[];
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
   implements?: { name: string; line: number }; // an api app that implements a published contract
-  uses?: { contract: string; alias: string; testedWith?: string; line: number }[]; // clients of contracts
-  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string }[]; // resolved by the loader
+  uses?: { contract: string; alias: string; testedWith?: string; through?: LayerUse; line: number }[]; // clients of contracts
+  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse }[]; // resolved by the loader
   refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];
@@ -211,6 +215,7 @@ export interface LayerParam {
 export interface Binding {
   name: string;
   value: Literal | Literal[]; // a list param: comma-separated literals, or a table
+  state?: string; // a client layer's param bound to the app's state: \`key = apiKey\`
   line: number;
 }
 

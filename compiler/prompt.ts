@@ -1,9 +1,9 @@
 // The prompt that turns the LLM into the code-generation stage of the compiler.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ELM_APP_SKELETON, ELM_APP_SKELETON_CALLS, ROOT, TS_APP_SKELETON, TS_APP_SKELETON_CALLS, type Target } from "./gen.ts";
+import { ELM_APP_SKELETON, ELM_APP_SKELETON_CALLS, ELM_APP_SKELETON_THROUGH, ROOT, TS_APP_SKELETON, TS_APP_SKELETON_CALLS, TS_APP_SKELETON_THROUGH, type Target } from "./gen.ts";
 import { API_APP_SKELETON, API_TARGET_RULES } from "./api.ts";
-import { LAYER_RULES, LAYER_SKELETON } from "./layer.ts";
+import { CLIENT_LAYER_RULES, CLIENT_LAYER_SKELETON, LAYER_RULES, LAYER_SKELETON } from "./layer.ts";
 
 export const SYSTEM = `You are the code-generation stage of the Intent compiler. You translate an Intent spec into exactly one source module.
 Behave like a compiler: literal, deterministic, no creativity, no extra features, no commentary.
@@ -91,7 +91,12 @@ const API_CODING_RULES = `Rules that keep every build identical:
 5. Every example in the spec must pass. Walk through each one step by step before you answer.
 6. All rounding goes through Fmt. For every refined type the interface has a check (\`isEmail\`); "is a valid Email" means that check. Write plain, straightforward code. No comments needed.`;
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false): string {
+const THROUGH_RULE = {
+  elm: "- `through : Model -> Through` (exposed too): for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
+  ts: "- Export `through(model: Model): Through` too: for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
+};
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
   if (api)
@@ -129,7 +134,7 @@ ${language}
 # ${TARGET_RULES[target]}
 
 \`\`\`${lang}
-${target === "elm" ? (calls ? ELM_APP_SKELETON_CALLS : ELM_APP_SKELETON) : calls ? TS_APP_SKELETON_CALLS : TS_APP_SKELETON}\`\`\`
+${target === "elm" ? (calls ? (through ? ELM_APP_SKELETON_CALLS.replace("exposing (Model, init, update, view)", "exposing (Model, init, through, update, view)") + ELM_APP_SKELETON_THROUGH : ELM_APP_SKELETON_CALLS) : ELM_APP_SKELETON) : calls ? TS_APP_SKELETON_CALLS.replace("import type { Call, Msg, Screen", through ? "import type { Call, Msg, Screen, Through" : "import type { Call, Msg, Screen") + (through ? TS_APP_SKELETON_THROUGH : "") : TS_APP_SKELETON}\`\`\`
 
 Standard helpers (use these for all number/time formatting and parsing):
 \`\`\`
@@ -137,7 +142,7 @@ ${FMT_API[target]}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${CALL_RULES[target]}\n` : ""}
+${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}
 # Generated interface (${target === "elm" ? "src/Spec.elm" : "spec.ts"})
 
 \`\`\`${lang}
@@ -168,18 +173,18 @@ Fix these problems. Reply with the complete corrected module.`;
 }
 
 /** A layer (std.http.cors, …): one module with \`before\` and \`after\`, checked by the layer's own examples. */
-export function layerPrompt(specFile: string, specText: string, specModule: string, probe = false): string {
+export function layerPrompt(specFile: string, specText: string, specModule: string, probe = false, client = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   return `# Language reference
 
 ${language}
 
-# ${LAYER_RULES}
+# ${client ? CLIENT_LAYER_RULES : LAYER_RULES}
 
 \`\`\`ts
-${LAYER_SKELETON}\`\`\`
+${client ? CLIENT_LAYER_SKELETON : LAYER_SKELETON}\`\`\`
 
-In the layer's examples, the layer runs around a stub app that answers 200 with the body \`{ "reached": true, …what before passed on }\`, and the params are those under \`examples with\` (defaults otherwise). The same module then runs in real apps with their own params: never hard-code an example's values.
+${client ? "In the layer's examples, `request …` is a call the screen makes, and what is seen is the call as it leaves: `see header x = …` its headers, `see body.path`, `body.method`, `body.query…`, `body.body…`. The params are those under `examples with` (defaults otherwise), changed by `given`." : "In the layer's examples, the layer runs around a stub app that answers 200 with the body \`{ \"reached\": true, …what before passed on }\`, and the params are those under \`examples with\` (defaults otherwise), changed by \`given\`."} The same module then runs in real apps with their own params: never hard-code an example's values.
 
 # Generated interface (spec.ts)
 
