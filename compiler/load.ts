@@ -348,6 +348,9 @@ function implementContract(app: App, contract: App, err: (line: number, code: st
   }
   for (const extra of own.values()) err(extra.line, "CONTRACT", `endpoint \`${extra.name}\` is not in the contract; a contract is the whole public surface. Add it to the contract first`);
   app.endpoints = merged;
+  // Events are part of the public surface too: the contract declares them, the app publishes them.
+  for (const e of app.events ?? []) if (!contract.events?.some((c) => c.name === e.name)) err(e.line, "CONTRACT", `event \`${e.name}\` is not in the contract; add it to the contract first`);
+  app.events = [...(contract.events ?? [])];
   // The contract's examples run on every implementation (consumer-facing behaviour).
   app.examples.unshift(...contract.examples);
 }

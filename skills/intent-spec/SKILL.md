@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v21** (see the changelog at the end of
+Language version this skill matches: **v22** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -209,6 +209,12 @@ rest (show the Problem's error). The screen's examples run against the real prov
 its seed data, so write them from that data (`see rows has 8 rows`, the provider's newest
 first). After a change (add, solve), call the list endpoint again instead of editing the list
 locally: the screen then shows what the service holds, and two builds cannot drift apart.
+When other people change the same data (shared lists, dashboards, chat), declare events in the
+contract (`event ticketCreated: Ticket`), publish them in the service's steps, and handle them
+with `on event` in the screen. Prove it with an example in which another client calls
+(`call tickets.createTicket with …` in the screen's example) and the screen shows the change.
+Handle each change in one place: if the event updates the list, the answer to your own call
+should not update it again.
 
 ## 6. Write a bundle
 

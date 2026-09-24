@@ -147,6 +147,13 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       const ep = parseEndpoint(node, m[1], "GET", "", ctx);
       ep.signatureOnly = true;
       app.endpoints.push(ep);
+    } else if ((m = t.match(new RegExp(`^event\\s+(${LOWER})\\s*:\\s*(.+)$`)))) {
+      // An api announces something happened: \`event ticketCreated: Ticket\` (the payload type).
+      const type = parseType(m[2]);
+      if (!type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
+      else (app.events ??= []).push({ name: m[1], type, line: node.line, note: node.note });
+    } else if (t.startsWith("event ")) {
+      err(node.line, "SYNTAX", "expected `event name: Type` (the payload), for example `event ticketCreated: Ticket`");
     } else if (t.startsWith("endpoint")) {
       err(node.line, "SYNTAX", 'expected `endpoint name GET|POST|PUT|PATCH|DELETE "/path/{id}"`, or `endpoint name` when the app implements a contract');
     } else if ((m = t.match(/^language\s+(v\d+)$/))) {
@@ -159,7 +166,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "contract", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -270,7 +277,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     }
   } else if (t === "screen") {
     app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
-  } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS}|answer)\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS}|start)$`)))) {
+  } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS}|answer|event)\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS}|start)$`)))) {
     const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err), line: node.line, note: node.note };
     app.handlers.push(h);
   } else if (t.startsWith("on ")) {
@@ -758,7 +765,8 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], line, quoted: true } };
   if ((m = t.match(new RegExp(`^snapshot\\s+(${STR})$`)))) return { step: { do: "snapshot", name: parseString(m[1])!, line } };
   // api profile: `call createTicket with subject = "Printer", priority = Urgent`
-  if ((m = t.match(new RegExp(`^call\\s+(${LOWER})(?:\\s+with\\s+(.+))?$`)))) {
+  // In a screen's examples, \`call tickets.createTicket …\` is another client calling the provider.
+  if ((m = t.match(new RegExp(`^call\\s+(${LOWER}(?:\\.${LOWER})?)(?:\\s+with\\s+(.+))?$`)))) {
     const args: { name: string; value: Literal }[] = [];
     const headers: { name: string; value: Literal }[] = [];
     for (const part of m[2] ? splitArgs(m[2]) : []) {
@@ -1044,6 +1052,17 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       continue;
     }
     if (h.verb === "start") continue;
+    if (h.verb === "event") {
+      // `on event tickets.ticketCreated`: a client alias and an event of its contract.
+      const [alias, ev] = h.target.split(".");
+      const client = app.clients?.find((c) => c.alias === alias);
+      if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
+      else if (!client.contract.events?.some((e) => e.name === ev)) err(h.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no event \`${ev}\`${suggest(ev ?? "", client.contract.events?.map((e) => e.name) ?? [])}`);
+      const key = `event ${h.target}`;
+      if (handled.has(key)) err(h.line, "DUPLICATE", `there is already an \`on ${key}\``);
+      handled.add(key);
+      continue;
+    }
     if (h.verb === "answer") {
       // `on answer tickets.listTickets`: a client alias and an endpoint of its contract.
       const [alias, ep] = h.target.split(".");
@@ -1088,6 +1107,20 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     for (const s of ex.steps) {
       if (s.do === "tick") {
         if (!app.clockMs) err(s.line, "STEP", "`tick`/`wait` needs a `clock every …` block");
+        continue;
+      }
+      if (s.do === "call" && s.endpoint.includes(".")) {
+        // Another client calls the provider: \`call tickets.createTicket with …\`.
+        const [alias, epName] = s.endpoint.split(".");
+        const client = app.clients?.find((c) => c.alias === alias);
+        const ep = client?.contract.endpoints?.find((e) => e.name === epName);
+        if (!client) err(s.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
+        else if (!ep) err(s.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${epName}\``);
+        else {
+          if (!client.testedWith) err(s.line, "STEP", `another client's call needs a provider: add \`tested with "…"\` under \`uses ${client.contract.name} as ${alias}\``);
+          for (const a of s.args) if (!ep.params.some((p) => p.name === a.name)) err(s.line, "UNKNOWN_NAME", `endpoint ${epName} has no param \`${a.name}\` (${ep.params.map((p) => p.name).join(", ") || "none"})`);
+        }
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
         continue;
       }
       if (s.do === "call" || s.do === "request") {
@@ -1246,7 +1279,19 @@ function checkApi(
           if (!declared.has(Number(m[1]))) err(ep.line, "CONTRACT", `endpoint ${ep.name} answers ${m[1]}, which its contract does not declare (${[...declared].join(", ")}); add \`answers ${m[1]} …\` to the contract, or answer differently`);
     }
   }
-  // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`.
+  // Events: declared once, with a payload type; \`publish x\` in steps names a declared event.
+  const events = new Map<string, NonNullable<App["events"]>[number]>();
+  for (const e of app.events ?? []) {
+    if (events.has(e.name)) err(e.line, "DUPLICATE", `event \`${e.name}\` is declared twice`);
+    events.set(e.name, e);
+    ctx.checkType(e.type, e.line);
+    if (eps.has(e.name)) err(e.line, "DUPLICATE", `\`${e.name}\` is both an endpoint and an event`);
+  }
+  for (const ep of eps.values())
+    for (const st of ep.steps)
+      for (const m of st.matchAll(/\bpublish(?:es)?\s+([a-z]\w*)/gi))
+        if (!events.has(m[1])) err(ep.line, "UNKNOWN_NAME", `endpoint ${ep.name} publishes \`${m[1]}\`, which is not a declared event${suggest(m[1], [...events.keys()])}; declare it with \`event ${m[1]}: <Type>\``);
+  // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`; `see <event>.body…` (what the latest call published).
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
     for (const s of ex.steps) {
       if (s.do === "call") {
@@ -1266,7 +1311,12 @@ function checkApi(
         const [head, part] = s.target.split(/[.[]/);
         const target = s.every ?? s.target;
         const h = target.split(/[.[]/)[0];
-        if (!eps.has(h)) err(s.line, "UNKNOWN_NAME", `\`${h}\` is not an endpoint; check a response as \`see ${[...eps.keys()][0] ?? "endpoint"}.status = 200\` or \`….body.<field>\``);
+        if (events.has(h)) {
+          // \`see ticketCreated.body.subject = "…"\`: the event as the latest call published it; \`see ticketCreated is absent\`.
+          if (part !== undefined && part !== "body") err(s.line, "UNKNOWN_NAME", `an event has a \`body\`: \`see ${h}.body.<field>\``);
+          continue;
+        }
+        if (!eps.has(h)) err(s.line, "UNKNOWN_NAME", `\`${h}\` is not an endpoint or an event; check a response as \`see ${[...eps.keys()][0] ?? "endpoint"}.status = 200\` or \`….body.<field>\``);
         else if (!s.every && !["status", "body"].includes(part)) err(s.line, "UNKNOWN_NAME", `a response has \`status\` and \`body\`: \`see ${head}.status = 200\``);
         else {
           // The path into the body must exist in a type the endpoint can answer with: \`returns\`, or any of its \`answers\`.

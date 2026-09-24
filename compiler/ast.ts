@@ -69,7 +69,7 @@ export interface Element {
   note?: string;
 }
 
-export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer";
+export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer" | "event";
 
 export interface Handler {
   verb: Verb;
@@ -167,6 +167,7 @@ export interface App {
   layers?: LayerUse[];
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
   endpoints?: Endpoint[];
+  events?: EventDecl[]; // what an api (or contract) announces: `event ticketCreated: Ticket`
   name: string;
   imports?: Import[];
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
@@ -190,6 +191,13 @@ export interface App {
   rules: string[];
   examples: Example[];
   always: Step[]; // invariants: `see` steps that must hold after every action
+}
+
+export interface EventDecl {
+  name: string;
+  type: Type; // the payload: `its body` in handlers
+  line: number;
+  note?: string;
 }
 
 export interface LayerParam {

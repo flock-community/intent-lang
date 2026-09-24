@@ -37,6 +37,23 @@ export function apiBase(): string {
   return (fromQuery ?? "").replace(/\/$/, "");
 }
 
+/**
+ * Listen to the api's events (Server-Sent Events at /events): each \`{ event, body }\` goes to
+ * \`deliver\` once per alias whose contract declares it, as \`<alias>.<event>\`.
+ */
+export function listen(aliases: Record<string, string[]>, deliver: (e: { event: string; body: unknown }) => void): void {
+  if (!Object.keys(aliases).length || typeof EventSource === "undefined") return;
+  const source = new EventSource(apiBase() + "/events");
+  source.onmessage = (m) => {
+    try {
+      const d = JSON.parse(m.data) as { event: string; body: unknown };
+      for (const alias of aliases[d.event] ?? []) deliver({ event: `${alias}.${d.event}`, body: d.body });
+    } catch {
+      // not an event: ignore
+    }
+  };
+}
+
 /** Perform a call over HTTP. Never throws: a network failure is an answer with status 0 and an error. */
 export async function fetchCall(eps: CallDesc[], c: CallOut): Promise<Answer> {
   try {

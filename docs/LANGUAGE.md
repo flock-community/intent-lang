@@ -1,4 +1,4 @@
-# Intent — language reference (v21)
+# Intent — language reference (v22)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -467,6 +467,14 @@ Contracts cannot fail silently:
   shape of the body. The contract's examples run on every implementation.
 - **The consumer** uses a typed client generated from the same contract version:
   `intent client support/ticketsApi.intent`.
+- **Events** are part of the contract: `event ticketCreated: Ticket` says the service announces
+  that something happened, with a payload. An endpoint's step says when:
+  `- publish ticketCreated with the new ticket`. The implementation may publish only declared
+  events, and every payload is checked against its type in every test. In examples,
+  `see ticketCreated.body.subject = "…"` checks what the latest call published, and
+  `see ticketCreated is absent` checks that it published nothing of that kind. The server sends
+  events to every open `GET /events` stream (Server-Sent Events, `{ "event": …, "body": … }`),
+  after the layers let the stream through.
 - **Versions are computed on publish:** a removed endpoint, param or answer, or a changed type,
   makes a new major version.
 
@@ -503,13 +511,31 @@ on answer tickets.createTicket
   network is down, or the body has the wrong shape) is not any declared status: `otherwise`
   covers it.
 - `on start` runs once when the app starts.
+- `on event <alias>.<event>` handles an event of the contract, whoever caused it: this screen,
+  or another client. "its body" is the payload. Events the screen does not handle are ignored.
+  In the browser, the screen listens to the service's `/events` stream.
 
 **Tests run against the real provider, not mocks.** The examples of the screen run against a
 build of the app named in `tested with` (built first, and cached). A call is answered right
 after the step that made it, before the next `see`; calls made in one step are answered in the
 order they were made, and calls made by answers are answered in turn, until nothing is pending.
 Every example starts with a fresh provider, so the screen's examples read the provider's seed
-data (`see rows has 8 rows`).
+data (`see rows has 8 rows`). The events a call publishes reach the screen right after its
+answer, in the order published, before the calls that answer made.
+
+**Other clients.** In a screen's example, `call tickets.createTicket with subject = "…", …` is
+another client calling the provider: the screen does not see the answer, only the events it
+publishes. That is how an example proves that the screen follows changes made elsewhere:
+
+```
+example "another agent adds a ticket"
+  call tickets.createTicket with subject = "Coffee machine broken", customer = "Iris", priority = Low
+  see rows has 9 rows
+  see subject on row 1 = "Coffee machine broken"
+```
+
+Random sessions mix in the other-client calls the examples make (with whole numbers varied), so
+two builds that handle someone else's change differently count as different apps.
 
 The checker reports a call to an endpoint the contract does not have, and warns when a call's
 answer is never handled.
@@ -763,6 +789,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v22: events: `event name: Type` in contracts and apis, `publish x with …` in endpoint steps,
+  `see x.body…` / `see x is absent` on what a call published, `on event <alias>.<event>` in
+  screens, another client's `call <alias>.<endpoint>` in a screen's examples; Server-Sent
+  Events at `/events`. The checker checks `see x.body.<path>` against the answer types.
 
 - v21: layers (`layer`, `param`, `provides`, `before every request`, `after every answer`,
   `examples with`) and `use <name> = <layer>` in api apps; `std.http.secure`, `std.http.cors`

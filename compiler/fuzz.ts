@@ -19,6 +19,22 @@ const TRICKY_TEXT = ["don't stop", "e-mail me", "one,two", "  two   spaces  ", "
 // Numbers that stress parsing and rounding.
 const NUMERIC_EDGES = ["0.01", "0.005", "0,99", "33.33", "99.99", "1000000", "2.675", "1.005", "10.10", "3", "9", "13", "0.1", "07", "1.", ".5", "1e3"];
 
+/** The calls another client makes in the examples (\`call tickets.createTicket …\` in a screen's example). */
+export function otherCalls(app: App): Action[] {
+  const seen = new Map<string, Action>();
+  for (const ex of app.examples) for (const s of ex.steps) if (s.do === "call" && s.endpoint.includes(".")) {
+    const a = stepToAction(s)!;
+    seen.set(JSON.stringify(a), a);
+  }
+  return [...seen.values()];
+}
+
+/** The same call with its whole-number arguments sometimes changed (1–10): the same kind of change, to something else. */
+export function varyOther(a: Action, rnd: () => number): Action {
+  const args = Object.fromEntries(Object.entries(a.call!.args).map(([k, v]) => [k, typeof v === "number" && Number.isInteger(v) && rnd() < 0.5 ? 1 + Math.floor(rnd() * 10) : v]));
+  return { ...a, call: { endpoint: a.call!.endpoint, args } };
+}
+
 export function actionTemplates(app: App): { weight: number; make: (rnd: () => number) => Action }[] {
   const typed = new Set<string>();
   for (const ex of app.examples) for (const s of ex.steps) if (s.do === "type") typed.add(s.text);
@@ -42,6 +58,8 @@ export function actionTemplates(app: App): { weight: number; make: (rnd: () => n
     }
   };
   walk(app.screen);
+  // Another client's calls, as the examples make them (with whole numbers varied: another ticket).
+  for (const a of otherCalls(app)) out.push({ weight: 1, make: (r) => varyOther(a, r) });
   if (app.clockMs) {
     const perMinute = Math.max(1, Math.round(60_000 / app.clockMs));
     out.push({ weight: 3, make: (r) => ({ on: "tick", target: "", times: pick(r, [1, 1, 2, 5, 10, perMinute, 5 * perMinute, 25 * perMinute]) }) });
@@ -69,7 +87,7 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
       const ex = examples[Math.floor(rnd() * examples.length)];
       prefix = ex.slice(0, 1 + Math.floor(rnd() * ex.length));
     }
-    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, always: app.always });
+    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), always: app.always });
   }
   return jobs;
 }
@@ -99,6 +117,7 @@ export function actionText(a: Action): string {
     case "toggle": return `toggle ${a.target}${at}`;
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}` : `choose ${a.value} in ${a.target}`;
     case "tick": return `tick ${a.times} times`;
+    case "other": return `call ${a.call!.endpoint}${Object.keys(a.call!.args).length ? ` with ${Object.entries(a.call!.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}  # another client`;
   }
 }
 

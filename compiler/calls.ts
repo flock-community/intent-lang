@@ -25,6 +25,26 @@ export function clientEndpoints(app: App): ClientEndpoint[] {
 
 export const hasClients = (app: App) => clientEndpoints(app).length > 0;
 
+export interface ClientEvent {
+  alias: string;
+  name: string; // "tickets.ticketCreated"
+  tag: string; // "TicketsTicketCreated"
+  type: Type;
+}
+
+/** The events this app handles (\`on event tickets.ticketCreated\`): only those get a message. */
+export function clientEvents(app: App): ClientEvent[] {
+  const handled = new Set(app.handlers.filter((h) => h.verb === "event").map((h) => h.target));
+  return (app.clients ?? []).flatMap((c) => (c.contract.events ?? []).filter((e) => handled.has(`${c.alias}.${e.name}`)).map((e) => ({ alias: c.alias, name: `${c.alias}.${e.name}`, tag: cap(c.alias) + cap(e.name), type: e.type })));
+}
+
+/** Per event name on the wire, the aliases whose contract declares it (an event stream is per api). */
+export function eventAliases(app: App): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const e of clientEvents(app)) (out[e.name.split(".")[1]] ??= []).push(e.alias);
+  return out;
+}
+
 /** Method, path and params per callable endpoint: how a call becomes an HTTP request. */
 export function callDescs(app: App): CallDesc[] {
   return clientEndpoints(app).map((c) => ({ name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name })) }));
@@ -44,11 +64,18 @@ export function genTsCalls(app: App): string {
   out.push(`/** The contract's answers per endpoint (status → body type): an answer that does not fit arrives as status 0. */\nexport const callAnswers: Record<string, Record<number, TypeDesc | null>> = {\n${eps.map((c) => `  ${q(c.name)}: { ${(c.ep.answers ?? []).map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}\n};\n\n`);
   out.push(`export function callToJson(c: Call): CallOut {\n  return { endpoint: c.call, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
   out.push(`const ANSWERED: Record<string, string> = { ${eps.map((c) => `${q(c.name)}: ${q(c.tag + "Answered")}`).join(", ")} };\n\n`);
+  const evs = clientEvents(app);
+  out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
+  out.push(`/** Per event name on the wire, the aliases whose contract declares it. */\nexport const eventAliases: Record<string, string[]> = ${JSON.stringify(eventAliases(app))};\n\n`);
+  out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: e.body } as Msg;\n}\n\n`);
   out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as Msg;\n}\n`);
   return out.join("");
 }
 
-export const tsAnswerMsgs = (app: App) => clientEndpoints(app).map((c) => `{ tag: ${q(c.tag + "Answered")}; answer: ${c.tag}Answer }`);
+export const tsAnswerMsgs = (app: App) => [
+  ...clientEndpoints(app).map((c) => `{ tag: ${q(c.tag + "Answered")}; answer: ${c.tag}Answer }`),
+  ...clientEvents(app).map((e) => `{ tag: ${q(e.tag)}; body: ${tsType(e.type)} }`),
+];
 
 // ---------------------------------------------------------------- Elm
 
@@ -118,7 +145,9 @@ export function genElmCalls(app: App): string {
       return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    (case status of\n${cases.join("\n")}\n                        _ ->\n                            ${c.tag}Failed failure\n                    )\n                )\n`;
     })
     .join("\n")}\n        _ ->\n            Nothing\n`);
+  const evs = clientEvents(app);
+  out.push(`\n\n{-| An event from the api (\`{ event: "tickets.ticketCreated", body }\`) as a message; one whose payload does not fit is dropped. -}\nfromEvent : D.Value -> Maybe Msg\nfromEvent v =\n    case D.decodeValue (D.field "event" D.string) v of\n${evs.map((e) => `        Ok ${q(e.name)} ->\n            Result.toMaybe (D.decodeValue (D.field "body" (D.map ${e.tag} ${elmDecoder(app, e.type)})) v)\n`).join("\n")}${evs.length ? "\n" : ""}        _ ->\n            Nothing\n`);
   return out.join("");
 }
 
-export const elmAnswerMsgs = (app: App) => clientEndpoints(app).map((c) => `${c.tag}Answered ${c.tag}Answer`);
+export const elmAnswerMsgs = (app: App) => [...clientEndpoints(app).map((c) => `${c.tag}Answered ${c.tag}Answer`), ...clientEvents(app).map((e) => `${e.tag} ${elmAtom(e.type)}`)];

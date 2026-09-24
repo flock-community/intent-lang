@@ -58,9 +58,9 @@ export type ${typeName(e)}Response = ${respType(e)};`,
   )
   .join("\n\n")}
 
-/** One handler per endpoint: the request and the model in, the new model and the answer out. */
+${(app.events ?? []).length ? `/** An event this api announces (\\\`publish x\\\` in a step): the name and its payload. */\nexport type Published =\n${(app.events ?? []).map((ev) => `  | { event: ${q(ev.name)}; body: ${tsType(ev.type)} }`).join("\n")};\n\n/** The payload type of every event, checked on every publish in tests. */\nexport const eventTypes: Record<string, TypeDesc> = { ${(app.events ?? []).map((ev) => `${ev.name}: ${typeDesc(app, ev.type)}`).join(", ")} };\n\n` : `export type Published = never;\nexport const eventTypes: Record<string, TypeDesc> = {};\n\n`}/** One handler per endpoint: the request and the model in; the new model, the answer, and the events it publishes (in step order) out. */
 export type Handlers<M> = {
-${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model: M; response: ${typeName(e)}Response };`).join("\n")}
+${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model: M; response: ${typeName(e)}Response; publish?: Published[] };`).join("\n")}
 };
 
 /** The endpoints, for the router: methods, paths and parameter types. */
@@ -98,7 +98,7 @@ import { layers } from "./layers.ts";
 
 const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
 
-export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown } };
+export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[] };
 
 export function pipeline() {
   let model = App.init();
@@ -108,6 +108,7 @@ export function pipeline() {
     let res: HttpResponse | undefined;
     let endpoint: string | undefined;
     let appAnswer: { status: number; body: unknown } | undefined;
+    let events: { event: string; body: unknown }[] = [];
     for (const l of layers) {
       passed.push(l);
       const b = l.before(copy(req), copy(l.config));
@@ -117,6 +118,8 @@ export function pipeline() {
       }
       Object.assign(provided, copy(b.pass));
     }
+    // The event stream (\`GET /events\` on the server) passes the layers, then opens; it is not an endpoint.
+    if (!res && (req as { stream?: boolean }).stream) res = { status: 200, headers: {}, body: null };
     if (!res) {
       const r = route(endpoints, req.method, req.path, req.query, req.body === undefined ? undefined : copy(req.body));
       if ("response" in r) res = { ...r.response, headers: {} };
@@ -125,11 +128,12 @@ export function pipeline() {
         const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided }, model);
         model = out.model;
         appAnswer = copy({ status: out.response.status, body: out.response.body });
+        events = copy(out.publish ?? []);
         res = { status: out.response.status, headers: {}, body: out.response.body };
       }
     }
     for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
-    return { ...normalize(res), endpoint, appAnswer };
+    return { ...normalize(res), endpoint, appAnswer, events };
   };
 }
 `;
@@ -138,7 +142,26 @@ const SERVER = `import { createServer } from "node:http";
 import { pipeline } from "./pipeline.ts";
 
 const handle = pipeline();
+// Events go to every open \`GET /events\` stream (Server-Sent Events), as \`{ "event": name, "body": payload }\`.
+const streams = new Set<import("node:http").ServerResponse>();
 createServer((req, res) => {
+  if (req.method === "GET" && (req.url ?? "").split("?")[0] === "/events") {
+    // The stream passes the layers like any request (a key, an origin); only then does it open.
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k.toLowerCase()] = v;
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const gate = handle({ method: "GET", path: "/events", query: Object.fromEntries(url.searchParams), headers, body: undefined, stream: true } as any);
+    if (gate.status !== 200) {
+      res.writeHead(gate.status, { "content-type": "application/json", ...gate.headers });
+      res.end(JSON.stringify(gate.body));
+      return;
+    }
+    res.writeHead(200, { ...gate.headers, "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
+    res.write(": open\\n\\n");
+    streams.add(res);
+    req.on("close", () => streams.delete(res));
+    return;
+  }
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
@@ -152,6 +175,7 @@ createServer((req, res) => {
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k.toLowerCase()] = v;
     const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body });
+    for (const ev of out.events) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
     const noBody = out.status === 204 || out.status === 304 || req.method === "HEAD";
     res.writeHead(out.status, { ...(noBody ? {} : { "content-type": "application/json" }), ...out.headers });
     res.end(noBody ? undefined : JSON.stringify(out.body));
@@ -160,7 +184,7 @@ createServer((req, res) => {
 `;
 
 const TEST_ENTRY = `import { conforms } from "./api.ts";
-import { answers } from "./spec.ts";
+import { answers, eventTypes } from "./spec.ts";
 import { pipeline } from "./pipeline.ts";
 
 /** A client for tests: the same layers, routing and validation as the server, without the network. */
@@ -169,9 +193,14 @@ export function start() {
   return {
     send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}) {
       const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) });
-      const response = { status: out.status, body: out.body, headers: out.headers };
-      // The contract is checked on every answer of the app: a status it does not declare, or a body of the wrong shape.
-      const problem = out.endpoint && out.appAnswer ? conforms(answers[out.endpoint], out.appAnswer) : undefined;
+      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events };
+      // The contract is checked on every answer of the app (a status it does not declare, or a body of the wrong shape) and on every event it publishes.
+      let problem = out.endpoint && out.appAnswer ? conforms(answers[out.endpoint], out.appAnswer) : undefined;
+      for (const ev of out.events) {
+        const t = eventTypes[ev.event];
+        const bad = !t ? \`published \${ev.event}, which is not a declared event\` : conforms({ 200: t }, { status: 200, body: ev.body });
+        if (bad && !problem) problem = t ? \`published \${ev.event} with a payload that does not fit: \${bad.replace(/^answered 200, but /, "")}\` : bad;
+      }
       return problem ? { ...response, contractError: \`\${out.endpoint} \${problem}\` } : response;
     },
   };
@@ -219,6 +248,7 @@ export const API_TARGET_RULES = `Target: TypeScript (strict mode), a pure HTTP h
 - Answer with \`answer(status, body)\` or \`fail(status, message)\` from "./api.ts" (\`answer(204)\` for no body). A body is records, lists of records, or plain values, exactly as the endpoint \`returns\`. "answer 404 \\"No such ticket\\"" means \`fail(404, "No such ticket")\`.
 - Available: the standard library, "./spec.ts", "./api.ts" and "./fmt.ts". No I/O, no timers, no randomness, no Date. Import with explicit extensions.
 - Model is immutable: return a new model from handle. Handle every endpoint in the switch.
+- A step "publish ticketCreated with the new ticket" adds \`{ event: "ticketCreated", body: ticket }\` to the handler's \`publish\` list, in step order. Publish only what the steps say; an answer that stops early publishes nothing the steps after it would have.
 - The module must export exactly Model, init and handlers (one handler per endpoint, typed by \`Handlers<Model>\` in spec.ts). When an endpoint has a contract, its handler's answers are typed: only the declared statuses and body types compile.`;
 
 // ---------------------------------------------------------------- driving a build
@@ -322,10 +352,21 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
   for (const job of jobs) {
     const client = mod.start();
     const responses: Responses = new Map();
+    // Events as the latest call published them: \`see ticketCreated.body…\`; a call that publishes none clears them.
+    let published: string[] = [];
+    const record = (res: { events?: { event: string; body: unknown }[] }) => {
+      for (const e of published) responses.delete(e);
+      published = [];
+      for (const ev of res.events ?? []) {
+        responses.set(ev.event, { status: 0, body: ev.body });
+        published.push(ev.event);
+      }
+    };
     const call = (c: Call) => {
       const h = toHttp(eps, c);
       const res = client.send(h.method, h.path, h.query, h.body, c.headers ?? {});
       responses.set(c.endpoint, res);
+      record(res);
       return res;
     };
     const broken = (always?: Step[]) => {
@@ -364,7 +405,9 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
           } else if (s.do === "request") {
             // A raw request, through the layers and the router: its answer is \`request.…\`.
             const r = requestOf(s);
-            responses.set("request", client.send(r.method, r.path, r.query, r.body, r.headers));
+            const res = client.send(r.method, r.path, r.query, r.body, r.headers);
+            responses.set("request", res);
+            record(res);
           } else if (s.do === "see") {
             const msg = checkSeeApi(responses, s);
             if (msg) {
@@ -379,7 +422,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         let violation: { line: number; message: string; actions: Call[]; screen: string } | undefined;
         for (const [i, c] of job.calls.entries()) {
           const res = call(c);
-          steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body, headers: Object.fromEntries(Object.entries(res.headers ?? {}).sort()) }));
+          steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body, headers: Object.fromEntries(Object.entries(res.headers ?? {}).sort()), events: res.events ?? [] }));
           const v = res.contractError ? { line: 0, message: `the answer breaks the contract: ${res.contractError}` } : broken(job.always);
           if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
         }
@@ -394,7 +437,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
 
 /** The latest responses, readable: for repair prompts and reports. */
 function dump(responses: Responses): string {
-  return [...responses].map(([ep, r]) => `${ep} → ${r.status} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
+  return [...responses].map(([ep, r]) => r.status === 0 ? `${ep} published ${JSON.stringify(r.body)}` : `${ep} → ${r.status} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
 }
 
 // ---------------------------------------------------------------- random sessions

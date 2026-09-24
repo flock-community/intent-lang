@@ -1,11 +1,12 @@
 app TicketsUi
   "A small front end for the tickets API: list, add and solve tickets."
+  "The list stays up to date when other agents add or solve tickets."
 
 uses support.ticketsApi as tickets
   tested with "apps/api/tickets-api.intent"
 
 state
-  rows: List Ticket = []            # the tickets as the API last listed them
+  rows: List Ticket = []            # the tickets, newest first
   draft: Text = ""
   problem: Text = ""
 
@@ -31,14 +32,21 @@ on click add
   - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
 
 on answer tickets.createTicket
-  - if its status is 201, clear draft and problem, and call tickets.listTickets
+  - if its status is 201, clear draft and problem
   - otherwise set problem to the error in its body
 
 on click solve
   - call tickets.solveTicket with id = the id of that ticket
 
 on answer tickets.solveTicket
-  - call tickets.listTickets
+  - if its status is 200, clear problem
+  - otherwise set problem to the error in its body
+
+on event tickets.ticketCreated
+  - if no row in rows has the id of its body, add its body at the start of rows
+
+on event tickets.ticketSolved
+  - replace the row in rows with the same id as its body by its body
 
 example "the list loads from the api"
   see rows has 8 rows
@@ -59,3 +67,14 @@ example "solving a ticket"
   click solve on row with "Refund for double charge"
   see status on row 1 = "Solved"
   see solve on row 1 is disabled
+
+example "another agent adds a ticket"
+  call tickets.createTicket with subject = "Coffee machine broken", customer = "Iris", priority = Low
+  see rows has 9 rows
+  see subject on row 1 = "Coffee machine broken"
+
+example "another agent solves a ticket first"
+  call tickets.solveTicket with id = 8
+  see status on row 1 = "Solved"
+  see solve on row 1 is disabled
+  see problem is hidden

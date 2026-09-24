@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
-import { callDescs, elmAnswerMsgs, genElmCalls, genTsCalls, hasClients, tsAnswerMsgs } from "./calls.ts";
+import { callDescs, elmAnswerMsgs, eventAliases, genElmCalls, genTsCalls, hasClients, tsAnswerMsgs } from "./calls.ts";
 
 export type Target = "elm" | "ts";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), ".."); // the Intent installation
@@ -273,9 +273,13 @@ port request : J.Value -> Cmd msg
 port answer : (D.Value -> msg) -> Sub msg
 
 
+port events : (D.Value -> msg) -> Sub msg
+
+
 type In
     = FromUi Ui.Wire
     | FromApi D.Value
+    | FromEvent D.Value
 
 
 send : List Spec.Call -> Cmd In
@@ -297,6 +301,9 @@ main =
 
                             FromApi v ->
                                 Spec.fromAnswer v
+
+                            FromEvent v ->
+                                Spec.fromEvent v
                 in
                 case msg of
                     Just e ->
@@ -305,7 +312,7 @@ main =
                     Nothing ->
                         ( m, Cmd.none )
         , view = \\m -> Html.map FromUi (Ui.render (Spec.toNode (App.view m)))
-        , subscriptions = \\_ -> Sub.batch [ answer FromApi${app.clockMs ? `, Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", text = "", value = "" })` : ""} ]
+        , subscriptions = \\_ -> Sub.batch [ answer FromApi, events FromEvent${app.clockMs ? `, Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", text = "", value = "" })` : ""} ]
         }
 `;
 }
@@ -337,9 +344,15 @@ main =
         , update =
             \\v m ->
                 let
+                    on =
+                        Result.withDefault "" (D.decodeValue (D.field "on" D.string) v)
+
                     msg =
-                        if D.decodeValue (D.field "on" D.string) v == Ok "answer" then
+                        if on == "answer" then
                             Result.toMaybe (D.decodeValue (D.field "answer" D.value) v) |> Maybe.andThen Spec.fromAnswer
+
+                        else if on == "event" then
+                            Result.toMaybe (D.decodeValue (D.field "event" D.value) v) |> Maybe.andThen Spec.fromEvent
 
                         else
                             case D.decodeValue Ui.wireDecoder v of
@@ -557,7 +570,7 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
       e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
     return `    case ${q(`${e.on} ${e.target}`)}:\n      return ${body};\n`;
   });
-  out.push(`export function fromWire(w: Wire): Msg | null {\n  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}${hasClients(app) ? `  if (w.on === "answer" && w.answer) return fromAnswer(w.answer as Answer);\n` : ""}  return null;\n}\n`);
+  out.push(`export function fromWire(w: Wire): Msg | null {\n  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}${hasClients(app) ? `  if (w.on === "answer" && w.answer) return fromAnswer(w.answer as Answer);\n  if (w.on === "event" && w.event) return fromEvent(w.event as { event: string; body: unknown });\n` : ""}  return null;\n}\n`);
   if (hasClients(app)) out.push(`\n${genTsCalls(app)}`);
   return out.join("");
 }
@@ -593,9 +606,9 @@ export function view(model: Model): Screen { /* … */ }
 /** Entry points of an app that makes calls: the browser performs them with fetch; tests hand them to the driver. */
 function genTsEntriesCalls(app: App): { main: string; test: string } {
   const main = `import * as App from "./app.ts";
-import { callEndpoints, callToJson, fromWire, toNode, type Call } from "./spec.ts";
+import { callEndpoints, callToJson, eventAliases, fromWire, toNode, type Call } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
-import { fetchCall } from "./calls.ts";
+import { fetchCall, listen } from "./calls.ts";
 
 const style = document.createElement("style");
 style.textContent = STYLE;
@@ -620,6 +633,8 @@ dispatch = mount(document.getElementById("app")!, {
   render: (m) => toNode(App.view(m)),
   clockMs: ${app.clockMs ?? 0},
 });
+// Events from the api (Server-Sent Events at /events), for the events this app handles.
+listen(eventAliases, (e) => dispatch({ on: "event", target: e.event, event: e }));
 `;
   const test = `import * as App from "./app.ts";
 import { callToJson, fromWire, toNode } from "./spec.ts";
@@ -702,7 +717,7 @@ export function scaffold(app: App, target: Target, dir: string): { appFile: stri
       writeFileSync(join(dir, "src/Main.elm"), genElmMainCalls(app));
       writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER_CALLS);
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
-      writeFileSync(join(dir, "glue.ts"), `// Performs the app's calls with fetch and sends the answers back in.\nimport { fetchCall, type CallDesc } from "./calls.ts";\n\nconst endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n(globalThis as any).intentConnect = (app: any) =>\n  app.ports.request.subscribe((c: any) => fetchCall(endpoints, c).then((a) => app.ports.answer.send(a)));\n`);
+      writeFileSync(join(dir, "glue.ts"), `// Performs the app's calls with fetch and sends the answers back in; passes the api's events in.\nimport { fetchCall, listen, type CallDesc } from "./calls.ts";\n\nconst endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n(globalThis as any).intentConnect = (app: any) => {\n  app.ports.request.subscribe((c: any) => fetchCall(endpoints, c).then((a) => app.ports.answer.send(a)));\n  listen(${JSON.stringify(eventAliases(app))}, (e) => app.ports.events.send(e));\n};\n`);
       writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script src="glue.js"></script><script>intentConnect(Elm.Main.init({ node: document.getElementById("app") }))</script>`, true));
     } else {
       writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));

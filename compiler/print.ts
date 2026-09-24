@@ -106,6 +106,7 @@ export function printApp(app: App): string {
         ...ep.params.map((p) => `    ${p.in} ${p.name}: ${typeToString(p.type)}`),
         ...(ep.answers ?? []).map((a) => `    answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`),
       ]),
+      ...(c.contract.events ?? []).map((e) => `  event ${e.name}: ${typeToString(e.type)}${e.note ? `  # ${e.note}` : ""}`),
     ]);
   if (app.design) {
     const d = app.design;
@@ -127,6 +128,7 @@ export function printApp(app: App): string {
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
   block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
   if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
+  block((app.events ?? []).map((e) => `event ${e.name}: ${typeToString(e.type)}${origin(app, e.line, e.note)}`));
   for (const ep of app.endpoints ?? [])
     block([
       `endpoint ${ep.name} ${ep.method} ${q(ep.path)}${origin(app, ep.line, ep.note)}`,

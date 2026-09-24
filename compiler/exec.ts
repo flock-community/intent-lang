@@ -5,6 +5,8 @@
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { toHttp, type CallDesc, type CallOut } from "../runtime/ts/calls.ts";
+import { literalJson } from "./api.ts";
+import { varyOther } from "./fuzz.ts";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,8 +15,9 @@ import type { Check, Example, Step } from "./ast.ts";
 export type Obs = any; // Ui Node as JSON
 
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick";
-  target: string; // element name ("" for tick)
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other";
+  target: string; // element name ("" for tick; the endpoint for another client's call)
+  call?: CallOut; // on "other": another client calls the provider
   list?: string;
   row?: number; // 1-based
   rowWith?: string; // or: the first row showing this text
@@ -27,7 +30,7 @@ export interface Action {
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
   | { kind: "trace"; actions: Action[]; always?: Step[] }
-  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; always?: Step[] };
+  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; always?: Step[] };
 
 /** The first broken `always` check in a session: after `actions`, `check` failed on `screen`. */
 export interface Violation {
@@ -84,20 +87,35 @@ async function openSession(dir: string, target: string): Promise<Session> {
   const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown) => any }> = {};
   for (const [alias, pdir] of Object.entries(providers)) clients[alias] = (await import(pathToFileURL(join(pdir, "test.mjs")).href + `?t=${Date.now()}`)).start();
   const log: string[] = [];
-  const settle = async () => {
-    const queue: CallOut[] = await raw.calls!();
+  const send = (c: CallOut) => {
+    const alias = c.endpoint.split(".")[0];
+    const client = clients[alias];
+    if (!client) throw new Error(`a call to ${c.endpoint}, but no provider for \`${alias}\` (add \`tested with "…"\` to its \`uses\`)`);
+    const h = toHttp(endpoints, c);
+    const res = client.send(h.method, h.path, h.query, h.body);
+    if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
+    return { alias, res };
+  };
+  // The events a call published go to the screen right after its answer, in the order published.
+  const deliverEvents = async (alias: string, events: { event: string; body: unknown }[] | undefined) => {
+    const made: CallOut[] = [];
+    for (const ev of events ?? []) {
+      log.push(`event ${alias}.${ev.event}`);
+      await raw.send({ on: "event", target: `${alias}.${ev.event}`, event: { event: `${alias}.${ev.event}`, body: ev.body } });
+      made.push(...(await raw.calls!()));
+    }
+    return made;
+  };
+  const settle = async (first: CallOut[] = []) => {
+    const queue: CallOut[] = [...first, ...(await raw.calls!())];
     for (let n = 0; queue.length; n++) {
       if (n >= 100) throw new Error("the calls do not settle: 100 answers in a row led to new calls");
       const c = queue.shift()!;
-      const alias = c.endpoint.split(".")[0];
-      const client = clients[alias];
-      if (!client) throw new Error(`a call to ${c.endpoint}, but no provider for \`${alias}\` (add \`tested with "…"\` to its \`uses\`)`);
-      const h = toHttp(endpoints, c);
-      const res = client.send(h.method, h.path, h.query, h.body);
-      if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
+      const { alias, res } = send(c);
       log.push(`${c.endpoint} ${stable(c.args)} → ${res.status}`);
       await raw.send({ on: "answer", target: c.endpoint, answer: { endpoint: c.endpoint, status: res.status, body: res.body } });
-      queue.push(...(await raw.calls!()));
+      const made = await raw.calls!();
+      queue.push(...(await deliverEvents(alias, res.events)), ...made);
     }
   };
   await settle();
@@ -107,7 +125,14 @@ async function openSession(dir: string, target: string): Promise<Session> {
       log.length = 0;
       return obs;
     },
+    // Another client calls the provider (an example's \`call tickets.createTicket …\`): the screen sees only its events.
     send: async (w) => {
+      const other = (w as { on?: string; call?: CallOut }).on === "other" ? (w as { call: CallOut }).call : undefined;
+      if (other) {
+        const { alias, res } = send(other);
+        log.push(`(another client) ${other.endpoint} ${stable(other.args)} → ${res.status}`);
+        return settle(await deliverEvents(alias, res.events));
+      }
       await raw.send(w);
       await settle();
     },
@@ -248,6 +273,7 @@ export function describe(obs: Obs): string {
 /** Resolve an abstract action against the current screen. Returns the wire event(s), or a reason it is unavailable. */
 export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailable: string } {
   if (a.on === "tick") return { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
+  if (a.on === "other") return { wires: [{ on: "other", call: a.call }] }; // handled by the session: another client calls the provider
   const f = locate(obs, a.target, a.list, a.row, a.rowWith);
   if ("missing" in f) return { unavailable: f.missing };
   const n = f.node;
@@ -271,6 +297,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "choose": return { on: "choose", target: s.target, value: s.value };
     case "tick": return { on: "tick", target: "", times: s.times };
+    case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])) } } : undefined;
     default: return undefined;
   }
 }
@@ -358,6 +385,7 @@ function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => 
   };
   walk(obs.c);
   if (job.ticks.length) out.push({ w: 3, a: { on: "tick", target: "", times: job.ticks[Math.floor(rnd() * job.ticks.length)] } });
+  for (const o of job.others ?? []) out.push({ w: 1, a: varyOther(o, rnd) });
   return out;
 }
 

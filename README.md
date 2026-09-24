@@ -351,6 +351,15 @@ different apps. First run of `apps/15-tickets-ui.intent`: the provider and the s
 the first attempt in Elm and TypeScript, both twin-verified (24 sessions each), and 60 of 60
 sessions identical across the two targets (801 steps made calls).
 
+**Events** (v22) keep screens up to date with changes made elsewhere. A contract declares
+`event ticketCreated: Ticket`, the service's steps `publish` it, and a screen handles it with
+`on event tickets.ticketCreated`. A screen's example can let *another client* call the provider
+(`call tickets.createTicket with …`) and check that the screen follows. In the browser, events
+arrive over Server-Sent Events. `apps/15-tickets-ui.intent` now keeps its list up to date from
+events. It built on the first attempt in Elm and TypeScript, twin-verified, and 60 of 60 random
+sessions (with 286 calls by another client) were identical across the two targets. In
+Chromium, a second page showed a ticket added in the first.
+
 **Layers** (v21) are the parts of an HTTP service nobody wants to think through again:
 `std.http.secure` (safe headers), `std.http.cors` (which web pages may call) and
 `std.http.apiKey` (who calls; provides `caller` to every endpoint). Each is a spec of its own
