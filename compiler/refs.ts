@@ -57,6 +57,7 @@ export function sentences(app: App): { text: string; line: number; where: string
   for (const h of app.handlers) h.steps.forEach((s, i) => out.push({ text: s, line: h.stepLines?.[i] ?? h.line, where: `on ${h.verb}${h.target ? " " + h.target : ""}` }));
   for (const d of app.derive) out.push({ text: d.sentence, line: d.line, where: `derive ${d.name}` });
   app.rules.forEach((r, i) => out.push({ text: r, line: app.ruleLines?.[i] ?? 1, where: "rules" }));
+  for (const inv of app.invariants ?? []) out.push({ text: inv.text, line: inv.line, where: "always" });
   const walk = (els: Element[]) => {
     for (const el of els) {
       if (el.expr) out.push({ text: el.expr, line: el.line, where: `${el.kind} ${el.name}` });

@@ -63,6 +63,8 @@ export interface TraceResult {
 
 /** Invariants only apply to what is on the screen: a check on an absent element is skipped. */
 function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]): Violation | undefined {
+  // A sentence in `always` over the data (checked by openSession).
+  if (obs?.dataViolation) return { line: obs.dataViolation.line, message: obs.dataViolation.message, actions: [...actions], screen: `${describe(obs)}\n\nThe app's data (from data(model)):\n${JSON.stringify(obs.dataViolation.data, null, 1).slice(0, 2500)}` };
   for (const s of always ?? []) {
     if (s.do !== "see") continue;
     if (!s.every && s.check.is !== "hidden" && s.check.is !== "shown" && "missing" in locate(obs, s.target)) continue;
@@ -76,6 +78,8 @@ interface Session {
   send(w: object): Promise<void>;
   calls?(): Promise<CallOut[]>;
   through?(): Promise<Record<string, Record<string, unknown>>>;
+  data?(): Promise<unknown>;
+  clock?(): Promise<{ now: string; today: string }>;
 }
 
 /**
@@ -84,7 +88,37 @@ interface Session {
  * pending. The screen after a step is the settled screen. Each observation also lists the calls
  * made since the previous one, so two builds that call differently are different apps.
  */
+/**
+ * A session, plus the checks over the app's data (`- sentence` lines in `always`, invariants.mjs):
+ * after every observation they run on the app's data, and a sentence that does not hold is marked
+ * on the observation, where the `always` handling picks it up.
+ */
 async function openSession(dir: string, target: string): Promise<Session> {
+  const session = await openSessionInner(dir, target);
+  if (!existsSync(join(dir, "invariants.mjs"))) return session;
+  const mod = await import(pathToFileURL(join(dir, "invariants.mjs")).href + `?t=${Date.now()}`);
+  const texts: { line: number; text: string }[] = JSON.parse(readFileSync(join(dir, "invariants.json"), "utf8"));
+  return {
+    ...session,
+    observe: async () => {
+      const obs = await session.observe();
+      const data = await session.data?.();
+      const clock = (await session.clock?.()) ?? clockAt("2026-01-05T09:00");
+      for (const [i, check] of (mod.invariants as { line: number; holds: (d: unknown, c: unknown) => boolean }[]).entries()) {
+        let holds: boolean;
+        try {
+          holds = !!check.holds(data, clock);
+        } catch (e) {
+          holds = false;
+        }
+        if (!holds) return { ...obs, dataViolation: { line: check.line, message: `"${texts[i].text}" does not hold`, data } };
+      }
+      return obs;
+    },
+  };
+}
+
+async function openSessionInner(dir: string, target: string): Promise<Session> {
   // Apps that read the clock (clock.json): the driver owns it. It starts at `examples start at`,
   // moves with every tick and every `wait`, and comes with every event (and every call to a provider).
   const clockSpec: { start: string; tickMs: number } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
@@ -95,6 +129,7 @@ async function openSession(dir: string, target: string): Promise<Session> {
     ? inner
     : {
         ...inner,
+        clock: async () => clockNow()!,
         send: async (w) => {
           const wire = w as { on?: string; ms?: number };
           if (wire.on === "wait") {
@@ -158,6 +193,8 @@ async function openSession(dir: string, target: string): Promise<Session> {
   };
   await settle();
   return {
+    data: raw.data,
+    clock: raw.clock,
     observe: async () => {
       const obs = { ...(await raw.observe()), calls: [...log] };
       log.length = 0;
@@ -185,19 +222,23 @@ async function openRawSession(dir: string, target: string, clock?: { now: string
   if (target === "ts") {
     const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
     const s = mod.start(clock);
-    return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []), through: async () => (s.through ? s.through() : {}) };
+    return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []), through: async () => (s.through ? s.through() : {}), data: async () => (s.data ? s.data() : undefined) };
   }
   const require = createRequire(import.meta.url);
   const { Elm } = require(join(dir, "worker.cjs"));
-  const app = clock ? Elm.Worker.init({ flags: clock }) : Elm.Worker.init();
+  // A worker that takes flags (the clock, or nothing) says so in its type.
+  const takesFlags = readFileSync(join(dir, "src/Worker.elm"), "utf8").includes("Program D.Value");
+  const app = takesFlags ? Elm.Worker.init({ flags: clock ?? null }) : Elm.Worker.init();
   let last: Obs | undefined;
   let made: CallOut[] = [];
   let through: Record<string, Record<string, unknown>> = {};
+  let data: unknown;
   let waiting: ((v: Obs) => void) | undefined;
   app.ports.observe.subscribe((v: Obs) => {
     // Apps that make calls observe { screen, calls }.
     if (v && v.screen) {
-      made.push(...v.calls);
+      made.push(...(v.calls ?? []));
+      if (v.data !== undefined) data = v.data;
       if (v.through) through = v.through;
       v = v.screen;
     }
@@ -230,6 +271,7 @@ async function openRawSession(dir: string, target: string, clock?: { now: string
       return out;
     },
     through: async () => through,
+    data: async () => data,
   };
 }
 

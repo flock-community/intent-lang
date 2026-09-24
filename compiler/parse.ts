@@ -320,13 +320,18 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     err(node.line, "SYNTAX", `expected \`on ${VERBS} <element>\` or \`on ${CLOCK_VERBS}\``);
   } else if (t === "always") {
     for (const c of node.children) {
+      if (c.text.startsWith("- ")) {
+        // A sentence over the data (state, derived values): checked after every step of every session.
+        (app.invariants ??= []).push({ text: (c.text.slice(2) + flattenChildren(c)).trim(), line: c.line });
+        continue;
+      }
       const r = parseStep(c, err, where === "component");
       if (!r) continue;
-      if (r.step.do !== "see") err(c.line, "SYNTAX", "`always` holds only `see` checks", c.indent + 1);
+      if (r.step.do !== "see") err(c.line, "SYNTAX", "`always` holds `see` checks (the screen) and `- sentence` lines (the data)", c.indent + 1);
       else if (r.step.at) err(c.line, "SYNTAX", "`always` checks cannot point at a row", c.indent + 1);
       else app.always.push(r.step);
     }
-    if (!node.children.length) err(node.line, "SYNTAX", "expected indented `see …` checks");
+    if (!node.children.length) err(node.line, "SYNTAX", "expected `see …` checks or `- sentence` lines");
   } else if (t === "rules") {
     const lines: number[] = [];
     app.rules.push(...parseBullets(node, err, lines));
@@ -454,6 +459,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     check(app, err, warn, clockLine, used);
     checkRefs(app, err, warn);
     checkBodies(app, err, warn);
+    checkHints(app, warn);
   }
   diagnostics.sort((a, b) => a.line - b.line || a.col - b.col);
   return { app: diagnostics.some((d) => d.level === "error") ? undefined : app, diagnostics };
@@ -467,7 +473,18 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   check(app, err, warn, clockLine, used);
   checkRefs(app, err, warn);
   checkBodies(app, err, warn);
+  checkHints(app, warn);
   return diags;
+}
+
+/** Hints: unguarded absent values, and rules that read like invariants. */
+function checkHints(app: App, warn: Err) {
+  checkNothing(app, warn);
+  // A rule that reads like an invariant is only guidance in `rules`; in `always` it is checked.
+  app.rules.forEach((r, i) => {
+    if (/\b(never|always|at most|at least|no two|cannot|can't|must not|may not)\b/i.test(r) && (app.ruleLines?.[i] ?? 0) < LINE_BASE)
+      warn(app.ruleLines?.[i] ?? 1, "UNCHECKED", `this rule reads like something that must always hold, but \`rules\` is only guidance: move it to \`always { - … }\` so every session checks it`);
+  });
 }
 
 /**
@@ -499,6 +516,46 @@ function checkBodies(app: App, err: Err, warn: Err) {
     walk(ep.body, `endpoint ${ep.name}`, true);
     if (ep.line < LINE_BASE && !endsBlock(ep.body, false)) err(ep.line, "NO_ANSWER", `endpoint ${ep.name} does not answer on every path: end it with \`answer …\`, or give every \`if\` an \`else\` that answers`);
   }
+}
+
+/**
+ * A value that may be absent (`T or nothing`) is handled where it is used: a sentence that reads
+ * it says what happens when there is none, or sits inside an `if` that asks. Otherwise: a hint.
+ */
+function checkNothing(app: App, warn: Err) {
+  const optional = new Set(app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name));
+  if (!optional.size) return;
+  const esc = (x: string) => x.replace(/\./g, "\\.");
+  const handles = (text: string, x: string) =>
+    new RegExp(`there is (a |an |no )?@${esc(x)}\\b|\\bno @${esc(x)}\\b|@${esc(x)} is (not )?(nothing|set)|without (a |an )?@${esc(x)}\\b|\\b(set|clear) @${esc(x)}\\b`).test(text);
+  const reads = (text: string) => [...new Set(refsIn(text).map((r) => r.split(".")[0]))].filter((x) => optional.has(x) && !handles(text, x));
+  const hint = (line: number, x: string, where: string) =>
+    line < LINE_BASE && warn(line, "UNGUARDED", `@${x} may be nothing (${where}): say what happens then, inside \`if there is a @${x} { … }\` or in the sentence ("…, or nothing when there is no @${x}")`);
+  const walk = (b: Stmt[], guarded: Set<string>, where: string) => {
+    for (const s of b) {
+      if (s.k === "step" || s.k === "answer") for (const x of reads(s.text)) if (!guarded.has(x)) hint(s.line, x, where);
+      if (s.k === "if") {
+        for (const br of s.branches) {
+          const inner = new Set(guarded);
+          for (const x of optional) if (br.cond !== undefined && handles(br.cond, x)) inner.add(x);
+          walk(br.body, inner, where);
+        }
+        // `if there is no @x { stop }`: an early exit guards what follows
+        const [only] = s.branches;
+        const last = only.body[only.body.length - 1];
+        if (s.branches.length === 1 && only.cond !== undefined && last && (last.k === "stop" || last.k === "answer"))
+          for (const x of optional) if (handles(only.cond, x)) guarded = new Set([...guarded, x]);
+      }
+    }
+  };
+  for (const h of app.handlers) if (h.body) walk(h.body, new Set(), `on ${h.verb}${h.target ? " " + h.target : ""}`);
+  for (const ep of app.endpoints ?? []) if (ep.body) walk(ep.body, new Set(), `endpoint ${ep.name}`);
+  for (const d of app.derive) for (const x of reads(d.sentence)) hint(d.line, x, `derive ${d.name}`);
+  const els = (list: Element[]) => list.forEach((el) => {
+    for (const t of [el.expr, el.visibleWhen, el.enabledWhen]) if (t) for (const x of reads(t)) hint(el.line, x, `${el.kind} ${el.name}`);
+    els(el.children);
+  });
+  els(app.screen);
 }
 
 /**

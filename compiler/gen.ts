@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { App, Element, Literal, Type } from "./ast.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
 import { usesClock } from "./refs.ts";
+import { elmEncoder as elmEncode, genElmJson } from "./calls.ts";
 import { callDescs, elmAnswerMsgs, eventsByAlias, genElmCalls, genTsCalls, hasClients, hasThrough, throughs, tsAnswerMsgs } from "./calls.ts";
 
 export type Target = "elm" | "ts";
@@ -103,6 +104,34 @@ function tsLiteral(l: Literal): string {
 
 // ---------------------------------------------------------------- Elm
 
+/** Apps with sentences in `always`: the harness checks them on the app's data after every step. */
+export const hasInvariants = (app: App) => !!app.invariants?.length;
+/** A state field's name in the data: `pager.page` → `pagerPage`. */
+export const dataField = (name: string) => name.replace(/\.([a-z])/g, (_, c: string) => c.toUpperCase());
+
+/** The app's data as TypeScript: every state field, for the checks in `always`. */
+export function tsData(app: App): string {
+  return `/** The app's data, for the checks in \`always\`: every state field, as in the spec. \`data(model)\` in the app module fills it. */\nexport type Data = { ${app.state.map((f) => `${dataField(f.name)}: ${tsType(f.type)}`).join("; ")} };\n\n`;
+}
+
+/** The app's data as the checks see it: every state field, typed as in the spec. */
+function genElmData(app: App): string {
+  return `{-| The app's data, for the checks in \`always\`: every state field, as in the spec. \`data\` in the app module fills it. -}
+type alias Data =
+    { ${app.state.map((f) => `${dataField(f.name)} : ${elmType(f.type)}`).join("\n    , ")}
+    }
+
+
+encodeData : Data -> J.Value
+encodeData d =
+    J.object
+        [ ${app.state.map((f) => `( ${q(dataField(f.name))}, ${elmEncode(app, f.type, `d.${dataField(f.name)}`)} )`).join("\n        , ")}
+        ]
+
+
+`;
+}
+
 export function elmType(t: Type): string {
   switch (t.k) {
     case "Text": return "String";
@@ -130,7 +159,7 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-${hasClients(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
+${hasClients(app) || hasInvariants(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
   out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec. -}\ntype alias Clock =\n    { now : DateTime, today : Date }\n\n\n`);
@@ -229,6 +258,8 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     return `        ${pat} ->\n            ${body}\n`;
   });
   out.push(`fromWire : Ui.Wire -> Maybe Msg\nfromWire w =\n    case ( w.on, w.target ) of\n${cases.join("\n")}\n        _ ->\n            Nothing\n`);
+  if (hasClients(app) || hasInvariants(app)) out.push(`\n\n${genElmJson(app)}`);
+  if (hasInvariants(app)) out.push(genElmData(app));
   if (hasClients(app)) out.push(`\n\n${genElmCalls(app)}`);
   return out.join("");
 }
@@ -382,6 +413,7 @@ ${calls ? `
 const elmWorkerPorts = (app: App) => {
   const calls = hasClients(app);
   const c = usesClock(app);
+  const inv = hasInvariants(app);
   const upd = c ? "App.update clock" : "App.update";
   return `port module Worker exposing (main)
 
@@ -456,7 +488,7 @@ main =
                         Ui.encode (Spec.toNode (App.view${c ? " clock" : ""} next))
                 in
                 ( { app = next${calls ? ", pending = []" : ""}${c ? ", clock = clock" : ""} }
-                , observe ${calls ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}( "screen", screen ), ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) ) ])` : "screen"}
+                , observe ${calls || inv ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}${inv ? `( "data", Spec.encodeData (App.data next) ), ` : ""}( "screen", screen )${calls ? `, ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) )` : ""} ])` : "screen"}
                 )
         , subscriptions = \\_ -> act identity
         }
@@ -610,6 +642,7 @@ import type { Node, Wire } from "./ui.ts";
 ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : ""}
 `);
   out.push(tsDomain(app));
+  if (hasInvariants(app)) out.push(tsData(app));
   const evs = events(app);
   out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${[...evs
     .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)]
@@ -767,7 +800,7 @@ ${c ? "  let clock = initial;\n" : ""}  const first = App.init(${c ? "clock" : "
   let pending: CallOut[] = first.calls.map((c) => out(c, m));
   return {
     observe: () => JSON.parse(JSON.stringify(toNode(App.view(m${c ? ", clock" : ""})))),
-    /** What the client layers get from the current state, per api. */
+${hasInvariants(app) ? "    /** The app's data, for the checks in `always`. */\n    data: () => JSON.parse(JSON.stringify(App.data(m))),\n" : ""}    /** What the client layers get from the current state, per api. */
     through: () => ${hasThrough(app) ? "JSON.parse(JSON.stringify(App.through(m)))" : "({})"},
     /** The calls made since the last time this was asked, in order. */
     calls() {
@@ -840,7 +873,7 @@ export function start(${c ? "initial: Clock" : ""}) {
 ${c ? "  let clock = initial;\n" : ""}  let m = App.init(${c ? "clock" : ""});
   return {
     observe: () => JSON.parse(JSON.stringify(toNode(App.view(m${c ? ", clock" : ""})))),
-    send(w: Wire) {
+${hasInvariants(app) ? "    /** The app's data, for the checks in `always`. */\n    data: () => JSON.parse(JSON.stringify(App.data(m))),\n" : ""}    send(w: Wire) {
 ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}      const e = fromWire(w);
       if (e) m = App.update(e, m${c ? ", clock" : ""});
     },
@@ -869,7 +902,12 @@ export function scaffold(app: App, target: Target, dir: string, layerDirs: Recor
     copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
     const spec = genElmSpec(app);
     writeFileSync(join(dir, "src/Spec.elm"), spec);
-    if (hasClients(app) || usesClock(app)) {
+    if (!hasClients(app) && !usesClock(app) && hasInvariants(app)) {
+      // Checks in `always` need the data from the test worker; the browser entry stays plain.
+      writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
+      writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
+      writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
+    } else if (hasClients(app) || usesClock(app)) {
       writeFileSync(join(dir, "src/Main.elm"), genElmMainPorts(app));
       writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
       copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));

@@ -14,6 +14,8 @@ import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
 import { callDescs, hasClients, hasThrough } from "./calls.ts";
 import { usesClock } from "./refs.ts";
+import { prepareInvariants } from "./invariants.ts";
+import { hasInvariants } from "./gen.ts";
 import { readLayerConfig, scaffoldLayer } from "./layer.ts";
 
 export interface BuildResult {
@@ -64,7 +66,17 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   // Apps that read the clock: where it starts in tests, and how far one clock tick moves it.
   if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })) }));
   mkdirSync(join(dir, "log"), { recursive: true });
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app));
+  // Sentences in `always` over the data: their checks are compiled once per spec, apart from the app.
+  if (hasInvariants(app) && !layer) {
+    const inv = await prepareInvariants(app, specText, dir, log);
+    res.costUsd += inv.costUsd;
+    if (inv.error) {
+      res.attempts.push({ stage: "compile", detail: inv.error });
+      res.ms = Date.now() - t0;
+      return res;
+    }
+  }
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasInvariants(app));
 
   let code = "";
   let problems = "";

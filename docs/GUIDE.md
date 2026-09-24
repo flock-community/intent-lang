@@ -208,6 +208,22 @@ always {
 }
 ```
 
+Anything else that must always hold about the data, across rows or against the clock, is a
+sentence (`apps/17-habits.intent`):
+
+```
+always {
+  see every row of habits: streak is at least 0
+  - no two @dones have the same @habit and the same @day
+  - no @Done has a @day after @today
+}
+```
+
+A separate compiler stage turns these sentences into checks, once per spec, apart from the
+app's code, so the app's compiler cannot bend a check to its own reading. Every build runs them
+after every step. A sentence in `rules` is only guidance; the checker points out rules that read
+like they should be in `always`.
+
 ## 4. Reuse: bundles, components and a design
 
 Specs reuse specs. A **bundle** is a library under `lib/`. `lib/std/list.intent` offers a

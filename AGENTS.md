@@ -69,9 +69,8 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    English only in the leaves.
 3. **Identity and references** (review #2): relations as declared references instead of text
    columns with a comment, and defined behaviour when a selection points at nothing.
-4. **Real invariants** (review #3): per-row and numeric checks done in v14 (screen-level,
-   harness-verified). Still open: invariants across rows, over state not on screen, and a
-   warning for `rules` sentences that no check covers.
+4. ~~**Real invariants**~~ (review #3): per-row and numeric checks (v14), sentences in `always`
+   checked over the app's data (v31), `UNCHECKED` for rules that should be checks.
 5. **Bundles as versioned behavioural contracts** (review #4): a demo for every bundle, a
    semantic version computed from names *and* examples, namespaced imports, immutable
    versions.
@@ -85,13 +84,12 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    order: ~~v22 events and subscriptions~~ done, ~~v23 client layers (keys from screens)~~
    done, ~~v24 blocks with braces~~ done, ~~v25 `@` references in sentences~~ done, ~~v26 import what
    you use~~ done, ~~v27 traceability for apis~~ done, ~~v28 time and a steerable clock~~ done,
-   ~~v29 structure for control words~~ done. Next, from the v29 score (74/100,
-   `docs/reviews/scores/v29.md`) and the research on modern languages
-   (`docs/reviews/modern-languages.md`): measure again (`converge` at the current version), then
-   diagnostics that carry their fix (`check --fix`) and `intent fix` with pinned `language vN`,
-   stored state and effects on actions, invariants over state, and an explicit "none" type
-   (approval, permissions, outbox, compensation) with a `std.actions` layer, then stored state
-   with identity and references, then unions of records and several targets per app. Also
+   ~~v29 structure for control words~~ done, ~~v30 `T or nothing`~~ done, ~~v31 invariants over
+   the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`). Next: stored
+   state (survives a restart), then effects on actions (approval, permissions, outbox,
+   compensation) with a `std.actions` layer. Later (the language is alpha): diagnostics that
+   carry their fix and `intent fix` with pinned `language vN`; identity and references for stored
+   records, then unions of records and several targets per app. Also
    open: styled builds of screens that make calls, and Kotlin as a second API target. Wire
    names for choice values wait until a spec must match an existing API.
 

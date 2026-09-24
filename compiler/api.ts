@@ -6,7 +6,7 @@ import type { Endpoint } from "./ast.ts";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LINE_BASE, type App, type Check, type Example, type Literal, type Step, type Type } from "./ast.ts";
-import { ROOT, tsDomain, tsType } from "./gen.ts";
+import { ROOT, tsData, tsDomain, tsType } from "./gen.ts";
 import { usesClock } from "./refs.ts";
 import { toHttp } from "../runtime/ts/calls.ts";
 import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
@@ -59,7 +59,7 @@ export function genApiSpec(app: App): string {
 import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
 
-${tsDomain(app)}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
+${tsDomain(app)}${app.invariants?.length ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
 ${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
 
@@ -178,7 +178,9 @@ export function pipeline() {
     for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
     return { ...normalize(res), endpoint, appAnswer, events, source };
   };
-  return Object.assign(handle, { runJob });
+  /** The app's data, for the checks in \`always\`. */
+  const data = () => ((App as any).data ? copy((App as any).data(model)) : undefined);
+  return Object.assign(handle, { runJob, data });
 }
 `;
 
@@ -247,6 +249,10 @@ export function start() {
     /** Would an event stream with these headers open (GET /events through the layers)? Its status. */
     stream(headers: Record<string, string> = {}, query: Record<string, string> = {}) {
       return handle({ method: "GET", path: "/events", query, headers, body: undefined, stream: true } as any).status;
+    },
+    /** The app's data, for the checks in \`always\`. */
+    data() {
+      return handle.data();
     },
     /** Recurring work, run by the driver when a \`wait\` moves the clock past its time. */
     runJob(name: string, clock: Clock) {
@@ -415,6 +421,9 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
   // Apis that read the clock: it starts at `examples start at` and moves with `wait`; recurring work
   // runs at start + k × its interval, in time order (ties: declaration order), when a wait passes it.
   const clockSpec: { start: string; jobs: { name: string; every: number }[] } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
+  const inv = existsSync(join(dir, "invariants.mjs"))
+    ? { checks: (await import(pathToFileURL(join(dir, "invariants.mjs")).href + `?t=${Date.now()}`)).invariants as { line: number; holds: (d: unknown, c: unknown) => boolean }[], texts: JSON.parse(readFileSync(join(dir, "invariants.json"), "utf8")) as { text: string }[] }
+    : undefined;
   const out: unknown[] = [];
   for (const job of jobs) {
     const client = mod.start();
@@ -450,6 +459,20 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
       return res;
     };
     const broken = (always?: Step[]) => {
+      // Sentences in `always` over the api's data.
+      if (inv) {
+        const data = client.data?.();
+        const clock = clockAtMs(elapsed) ?? clockAt("2026-01-05T09:00");
+        for (const [i, check] of inv.checks.entries()) {
+          let holds: boolean;
+          try {
+            holds = !!check.holds(data, clock);
+          } catch {
+            holds = false;
+          }
+          if (!holds) return { line: check.line, message: `"${inv.texts[i].text}" does not hold; the data: ${JSON.stringify(data).slice(0, 1500)}` };
+        }
+      }
       for (const s of always ?? []) if (s.do === "see") {
         const msg = checkSeeApi(responses, s, true);
         if (msg) return { line: s.line, message: msg };
@@ -485,6 +508,11 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
           } else if (s.do === "tick" && s.ms) {
             // Time passes: recurring work that falls in it runs; what it publishes is what this step published.
             record({ events: wait(s.ms) });
+            const v = broken(job.always);
+            if (v) {
+              failure = { line: s.line, message: `after this wait, \`always\` (line ${v.line}) is broken: ${v.message}`, screen: dump(responses) };
+              break;
+            }
           } else if (s.do === "request") {
             // A raw request, through the layers and the router: its answer is \`request.…\`.
             const r = requestOf(s);
@@ -506,6 +534,8 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
         for (const [i, c] of job.calls.entries()) {
           if (c.endpoint === "(wait)") {
             steps.push(JSON.stringify({ wait: c.args.ms, events: wait(c.args.ms as number) }));
+            const v = broken(job.always);
+            if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
             continue;
           }
           const res = call(c);

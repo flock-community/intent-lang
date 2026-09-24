@@ -1,0 +1,41 @@
+app NothingChecks {
+  "A value that may be absent is handled where it is used."
+}
+
+state {
+  picked: Int or nothing = nothing
+  items: List Int = []
+  total: Int = 0
+}
+
+derive {
+  shown = the item equal to @picked                    # expect: UNGUARDED
+  safe = the item equal to @picked, or 0 when there is no @picked
+}
+
+screen {
+  text total
+  button add "Add"
+  button pick "Pick"
+}
+
+on click pick {
+  - set @picked to 2
+}
+
+on click add {
+  - increase @total by @picked                         # expect: UNGUARDED
+  if there is a @picked {
+    - increase @total by @picked
+  }
+  if there is no @picked {
+    stop
+  }
+  - increase @total by @picked
+}
+
+example "adds" {
+  click pick
+  click add
+  see total = "4"
+}

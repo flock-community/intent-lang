@@ -54,8 +54,8 @@ derive {
   matching = the @tickets whose @subject or @customer contains @search (trimmed, ignoring case), and whose @status fits @statusFilter (@AllTickets fits every @status)
   sorted = @matching in the order of @sort: @Newest is highest @id first; @Oldest is lowest @id first; @ByPriority is @Urgent, @High, @Normal, @Low, and within one @priority highest @id first
   urgentOpen = the number of @Urgent @tickets that are not @Solved
-  current = the ticket whose @id is @selected
-  thread = the @comments whose @ticket is @selected, in their order
+  current = the ticket whose @id is @selected, or nothing when there is no @selected
+  thread = the @comments whose @ticket is @selected, in their order (none when there is no @selected)
   byPriority = one @Bar per @priority, in the order @Urgent, @High, @Normal, @Low: @label is the @priority's name, @count is the number of @tickets with that @priority that are not @Solved, and @share is @count × 100 divided by the largest @count of the four, rounded down (0 when all counts are 0)
 }
 
@@ -204,6 +204,9 @@ on click close {
 }
 
 on click send {
+  if there is no @selected {
+    stop
+  }
   - add a @Comment to the end of @comments with @ticket = @selected, @author = "Sam" and @body = @reply trimmed
   if @current is @Open {
     - set its @status to @Pending

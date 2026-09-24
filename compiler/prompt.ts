@@ -130,7 +130,13 @@ const CLOCK_RULE = {
   ts: `Clock (this app reads @now or @today): \`init(clock)\`, \`update(msg, model, clock)\` and \`view(model, clock)\` take the clock (type \`Clock\` from spec.ts) as their LAST argument. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,
 };
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false): string {
+/** Apps with sentences in `always`: the harness checks them on the app's data, which the app hands over. */
+const DATA_RULE = {
+  elm: "Data (this spec has sentences in `always`): also expose `data : Model -> Data` (the `Data` record in Spec: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
+  ts: "Data (this spec has sentences in `always`): also export `data(model: Model): Data` (the `Data` type in spec.ts: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
+};
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const lang = target === "elm" ? "elm" : "ts";
   if (api)
@@ -160,7 +166,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${clock ? `# Clock\n\n${API_CLOCK_RULE}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
+${clock ? `# Clock\n\n${API_CLOCK_RULE}\n\n` : ""}${data ? `# Data\n\n${DATA_RULE.ts}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
   return `# Language reference
 
 ${language}
@@ -176,7 +182,7 @@ ${FMT_API[target]}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}${clock && !api ? `\n${CLOCK_RULE[target]}\n` : ""}
+${calls ? `\n${CALL_RULES[target]}${through ? `\n${THROUGH_RULE[target]}` : ""}\n` : ""}${clock && !api ? `\n${CLOCK_RULE[target]}\n` : ""}${data && !api ? `\n${DATA_RULE[target]}\n` : ""}
 # Generated interface (${target === "elm" ? "src/Spec.elm" : "spec.ts"})
 
 \`\`\`${lang}

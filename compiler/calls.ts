@@ -112,7 +112,7 @@ function elmDecoder(app: App, t: Type): string {
   }
 }
 
-function elmEncoder(app: App, t: Type, v: string, d = 0): string {
+export function elmEncoder(app: App, t: Type, v: string, d = 0): string {
   switch (t.k) {
     case "Text": return `J.string ${v}`;
     case "Int": return `J.int ${v}`;
@@ -129,8 +129,8 @@ function elmEncoder(app: App, t: Type, v: string, d = 0): string {
   }
 }
 
-export function genElmCalls(app: App): string {
-  const eps = clientEndpoints(app);
+/** JSON decoders and encoders for every record and choice (calls, answers, and the app's data for checks). */
+export function genElmJson(app: App): string {
   const out: string[] = [];
   // JSON for every record and choice: calls send them, answers bring them back.
   out.push(`jsonAndMap : D.Decoder a -> D.Decoder (a -> b) -> D.Decoder b\njsonAndMap =\n    D.map2 (|>)\n\n\n`);
@@ -146,6 +146,12 @@ export function genElmCalls(app: App): string {
     out.push(`decode${r.name} : D.Decoder ${r.name}\ndecode${r.name} =\n    D.succeed ${r.name}\n${r.fields.map((f) => `        |> jsonAndMap ${field(f)}`).join("\n")}\n\n\n`);
     out.push(`encode${r.name} : ${r.name} -> J.Value\nencode${r.name} r =\n    J.object\n        [ ${r.fields.map((f) => `( ${q(f.name)}, ${elmEncoder(app, f.type, `r.${f.name}`)} )`).join("\n        , ")}\n        ]\n\n\n`);
   }
+  return out.join("");
+}
+
+export function genElmCalls(app: App): string {
+  const eps = clientEndpoints(app);
+  const out: string[] = [];
   out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message. -}\ntype Call\n    = ${eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")} }` : ""}`).join("\n    | ")}\n\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);

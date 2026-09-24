@@ -1,4 +1,4 @@
-# Intent — language reference (v30)
+# Intent — language reference (v31)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -81,14 +81,18 @@ derive { … }                # named values computed from state: `name = senten
 screen { … }                # what the user sees, top to bottom (§4)
 on <verb> <element> { … }   # what happens (§5): `- sentence` lines
 rules { … }                 # invariants in words: `- sentence` lines
-always { … }                # invariants the harness checks after every action: `see` steps
+always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data)
 example "name" { … }        # proof (§6): steps
 ```
 
 Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `T or nothing`, a
 record name, a choice name. `T or nothing` is a value that may be absent: say so instead of
 using a stand-in such as `0` or `""` (`selected: Int or nothing = nothing`, then
-`visible when there is a @selected` and `set @selected to nothing`). `Maybe T` still reads. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
+`visible when there is a @selected` and `set @selected to nothing`). `Maybe T` still reads.
+There is no null and no stand-in: wherever a sentence uses such a value, it says what happens
+when there is none, in the sentence ("…, or nothing when there is no @selected") or around it
+(`if there is a @selected { … }`, or an early `if there is no @selected { stop }`). The checker
+warns (`UNGUARDED`) when it does not. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
@@ -835,9 +839,25 @@ value). Comparisons: `at least`, `at most`, `above`, `below`, against a number o
 element. In `see every row of …` that other element is in the same row; in a plain check it is
 on the screen. These also work as example steps.
 
-An invariant across rows ("no table is booked twice") cannot be an `always` check yet. Until
-it can: derive a count of the violations, show it in an alert that is only visible when the
-count is above 0, and write `always see <alert> is hidden`.
+**Sentences over the data.** Anything that must always hold about the data, also what the
+screen does not show, is a `- sentence` in `always`:
+
+```
+always {
+  see every row of habits: streak is at least 0
+  - no two @dones have the same @habit and the same @day
+  - no @Done has a @day after @today
+}
+```
+
+The harness checks every such sentence after every step of every example and random session.
+A separate compiler stage turns the sentences into checks, once per spec and apart from the
+app's code, so an app cannot bend a check to its own reading; every build of the spec runs the
+same checks. The app hands its data over (every state field, generated as `Data`). A sentence
+that does not hold fails the build like any `always` check, with the steps that led there and the
+data at that moment. `rules` stays for guidance the compiler reads but nothing checks (how
+something is done, what a word means); a rule that reads like an invariant gets an `UNCHECKED`
+hint to move it to `always`.
 
 `has 1 row` and `has 3 rows` are both fine. `see x on row 2 is hidden` checks an element inside a
 row. A list hidden by `visible when` counts as not on the screen: check it with
@@ -872,6 +892,8 @@ places where the spec is not yet precise.
 | `UNREACHABLE` | error | a step after `stop` or `answer` in the same block |
 | `NO_ANSWER` | error | an endpoint that does not `answer` on every path |
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
+| `UNGUARDED` | warning | a sentence uses a `T or nothing` value without saying what happens when there is none |
+| `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNUSED` | warning | a declared component is never used |
 | `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
@@ -964,6 +986,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v31: `- sentence` lines in `always`: invariants over the data, checked after every step by a
+  separately compiled check; the app hands over its data (`Data`); `UNCHECKED` hint for rules that
+  read like invariants; `UNGUARDED` hint when a `T or nothing` value is used without saying what
+  happens when there is none (the helpdesk's drawer now says it).
 
 - v30: `T or nothing` for a value that may be absent (was `Maybe T`, which still reads); the
   helpdesk's "0 for none" became `Int or nothing`.

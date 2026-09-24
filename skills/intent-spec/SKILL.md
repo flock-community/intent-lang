@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v30** (see the changelog at the end of
+Language version this skill matches: **v31** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -92,7 +92,9 @@ Habits that make builds identical *and* correct:
   for the clicked row in a handler,
   and "its" for the row's item in a row expression (§5 of the reference).
 - **Absent is `nothing`:** a value that may be missing is `T or nothing` with default `nothing`;
-  never a stand-in like `0` or `""` with a comment explaining it.
+  never a stand-in like `0` or `""` with a comment explaining it. Where you use it, say what
+  happens when there is none: `if there is a @selected { … }`, an early
+  `if there is no @selected { stop }`, or "…, or nothing when there is no @selected" (else `UNGUARDED`).
 - **Name intermediate values** in `derive` (`quantity = amount read as a whole number`)
   and use the name in templates and sentences, instead of repeating phrases.
 - **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `
@@ -107,9 +109,11 @@ Habits that make builds identical *and* correct:
 - **Per-row and numeric invariants** go straight into `always`: `see every row of cart:
   qty is at least 1`, `see every row of events: confirmed is at most capacity`. Write one for
   every "never" in the user's words.
-- **An invariant across rows** ("no table booked twice"): derive a count of the
-  violations, show it in an alert visible only when it is above 0, and add
-  `always see <alert> is hidden`.
+- **Anything that must always hold about the data** (across rows, over state not on screen,
+  against the clock) is a sentence in `always`: `- no two @bookings have the same @table and
+  @slot`, `- no @Done has a @day after @today`. It is compiled separately and checked after every
+  step of every example and random session. `rules` is only guidance: a rule with "never",
+  "at most" or "no two" belongs in `always` (else `UNCHECKED`).
 - **Un-picking a select:** a handler sets it to `""` (for example a Clear button); `""` shows
   as an empty placeholder.
 - **Don't give a row element the same name as an app-level value** (`SHADOWED`).

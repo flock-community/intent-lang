@@ -87,8 +87,8 @@ derive {
   pageCount = the number of @sorted @tickets divided by 5, rounded up, but at least 1
   shown = @sorted from position (@pageNumber - 1) × 5 + 1 on, at most 5 of them
   urgentOpen = the number of @Urgent @tickets that are not @Solved
-  current = the ticket whose @id is @selected
-  thread = the @comments whose @ticket is @selected, in their order
+  current = the ticket whose @id is @selected, or nothing when there is no @selected
+  thread = the @comments whose @ticket is @selected, in their order (none when there is no @selected)
   byPriority = one @Bar per @priority, in the order @Urgent, @High, @Normal, @Low: @label is the @priority's name, @count is the number of @tickets with that @priority that are not @Solved, and @share is @count × 100 divided by the largest @count of the four, rounded down (0 when all counts are 0)
 }
 
@@ -255,6 +255,9 @@ on click close {
 }
 
 on click send {
+  if there is no @selected {
+    stop
+  }
   - add a @Comment to the end of @comments with @ticket = @selected, @author = "Sam" and @body = @reply trimmed
   if @current is @Open {
     - set its @status to @Pending

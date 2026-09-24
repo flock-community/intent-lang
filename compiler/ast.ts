@@ -216,6 +216,7 @@ export interface App {
   ruleLines?: number[]; // the line of each rule
   examples: Example[];
   always: Step[]; // invariants: `see` steps that must hold after every action
+  invariants?: { text: string; line: number }[]; // `- sentence` in `always`: over the app's data, checked after every step
 }
 
 export interface EventDecl {

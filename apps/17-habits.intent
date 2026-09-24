@@ -55,6 +55,8 @@ on click done {
 
 always {
   see every row of habits: streak is at least 0
+  - no two @dones have the same @habit and the same @day
+  - no @Done has a @day after @today
 }
 
 example "today" {
