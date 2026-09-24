@@ -50,13 +50,13 @@ state {
 }
 
 derive {
-  visibleProducts = the products whose category is category (AllProducts shows all), in table order
-  left = for a product: its stock minus the qty of its line in cart (its full stock when it is not in cart)
-  lineTotal = for a line: the price of that product × qty
-  itemCount = the sum of qty over cart
+  visibleProducts = the @products whose @category is @category (@AllProducts shows all), in table order
+  left = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
+  lineTotal = for a line: the @price of that product × @qty
+  itemCount = the sum of @qty over @cart
   subtotal = the sum of all line totals
-  discount = when appliedCode is "FRESH10" and subtotal is at least 10.00: 10% of subtotal, rounded to cents; otherwise 0
-  total = subtotal minus discount
+  discount = when @appliedCode is "FRESH10" and @subtotal is at least 10.00: 10% of @subtotal, rounded to cents; otherwise 0
+  total = @subtotal minus @discount
 }
 
 screen {
@@ -70,11 +70,11 @@ screen {
     list visibleProducts of Product as cards {
       section product as ProductCard {
         text name
-        text categoryName = the label of category as caption
-        text price = price as money
+        text categoryName = the label of @category as caption
+        text price = @price as money
         text stockLine = "{left} left" as caption
         button add "Add to cart" as primary {
-          enabled when left is above 0
+          enabled when @left is above 0
         }
       }
     }
@@ -83,76 +83,76 @@ screen {
         look "each row: the name on the left, then the quantity, the line total and the two icon buttons on the right"
         text name
         text qty = "× {qty}"
-        text lineTotal = lineTotal as money
+        text lineTotal = @lineTotal as money
         button minus "Remove one" as icon
         button plus "Add one" as icon {
-          enabled when the product of that line has something left
+          enabled when the product of that line has something @left
         }
       }
       text emptyCart = "Your cart is empty" as caption {
-        visible when cart is empty
+        visible when @cart is empty
       }
       section codeForm as row {
         field code "Discount code"
         button apply "Apply" as secondary {
-          enabled when code is not blank
+          enabled when @code is not blank
         }
       }
       text codeMessage as caption {
-        visible when codeMessage is not empty
+        visible when @codeMessage is not empty
       }
       section summary as form {
         section subtotalLine as SummaryLine {
           text subtotalLabel = "Subtotal"
-          text subtotalValue = subtotal as money
+          text subtotalValue = @subtotal as money
         }
         section discountLine as SummaryLine {
-          visible when discount is above 0
+          visible when @discount is above 0
           text discountLabel = "Discount"
-          text discountValue = "-{discount as money}"
+          text discountValue = "-{@discount as money}"
         }
         section totalLine as SummaryLine {
           text totalLabel = "Total"
-          text totalValue = total as money
+          text totalValue = @total as money
         }
       }
       button checkout "Check out" as primary {
-        enabled when cart is not empty
+        enabled when @cart is not empty
       }
     }
   }
   text orderPlaced = "Thank you! Your order is on its way." as toast {
-    visible when ordered
+    visible when @ordered
   }
 }
 
 on click add {
-  - if cart has a line for that product, increase its qty by 1; otherwise add a Line with the product's name and qty 1 to the end of cart
-  - set ordered to false
+  - if @cart has a line for that product, increase its @qty by 1; otherwise add a @Line with the product's @name and @qty 1 to the end of @cart
+  - set @ordered to false
 }
 
 on click plus {
-  - increase the qty of that line by 1
+  - increase the @qty of that line by 1
 }
 
 on click minus {
-  - decrease the qty of that line by 1; if it is now 0, remove the line from cart
+  - decrease the @qty of that line by 1; if it is now 0, remove the line from @cart
 }
 
 on click apply {
-  - the entered code is code, trimmed and in capitals
-  - if the entered code is "FRESH10", set appliedCode to it and codeMessage to "Code applied"
-  - otherwise set appliedCode to "" and codeMessage to "Unknown code"
-  - clear code
+  - the entered @code is @code, trimmed and in capitals
+  - if the entered @code is "FRESH10", set @appliedCode to it and @codeMessage to "Code applied"
+  - otherwise set @appliedCode to "" and @codeMessage to "Unknown code"
+  - clear @code
 }
 
 on click checkout {
-  - clear cart, appliedCode and codeMessage
-  - set ordered to true
+  - clear @cart, @appliedCode and @codeMessage
+  - set @ordered to true
 }
 
 on choose category {
-  - set ordered to false
+  - set @ordered to false
 }
 
 always {

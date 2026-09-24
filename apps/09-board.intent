@@ -15,60 +15,60 @@ state {
 }
 
 derive {
-  full = there are 3 cards in Doing
+  full = there are 3 @cards in @Doing
 }
 
 screen {
   field draft "New card"
   button add "Add" {
-    enabled when draft is not blank
+    enabled when @draft is not blank
   }
   heading "To do"
-  list todo of Card = the cards in Todo {
+  list todo of Card = the @cards in @Todo {
     text title
     button start "Start" {
-      enabled when not full
+      enabled when not @full
     }
   }
   heading "Doing"
-  list doing of Card = the cards in Doing {
+  list doing of Card = the @cards in @Doing {
     text title
     button back "Back"
     button finish "Finish"
   }
   heading "Done"
-  list done of Card = the cards in Done {
+  list done of Card = the @cards in @Done {
     text title
     button reopen "Reopen" {
-      enabled when not full
+      enabled when not @full
     }
   }
-  text wip = "Doing {number of cards in Doing}/3"
+  text wip = "Doing {number of @cards in @Doing}/3"
 }
 
 on click add {
-  - add a card with the draft, trimmed, as title to Todo
-  - clear draft
+  - add a card with the @draft, trimmed, as @title to @Todo
+  - clear @draft
 }
 
 on click start {
-  - move the card to Doing
+  - move the card to @Doing
 }
 
 on click back {
-  - move the card back to Todo
+  - move the card back to @Todo
 }
 
 on click finish {
-  - move the card to Done
+  - move the card to @Done
 }
 
 on click reopen {
-  - move the card back to Doing
+  - move the card back to @Doing
 }
 
 rules {
-  - A moved card goes to the end of its new column.
+  - A moved card goes to the end of its new @column.
 }
 
 always {

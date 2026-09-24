@@ -1,6 +1,7 @@
 // Instantiating behaviour components: `use pager = Pager` + bindings becomes plain spec,
 // deterministically. Names of the component become `pager.<name>`; `{local}` anchors in its
 // sentences become `{pager.local}`; `{param}` anchors become the bound value.
+import { mapRefs } from "./refs.ts";
 import type { App, Component, Element, Handler, Step } from "./ast.ts";
 
 type Err = (l: number, c: string, m: string, col?: number) => void;
@@ -84,13 +85,26 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
       });
       return `{${out}}`;
     });
+  // And `@name` references: `@page` → `@pager.page`, `@items` → `@sorted`, `@size` → `5`.
+  const rwBraces = rw;
+  const rwAll = (text: string | undefined): string | undefined =>
+    text === undefined
+      ? undefined
+      : mapRefs(rwBraces(text)!, (n) => {
+          if (locals.has(n)) return "@" + q(n);
+          if (values.has(n)) {
+            const v = values.get(n)!;
+            return QN.test(v) ? "@" + v : v.replace(/^"(.*)"$/, "$1");
+          }
+          return "@" + n;
+        });
   const renameRef = (name: string) => (locals.has(name) ? q(name) : values.has(name) && QN.test(values.get(name)!) ? values.get(name)! : name);
 
   for (const f of body.state) app.state.push({ ...f, name: q(f.name) });
-  for (const d of body.derive) app.derive.push({ ...d, name: q(d.name), sentence: rw(d.sentence)! });
-  for (const r of body.rules) app.rules.push(`(${inst}) ${rw(r)}`);
+  for (const d of body.derive) app.derive.push({ ...d, name: q(d.name), sentence: rwAll(d.sentence)! });
+  for (const r of body.rules) app.rules.push(`(${inst}) ${rwAll(r)}`);
   for (const h of body.handlers) {
-    const handler: Handler = { ...h, target: h.verb === "tick" ? "" : renameRef(h.target), steps: h.steps.map((s) => rw(s)!) };
+    const handler: Handler = { ...h, target: h.verb === "tick" ? "" : renameRef(h.target), steps: h.steps.map((s) => rwAll(s)!) };
     app.handlers.push(handler);
   }
   for (const a of body.always) {
@@ -108,12 +122,12 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
       ...el,
       name: el.kind === "heading" || inRow ? el.name : q(el.name),
       label: el.label,
-      expr: rw(el.expr),
-      visibleWhen: rw(el.visibleWhen),
-      enabledWhen: rw(el.enabledWhen),
-      look: rw(el.look),
+      expr: rwAll(el.expr),
+      visibleWhen: rwAll(el.visibleWhen),
+      enabledWhen: rwAll(el.enabledWhen),
+      look: rwAll(el.look),
       from: el.from ? { list: renameRef(el.from.list), field: el.from.field } : undefined,
-      bindings: el.bindings?.map((b) => ({ ...b, value: rw(b.value)! })),
+      bindings: el.bindings?.map((b) => ({ ...b, value: rwAll(b.value)! })),
       children: renameEls(el.children, inRow || el.kind === "list"),
     }));
 

@@ -9,22 +9,22 @@ state {
 screen {
   text count
   button down "−" {
-    enabled when count is above 0
+    enabled when @count is above 0
   }
   button up "+"
   button reset "Reset"
 }
 
 on click up {
-  - increase count by 1
+  - increase @count by 1
 }
 
 on click down {
-  - decrease count by 1
+  - decrease @count by 1
 }
 
 on click reset {
-  - set count to 0
+  - set @count to 0
 }
 
 example "counting up and down" {

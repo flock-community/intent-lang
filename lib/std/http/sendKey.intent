@@ -7,8 +7,8 @@ param key: Text                              # the key; bind it to the screen's 
 param keyHeader: Text = "x-api-key"          # the header the service reads the key from
 
 before every call {
-  - when key, trimmed, is not blank: set header keyHeader to key, trimmed
-  - when key, trimmed, is blank: the call goes without that header (the service will refuse it)
+  - when @key, trimmed, is not blank: set header @keyHeader to @key, trimmed
+  - when @key, trimmed, is blank: the call goes without that header (the service will refuse it)
   - the method, path, query, body and every other header stay as they are
 }
 

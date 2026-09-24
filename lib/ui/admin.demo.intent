@@ -11,18 +11,18 @@ state {
 screen {
   section stat as StatCard {
     text statLabel = "Open"
-    text statValue = count
+    text statValue = @count
   }
   button clear "Clear"
   section nothing as EmptyState {
-    visible when count is 0
+    visible when @count is 0
     text nothingTitle = "Nothing open"
     text nothingHint = "New items show up here."
   }
 }
 
 on click clear {
-  - set count to 0
+  - set @count to 0
 }
 
 example "a stat and the empty state" {

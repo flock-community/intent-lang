@@ -51,12 +51,12 @@ state {
 }
 
 derive {
-  matching = the tickets whose subject or customer contains search (trimmed, ignoring case), and whose status fits statusFilter (AllTickets fits every status)
-  sorted = matching in the order of sort: Newest is highest id first; Oldest is lowest id first; ByPriority is Urgent, High, Normal, Low, and within one priority highest id first
-  urgentOpen = the number of Urgent tickets that are not Solved
-  current = the ticket whose id is selected
-  thread = the comments whose ticket is selected, in their order
-  byPriority = one Bar per priority, in the order Urgent, High, Normal, Low: label is the priority's name, count is the number of tickets with that priority that are not Solved, and share is count × 100 divided by the largest count of the four, rounded down (0 when all counts are 0)
+  matching = the @tickets whose @subject or @customer contains @search (trimmed, ignoring case), and whose @status fits @statusFilter (@AllTickets fits every @status)
+  sorted = @matching in the order of @sort: @Newest is highest @id first; @Oldest is lowest @id first; @ByPriority is @Urgent, @High, @Normal, @Low, and within one @priority highest @id first
+  urgentOpen = the number of @Urgent @tickets that are not @Solved
+  current = the ticket whose @id is @selected
+  thread = the @comments whose @ticket is @selected, in their order
+  byPriority = one @Bar per @priority, in the order @Urgent, @High, @Normal, @Low: @label is the @priority's name, @count is the number of @tickets with that @priority that are not @Solved, and @share is @count × 100 divided by the largest @count of the four, rounded down (0 when all counts are 0)
 }
 
 screen {
@@ -70,49 +70,49 @@ screen {
   }
   section content as main {
     section header as header {
-      text pageTitle = the label of page: "Inbox", "Reports" or "Settings" as title
+      text pageTitle = the text users see for @page: "Inbox", "Reports" or "Settings" as title
       field search "Search tickets" as search {
-        visible when page is Inbox
+        visible when @page is @Inbox
       }
       button newTicket "New ticket" as primary
     }
     text urgentAlert = "{urgentOpen} urgent tickets need attention" as alert {
-      visible when page is Inbox and urgentOpen is at least 3
+      visible when @page is @Inbox and @urgentOpen is at least 3
     }
     section stats as grid {
-      visible when page is Inbox
+      visible when @page is @Inbox
       look "four cards in one row on wide screens, two per row on small screens"
       section openStat as StatCard {
         text openLabel = "Open"
-        text openValue = the number of Open tickets
+        text openValue = the number of @Open @tickets
       }
       section pendingStat as StatCard {
         text pendingLabel = "Pending"
-        text pendingValue = the number of Pending tickets
+        text pendingValue = the number of @Pending @tickets
       }
       section solvedStat as StatCard {
         text solvedLabel = "Solved"
-        text solvedValue = the number of Solved tickets
+        text solvedValue = the number of @Solved @tickets
       }
       section unassignedStat as StatCard {
         text unassignedLabel = "Unassigned"
-        text unassignedValue = the number of tickets that are not Solved and have no assignee
+        text unassignedValue = the number of @tickets that are not @Solved and have no @assignee
       }
     }
     section inbox as card {
-      visible when page is Inbox
+      visible when @page is @Inbox
       section filters as toolbar {
         select statusFilter as chips
         select sort "Sort by" as dropdown
       }
-      list shown of Ticket = {pager.visible} as table {
+      list shown of Ticket = @pager.visible as table {
         look "columns: ticket, subject, customer, priority, status, assignee, and the action on the right; rows are tighter when compactRows is on"
         text ticketId = "#{id}"
         text subject
         text customer
         text priority as PriorityBadge
         text status as StatusBadge
-        text assignee = the assignee, or "Unassigned" when it is empty
+        text assignee = the @assignee, or "Unassigned" when it is empty
         button open "View" as link
       }
       section empty as EmptyState {
@@ -126,10 +126,10 @@ screen {
       }
     }
     section reports as card {
-      visible when page is Reports
+      visible when @page is @Reports
       heading "Resolution"
-      progress solvedShare "Solved" = the share of tickets that are Solved, in percent, rounded down
-      text solvedLine = "{number of Solved tickets} of {number of tickets} tickets solved"
+      progress solvedShare "Solved" = the @share of @tickets that are @Solved, in percent, rounded down
+      text solvedLine = "{number of @Solved @tickets} of {number of @tickets} tickets solved"
       heading "Open work by priority"
       list byPriority of Bar as bars {
         look "a horizontal bar chart: label on the left, a bar whose length is the share, the count on the right"
@@ -139,39 +139,39 @@ screen {
       }
     }
     section settings as form {
-      visible when page is Settings
+      visible when @page is @Settings
       checkbox compactRows "Compact table rows" as toggle
       field signature "Reply signature" as textarea
       text preview = "Preview: {signature}" as caption
     }
   }
   section detail as drawer {
-    visible when selected is not 0
-    text detailSubject = the subject of current as title
-    text detailMeta = "#{id of current} · {customer of current}" as caption
-    text detailPriority = the priority of current as PriorityBadge
-    text detailStatus = the status of current as StatusBadge
+    visible when @selected is not 0
+    text detailSubject = the @subject of @current as title
+    text detailMeta = "#{@id of @current} · {@customer of @current}" as caption
+    text detailPriority = the @priority of @current as PriorityBadge
+    text detailStatus = the @status of @current as StatusBadge
     list thread of Comment as timeline {
       text author
       text body
     }
     field reply "Reply" as textarea
     button send "Send reply" as primary {
-      enabled when reply is not blank
+      enabled when @reply is not blank
     }
     button solve "Mark as solved" as secondary {
-      enabled when current is not Solved
+      enabled when @current is not @Solved
     }
     button close "Close" as ghost
   }
   section newDialog "New ticket" as dialog {
-    visible when showNew
+    visible when @showNew
     field newSubject "Subject"
     field newCustomer "Customer"
     select newPriority "Priority" as segmented
     checkbox notifyCustomer "Email the customer a confirmation" as toggle
     button create "Create ticket" as primary {
-      enabled when newSubject is not blank and newCustomer is not blank
+      enabled when @newSubject is not blank and @newCustomer is not blank
     }
     button cancel "Cancel" as secondary
   }
@@ -179,56 +179,56 @@ screen {
 }
 
 on type search {
-  - set {pager.page} to 1
+  - set @pager.page to 1
 }
 
 on choose statusFilter {
-  - set {pager.page} to 1
+  - set @pager.page to 1
 }
 
 on choose sort {
-  - set {pager.page} to 1
+  - set @pager.page to 1
 }
 
 on choose page {
-  - set selected to 0
+  - set @selected to 0
 }
 
 on click open {
-  - set selected to the id of that ticket
-  - clear reply
+  - set @selected to the @id of that ticket
+  - clear @reply
 }
 
 on click close {
-  - set selected to 0
+  - set @selected to 0
 }
 
 on click send {
-  - add a Comment to the end of comments with ticket = selected, author = "Sam" and body = reply trimmed
-  - if current is Open, set its status to Pending
-  - clear reply
-  - set {toast.message} to "Reply sent"
+  - add a @Comment to the end of @comments with @ticket = @selected, @author = "Sam" and @body = @reply trimmed
+  - if @current is @Open, set its @status to @Pending
+  - clear @reply
+  - set @toast.message to "Reply sent"
 }
 
 on click solve {
-  - set the status of current to Solved
-  - set {toast.message} to "Ticket #<id of current> solved"
+  - set the @status of @current to @Solved
+  - set @toast.message to "Ticket #<id of current> solved"
 }
 
 on click newTicket {
-  - set showNew to true
-  - clear newSubject and newCustomer; set newPriority to Normal and notifyCustomer to true
+  - set @showNew to true
+  - clear @newSubject and @newCustomer; set @newPriority to @Normal and @notifyCustomer to true
 }
 
 on click create {
-  - add a Ticket to the end of tickets with id = the highest id + 1, subject = newSubject trimmed, customer = newCustomer trimmed, priority = newPriority, status Open and assignee ""
-  - set showNew to false
-  - set {toast.message} to "Ticket #<new id> created", followed by " · customer notified" when notifyCustomer
-  - set page to Inbox, search to "", statusFilter to AllTickets, sort to Newest and {pager.page} to 1
+  - add a @Ticket to the end of @tickets with @id = the highest @id + 1, @subject = @newSubject trimmed, @customer = @newCustomer trimmed, @priority = @newPriority, @status @Open and @assignee ""
+  - set @showNew to false
+  - set @toast.message to "Ticket #<new id> created", followed by " · customer notified" when @notifyCustomer
+  - set @page to @Inbox, @search to "", @statusFilter to @AllTickets, @sort to @Newest and @pager.page to 1
 }
 
 on click cancel {
-  - set showNew to false
+  - set @showNew to false
 }
 
 always {

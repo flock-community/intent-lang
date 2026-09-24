@@ -11,11 +11,11 @@ screen {
 }
 
 on click save {
-  - set {toast.message} to "Saved"
+  - set @toast.message to "Saved"
 }
 
 on click fail {
-  - set {toast.message} to "Could not save"
+  - set @toast.message to "Could not save"
 }
 
 example "a message appears and is dismissed" {

@@ -16,14 +16,14 @@ state {
 }
 
 derive {
-  shown = the items that match filter: All shows every item, Open the items not done, Finished the items that are done
+  shown = the @items that match @filter: @All shows every item, @Open the @items not @done, @Finished the @items that are @done
 }
 
 screen {
   heading "Today"
   field draft "New item"
   button add "Add" {
-    enabled when draft is not blank
+    enabled when @draft is not blank
   }
   select filter "Show"
   list shown of Item {
@@ -32,19 +32,19 @@ screen {
     button remove "Delete"
   }
   text empty = "Nothing here" {
-    visible when shown is empty
+    visible when @shown is empty
   }
-  text remaining = "{number of items not done} left"
+  text remaining = "{number of @items not @done} left"
 }
 
 on click add {
-  - if an item with the same title (trimmed, ignoring case) exists, do not add anything
-  - otherwise add an Item with title = draft trimmed to the end of items
-  - clear draft in both cases
+  - if an item with the same @title (trimmed, ignoring case) exists, do not add anything
+  - otherwise add an @Item with @title = @draft trimmed to the end of @items
+  - clear @draft in both cases
 }
 
 on click remove {
-  - remove that item from items
+  - remove that item from @items
 }
 
 example "adding an item" {

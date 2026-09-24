@@ -9,16 +9,16 @@ component Toast {
   }
   screen {
     text message as toast {
-      visible when {message} is not empty
+      visible when @message is not empty
     }
     button dismiss "Dismiss" as icon {
-      visible when {message} is not empty
+      visible when @message is not empty
     }
   }
   on click dismiss {
-    - clear {message}
+    - clear @message
   }
   rules {
-    - Setting {message} replaces the message on screen at once; it stays until it is dismissed or replaced.
+    - Setting @message replaces the @message on screen at once; it stays until it is dismissed or replaced.
   }
 }

@@ -61,12 +61,12 @@ state {
 }
 
 derive {
-  foundContacts = the contacts whose name or company contains search (trimmed, ignoring case), sorted by name from A to Z
-  filteredDeals = the deals whose stage fits stageFilter (AllStages fits every stage), highest value first, and for equal values the lowest id first
-  pipelineValue = the sum of value over the deals in stage Lead or Proposal
-  wonValue = the sum of value over the Won deals
-  winRate = the number of Won deals × 100 divided by the number of Won and Lost deals together, rounded down; 0 when there are none
-  emailValid = newEmail, trimmed, is a valid Email
+  foundContacts = the @contacts whose @name or @company contains @search (trimmed, ignoring case), sorted by @name from A to Z
+  filteredDeals = the @deals whose @stage fits @stageFilter (@AllStages fits every @stage), highest @value first, and for equal values the lowest @id first
+  pipelineValue = the sum of @value over the @deals in @stage @Lead or @Proposal
+  wonValue = the sum of @value over the @Won @deals
+  winRate = the number of @Won @deals × 100 divided by the number of @Won and @Lost @deals together, rounded down; 0 when there are none
+  emailValid = @newEmail, trimmed, is a valid @Email
 }
 
 screen {
@@ -80,19 +80,19 @@ screen {
   }
   section content as main {
     section header as header {
-      text pageTitle = the label of page as title
+      text pageTitle = the label of @page as title
       button newContact "New contact" as primary {
-        visible when page is Contacts
+        visible when @page is @Contacts
       }
     }
     section stats as grid {
       section pipelineStat as StatCard {
         text pipelineLabel = "Pipeline"
-        text pipelineAmount = pipelineValue as money
+        text pipelineAmount = @pipelineValue as money
       }
       section wonStat as StatCard {
         text wonLabel = "Won"
-        text wonAmount = wonValue as money
+        text wonAmount = @wonValue as money
       }
       section rateStat as StatCard {
         text rateLabel = "Win rate"
@@ -100,15 +100,15 @@ screen {
       }
     }
     section contactsCard as card {
-      visible when page is Contacts
+      visible when @page is @Contacts
       section contactFilters as toolbar {
         field search "Search contacts" as search
       }
-      list shownContacts of Contact = {contactPager.visible} as table {
+      list shownContacts of Contact = @contactPager.visible as table {
         text name
         text company
         text email
-        text dealCount = the number of deals whose contact is this contact's name
+        text dealCount = the number of @deals whose contact is this contact's @name
       }
       section noContacts as EmptyState {
         visible when shownContacts is empty
@@ -121,20 +121,20 @@ screen {
       }
     }
     section dealsCard as card {
-      visible when page is Deals
+      visible when @page is @Deals
       section dealFilters as toolbar {
         select stageFilter as chips
       }
-      list shownDeals of Deal = {dealPager.visible} as table {
+      list shownDeals of Deal = @dealPager.visible as table {
         text title
         text contact
-        text value = value as money
+        text value = @value as money
         text stage as StageBadge
         button advance "Advance" as secondary {
-          enabled when the deal is in stage Lead or Proposal
+          enabled when the deal is in @stage @Lead or @Proposal
         }
         button lose "Mark lost" as ghost {
-          enabled when the deal is in stage Lead or Proposal
+          enabled when the deal is in @stage @Lead or @Proposal
         }
       }
       use dealPager = Pager {
@@ -144,15 +144,15 @@ screen {
     }
   }
   section newDialog "New contact" as dialog {
-    visible when showNew
+    visible when @showNew
     field newName "Name"
     field newCompany "Company"
     field newEmail "Email"
     text emailProblem = "Enter a valid email address" as caption {
-      visible when newEmail is not blank and not emailValid
+      visible when @newEmail is not blank and not @emailValid
     }
     button create "Add contact" as primary {
-      enabled when newName is not blank and emailValid
+      enabled when @newName is not blank and @emailValid
     }
     button cancel "Cancel" as secondary
   }
@@ -160,37 +160,37 @@ screen {
 }
 
 on type search {
-  - set {contactPager.page} to 1
+  - set @contactPager.page to 1
 }
 
 on choose stageFilter {
-  - set {dealPager.page} to 1
+  - set @dealPager.page to 1
 }
 
 on click newContact {
-  - set showNew to true
-  - clear newName, newCompany and newEmail
+  - set @showNew to true
+  - clear @newName, @newCompany and @newEmail
 }
 
 on click create {
-  - add a Contact to the end of contacts with id = the highest id + 1, and name, company and email = newName, newCompany and newEmail, each trimmed
-  - set showNew to false
-  - set {toast.message} to "Added <the new name>"
-  - clear search and set {contactPager.page} to 1
+  - add a @Contact to the end of @contacts with @id = the highest @id + 1, and @name, @company and @email = @newName, @newCompany and @newEmail, each trimmed
+  - set @showNew to false
+  - set @toast.message to "Added <the new name>"
+  - clear @search and set @contactPager.page to 1
 }
 
 on click cancel {
-  - set showNew to false
+  - set @showNew to false
 }
 
 on click advance {
-  - a Lead deal moves to Proposal; a Proposal deal moves to Won
-  - set {toast.message} to "<title> moved to <its new stage>"
+  - a @Lead deal moves to @Proposal; a @Proposal deal moves to @Won
+  - set @toast.message to "<title> moved to <its new stage>"
 }
 
 on click lose {
-  - set the stage of that deal to Lost
-  - set {toast.message} to "<title> marked as lost"
+  - set the @stage of that deal to @Lost
+  - set @toast.message to "<title> marked as lost"
 }
 
 always {

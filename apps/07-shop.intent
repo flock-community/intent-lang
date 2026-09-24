@@ -28,65 +28,65 @@ state {
 }
 
 derive {
-  left = for a product: its stock minus the qty of its line in cart (its full stock when it is not in cart)
-  lineTotal = for a line: price of that product × the number of items paid for; for Apple every third apple is free, so you pay for qty minus (qty divided by 3, rounded down); for other products you pay for qty
+  left = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
+  lineTotal = for a line: @price of that product × the number of items paid for; for Apple every third apple is free, so you pay for @qty minus (@qty divided by 3, rounded down); for other @products you pay for @qty
   subtotal = sum of all line totals
-  discount = when appliedCode is "SAVE10" and subtotal is at least 20.00: 10% of subtotal, rounded to cents; when appliedCode is "FIVER" and subtotal is at least 30.00: 5.00; otherwise 0
-  total = subtotal minus discount
+  discount = when @appliedCode is "SAVE10" and @subtotal is at least 20.00: 10% of @subtotal, rounded to cents; when @appliedCode is "FIVER" and @subtotal is at least 30.00: 5.00; otherwise 0
+  total = @subtotal minus @discount
 }
 
 screen {
   heading "Products"
   list products of Product {
     text name
-    text price = price as money
+    text price = @price as money
     text left = "{left} left"
     button add "Add" {
-      enabled when left is above 0
+      enabled when @left is above 0
     }
   }
   heading "Cart"
   list cart of Line {
     text name
     text qty = "× {qty}"
-    text lineTotal = lineTotal as money
+    text lineTotal = @lineTotal as money
     button plus "+" {
-      enabled when the product of that line has something left
+      enabled when the product of that line has something @left
     }
     button minus "−"
   }
   text empty = "Your cart is empty" {
-    visible when cart is empty
+    visible when @cart is empty
   }
   field code "Discount code"
   button apply "Apply" {
-    enabled when code is not blank
+    enabled when @code is not blank
   }
   text codeMessage
-  text subtotalLine = "Subtotal {subtotal as money}"
-  text discountLine = "Discount -{discount as money}" {
-    visible when discount is above 0
+  text subtotalLine = "Subtotal {@subtotal as money}"
+  text discountLine = "Discount -{@discount as money}" {
+    visible when @discount is above 0
   }
-  text totalLine = "Total {total as money}"
+  text totalLine = "Total {@total as money}"
 }
 
 on click add {
-  - if cart has a line for that product, increase its qty by 1; otherwise add a Line with the product's name and qty 1 to the end of cart
+  - if @cart has a line for that product, increase its @qty by 1; otherwise add a @Line with the product's @name and @qty 1 to the end of @cart
 }
 
 on click plus {
-  - increase the qty of that line by 1
+  - increase the @qty of that line by 1
 }
 
 on click minus {
-  - decrease the qty of that line by 1; if it is now 0, remove the line from cart
+  - decrease the @qty of that line by 1; if it is now 0, remove the line from @cart
 }
 
 on click apply {
-  - the entered code is code, trimmed and in capitals
-  - if the entered code is "SAVE10" or "FIVER", set appliedCode to it and codeMessage to "Code applied"
-  - otherwise set appliedCode to "" and codeMessage to "Unknown code"
-  - clear code
+  - the entered @code is @code, trimmed and in capitals
+  - if the entered @code is "SAVE10" or "FIVER", set @appliedCode to it and @codeMessage to "Code applied"
+  - otherwise set @appliedCode to "" and @codeMessage to "Unknown code"
+  - clear @code
 }
 
 always {

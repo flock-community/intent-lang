@@ -10,7 +10,7 @@ state {
 
 screen {
   field address "Email"
-  text verdict = "valid" when address, trimmed, is a valid Email, otherwise "invalid"
+  text verdict = "valid" when @address, trimmed, is a valid @Email, otherwise "invalid"
 }
 
 example "valid and invalid addresses" {

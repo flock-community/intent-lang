@@ -4,7 +4,7 @@ app SupportDesk {
 
 extends support.helpdesk
 
-override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
+override text pageTitle = the text users see for @page: "Queue", "Reports" or "Settings" as title
 
 override state {
   sort: Sort = ByPriority          # we triage by priority first
@@ -12,7 +12,7 @@ override state {
 
 add to header after pageTitle {
   text slaNote = "Urgent tickets are answered within the hour." as caption {
-    visible when page is Inbox
+    visible when @page is @Inbox
   }
 }
 

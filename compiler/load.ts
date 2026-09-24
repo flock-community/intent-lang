@@ -1,6 +1,7 @@
 // Loading a spec with its imports: resolve bundles from lib/, verify them against intent.lock,
 // merge their declarations, expand `use` of behaviour components, then check the whole app.
 // Lines of imported files are encoded as fileIndex * LINE_BASE + line (see App.sources).
+import { bareWords, refsIn } from "./refs.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -384,16 +385,15 @@ function implementContract(app: App, contract: App, err: (line: number, code: st
   app.examples.unshift(...contract.examples);
 }
 
-/** Inside a component, its own names must be anchored in braces so they can be renamed per instance. */
+/** Inside a component, its own names must be marked (`@page`) so they can be renamed per instance. */
 function lintComponent(c: Component, warn: (line: number, code: string, message: string) => void) {
   const body = c.body!;
   const locals = new Set([...body.state.map((f) => f.name), ...body.derive.map((d) => d.name), ...(c.params ?? []).map((p) => p.name)]);
   const check = (text: string | undefined, line: number) => {
     if (!text) return;
-    const outside = text.replace(/\{[^{}]*\}/g, " ").replace(/"(?:[^"\\]|\\.)*"/g, " ");
-    for (const w of outside.match(/[a-z][A-Za-z0-9]*/g) ?? [])
-      // "on page {page}": the bare word is ordinary English when the name is anchored in the same sentence.
-      if (locals.has(w) && !text.includes(`{${w}}`)) return warn(line, "UNSCOPED", `\`${w}\` belongs to component ${c.name}; write \`{${w}}\` so each use gets its own`);
+    for (const w of bareWords(text))
+      // "on page @page": the bare word is ordinary English when the name is marked in the same sentence.
+      if (locals.has(w) && !refsIn(text).includes(w) && !text.includes(`{${w}}`)) return warn(line, "UNSCOPED", `\`${w}\` belongs to component ${c.name}; write \`@${w}\` so each use gets its own`);
   };
   for (const d of body.derive) check(d.sentence, d.line);
   for (const h of body.handlers) for (const s of h.steps) check(s, h.line);

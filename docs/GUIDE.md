@@ -46,22 +46,22 @@ state {
 screen {
   text count
   button down "−" {
-    enabled when count is above 0
+    enabled when @count is above 0
   }
   button up "+"
   button reset "Reset"
 }
 
 on click up {
-  - increase count by 1
+  - increase @count by 1
 }
 
 on click down {
-  - decrease count by 1
+  - decrease @count by 1
 }
 
 on click reset {
-  - set count to 0
+  - set @count to 0
 }
 
 example "counting up and down" {
@@ -86,6 +86,8 @@ Reading it top to bottom:
 
 - **Blocks** open with `{` at the end of a line and close with `}`. What is inside belongs to
   that line: the steps of a handler, the modifiers of a button, the rows of a list.
+- **`@`** marks a name from the spec inside a sentence: `@count` is the state, the rest of the
+  sentence is plain English. Declarations and example steps need no `@` (`button up`, `click up`).
 - **`app`** gives the app a name and a purpose (the quoted line). The compiler reads the
   purpose too.
 - **`state`** is what the app remembers, with a type and a starting value.
@@ -122,14 +124,14 @@ state {
 }
 
 derive {
-  shown = the items that match filter: All shows every item, Open the items not done, Finished the items that are done
+  shown = the @items that match @filter: @All shows every item, @Open the @items not @done, @Finished the @items that are @done
 }
 
 screen {
   heading "Today"
   field draft "New item"
   button add "Add" {
-    enabled when draft is not blank
+    enabled when @draft is not blank
   }
   select filter "Show"
   list shown of Item {
@@ -138,19 +140,19 @@ screen {
     button remove "Delete"
   }
   text empty = "Nothing here" {
-    visible when shown is empty
+    visible when @shown is empty
   }
-  text remaining = "{number of items not done} left"
+  text remaining = "{number of @items not @done} left"
 }
 
 on click add {
-  - if an item with the same title (trimmed, ignoring case) exists, do not add anything
-  - otherwise add an Item with title = draft trimmed to the end of items
-  - clear draft in both cases
+  - if an item with the same @title (trimmed, ignoring case) exists, do not add anything
+  - otherwise add an @Item with @title = @draft trimmed to the end of @items
+  - clear @draft in both cases
 }
 
 on click remove {
-  - remove that item from items
+  - remove that item from @items
 }
 
 example "finishing and filtering" {
@@ -221,24 +223,24 @@ component Pager as footer "The page info on the left; the previous and next butt
     page: Int = 1
   }
   derive {
-    pageCount = the number of {items} divided by {size}, rounded up, but at least 1
-    current = the smaller of {page} and {pageCount}
-    visible = the {items} from position ({current} - 1) × {size} + 1 on, at most {size} of them
+    pageCount = the number of @items divided by @size, rounded up, but at least 1
+    current = the smaller of @page and @pageCount
+    visible = the @items from position (@current - 1) × @size + 1 on, at most @size of them
   }
   screen {
     text pageInfo = "Page {current} of {pageCount}"
     button previous "Previous" as secondary {
-      enabled when {current} is above 1
+      enabled when @current is above 1
     }
     button next "Next" as secondary {
-      enabled when {current} is below {pageCount}
+      enabled when @current is below @pageCount
     }
   }
   on click previous {
-    - set {page} to {current} - 1
+    - set @page to @current - 1
   }
   on click next {
-    - set {page} to {current} + 1
+    - set @page to @current + 1
   }
 }
 ```
@@ -295,7 +297,7 @@ app SupportDesk {
 
 extends support.helpdesk
 
-override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
+override text pageTitle = the text users see for @page: "Queue", "Reports" or "Settings" as title
 
 override state {
   sort: Sort = ByPriority          # we triage by priority first
@@ -303,7 +305,7 @@ override state {
 
 add to header after pageTitle {
   text slaNote = "Urgent tickets are answered within the hour." as caption {
-    visible when page is Inbox
+    visible when @page is @Inbox
   }
 }
 
@@ -357,10 +359,10 @@ state {
 }
 
 endpoint createTicket {
-  - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
-  - if customer, trimmed, is blank, answer 400 "Customer is required" and stop
-  - add a Ticket to the end of tickets with id = the highest id in tickets + 1, subject and customer trimmed, the given priority, status Open and assignee ""
-  - publish ticketCreated with the new ticket
+  - if @subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  - if @customer, trimmed, is blank, answer 400 "Customer is required" and stop
+  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, @subject and @customer trimmed, the given @priority, @status @Open and @assignee ""
+  - publish @ticketCreated with the new ticket
   - answer 201 with the new ticket
 }
 
@@ -444,8 +446,8 @@ use auth = std.http.apiKey {
 }
 
 endpoint solveTicket {
-  - if no ticket has that id, answer 404 "No such ticket" and stop
-  - if that ticket's assignee is not the caller, answer 403 "Only the assignee can solve this ticket" and stop
+  - if no ticket has that @id, answer 404 "No such ticket" and stop
+  - if that ticket's @assignee is not the @caller, answer 403 "Only the assignee can solve this ticket" and stop
   - …
 }
 ```
@@ -497,24 +499,24 @@ state {
 }
 
 on start {
-  - call tickets.listTickets
+  - call @tickets.listTickets
 }
 
 on answer tickets.listTickets {
-  - if its status is 200, set rows to its body
+  - if its status is 200, set @rows to its body
 }
 
 on click add {
-  - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+  - call @tickets.createTicket with @subject = @draft, @customer = "Web" and @priority = @Normal
 }
 
 on answer tickets.createTicket {
-  - if its status is 201, clear draft and problem
-  - otherwise set problem to the error in its body
+  - if its status is 201, clear @draft and @problem
+  - otherwise set @problem to the error in its body
 }
 
 on event tickets.ticketCreated {
-  - if no row in rows has the id of its body, add its body at the start of rows
+  - if no row in @rows has the @id of its body, add its body at the start of @rows
 }
 
 example "another agent adds a ticket" {
@@ -558,15 +560,15 @@ state {
 screen {
   field apiKey "API key"
   button signIn "Show my tickets" {
-    enabled when apiKey is not blank
+    enabled when @apiKey is not blank
   }
   …
 }
 
 on answer desk.myTickets {
-  - if its status is 200, set mine to its body and clear problem
-  - if its status is 401, clear mine and set problem to the error in its body
-  - otherwise set problem to "Could not load your tickets"
+  - if its status is 200, set @mine to its body and clear @problem
+  - if its status is 401, clear @mine and set @problem to the error in its body
+  - if its status is neither 200 nor 401 (no answer), set @problem to "Could not load your tickets"
 }
 
 example "a wrong key" {

@@ -70,13 +70,13 @@ state {
 }
 
 derive {
-  matching = the books whose title or author contains search trimmed, ignoring upper and lower case, in list order; all books when search is blank
-  chosenMember = the member whose name is chosen, or nothing when chosen is empty
-  chosenLoans = the loans whose member is the number of chosenMember, earliest due first, ties by lowest id; empty when nobody is picked
-  chosenCount = the number of chosenLoans
-  overdueLoans = the loans whose due is below today, earliest due first, ties by lowest id
-  overdueCount = the number of overdueLoans
-  onLoanCount = the number of loans
+  matching = the @books whose @title or @author contains @search trimmed, ignoring upper and lower case, in list order; all @books when @search is blank
+  chosenMember = the member whose @name is @chosen, or nothing when @chosen is empty
+  chosenLoans = the @loans whose member is the @number of @chosenMember, earliest @due first, ties by lowest @id; empty when nobody is picked
+  chosenCount = the number of @chosenLoans
+  overdueLoans = the @loans whose @due is below @today, earliest @due first, ties by lowest @id
+  overdueCount = the number of @overdueLoans
+  onLoanCount = the number of @loans
 }
 
 screen {
@@ -89,13 +89,13 @@ screen {
   section stats as grid {
     section overdueStat as StatCard {
       text overdueLabel = "Overdue loans"
-      text overdueValue = overdueCount as stat {
+      text overdueValue = @overdueCount as stat {
         look "In the danger colour when it is above 0, otherwise in the normal heading colour."
       }
     }
     section onLoanStat as StatCard {
       text onLoanLabel = "Books on loan"
-      text onLoanValue = onLoanCount as stat
+      text onLoanValue = @onLoanCount as stat
     }
   }
 
@@ -105,28 +105,28 @@ screen {
         text catalogueTitle = "Books" as title
         field search "Search title or author" as search
       }
-      list shown of Book = {pager.visible} as table {
+      list shown of Book = @pager.visible as table {
         text title
         text author {
           look "Muted."
         }
-        text availability = "{a} of {its copies} available", where a is its copies minus the number of loans whose book is its title {
+        text availability = "{a} of {its @copies} available", where a is its @copies minus the number of @loans whose book is its @title {
           as badge
           look "Success-tinted when at least one copy is available; neutral when none are."
         }
         button lend "Lend" as secondary {
-          visible when chosen is not empty
+          visible when @chosen is not empty
         }
       }
       section noBooks as EmptyState {
-        visible when matching is empty
+        visible when @matching is empty
         text noBooksTitle = "No books found"
         text noBooksHint = "Try another title or author."
       }
       use pager = Pager {
         items = matching
         size = 5
-        visible when matching is not empty
+        visible when @matching is not empty
       }
     }
 
@@ -134,43 +134,43 @@ screen {
       text memberPanelTitle = "Member" as title
       select chosen from members.name as dropdown
       button clearMember "Clear" as ghost {
-        visible when chosen is not empty
+        visible when @chosen is not empty
       }
       section noMember as EmptyState {
-        visible when chosen is empty
+        visible when @chosen is empty
         text noMemberTitle = "No member picked"
         text noMemberHint = "Pick a member to see their loans and lend books."
       }
       section memberInfo as MemberCard {
-        visible when chosen is not empty
-        text memberName = the name of chosenMember
-        text memberNumber = "Member #{number}", where number is the number of chosenMember
+        visible when @chosen is not empty
+        text memberName = the @name of @chosenMember
+        text memberNumber = "Member #{number}", where @number is the @number of @chosenMember
         text memberCount = "{chosenCount} of 3 books out"
       }
-      list memberLoans of Loan = chosenLoans as table {
-        visible when chosen is not empty
+      list memberLoans of Loan = @chosenLoans as table {
+        visible when @chosen is not empty
         look "Rows of overdue loans (its due below today) have a light danger background."
         text book
-        text loanDue = "Overdue, was due day {its due}" when its due is below today, otherwise "Due day {its due}" {
+        text loanDue = "Overdue, was due day {its @due}" when its @due is below @today, otherwise "Due day {its @due}" {
           as DueBadge
         }
         button takeBack "Take back" as secondary
       }
       text noLoans = "No books out." {
         as caption
-        visible when chosen is not empty and chosenLoans is empty
+        visible when @chosen is not empty and @chosenLoans is empty
       }
     }
   }
 
   section overdue as card {
-    visible when overdueLoans is not empty
+    visible when @overdueLoans is not empty
     text overdueTitle = "Overdue loans" as title
-    list overdueList of Loan = overdueLoans as table {
+    list overdueList of Loan = @overdueLoans as table {
       look "Every row has a light danger background."
       text overdueBook = its book
-      text overdueWho = the name of the member whose number is its member
-      text overdueDue = "Overdue, was due day {its due}" as DueBadge
+      text overdueWho = the @name of the member whose @number is its member
+      text overdueDue = "Overdue, was due day {its @due}" as DueBadge
     }
   }
 
@@ -178,43 +178,43 @@ screen {
 }
 
 on click nextDay {
-  - increase today by 1
-  - set {toast.message} to "It is now day {today}"
+  - increase @today by 1
+  - set @toast.message to "It is now day {today}"
 }
 
 on type search {
-  - set {pager.page} to 1
+  - set @pager.page to 1
 }
 
 on choose chosen {
-  - set {toast.message} to "Showing loans of {chosen}"
+  - set @toast.message to "Showing loans of {chosen}"
 }
 
 on click clearMember {
-  - clear chosen
-  - set {toast.message} to "No member picked"
+  - clear @chosen
+  - set @toast.message to "No member picked"
 }
 
 on click lend {
-  - if chosen is empty, do nothing and stop
-  - if chosenLoans has a loan whose book is that book's title, set {toast.message} to "Cannot lend {that book's title}: {chosen} already has it" and stop
-  - if that book's copies minus the number of loans whose book is that book's title is 0 or less, set {toast.message} to "Cannot lend {that book's title}: no copies left" and stop
-  - if chosenCount is 3 or more, set {toast.message} to "Cannot lend {that book's title}: {chosen} already has 3 books out" and stop
-  - add a Loan to loans with id nextLoanId, book that book's title, member the number of chosenMember, lentOn today and due today + 14
-  - increase nextLoanId by 1
-  - set {toast.message} to "Lent {that book's title} to {chosen}, due day {today + 14}"
+  - if @chosen is empty, do nothing and stop
+  - if @chosenLoans has a loan whose book is that book's @title, set @toast.message to "Cannot lend {that book's @title}: {chosen} already has it" and stop
+  - if that book's @copies minus the number of @loans whose book is that book's @title is 0 or less, set @toast.message to "Cannot lend {that book's @title}: no copies left" and stop
+  - if @chosenCount is 3 or more, set @toast.message to "Cannot lend {that book's @title}: {chosen} already has 3 books out" and stop
+  - add a @Loan to @loans with @id @nextLoanId, book that book's @title, member the @number of @chosenMember, @lentOn @today and @due @today + 14
+  - increase @nextLoanId by 1
+  - set @toast.message to "Lent {that book's @title} to {chosen}, due day {@today + 14}"
 }
 
 on click takeBack {
-  - remove that loan from loans
-  - set {toast.message} to "{that loan's book} returned by {the name of the member whose number is that loan's member}"
+  - remove that loan from @loans
+  - set @toast.message to "{that loan's book} returned by {the @name of the member whose @number is that loan's member}"
 }
 
 rules {
-  - A book never has more loans than its copies: the "n of m available" number in availability never goes below 0.
-  - A member never has more than 3 loans.
-  - A loan is overdue when its due is below today; on its due day itself it is not yet overdue.
-  - Only nextDay changes today, always by exactly 1.
+  - A book never has more @loans than its @copies: the "n of m available" @number in availability never goes below 0.
+  - A member never has more than 3 @loans.
+  - A loan is overdue when its @due is below @today; on its @due day itself it is not yet overdue.
+  - Only nextDay changes @today, always by exactly 1.
 }
 
 always {

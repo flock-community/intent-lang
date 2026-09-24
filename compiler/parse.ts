@@ -4,6 +4,7 @@ import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import { fromBraces } from "./braces.ts";
+import { bareWords, declaredNames, refsIn, resolves, sentences } from "./refs.ts";
 import type { App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
@@ -442,7 +443,34 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
   check(app, err, warn, clockLine, used);
+  checkRefs(app, err, warn);
   return diags;
+}
+
+/**
+ * References in sentences: every `@name` must be declared; a bare word that is a declared name
+ * gets a hint to mark it (it may also just be English: "the title of the page").
+ */
+function checkRefs(app: App, err: Err, warn: Err) {
+  const names = declaredNames(app);
+  const unmarked = new Map<number, Set<string>>();
+  // The hint is only for data (element names such as "empty" or "add" are mostly English), and a
+  // word that names a record in lower case ("that ticket") is the row's item.
+  const elements = new Set<string>();
+  const walk = (els: App["screen"]) => els.forEach((el) => (elements.add(el.name), walk(el.children)));
+  walk(app.screen);
+  const data = new Set([...app.state.map((f) => f.name), ...app.derive.map((d) => d.name)]);
+  const hinted = new Set([...names].filter((n) => (!elements.has(n) || data.has(n)) && n !== "error"));
+  const rowItems = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
+  for (const s of sentences(app)) {
+    if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
+    for (const r of refsIn(s.text)) if (!resolves(r, names)) err(s.line, "UNKNOWN_NAME", `\`@${r}\` (${s.where}) is not declared${suggest(r, [...names])}`);
+    // "its body" / "its status" of an answer or event are the language's, not a field.
+    let text = /^on (answer|event)/.test(s.where) ? s.text.replace(/\bits (body|status)\b/g, " ") : s.text;
+    text = text.replace(/^\([\w.]+\) /, ""); // a rule from a component instance: checked in its bundle
+    for (const w of bareWords(text)) if (hinted.has(w) && !rowItems.has(w)) (unmarked.get(s.line) ?? unmarked.set(s.line, new Set()).get(s.line)!).add(w);
+  }
+  for (const [line, ws] of unmarked) warn(line, "UNMARKED", `${[...ws].map((w) => `"${w}"`).join(", ")} ${ws.size > 1 ? "are declared names" : "is a declared name"}: in a sentence, write ${[...ws].map((w) => `\`@${w}\``).join(", ")} when you mean ${ws.size > 1 ? "them" : "it"}`);
 }
 
 // ---------------------------------------------------------------- lines

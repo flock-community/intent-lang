@@ -25,20 +25,20 @@ state {
 screen {
   field draft "New card"
   button add "Add" {
-    enabled when draft is not blank
+    enabled when @draft is not blank
   }
-  list todo of Card = the cards in Todo {
+  list todo of Card = the @cards in @Todo {
     text title
     button start "Start" {
-      enabled when not full
+      enabled when not @full
     }
   }
   …
 }
 
 on click add {
-  - add a card with the draft, trimmed, as title to Todo
-  - clear draft
+  - add a card with the @draft, trimmed, as @title to @Todo
+  - clear @draft
 }
 
 always {

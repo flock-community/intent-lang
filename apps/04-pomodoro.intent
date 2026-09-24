@@ -14,34 +14,34 @@ state {
 clock every 1s
 
 screen {
-  text phaseName = Work shows "Focus", ShortBreak "Short break", LongBreak "Long break"
-  text time = "{remaining as clock}"
-  button startStop = "Pause" while running, otherwise "Start"
+  text phaseName = @Work shows "Focus", @ShortBreak "Short break", @LongBreak "Long break"
+  text time = "{@remaining as clock}"
+  button startStop = "Pause" while @running, otherwise "Start"
   button skip "Skip"
   button reset "Reset"
   text done = "{completed} done"
 }
 
 on click startStop {
-  - flip running
+  - flip @running
 }
 
 on tick {
-  - if not running, do nothing
-  - decrease remaining by 1
-  - if remaining is now 0, move to the next phase; running stays true
+  - if not @running, do nothing
+  - decrease @remaining by 1
+  - if @remaining is now 0, move to the next @phase; @running stays true
 }
 
 on click skip {
-  - move to the next phase; running does not change
+  - move to the next @phase; @running does not change
 }
 
 on click reset {
-  - go back to the initial state: Work, 1500, not running, completed 0
+  - go back to the initial state: @Work, 1500, not @running, @completed 0
 }
 
 rules {
-  - Moving to the next phase: after Work, completed increases by 1, and the next phase is LongBreak (900 seconds) when completed is now a multiple of 4, otherwise ShortBreak (300 seconds). After ShortBreak or LongBreak the next phase is Work (1500 seconds).
+  - Moving to the next @phase: after @Work, @completed increases by 1, and the next @phase is @LongBreak (900 seconds) when @completed is now a multiple of 4, otherwise @ShortBreak (300 seconds). After @ShortBreak or @LongBreak the next @phase is @Work (1500 seconds).
 }
 
 example "initial screen" {

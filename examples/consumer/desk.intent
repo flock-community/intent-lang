@@ -4,7 +4,7 @@ app OurDesk {
 
 extends support.helpdesk
 
-override text pageTitle = the label of page: "Our inbox", "Reports" or "Settings" as title
+override text pageTitle = the text users see for @page: "Our inbox", "Reports" or "Settings" as title
 
 drop example "the inbox at a glance"
 

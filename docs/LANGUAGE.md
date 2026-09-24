@@ -1,4 +1,4 @@
-# Intent — language reference (v24)
+# Intent — language reference (v25)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -31,13 +31,28 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
   ```
   screen {
     button add "Add" {
-      enabled when draft is not blank
+      enabled when @draft is not blank
     }
   }
   ```
 
   A file without braces is read by its indentation alone (the form before v24); `intent fmt`
   turns it into braces.
+- **References:** in a sentence (a step, a condition, a derived value, a rule, an endpoint's or
+  a layer's steps), a name from the spec is written with `@`: `@draft`, `@Item`, `@Open`,
+  `@pager.visible`, `@tickets.createTicket`. Everything else in the sentence is prose.
+
+  ```
+  on click add {
+    - otherwise add an @Item with @title = @draft trimmed to the end of @items
+  }
+  ```
+
+  Declarations and fixed places need no `@`: `button add`, `on click add`, `click add`,
+  `see count = 2`, bindings (`items = sorted`). In a template string, a hole holds a lone name
+  (`"Page {page} of {pageCount}"`) or a phrase with references (`"{number of @items not @done} left"`).
+  The checker reports an `@name` that is not declared, and hints (`UNMARKED`) when a sentence
+  uses a declared name without `@`: mark it if you mean it, or reword if you mean the English word.
 - `#` starts a comment (outside strings). Blank lines are ignored.
 - Names: element, field and state names are `lowerCamel`; app, record and choice names and
   choice values are `UpperCamel`.
@@ -186,7 +201,7 @@ component StatCard as card "A small uppercase muted label above a large number."
 
 section openStat as StatCard
   text openLabel = "Open"
-  text openValue = the number of Open tickets
+  text openValue = the number of @Open @tickets
 ```
 
 A component can start from a built-in presentation (`component StatCard as card "…"`). Its
@@ -259,29 +274,29 @@ component Pager as footer "The page info on the left; previous and next on the r
     page: Int = 1
   }
   derive {
-    pageCount = the number of {items} divided by {size}, rounded up, but at least 1
-    visible = the {items} on page {page}, {size} per page
+    pageCount = the number of @items divided by @size, rounded up, but at least 1
+    visible = the @items on page @page, @size per page
   }
   screen {
     text pageInfo = "Page {page} of {pageCount}"
     button next "Next" as secondary {
-      enabled when {page} is below {pageCount}
+      enabled when @page is below @pageCount
     }
   }
   on click next {
-    - increase {page} by 1
+    - increase @page by 1
   }
 }
 ```
 
-Inside a component, write its own names and its params in braces (`{page}`, `{items}`), so
-that every use gets its own copy. The checker warns (`UNSCOPED`) when you don't.
+Inside a component, write its own names and its params with `@` (`@page`, `@items`), so that
+every use gets its own copy. The checker warns (`UNSCOPED`) when you don't.
 
 An app places a component with `use`, and binds its params in its block:
 
 ```
 screen {
-  list shown of Ticket = {pager.visible} as table {
+  list shown of Ticket = @pager.visible as table {
     text subject
   }
   use pager = Pager {
@@ -291,7 +306,7 @@ screen {
 }
 
 on type search {
-  - set {pager.page} to 1
+  - set @pager.page to 1
 }
 
 example "paging" {
@@ -302,16 +317,15 @@ example "paging" {
 
 Everything in the component is then called `<use name>.<name>`: `pager.next`, `pager.page`,
 `pager.visible`. The app can read and set these names in its own sentences, handlers and
-examples (`set {toast.message} to "Saved"`). Braces mark a name as a reference; they are
-required inside components, and recommended in app sentences. A binding value
-(`items = sorted`) is a name or a literal, without braces.
+examples (`set @toast.message to "Saved"`). A binding value (`items = sorted`) is a name or a
+literal, without `@`.
 
 A `use` can also take `visible when …` and `look "…"`, like any element:
 
 ```
   use pager = Pager {
     items = sorted
-    visible when sorted is not empty
+    visible when @sorted is not empty
   }
 ```
 
@@ -344,7 +358,7 @@ app SupportDesk {
 
 extends support.helpdesk
 
-override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
+override text pageTitle = the text users see for @page: "Queue", "Reports" or "Settings" as title
 
 override state {
   sort: Sort = ByPriority          # we triage by priority first
@@ -427,8 +441,8 @@ endpoint createTicket POST "/tickets" {
   body customer: Text
   body priority: Priority
   returns Ticket
-  - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
-  - add a Ticket to the end of tickets with id = the highest id in tickets + 1, …
+  - if @subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, …
   - answer 201 with the new ticket
 }
 
@@ -479,7 +493,7 @@ endpoint createTicket POST "/tickets" {
 
 example "solving a new ticket" {
   call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
-  call solveTicket with id = {createTicket.body.id}     # a value from an earlier answer
+  call solveTicket with id = @createTicket.body.id     # a value from an earlier answer
   see solveTicket.status = 200
 }
 ```
@@ -489,7 +503,7 @@ app TicketsApi
 implements support.ticketsApi
 
 endpoint createTicket {  # the signature comes from the contract
-  - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
+  - if @subject, trimmed, is blank, answer 400 "Subject is required" and stop
   - …
   - answer 201 with the new ticket
 }
@@ -528,20 +542,20 @@ uses support.ticketsApi as tickets {  # the contract; its types come with it
 }
 
 on start {
-  - call tickets.listTickets
+  - call @tickets.listTickets
 }
 
 on answer tickets.listTickets {
-  - if its status is 200, set rows to its body
+  - if its status is 200, set @rows to its body
 }
 
 on click add {
-  - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+  - call @tickets.createTicket with @subject = @draft, @customer = "Web" and @priority = @Normal
 }
 
 on answer tickets.createTicket {
-  - if its status is 201, clear draft and problem, and call tickets.listTickets
-  - otherwise set problem to the error in its body
+  - if its status is 201, clear @draft and @problem, and call @tickets.listTickets
+  - otherwise set @problem to the error in its body
 }
 ```
 
@@ -612,7 +626,7 @@ use auth = std.http.apiKey {  # who calls; provides `caller`
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
   path id: Int
-  - if that ticket's assignee is not the caller, answer 403 "Only the assignee can solve this ticket" and stop
+  - if that ticket's @assignee is not the @caller, answer 403 "Only the assignee can solve this ticket" and stop
 }
 ```
 
@@ -685,18 +699,18 @@ Sentences may be conditional ("if draft is blank, do nothing").
 
 Idioms the compiler reads the same way every time:
 
-- **Stop early:** `- if quantity is not a whole number above 0, set {toast.message} to "…" and stop`.
+- **Stop early:** `- if @quantity is not a whole number above 0, set @toast.message to "…" and stop`.
   "and stop" skips the remaining steps. Without it, the next steps still run.
 - **Otherwise:** an `otherwise …` step applies only when the step before it did not.
 - **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
   ticket") is the item of the clicked row. In an expression inside a row, "its" and "this
-  <item>" refer to the row's item: `text left = its capacity minus its number of sign-ups`.
-- **Adding a record:** `- add a Ticket to the end of tickets with subject = {draft}, trimmed,
-  and status Open`. New ids: `id = the highest id in tickets + 1` (1 when there are none).
-- **Messages in handlers** refer to the clicked row's fields by name: `set {toast.message} to
+  <item>" refer to the row's item: `text left = its @capacity minus its number of sign-ups`.
+- **Adding a record:** `- add a @Ticket to the end of @tickets with @subject = @draft, trimmed,
+  and @status @Open`. New ids: `@id = the highest @id in @tickets + 1` (1 when there are none).
+- **Messages in handlers** refer to the clicked row's fields by name: `set @toast.message to
   "Cancelled {guest} at {time}"` inside `on click cancel` of a row.
 - **Named intermediate values:** give a value a name in `derive` and use that name (for
-  example `quantity = amount read as a whole number`), instead of repeating the phrase.
+  example `quantity = @amount read as a whole number`), instead of repeating the phrase.
 
 ## 6. Examples
 
@@ -779,7 +793,8 @@ places where the spec is not yet precise.
 | `UNANCHORED` | warning | a rule or handler sentence that mentions no declared name |
 | `NO_EXAMPLES` | warning | the app has no examples |
 | `LOCK` | error | a bundle is not locked, or changed since it was locked (§4b) |
-| `UNSCOPED` | warning | inside a component, one of its own names is not written in braces |
+| `UNSCOPED` | warning | inside a component, one of its own names is not written with `@` |
+| `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNUSED` | warning | a declared component is never used |
 | `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
@@ -870,6 +885,9 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v25: references in sentences are marked with `@` (`@draft`, `@Item`, `@pager.visible`), also
+  inside components (was `{page}`); unknown `@names` are errors, unmarked names a hint.
 
 - v24: blocks with braces (`screen { … }`), the canonical form; files without braces are still
   read by indentation. `intent fmt` lays a file out in braces. The compiler reads braces.

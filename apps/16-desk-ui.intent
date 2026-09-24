@@ -19,7 +19,7 @@ state {
 screen {
   field apiKey "API key"
   button signIn "Show my tickets" {
-    enabled when apiKey is not blank
+    enabled when @apiKey is not blank
   }
   text problem {
     visible when problem is not empty
@@ -28,37 +28,37 @@ screen {
     text subject
     text status
     button solve "Solve" {
-      enabled when its status is not Solved
+      enabled when its @status is not @Solved
     }
   }
 }
 
 on click signIn {
-  - call desk.myTickets
+  - call @desk.myTickets
 }
 
 on answer desk.myTickets {
-  - if its status is 200, set mine to its body and clear problem
-  - if its status is 401, clear mine and set problem to the error in its body
-  - otherwise set problem to "Could not load your tickets"
+  - if its status is 200, set @mine to its body and clear @problem
+  - if its status is 401, clear @mine and set @problem to the error in its body
+  - if its status is neither 200 nor 401 (no answer), set @problem to "Could not load your tickets"
 }
 
 on click solve {
-  - call desk.solveTicket with id = the id of that ticket
+  - call @desk.solveTicket with @id = the @id of that ticket
 }
 
 on answer desk.solveTicket {
-  - if its status is 200, clear problem
-  - if its status is 401, 403, 404 or 409, set problem to the error in its body
-  - otherwise set problem to "Could not solve the ticket"
+  - if its status is 200, clear @problem
+  - if its status is 401, 403, 404 or 409, set @problem to the error in its body
+  - if its status is none of those (no answer), set @problem to "Could not solve the ticket"
 }
 
 on event desk.ticketSolved {
-  - replace the ticket in mine with the same id as its body by its body
+  - replace the ticket in @mine with the same @id as its body by its body
 }
 
 on event desk.ticketAssigned {
-  - call desk.myTickets
+  - call @desk.myTickets
 }
 
 example "a wrong key" {

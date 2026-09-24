@@ -28,12 +28,12 @@ state {
 }
 
 derive {
-  matching = the numbers whose label contains filter
+  matching = the @numbers whose @label contains @filter
 }
 
 screen {
   field filter "Filter"
-  list shown of Number = {pager.visible} {
+  list shown of Number = @pager.visible {
     text label
   }
   use pager = Pager {

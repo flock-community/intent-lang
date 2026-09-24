@@ -16,7 +16,7 @@ state {
 screen {
   field draft "New ticket"
   button add "Add" {
-    enabled when draft is not blank
+    enabled when @draft is not blank
   }
   text problem {
     visible when problem is not empty
@@ -25,43 +25,43 @@ screen {
     text subject
     text status
     button solve "Solve" {
-      enabled when its status is not Solved
+      enabled when its @status is not @Solved
     }
   }
 }
 
 on start {
-  - call tickets.listTickets
+  - call @tickets.listTickets
 }
 
 on answer tickets.listTickets {
-  - if its status is 200, set rows to its body
+  - if its status is 200, set @rows to its body
 }
 
 on click add {
-  - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+  - call @tickets.createTicket with @subject = @draft, @customer = "Web" and @priority = @Normal
 }
 
 on answer tickets.createTicket {
-  - if its status is 201, clear draft and problem
-  - otherwise set problem to the error in its body
+  - if its status is 201, clear @draft and @problem
+  - otherwise set @problem to the error in its body
 }
 
 on click solve {
-  - call tickets.solveTicket with id = the id of that ticket
+  - call @tickets.solveTicket with @id = the @id of that ticket
 }
 
 on answer tickets.solveTicket {
-  - if its status is 200, clear problem
-  - otherwise set problem to the error in its body
+  - if its status is 200, clear @problem
+  - otherwise set @problem to the error in its body
 }
 
 on event tickets.ticketCreated {
-  - if no row in rows has the id of its body, add its body at the start of rows
+  - if no row in @rows has the @id of its body, add its body at the start of @rows
 }
 
 on event tickets.ticketSolved {
-  - replace the row in rows with the same id as its body by its body
+  - replace the row in @rows with the same @id as its body by its body
 }
 
 example "the list loads from the api" {

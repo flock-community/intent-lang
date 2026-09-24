@@ -55,11 +55,11 @@ state {
 }
 
 derive {
-  matching = the parts whose name or sku contains search, trimmed, ignoring case (a blank search matches every part), and whose category matches category (AllCategories matches every part, OnlyBrakes matches Brakes, and so on); when sortBy is ByName they are sorted by name, A to Z; when sortBy is ByStock they are sorted by stock, lowest first, and parts with equal stock by name, A to Z
-  lowCount = the number of parts whose stock is at most their reorderLevel
-  partTotal = the number of parts
-  partsByName = the parts sorted by name, A to Z
-  quantity = amount read as a whole number (Fmt.parseInt); "not a number" when it is not a whole number
+  matching = the @parts whose @name or @sku contains @search, trimmed, ignoring case (a blank @search matches every part), and whose @category matches @category (@AllCategories matches every part, @OnlyBrakes matches @Brakes, and so on); when @sortBy is @ByName they are sorted by @name, A to Z; when @sortBy is @ByStock they are sorted by @stock, lowest first, and @parts with equal @stock by @name, A to Z
+  lowCount = the number of @parts whose @stock is at most their @reorderLevel
+  partTotal = the number of @parts
+  partsByName = the @parts sorted by @name, A to Z
+  quantity = @amount read as a whole number (Fmt.parseInt); "not a number" when it is not a whole number
 }
 
 screen {
@@ -86,8 +86,8 @@ screen {
       select category "Category" as dropdown
       select sortBy "Sort by" as segmented
     }
-    list shown of Part = {pager.visible} as table {
-      visible when matching is not empty
+    list shown of Part = @pager.visible as table {
+      visible when @matching is not empty
       look "Column headers: Part, SKU, Category, In stock, Reorder at, and an empty last header. A row whose stock is at or below its reorder level has a light danger background and its stock number in semibold danger colour."
       text name
       text sku as code
@@ -95,16 +95,16 @@ screen {
       text stock
       text reorderLevel
       text lowFlag = "Reorder" as LowBadge {
-        visible when that part's stock is at most its reorderLevel
+        visible when that part's @stock is at most its @reorderLevel
       }
     }
     section noMatches as EmptyState {
-      visible when matching is empty
+      visible when @matching is empty
       text emptyTitle = "No parts found"
       text emptyHint = "Try another search or category."
     }
     section paging {
-      visible when matching is not empty
+      visible when @matching is not empty
       use pager = Pager {
         items = matching
         size = 6
@@ -121,52 +121,52 @@ screen {
   }
   section historyCard "Recent movements" as card {
     list history of Movement as table {
-      visible when history is not empty
+      visible when @history is not empty
       look "Column headers: Part, Direction, Quantity."
       text part
       text direction as DirectionBadge
       text quantity
     }
     text noHistory = "No movements yet." as caption {
-      visible when history is empty
+      visible when @history is empty
     }
   }
   use toast = Toast
 }
 
 on type search {
-  - set pager.page to 1
+  - set @pager.page to 1
 }
 
 on choose category {
-  - set pager.page to 1
+  - set @pager.page to 1
 }
 
 on choose sortBy {
-  - set pager.page to 1
+  - set @pager.page to 1
 }
 
 on click receive {
-  - if quantity is not a number or is not above 0, set toast.message to "Enter a whole number above 0" and skip all remaining steps (parts, history and amount stay unchanged)
-  - increase the stock of the part in parts whose name is partChoice by quantity
-  - put a new Movement with part = partChoice, quantity = quantity and direction = In at the front of history, then keep only the first 8 items of history
-  - set toast.message to "Received {quantity} × {partChoice}"
-  - clear amount
+  - if @quantity is not a number or is not above 0, set @toast.message to "Enter a whole number above 0" and skip all remaining steps (@parts, @history and @amount stay unchanged)
+  - increase the @stock of the part in @parts whose @name is @partChoice by @quantity
+  - put a new @Movement with part = @partChoice, @quantity = @quantity and @direction = @In at the front of @history, then keep only the first 8 items of @history
+  - set @toast.message to "Received {quantity} × {partChoice}"
+  - clear @amount
 }
 
 on click pick {
-  - if quantity is not a number or is not above 0, set toast.message to "Enter a whole number above 0" and skip all remaining steps (parts, history and amount stay unchanged)
-  - if quantity is above the stock of the part in parts whose name is partChoice, set toast.message to "Cannot pick {quantity} × {partChoice}: only {that stock} in stock" and skip all remaining steps (stock never goes below 0; parts, history and amount stay unchanged)
-  - decrease the stock of the part in parts whose name is partChoice by quantity
-  - put a new Movement with part = partChoice, quantity = quantity and direction = Out at the front of history, then keep only the first 8 items of history
-  - set toast.message to "Picked {quantity} × {partChoice}"
-  - clear amount
+  - if @quantity is not a number or is not above 0, set @toast.message to "Enter a whole number above 0" and skip all remaining steps (@parts, @history and @amount stay unchanged)
+  - if @quantity is above the @stock of the part in @parts whose @name is @partChoice, set @toast.message to "Cannot pick {quantity} × {partChoice}: only {that @stock} in stock" and skip all remaining steps (@stock never goes below 0; @parts, @history and @amount stay unchanged)
+  - decrease the @stock of the part in @parts whose @name is @partChoice by @quantity
+  - put a new @Movement with part = @partChoice, @quantity = @quantity and @direction = @Out at the front of @history, then keep only the first 8 items of @history
+  - set @toast.message to "Picked {quantity} × {partChoice}"
+  - clear @amount
 }
 
 rules {
-  - The stock of a part in parts is never below 0; a pick that would take it below 0 is refused and changes neither parts nor history.
-  - history holds at most 8 movements, newest first; only successful receive and pick actions add to history.
-  - lowCount counts every part in parts, regardless of search, category or the page shown.
+  - The @stock of a part in @parts is never below 0; a pick that would take it below 0 is refused and changes neither @parts nor @history.
+  - @history holds at most 8 movements, newest first; only successful receive and pick actions add to @history.
+  - @lowCount counts every part in @parts, regardless of @search, @category or the page shown.
 }
 
 always {
