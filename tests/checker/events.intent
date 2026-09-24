@@ -8,10 +8,10 @@ state {
 event counted: Int
 event counted: Int                        # expect: DUPLICATE
 
-endpoint bump POST "/bump" {  # expect: UNKNOWN_NAME
+endpoint bump POST "/bump" {
   returns Int
-  - increase count by 1
-  - publish bumped with count
+  - increase @count by 1
+  - publish @bumped with @count           # expect: UNKNOWN_NAME
   - answer 200 with count
 }
 

@@ -5,7 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Endpoint } from "./ast.ts";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { App, Check, Example, Literal, Step, Type } from "./ast.ts";
+import { LINE_BASE, type App, type Check, type Example, type Literal, type Step, type Type } from "./ast.ts";
 import { ROOT, tsDomain, tsType } from "./gen.ts";
 import { toHttp } from "../runtime/ts/calls.ts";
 import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
@@ -32,6 +32,12 @@ export function typeDesc(app: App, t: Type): string {
 }
 
 const typeName = (e: { name: string }) => cap(e.name);
+
+/** \`file:line\` of a line of an app (lines of imported files are offset by their file index). */
+export function specLine(app: App, line: number): string {
+  const file = app.sources?.[Math.floor(line / LINE_BASE)]?.file ?? `${app.name}.intent`;
+  return `${file}:${line % LINE_BASE}`;
+}
 
 export function genApiSpec(app: App): string {
   const eps = app.endpoints ?? [];
@@ -68,6 +74,18 @@ export const endpoints: EndpointDesc[] = [
 ${eps.map((e) => `  { name: ${q(e.name)}, method: ${q(e.method)}, path: ${q(e.path)}, params: [${e.params.map((p) => `{ in: ${q(p.in)}, name: ${q(p.name)}, type: ${typeDesc(app, p.type)} }`).join(", ")}] },`).join("\n")}
 ];
 
+/** Where each endpoint is in the spec: \`file:line\`, for tracing an answer back to its source. */
+export const sources: Record<string, string> = { ${eps.map((e) => `${e.name}: ${q(specLine(app, e.line))}`).join(", ")} };
+
+/** Per endpoint and status: the one step that answers it (\`answer 409 …\`), when exactly one does. */
+export const answerSources: Record<string, Record<number, string>> = { ${eps
+  .map((e) => {
+    const by = new Map<number, number[]>();
+    e.steps.forEach((st, i) => [...st.matchAll(/\banswer\s+([1-5]\d\d)\b/g)].forEach((m) => by.set(Number(m[1]), [...(by.get(Number(m[1])) ?? []), e.stepLines?.[i] ?? e.line])));
+    return `${e.name}: { ${[...by].filter(([, ls]) => ls.length === 1).map(([st, ls]) => `${st}: ${q(specLine(app, ls[0]))}`).join(", ")} }`;
+  })
+  .join(", ")} };
+
 /** The contract's answers per endpoint (status → body type), checked on every answer in tests. */
 export const answers: Record<string, Record<number, TypeDesc | null>> = {
 ${eps.filter((e) => e.answers?.length).map((e) => `  ${e.name}: { ${e.answers!.map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}
@@ -93,12 +111,12 @@ export const handlers: Handlers<Model> = {
 const PIPELINE = `import * as App from "./app.ts";
 import { route } from "./api.ts";
 import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
-import { endpoints } from "./spec.ts";
+import { answerSources, endpoints, sources } from "./spec.ts";
 import { layers } from "./layers.ts";
 
 const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
 
-export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[] };
+export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[]; source?: string };
 
 export function pipeline() {
   let model = App.init();
@@ -109,11 +127,13 @@ export function pipeline() {
     let endpoint: string | undefined;
     let appAnswer: { status: number; body: unknown } | undefined;
     let events: { event: string; body: unknown }[] = [];
+    let source: string | undefined; // the spec line that answered: a layer that refused, or the endpoint
     for (const l of layers) {
       passed.push(l);
       const b = l.before(copy(req), copy(l.config));
       if ("answer" in b) {
         res = normalize(b.answer);
+        source = \`\${l.source} (layer \${l.name})\`;
         break;
       }
       Object.assign(provided, copy(b.pass));
@@ -125,15 +145,18 @@ export function pipeline() {
       if ("response" in r) res = { ...r.response, headers: {} };
       else {
         endpoint = r.request.endpoint as string;
+        source = \`\${sources[endpoint]} (endpoint \${endpoint})\`;
         const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided }, model);
         model = out.model;
         appAnswer = copy({ status: out.response.status, body: out.response.body });
         events = copy(out.publish ?? []);
         res = { status: out.response.status, headers: {}, body: out.response.body };
+        const step = answerSources[endpoint]?.[out.response.status];
+        if (step) source = \`\${step} (endpoint \${endpoint})\`;
       }
     }
     for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
-    return { ...normalize(res), endpoint, appAnswer, events };
+    return { ...normalize(res), endpoint, appAnswer, events, source };
   };
 }
 `;
@@ -177,7 +200,9 @@ createServer((req, res) => {
     const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body });
     for (const ev of out.events) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
     const noBody = out.status === 204 || out.status === 304 || req.method === "HEAD";
-    res.writeHead(out.status, { ...(noBody ? {} : { "content-type": "application/json" }), ...out.headers });
+    // INTENT_TRACE=1: every answer says which spec line gave it (never on in production: it names files).
+    const trace = process.env.INTENT_TRACE === "1" && out.source ? { "x-intent-source": out.source } : {};
+    res.writeHead(out.status, { ...(noBody ? {} : { "content-type": "application/json" }), ...out.headers, ...trace });
     res.end(noBody ? undefined : JSON.stringify(out.body));
   });
 }).listen(Number(process.env.PORT ?? 3000), () => console.log("listening on " + (process.env.PORT ?? 3000)));
@@ -197,7 +222,7 @@ export function start() {
     },
     send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}) {
       const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) });
-      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events };
+      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events, source: out.source };
       // The contract is checked on every answer of the app (a status it does not declare, or a body of the wrong shape) and on every event it publishes.
       let problem = out.endpoint && out.appAnswer ? conforms(answers[out.endpoint], out.appAnswer) : undefined;
       for (const ev of out.events) {
@@ -226,10 +251,10 @@ export function scaffoldApi(app: App, dir: string, layerDirs: Record<string, str
 import type { HttpRequest, HttpResponse } from "./http.ts";
 ${(app.layers ?? []).map((l) => `import * as ${l.alias} from "./layers/${l.alias}/layer.ts";`).join("\n")}
 
-export type Layer = { name: string; before: (req: HttpRequest, config: any) => { pass: Record<string, unknown> } | { answer: HttpResponse }; after: (req: HttpRequest, res: HttpResponse, config: any) => HttpResponse; config: unknown };
+export type Layer = { name: string; source: string; before: (req: HttpRequest, config: any) => { pass: Record<string, unknown> } | { answer: HttpResponse }; after: (req: HttpRequest, res: HttpResponse, config: any) => HttpResponse; config: unknown };
 
 export const layers: Layer[] = [
-${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, before: ${l.alias}.before as Layer["before"], after: ${l.alias}.after as Layer["after"], config: ${JSON.stringify(layerConfig(l.spec!, l.bindings))} },`).join("\n")}
+${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(app, l.line))}, before: ${l.alias}.before as Layer["before"], after: ${l.alias}.after as Layer["after"], config: ${JSON.stringify(layerConfig(l.spec!, l.bindings))} },`).join("\n")}
 ];
 `,
   );
@@ -441,7 +466,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
 
 /** The latest responses, readable: for repair prompts and reports. */
 function dump(responses: Responses): string {
-  return [...responses].map(([ep, r]) => r.status === 0 ? `${ep} published ${JSON.stringify(r.body)}` : `${ep} → ${r.status} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
+  return [...responses].map(([ep, r]) => r.status === 0 ? `${ep} published ${JSON.stringify(r.body)}` : `${ep} → ${r.status}${(r as { source?: string }).source ? ` (from ${(r as { source?: string }).source})` : ""} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
 }
 
 // ---------------------------------------------------------------- random sessions

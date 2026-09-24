@@ -47,9 +47,9 @@ export function bareWords(text: string): string[] {
 /** Every sentence of an app, with its line: steps, conditions, derived values, rules, endpoint and layer steps. */
 export function sentences(app: App): { text: string; line: number; where: string }[] {
   const out: { text: string; line: number; where: string }[] = [];
-  for (const h of app.handlers) for (const s of h.steps) out.push({ text: s, line: h.line, where: `on ${h.verb}${h.target ? " " + h.target : ""}` });
+  for (const h of app.handlers) h.steps.forEach((s, i) => out.push({ text: s, line: h.stepLines?.[i] ?? h.line, where: `on ${h.verb}${h.target ? " " + h.target : ""}` }));
   for (const d of app.derive) out.push({ text: d.sentence, line: d.line, where: `derive ${d.name}` });
-  for (const r of app.rules) out.push({ text: r, line: 1, where: "rules" });
+  app.rules.forEach((r, i) => out.push({ text: r, line: app.ruleLines?.[i] ?? 1, where: "rules" }));
   const walk = (els: Element[]) => {
     for (const el of els) {
       if (el.expr) out.push({ text: el.expr, line: el.line, where: `${el.kind} ${el.name}` });
@@ -59,9 +59,9 @@ export function sentences(app: App): { text: string; line: number; where: string
     }
   };
   walk(app.screen);
-  for (const ep of app.endpoints ?? []) for (const s of ep.steps) out.push({ text: s, line: ep.line, where: `endpoint ${ep.name}` });
+  for (const ep of app.endpoints ?? []) ep.steps.forEach((s, i) => out.push({ text: s, line: ep.stepLines?.[i] ?? ep.line, where: `endpoint ${ep.name}` }));
   for (const [b, where] of [[app.before, "before every request"], [app.after, "after every answer"], [app.beforeCall, "before every call"]] as const)
-    for (const s of b?.steps ?? []) out.push({ text: s, line: b!.line, where });
+    (b?.steps ?? []).forEach((s, i) => out.push({ text: s, line: b!.stepLines?.[i] ?? b!.line, where }));
   return out;
 }
 

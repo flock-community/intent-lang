@@ -27,4 +27,5 @@ example "hello" {
   call hello
   see hello.body.nonsense = "x"           # expect: UNKNOWN_NAME
   see hello.body.error = "x"
+  see hello.body = "ten"                  # expect: STEP
 }

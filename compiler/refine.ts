@@ -157,6 +157,7 @@ export function refine(base: App, child: App, refinements: Refinement[], err: Er
   app.state.push(...child.state);
   app.derive.push(...child.derive);
   app.handlers.push(...child.handlers);
+  app.ruleLines = [...(app.ruleLines ?? app.rules.map(() => 1)), ...(child.ruleLines ?? child.rules.map(() => 1))];
   app.rules.push(...child.rules);
   app.always.push(...child.always);
   app.examples.push(...child.examples);

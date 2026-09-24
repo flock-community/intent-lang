@@ -75,6 +75,7 @@ export interface Handler {
   verb: Verb;
   target: string; // "" for tick
   steps: string[];
+  stepLines?: number[]; // the line of each step, for diagnostics and the source map
   line: number;
   note?: string;
 }
@@ -153,6 +154,7 @@ export interface Endpoint {
   answers?: { status: number; type?: Type; line: number }[]; // the contract: every status it may answer, with its body type
   signatureOnly?: boolean; // `endpoint name` in an app that implements a contract: method, path and params come from it
   steps: string[];
+  stepLines?: number[];
   line: number;
   note?: string;
 }
@@ -162,9 +164,9 @@ export interface App {
   // A layer (kind "layer"): what an app configures, what it hands to endpoints, and its two steps lists.
   params?: LayerParam[];
   provides?: Field[];
-  before?: { steps: string[]; line: number };
-  after?: { steps: string[]; line: number };
-  beforeCall?: { steps: string[]; line: number }; // a client layer: changes every outgoing call (adds a key, …)
+  before?: { steps: string[]; line: number; stepLines?: number[] };
+  after?: { steps: string[]; line: number; stepLines?: number[] };
+  beforeCall?: { steps: string[]; line: number; stepLines?: number[] }; // a client layer: changes every outgoing call (adds a key, …)
   exampleConfig?: Binding[]; // `examples with`: the params the layer's own examples run with
   // An api app: the layers it runs behind, in order (`use cors = std.http.cors`).
   layers?: LayerUse[];
@@ -193,6 +195,7 @@ export interface App {
   screen: Element[];
   handlers: Handler[];
   rules: string[];
+  ruleLines?: number[]; // the line of each rule
   examples: Example[];
   always: Step[]; // invariants: `see` steps that must hold after every action
 }

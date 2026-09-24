@@ -75,7 +75,11 @@ export function readCompilerLock(): { language?: string; model?: string } {
 /** Add every node's line offset for an imported file. */
 function offsetLines(v: any, base: number) {
   if (Array.isArray(v)) v.forEach((x) => offsetLines(x, base));
-  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) k === "line" && typeof x === "number" ? (v[k] = x + base) : offsetLines(x, base);
+  else if (v && typeof v === "object")
+    for (const [k, x] of Object.entries(v))
+      if (k === "line" && typeof x === "number") v[k] = x + base;
+      else if ((k === "stepLines" || k === "ruleLines") && Array.isArray(x)) v[k] = x.map((n: number) => n + base);
+      else offsetLines(x, base);
 }
 
 export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded {
@@ -423,7 +427,7 @@ function implementContract(app: App, contract: App, err: (line: number, code: st
       if (!same) err(impl.line, "CONTRACT", `endpoint \`${sig.name}\` differs from its contract (${sig.method} ${sig.path}); write only \`endpoint ${sig.name}\` and its steps`);
     }
     if (impl.params.length && impl.signatureOnly) err(impl.line, "CONTRACT", `endpoint \`${sig.name}\`: its params come from the contract`);
-    merged.push({ ...sig, steps: impl.steps, line: impl.line, note: impl.note ?? sig.note, returns: sig.returns ?? sig.answers?.find((a) => a.status < 300 && a.type)?.type });
+    merged.push({ ...sig, steps: impl.steps, stepLines: impl.stepLines, line: impl.line, note: impl.note ?? sig.note, returns: sig.returns ?? sig.answers?.find((a) => a.status < 300 && a.type)?.type });
   }
   for (const extra of own.values()) err(extra.line, "CONTRACT", `endpoint \`${extra.name}\` is not in the contract; a contract is the whole public surface. Add it to the contract first`);
   app.endpoints = merged;
@@ -532,7 +536,21 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
   walk(app.screen);
   for (const f of app.state) map[`state ${f.name}`] = { kind: "state", ...where(app, f.line) };
   for (const d of app.derive) map[`derive ${d.name}`] = { kind: "derive", ...where(app, d.line) };
-  for (const h of app.handlers) map[`on ${h.verb}${h.target ? " " + h.target : ""}`] = { kind: "handler", ...where(app, h.line) };
+  for (const h of app.handlers) {
+    const key = `on ${h.verb}${h.target ? " " + h.target : ""}`;
+    map[key] = { kind: "handler", ...where(app, h.line) };
+    h.stepLines?.forEach((l, i) => (map[`${key} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
+  }
+  // Services: every endpoint and its steps, the events, and the layers it runs behind.
+  for (const ep of app.endpoints ?? []) {
+    map[`endpoint ${ep.name}`] = { kind: "endpoint", ...where(app, ep.line) };
+    ep.stepLines?.forEach((l, i) => (map[`endpoint ${ep.name} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
+  }
+  for (const e of app.events ?? []) map[`event ${e.name}`] = { kind: "event", ...where(app, e.line) };
+  for (const l of app.layers ?? []) map[`layer ${l.alias}`] = { kind: "layer", ...where(app, l.line) };
+  for (const c of app.clients ?? []) if (c.through) map[`through ${c.alias}`] = { kind: "layer", ...where(app, c.through.line) };
+  app.rules.forEach((_, i) => app.ruleLines?.[i] && (map[`rule ${i + 1}`] = { kind: "rule", ...where(app, app.ruleLines[i]) }));
+  for (const ex of app.examples) map[`example ${ex.name}`] = { kind: "example", ...where(app, ex.line) };
   // Tag everything that belongs to a component instance.
   for (const [key, entry] of Object.entries(map)) {
     const name = key.replace(/^(state|derive|on \w+) /, "");

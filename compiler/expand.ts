@@ -102,7 +102,11 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
 
   for (const f of body.state) app.state.push({ ...f, name: q(f.name) });
   for (const d of body.derive) app.derive.push({ ...d, name: q(d.name), sentence: rwAll(d.sentence)! });
-  for (const r of body.rules) app.rules.push(`(${inst}) ${rwAll(r)}`);
+  body.rules.forEach((r, i) => {
+    // Keep rules and their lines side by side (an app's own rules may have none recorded).
+    app.ruleLines = [...(app.ruleLines ?? app.rules.map(() => 1)), body.ruleLines?.[i] ?? comp.line];
+    app.rules.push(`(${inst}) ${rwAll(r)}`);
+  });
   for (const h of body.handlers) {
     const handler: Handler = { ...h, target: h.verb === "tick" ? "" : renameRef(h.target), steps: h.steps.map((s) => rwAll(s)!) };
     app.handlers.push(handler);

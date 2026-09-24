@@ -1,4 +1,4 @@
-# Intent — language reference (v26)
+# Intent — language reference (v27)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -473,6 +473,10 @@ example "creating a ticket" {
   latest answer of `x`. `has N rows`, numeric checks and `see every row of x.body: …` work on
   lists. A param left out of a `call` is not sent, which tests the harness's `is required` answer.
 - A build is a Node server (`node server.mjs`, `PORT`) plus the same pure handler under test.
+  With `INTENT_TRACE=1`, every answer carries `x-intent-source`: the spec line that gave it (the
+  step that answers that status, the endpoint, or the layer that refused). Leave it off in
+  production: it names files. A build's `sourcemap.json` maps every element, handler, step,
+  endpoint, event, layer, rule and example to its file and line.
   Twin compilation, examples, `always` and random call sessions work as for screens.
 - Headers: `call x with header x-api-key = "…", a = 1` sends a request header;
   `see x.header.vary = "origin"` and `see x.header.vary is absent` check an answer's header
@@ -767,7 +771,8 @@ always {
 
 The number is read from what the element shows ("10 left" → 10, "× 2" → 2, a progress bar's
 value). Comparisons: `at least`, `at most`, `above`, `below`, against a number or another
-element in the same row (or on the screen). These also work as example steps.
+element. In `see every row of …` that other element is in the same row; in a plain check it is
+on the screen. These also work as example steps.
 
 An invariant across rows ("no table is booked twice") cannot be an `always` check yet. Until
 it can: derive a count of the violations, show it in an alert that is only visible when the
@@ -894,6 +899,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v27: traceability: checker errors point at the step's own line; `see x.body… = value` must
+  be a value the field can hold; the source map covers endpoints, steps, events, layers, rules
+  and examples; `INTENT_TRACE=1` makes every api answer name its spec line.
 
 - v26: import what you use: names in a file's sentences and declarations must come from the
   file or from a spec it names itself (`import`, `uses`, `implements`, `extends`).

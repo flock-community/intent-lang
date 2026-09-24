@@ -131,13 +131,16 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       if (f) (app.provides ??= []).push(f);
     } else if (app.kind === "layer" && /^before\s+every\s+request$/.test(t)) {
       if (app.before) err(node.line, "DUPLICATE", "one `before every request` per layer");
-      app.before = { steps: parseBullets(node, err), line: node.line };
+      const stepLines: number[] = [];
+      app.before = { steps: parseBullets(node, err, stepLines), line: node.line, stepLines };
     } else if (app.kind === "layer" && /^after\s+every\s+answer$/.test(t)) {
       if (app.after) err(node.line, "DUPLICATE", "one `after every answer` per layer");
-      app.after = { steps: parseBullets(node, err), line: node.line };
+      const stepLines: number[] = [];
+      app.after = { steps: parseBullets(node, err, stepLines), line: node.line, stepLines };
     } else if (app.kind === "layer" && /^before\s+every\s+call$/.test(t)) {
       if (app.beforeCall) err(node.line, "DUPLICATE", "one `before every call` per layer");
-      app.beforeCall = { steps: parseBullets(node, err), line: node.line };
+      const stepLines: number[] = [];
+      app.beforeCall = { steps: parseBullets(node, err, stepLines), line: node.line, stepLines };
     } else if (app.kind === "layer" && /^examples\s+with$/.test(t)) {
       app.exampleConfig = node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b);
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
@@ -303,7 +306,8 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if (t === "screen") {
     app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
   } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS}|answer|event)\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS}|start)$`)))) {
-    const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err), line: node.line, note: node.note };
+    const stepLines: number[] = [];
+    const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", steps: parseBullets(node, err, stepLines), stepLines, line: node.line, note: node.note };
     app.handlers.push(h);
   } else if (t.startsWith("on ")) {
     err(node.line, "SYNTAX", `expected \`on ${VERBS} <element>\` or \`on ${CLOCK_VERBS}\``);
@@ -317,7 +321,9 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     }
     if (!node.children.length) err(node.line, "SYNTAX", "expected indented `see …` checks");
   } else if (t === "rules") {
-    app.rules.push(...parseBullets(node, err));
+    const lines: number[] = [];
+    app.rules.push(...parseBullets(node, err, lines));
+    (app.ruleLines ??= []).push(...lines);
   } else if ((m = t.match(new RegExp(`^example\\s+(${STR})$`)))) {
     if (where === "component") err(node.line, "NOT_YET", "examples inside a component are not in the language yet; prove a component with examples in its bundle's demo app");
     const ex: Example = { name: parseString(m[1])!, steps: [], line: node.line };
@@ -351,7 +357,10 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
       const type = parseType(m[1]);
       if (!type) err(c.line, "SYNTAX", `\`${m[1]}\` is not a type`, c.indent + 1);
       else ep.returns = type;
-    } else if (c.text.startsWith("- ")) ep.steps.push((c.text.slice(2) + flattenChildren(c)).trim());
+    } else if (c.text.startsWith("- ")) {
+      ep.steps.push((c.text.slice(2) + flattenChildren(c)).trim());
+      (ep.stepLines ??= []).push(c.line);
+    }
     else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, or `- step`", c.indent + 1);
   }
   return ep;
@@ -379,7 +388,8 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
     return { op: "override-state", field: f, line: c.line };
   }
   if ((m = t.match(new RegExp(`^override\\s+on\\s+(${VERBS})\\s+(${QN})$`)))) {
-    return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], steps: parseBullets(node, err), line: node.line, note: node.note }, line: node.line };
+    const stepLines: number[] = [];
+    return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], steps: parseBullets(node, err, stepLines), stepLines, line: node.line, note: node.note }, line: node.line };
   }
   if ((m = t.match(new RegExp(`^override\\s+component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
     return { op: "override-component", component: parseComponent(node, m[1], m[2], m[3], ctx), line: node.line };
@@ -522,11 +532,15 @@ function flattenChildren(n: Line): string {
   return n.children.map((c) => " " + c.text + flattenChildren(c)).join("");
 }
 
-function parseBullets(node: Line, err: (l: number, c: string, m: string, col?: number) => void): string[] {
+/** The `- step` lines of a block; `lines` receives the line of each step. */
+function parseBullets(node: Line, err: (l: number, c: string, m: string, col?: number) => void, lines?: number[]): string[] {
   const out: string[] = [];
   for (const c of node.children) {
     if (!c.text.startsWith("- ")) err(c.line, "SYNTAX", "each step is a line starting with `- `", c.indent + 1);
-    else out.push((c.text.slice(2) + flattenChildren(c)).trim());
+    else {
+      out.push((c.text.slice(2) + flattenChildren(c)).trim());
+      lines?.push(c.line);
+    }
   }
   if (!out.length) err(node.line, "SYNTAX", "expected at least one `- sentence` line");
   return out;
@@ -624,7 +638,8 @@ function parseTable(c: Line, err: (l: number, c: string, m: string, col?: number
     }
     const lits = cells.map((cell) => parseLiteral(cell));
     const bad = lits.findIndex((l) => !l);
-    if (bad >= 0) err(r.line, "SYNTAX", `\`${cells[bad]}\` is not a literal`, r.indent + 1);
+    if (bad >= 0)
+      err(r.line, cells[bad].trim().startsWith("[") ? "NOT_YET" : "SYNTAX", cells[bad].trim().startsWith("[") ? `a table cell holds one value; a list in a cell (\`${cells[bad]}\`) is not in the language yet. Put the items in a record of their own with a field that points back to this row (for example \`record Tick { habit: Int  day: Int }\`)` : `\`${cells[bad]}\` is not a literal: use a "text", a number, true/false, nothing or a choice value`, r.indent + 1);
     else rows.push(lits as Literal[]);
   }
   return { k: "table", columns, rows };
@@ -1143,15 +1158,16 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     handled.add(key);
   }
   if (app.clockMs && !app.handlers.some((h) => h.verb === "tick")) warn(clockLine, "NO_HANDLER", "the app has a clock but no `on tick`");
-  // Calls: \`call tickets.createTicket …\` must name an endpoint of a client, and its answer should be handled.
+  // Calls: `call @tickets.createTicket …` must name an endpoint of a client, and its answer should be handled.
   if (app.clients?.length)
     for (const h of app.handlers)
-      for (const st of h.steps)
-        for (const m of st.matchAll(/\bcall\s+([a-z]\w*)\.([a-z]\w*)/gi)) {
+      for (const [i, st] of h.steps.entries())
+        for (const m of st.matchAll(/\bcall\s+@?([a-z]\w*)\.([a-z]\w*)/gi)) {
+          const line = h.stepLines?.[i] ?? h.line;
           const client = app.clients.find((c) => c.alias === m[1]);
-          if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${m[1]}\`; declare it with \`uses <contract> as ${m[1]}\``);
-          else if (!client.contract.endpoints?.some((e) => e.name === m[2])) err(h.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${m[2]}\`${suggest(m[2], client.contract.endpoints?.map((e) => e.name) ?? [])}`);
-          else if (!handled.has(`answer ${m[1]}.${m[2]}`)) warn(h.line, "NO_HANDLER", `\`${m[1]}.${m[2]}\` is called, but its answer is ignored: add \`on answer ${m[1]}.${m[2]}\``);
+          if (!client) err(line, "UNKNOWN_NAME", `no client \`${m[1]}\`; declare it with \`uses <contract> as ${m[1]}\``);
+          else if (!client.contract.endpoints?.some((e) => e.name === m[2])) err(line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${m[2]}\`${suggest(m[2], client.contract.endpoints?.map((e) => e.name) ?? [])}`);
+          else if (!handled.has(`answer ${m[1]}.${m[2]}`)) warn(line, "NO_HANDLER", `\`${m[1]}.${m[2]}\` is called, but its answer is ignored: add \`on answer ${m[1]}.${m[2]}\``);
         }
   for (const { el } of all) if (el.kind === "button" && !handled.has(`click ${el.name}`)) warn(el.line, "NO_HANDLER", `button \`${el.name}\` has no \`on click ${el.name}\``);
 
@@ -1283,8 +1299,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     ...(app.clients ?? []).flatMap((c) => [c.alias, ...(c.contract.endpoints ?? []).map((e) => e.name)]),
   ]);
   const anchored = (s: string) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).some((w) => names.has(w));
-  for (const h of app.handlers) for (const s of h.steps) if (!anchored(s) && !/nothing|initial state/i.test(s)) warn(h.line, "UNANCHORED", `"${s}" mentions no declared name`);
-  for (const r of app.rules) if (!anchored(r)) warn(1, "UNANCHORED", `rule "${r}" mentions no declared name`);
+  for (const h of app.handlers) h.steps.forEach((s, i) => !anchored(s) && !/nothing|initial state/i.test(s) && warn(h.stepLines?.[i] ?? h.line, "UNANCHORED", `"${s}" mentions no declared name`));
+  app.rules.forEach((r, i) => !anchored(r) && warn(app.ruleLines?.[i] ?? 1, "UNANCHORED", `rule "${r}" mentions no declared name`));
 }
 
 /** A see-target on a raw answer: \`status\`, \`header.x\`, \`body…\` (layers), or the same after \`request.\` (apps). */
@@ -1342,9 +1358,9 @@ function checkApi(
     // answers (400 for bad input, 404 unknown route, 405 wrong method) are always allowed.
     if (ep.answers?.length) {
       const declared = new Set(ep.answers.map((a) => a.status));
-      for (const st of ep.steps)
+      for (const [i, st] of ep.steps.entries())
         for (const m of st.matchAll(/\banswer\s+([1-5]\d\d)\b/g))
-          if (!declared.has(Number(m[1]))) err(ep.line, "CONTRACT", `endpoint ${ep.name} answers ${m[1]}, which its contract does not declare (${[...declared].join(", ")}); add \`answers ${m[1]} …\` to the contract, or answer differently`);
+          if (!declared.has(Number(m[1]))) err(ep.stepLines?.[i] ?? ep.line, "CONTRACT", `endpoint ${ep.name} answers ${m[1]}, which its contract does not declare (${[...declared].join(", ")}); add \`answers ${m[1]} …\` to the contract, or answer differently`);
     }
   }
   // Events: declared once, with a payload type; \`publish x\` in steps names a declared event.
@@ -1356,9 +1372,9 @@ function checkApi(
     if (eps.has(e.name)) err(e.line, "DUPLICATE", `\`${e.name}\` is both an endpoint and an event`);
   }
   for (const ep of eps.values())
-    for (const st of ep.steps)
-      for (const m of st.matchAll(/\bpublish(?:es)?\s+([a-z]\w*)/gi))
-        if (!events.has(m[1])) err(ep.line, "UNKNOWN_NAME", `endpoint ${ep.name} publishes \`${m[1]}\`, which is not a declared event${suggest(m[1], [...events.keys()])}; declare it with \`event ${m[1]}: <Type>\``);
+    for (const [i, st] of ep.steps.entries())
+      for (const m of st.matchAll(/\bpublish(?:es)?\s+@?([a-z]\w*)/gi))
+        if (!events.has(m[1])) err(ep.stepLines?.[i] ?? ep.line, "UNKNOWN_NAME", `endpoint ${ep.name} publishes \`${m[1]}\`, which is not a declared event${suggest(m[1], [...events.keys()])}; declare it with \`event ${m[1]}: <Type>\``);
   // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`; `see <event>.body…` (what the latest call published).
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
     for (const s of ex.steps) {
@@ -1395,7 +1411,7 @@ function checkApi(
           if (parts[0] === "body" && types.length) {
             const rest = [...parts.slice(1), ...(s.every ? [s.target] : [])];
             const every = !!s.every;
-            const walk = (t: Type, ps: string[], listNeeded: boolean): string | undefined => {
+            const walk = (t: Type, ps: string[], listNeeded: boolean): string | Type => {
               let cur: Type = t;
               for (const [i, p] of ps.entries()) {
                 if (cur.k === "Maybe") cur = cur.of;
@@ -1411,9 +1427,14 @@ function checkApi(
                 cur = f.type;
               }
               if (listNeeded && (cur.k === "Maybe" ? cur.of : cur).k !== "List") return `this is ${typeToString(cur)}, not a list`;
+              return cur;
             };
-            const problems = types.map((t) => walk(t, rest, s.check.is === "rows"));
-            if (problems.every(Boolean)) err(s.line, "UNKNOWN_NAME", `\`${target}${s.every ? `: ${s.target}` : ""}\`: ${problems[0]}`);
+            const results = types.map((t) => walk(t, rest, s.check.is === "rows"));
+            const found = results.filter((r): r is Type => typeof r !== "string");
+            if (!found.length) err(s.line, "UNKNOWN_NAME", `\`${target}${s.every ? `: ${s.target}` : ""}\`: ${results[0]}`);
+            // The value compared with must be one the field can hold: `see x.body.id = "ten"` is a mistake.
+            else if (s.check.is === "eq" && !found.some((t) => (t.k === "Named" && ctx.records.has(t.name) ? (s.check as { value: string }).value.startsWith("{") : valueFits(t, (s.check as { value: string }).value, ctx.choices))))
+              err(s.line, "STEP", `\`${target}${s.every ? `: ${s.target}` : ""}\` is ${typeToString(found[0])}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
           }
         }
       } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\` and \`see\`, not \`${s.do}\``);
@@ -1443,6 +1464,17 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
 let REFINED = new Map<string, RefinedDecl>();
 
 /** Does a value satisfy a refined type's rule? The same rule the generated validators apply. */
+/** Can a value of this type be shown as this text? (For `see … = value` checks.) */
+function valueFits(t: Type, v: string, choices: Map<string, ChoiceDecl>): boolean {
+  if (t.k === "Maybe") return v === "nothing" || v === "" || valueFits(t.of, v, choices);
+  if (t.k === "Int") return /^-?\d+$/.test(v);
+  if (t.k === "Decimal") return /^-?\d+(\.\d+)?$/.test(v);
+  if (t.k === "Bool") return v === "true" || v === "false";
+  if (t.k === "Named" && choices.has(t.name)) return choices.get(t.name)!.values.includes(v);
+  if (t.k === "List") return v.startsWith("[");
+  return true; // text, and refined types (their rule is checked at run time)
+}
+
 export function satisfies(r: RefinedDecl, v: string | number | undefined): boolean {
   if (v === undefined) return false;
   if (r.pattern !== undefined) return typeof v === "string" && new RegExp(`^(?:${r.pattern})$`).test(v);

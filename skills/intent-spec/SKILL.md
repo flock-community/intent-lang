@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v26** (see the changelog at the end of
+Language version this skill matches: **v27** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -158,6 +158,8 @@ Always change the spec in the smallest local way, then check, then build.
   the case it prevents.
 - **Bug:** first write an example that reproduces it (it must fail), then fix the sentence,
   then confirm the example passes. The example stays, so the bug cannot come back.
+  For an API, run the server with `INTENT_TRACE=1`: the `x-intent-source` header of the wrong
+  answer names the spec line that gave it (a step, an endpoint, or a layer).
 - **Look change:** the element's `look`, its presentation, a component's look, or the
   `design`. Prefer the most general place that is right: a design token over a component
   over an element.
