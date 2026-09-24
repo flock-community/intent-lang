@@ -3,6 +3,8 @@ app TicketsUi {
   "The list stays up to date when other agents add or solve tickets."
 }
 
+import support.tickets
+
 uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"
 }

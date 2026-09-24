@@ -1,5 +1,7 @@
 app CallsChecks
 
+import support.tickets
+
 uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"
 }

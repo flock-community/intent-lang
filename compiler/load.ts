@@ -1,11 +1,11 @@
 // Loading a spec with its imports: resolve bundles from lib/, verify them against intent.lock,
 // merge their declarations, expand `use` of behaviour components, then check the whole app.
 // Lines of imported files are encoded as fileIndex * LINE_BASE + line (see App.sources).
-import { bareWords, refsIn } from "./refs.ts";
+import { bareWords, refsIn, sentences } from "./refs.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { LINE_BASE, type App, type Component, type Diagnostic, type Design } from "./ast.ts";
+import { LINE_BASE, type App, type Component, type Diagnostic, type Design, type Element, type Type } from "./ast.ts";
 import { expandUses } from "./expand.ts";
 import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, parseSyntax, typeToString } from "./parse.ts";
@@ -89,6 +89,8 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   const main = parseSyntax(sources[0].text);
   diagnostics.push(...main.diagnostics);
   let app = main.app;
+  // What this file names itself (for the direct-imports rule): its own imports, before anything is merged in.
+  const ownImports = new Set([...(app.imports ?? []).map((i) => i.bundle), ...[app.extends?.name, app.implements?.name, ...(app.uses ?? []).map((u) => u.contract)].filter((x): x is string => !!x)]);
   if (app.kind === "contract") app.profile = "api"; // a contract is checked with the api vocabulary
   const lock = readLock();
   let baseApp: App | undefined;
@@ -347,10 +349,57 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   if (app.name && app.kind !== "bundle") {
     // (a contract is checked as an api without behaviour)
     diagnostics.push(...checkApp(app, main.clockLine, used));
+    checkDirectImports(app, sources, bundles, ownImports, err);
   }
   const out = diagnostics.map((d) => ({ ...d, ...at(d.line) }));
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
   return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp };
+}
+
+/**
+ * A name used in this file must be declared in it, or in a spec it names itself (`import`, `uses`,
+ * `implements`, `extends`): not one that only arrives through another spec. Checked for references
+ * in sentences (`@Solved`) and for types in this file's own declarations (`mine: List Ticket`).
+ */
+function checkDirectImports(app: App, sources: { file: string }[], bundles: { name: string; file: string }[], ownImports: Set<string>, err: (line: number, code: string, message: string) => void) {
+  const fileOf = (line: number) => sources[Math.floor(line / LINE_BASE)]?.file;
+  const direct = new Set<string | undefined>([sources[0]?.file]);
+  for (const b of bundles) if (ownImports.has(b.name)) direct.add(b.file);
+  // Where each type, field, choice and value is declared (a name may be declared in several places).
+  const decls = new Map<string, { line: number; what: string }[]>();
+  const add = (name: string, line: number, what: string) => decls.set(name, [...(decls.get(name) ?? []), { line, what }]);
+  for (const r of app.records) {
+    add(r.name, r.line, `record ${r.name}`);
+    for (const f of r.fields) add(f.name, r.line, `a field of ${r.name}`);
+  }
+  for (const c of app.choices) {
+    add(c.name, c.line, `choice ${c.name}`);
+    for (const v of c.values) add(v, c.line, `a value of choice ${c.name}`);
+  }
+  for (const r of app.refined ?? []) add(r.name, r.line, `type ${r.name}`);
+  // One report per missing import: at the first use, with the names this file takes from it.
+  const missing = new Map<string, { line: number; file: string; names: string[] }>();
+  const check = (name: string, line: number, how: string) => {
+    const ds = decls.get(name);
+    if (!ds || ds.some((d) => d.line === 0 || direct.has(fileOf(d.line)))) return;
+    const file = fileOf(ds[0].line)!;
+    const bundle = bundles.find((b) => b.file === file)?.name ?? file;
+    const m = missing.get(bundle) ?? missing.set(bundle, { line, file, names: [] }).get(bundle)!;
+    if (line < m.line) m.line = line;
+    if (!m.names.includes(how)) m.names.push(how);
+  };
+  for (const s of sentences(app)) if (s.line < LINE_BASE) for (const r of refsIn(s.text)) check(r.split(".")[0], s.line, `\`@${r.split(".")[0]}\``);
+  const types = (t: Type): string[] => (t.k === "Named" ? [t.name] : t.k === "List" || t.k === "Maybe" ? types(t.of) : []);
+  for (const f of app.state) if (f.line < LINE_BASE) for (const n of types(f.type)) check(n, f.line, `\`${n}\``);
+  for (const r of app.records) if (r.line < LINE_BASE && r.line > 0) for (const f of r.fields) for (const n of types(f.type)) check(n, r.line, `\`${n}\``);
+  const walk = (els: Element[]) => els.forEach((el) => (el.line < LINE_BASE && el.of && check(el.of, el.line, `\`${el.of}\``), walk(el.children)));
+  walk(app.screen);
+  if (!app.implements) for (const ep of app.endpoints ?? []) if (ep.line < LINE_BASE) for (const t of [...ep.params.map((p) => p.type), ...(ep.returns ? [ep.returns] : []), ...(ep.answers ?? []).flatMap((a) => (a.type ? [a.type] : []))]) for (const n of types(t)) check(n, ep.line, `\`${n}\``);
+  for (const e of app.events ?? []) if (e.line < LINE_BASE) for (const n of types(e.type)) check(n, e.line, `\`${n}\``);
+  for (const [bundle, m] of missing) {
+    const shown = m.names.slice(0, 5).join(", ") + (m.names.length > 5 ? ` and ${m.names.length - 5} more` : "");
+    err(m.line, "IMPORT", `this file uses ${shown} from ${bundle} (${m.file}), but does not import it: add \`import ${bundle}\``);
+  }
 }
 
 /** Merge a contract into the app that implements it, and check that the app matches it exactly. */

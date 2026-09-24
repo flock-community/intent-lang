@@ -1,0 +1,29 @@
+app ImportChecks {
+  "A name that only arrives through another spec must be imported directly."
+}
+
+uses support.ticketsApi as tickets {
+  tested with "apps/api/tickets-api.intent"
+}
+
+state {
+  rows: List Ticket = []                   # expect: IMPORT
+}
+
+screen {
+  list rows of Ticket {
+    text subject
+  }
+}
+
+on start {
+  - call @tickets.listTickets
+}
+
+on answer tickets.listTickets {
+  - if its status is 200, set @rows to its body
+}
+
+example "loads" {
+  see rows has 8 rows
+}

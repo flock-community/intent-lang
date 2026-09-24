@@ -3,6 +3,8 @@ app DeskApi {
   "Every request carries an agent's API key; what an agent may do depends on who they are."
 }
 
+import support.tickets
+
 implements support.deskApi
 
 # The first layer sees every request first and every answer last.

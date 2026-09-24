@@ -1,4 +1,4 @@
-# Intent — language reference (v25)
+# Intent — language reference (v26)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -260,7 +260,13 @@ import std.list.Pager                # one name
 import std.list.Pager as TicketPager # one component, renamed
 ```
 
-All imported names share one namespace; a name declared twice is an error. A bundle's
+All imported names share one namespace; a name declared twice is an error.
+
+**Import what you use.** A name used in a file (in a sentence, `@Solved`, or as a type,
+`mine: List Ticket`) must be declared in that file or in a spec the file names itself: `import`,
+`uses`, `implements`, `extends`. A name that only arrives through another spec (a contract's own
+import, say) is an `IMPORT` error that names the spec to import. So a reader can always find
+where a name comes from without leaving the file. A bundle's
 `design` becomes the app's design; the app's own `design` lines override it.
 
 **Behaviour components** have parameters and their own state, derived values, screen,
@@ -794,6 +800,7 @@ places where the spec is not yet precise.
 | `NO_EXAMPLES` | warning | the app has no examples |
 | `LOCK` | error | a bundle is not locked, or changed since it was locked (§4b) |
 | `UNSCOPED` | warning | inside a component, one of its own names is not written with `@` |
+| `IMPORT` | error | a name comes from a spec this file does not import itself (add the `import` it names) |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNUSED` | warning | a declared component is never used |
 | `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
@@ -885,6 +892,9 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v26: import what you use: names in a file's sentences and declarations must come from the
+  file or from a spec it names itself (`import`, `uses`, `implements`, `extends`).
 
 - v25: references in sentences are marked with `@` (`@draft`, `@Item`, `@pager.visible`), also
   inside components (was `{page}`); unknown `@names` are errors, unmarked names a hint.

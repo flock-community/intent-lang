@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v25** (see the changelog at the end of
+Language version this skill matches: **v26** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -40,7 +40,9 @@ List `lib/` and read the bundles before writing anything yourself:
 - An admin look: `import ui.admin` gives you the design, `StatCard` and `EmptyState`.
 - Domains: `support.tickets`, and more over time.
 
-Import with `import std.list`. Place a component with `use name = Component { … }`, with its
+Import with `import std.list`. Import every spec whose names you use, also when they would
+arrive through another one (a screen that `uses` a tickets contract still writes
+`import support.tickets` to use `Ticket` and `@Solved`). Place a component with `use name = Component { … }`, with its
 bindings in the block (`items = sorted`, no braces around the value) and, when needed, `visible when …`. Then refer to its
 names as `@name.x` in your sentences and handlers (`set @toast.message to "Saved"`), and as
 `name.x` in examples (`click pager.next`). A bundle's `design` becomes yours; your own

@@ -2,6 +2,8 @@ app TicketsApi {
   "The support desk's tickets and comments, as an HTTP API."
 }
 
+import support.tickets
+
 implements support.ticketsApi
 
 state {

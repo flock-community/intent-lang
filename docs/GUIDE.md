@@ -348,6 +348,8 @@ app TicketsApi {
   "The support desk's tickets and comments, as an HTTP API."
 }
 
+import support.tickets
+
 implements support.ticketsApi
 
 state {
@@ -428,6 +430,7 @@ their own in `lib/std/http/`, built and verified once, reused by every API
 
 ```
 app DeskApi
+import support.tickets
 implements support.deskApi
 
 # The first layer sees every request first and every answer last.
@@ -488,6 +491,8 @@ app TicketsUi {
   "A small front end for the tickets API: list, add and solve tickets."
 }
 
+import support.tickets
+
 uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"
 }
@@ -526,6 +531,9 @@ example "another agent adds a ticket" {
 }
 ```
 
+- **Import what you use.** `Ticket` and `@Solved` come from `support.tickets`, so the screen
+  imports it itself, even though the contract imports it too: a reader can always see where a
+  name comes from.
 - **No mocks.** `tested with` names the real API spec. The examples run against a build of it,
   with its seed data: that is why the list has 8 rows.
 - Calls are answered right after the step that made them; the screen you `see` is settled.
@@ -543,6 +551,8 @@ A screen sends the user's key through a **client layer**, bound to its state
 app DeskUi {
   "An agent's own tickets, after signing in with their API key."
 }
+
+import support.tickets
 
 uses support.deskApi as desk {
   tested with "apps/api/desk-api.intent"
