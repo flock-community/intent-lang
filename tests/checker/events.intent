@@ -1,19 +1,22 @@
 app EventChecks
 profile api
 
-state
+state {
   count: Int = 0
+}
 
 event counted: Int
 event counted: Int                        # expect: DUPLICATE
 
-endpoint bump POST "/bump"                # expect: UNKNOWN_NAME
+endpoint bump POST "/bump" {  # expect: UNKNOWN_NAME
   returns Int
   - increase count by 1
   - publish bumped with count
   - answer 200 with count
+}
 
-example "bump"
+example "bump" {
   call bump
   see counted.body = 1
   see counted.status = 200                # expect: UNKNOWN_NAME
+}

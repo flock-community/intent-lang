@@ -1,69 +1,82 @@
-app DeskApi
+app DeskApi {
   "The support desk's API for agents, called from the desk's web pages."
   "Every request carries an agent's API key; what an agent may do depends on who they are."
+}
 
 implements support.deskApi
 
 # The first layer sees every request first and every answer last.
 use secure = std.http.secure
-use cors = std.http.cors
+use cors = std.http.cors {
   origins = "https://desk.example"
   headers = "content-type", "x-api-key"
-use auth = std.http.apiKey
-  keys = table
+}
+use auth = std.http.apiKey {
+  keys = table {
     secret         | owner
     "k-ann-7f3a"   | "Ann"
     "k-sam-91bc"   | "Sam"
+  }
   public = "/health"
+}
 
-state
-  tickets: List Ticket = table
+state {
+  tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     2  | "Invoice shows wrong VAT"      | "Piet de Vries" | High     | Open    | "Ann"
     3  | "Feature request: dark mode"   | "Lena Smit"     | Low      | Pending | "Sam"
     4  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | ""
     5  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Solved  | "Ann"
+  }
   comments: List Comment = []
+}
 
-endpoint health
+endpoint health {
   - answer 200 with a Health whose status is "ok"
+}
 
-endpoint myTickets
+endpoint myTickets {
   - answer 200 with the tickets whose assignee is the caller, highest id first
+}
 
-endpoint takeTicket
+endpoint takeTicket {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if that ticket's assignee is not blank and is not the caller, answer 409 "Already taken by {assignee}" and stop
   - set its assignee to the caller
   - publish ticketAssigned with the ticket
   - answer 200 with the ticket
+}
 
-endpoint solveTicket
+endpoint solveTicket {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if that ticket's assignee is not the caller, answer 403 "Only the assignee can solve this ticket" and stop
   - if that ticket is Solved, answer 409 "Already solved" and stop
   - set its status to Solved
   - publish ticketSolved with the ticket
   - answer 200 with the ticket
+}
 
-endpoint addComment
+endpoint addComment {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if text, trimmed, is blank, answer 400 "Comment is empty" and stop
   - add a Comment to the end of comments with ticket = id, author = the caller and body = text trimmed
   - answer 201 with the new comment
+}
 
-always
+always {
   see myTickets.status is below 500
+}
 
-example "anyone may ask whether the desk is up; every answer has the safe headers"
+example "anyone may ask whether the desk is up; every answer has the safe headers" {
   call health
   see health.status = 200
   see health.body.status = "ok"
   see health.header.x-content-type-options = "nosniff"
   see health.header.cache-control = "no-store"
+}
 
-example "without a key nothing else answers, and the refusal is safe too"
+example "without a key nothing else answers, and the refusal is safe too" {
   call myTickets
   see myTickets.status = 401
   see myTickets.body.error = "Missing API key"
@@ -71,8 +84,9 @@ example "without a key nothing else answers, and the refusal is safe too"
   call takeTicket with header x-api-key = "k-bob-0000", id = 4
   see takeTicket.status = 401
   see takeTicket.body.error = "Unknown API key"
+}
 
-example "each agent sees their own tickets"
+example "each agent sees their own tickets" {
   call myTickets with header x-api-key = "k-ann-7f3a"
   see myTickets.status = 200
   see myTickets.body has 2 rows
@@ -80,8 +94,9 @@ example "each agent sees their own tickets"
   call myTickets with header x-api-key = "k-sam-91bc"
   see myTickets.body has 2 rows
   see myTickets.body[1].subject = "Feature request: dark mode"
+}
 
-example "taking and solving: only the assignee solves"
+example "taking and solving: only the assignee solves" {
   call takeTicket with header x-api-key = "k-sam-91bc", id = 4
   see takeTicket.status = 200
   see takeTicket.body.assignee = "Sam"
@@ -99,8 +114,9 @@ example "taking and solving: only the assignee solves"
   see solveTicket.status = 409
   call myTickets with header x-api-key = "k-sam-91bc"
   see myTickets.body has 3 rows
+}
 
-example "a comment is by whoever calls"
+example "a comment is by whoever calls" {
   call addComment with header x-api-key = "k-ann-7f3a", id = 1, text = "  I can take this one. "
   see addComment.status = 201
   see addComment.body.author = "Ann"
@@ -109,8 +125,9 @@ example "a comment is by whoever calls"
   see addComment.status = 400
   call addComment with header x-api-key = "k-ann-7f3a", id = 99, text = "Hello"
   see addComment.status = 404
+}
 
-example "the desk's web pages may call; other pages may not read the answers"
+example "the desk's web pages may call; other pages may not read the answers" {
   request OPTIONS "/tickets/mine" with header origin = "https://desk.example", header access-control-request-method = "GET"
   see request.status = 204
   see request.header.access-control-allow-headers = "content-type, x-api-key"
@@ -122,3 +139,4 @@ example "the desk's web pages may call; other pages may not read the answers"
   call myTickets with header origin = "https://evil.example", header x-api-key = "k-ann-7f3a"
   see myTickets.status = 200
   see myTickets.header.access-control-allow-origin is absent
+}

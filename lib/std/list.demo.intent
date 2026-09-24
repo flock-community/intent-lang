@@ -1,13 +1,15 @@
-app PagerDemo
+app PagerDemo {
   "Proves std.list.Pager: twelve numbers, five per page."
+}
 
 import std.list
 
-record Number
+record Number {
   label: Text
+}
 
-state
-  numbers: List Number = table
+state {
+  numbers: List Number = table {
     label
     "one"
     "two"
@@ -21,30 +23,38 @@ state
     "ten"
     "eleven"
     "twelve"
+  }
   filter: Text = ""
+}
 
-derive
+derive {
   matching = the numbers whose label contains filter
+}
 
-screen
+screen {
   field filter "Filter"
-  list shown of Number = {pager.visible}
+  list shown of Number = {pager.visible} {
     text label
-  use pager = Pager
+  }
+  use pager = Pager {
     items = matching
     size = 5
+  }
+}
 
-always
+always {
   see shown has at most 5 rows
+}
 
-example "the first page"
+example "the first page" {
   see shown has 5 rows
   see label on row 1 = "one"
   see pager.pageInfo = "Page 1 of 3"
   see pager.previous is disabled
   see pager.next is enabled
+}
 
-example "paging to the end and back"
+example "paging to the end and back" {
   click pager.next
   see label on row 1 = "six"
   click pager.next
@@ -54,11 +64,13 @@ example "paging to the end and back"
   see pager.next is disabled
   click pager.previous
   see pager.pageInfo = "Page 2 of 3"
+}
 
-example "the page follows a shorter list"
+example "the page follows a shorter list" {
   click pager.next
   click pager.next
   see pager.pageInfo = "Page 3 of 3"
   type "e" into filter
   see pager.pageInfo = "Page 2 of 2"
   see pager.next is disabled
+}

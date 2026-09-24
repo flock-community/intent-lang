@@ -1,49 +1,60 @@
-app Wordle
+app Wordle {
   "Guess the hidden five-letter word in six tries."
+}
 
-record Guess
+record Guess {
   word: Text
   marks: Text
+}
 
-state
+state {
   game: Int = 1
   guesses: List Guess = []
   draft: Text = ""
   message: Text = ""
+}
 
-derive
+derive {
   answer = the word at position (game - 1) modulo 5 in the list APPLE, EERIE, LLAMA, CRANE, SPOON; game 1 is APPLE
   status = Won when the last guess equals answer; Lost when there are 6 guesses and none equals answer; otherwise Playing
+}
 
-screen
+screen {
   text title = "Game {game}"
-  list guesses of Guess
+  list guesses of Guess {
     text word
     text marks
+  }
   field draft "Guess"
-  button guess "Guess"
+  button guess "Guess" {
     enabled when status is Playing
+  }
   text message
-  text result = Won: "Solved in {number of guesses}", Lost: "The word was {answer}"
+  text result = Won: "Solved in {number of guesses}", Lost: "The word was {answer}" {
     visible when status is not Playing
+  }
   button next "Next game"
+}
 
-on click guess
+on click guess {
   - the word is draft, trimmed and in capitals
   - if the word is not exactly 5 letters from A to Z, set message to "Five letters, please" and stop
   - if the word is already in guesses, set message to "Already tried" and stop
   - add a Guess with that word and its marks to the end of guesses
   - clear draft and message
+}
 
-on click next
+on click next {
   - increase game by 1
   - clear guesses, draft and message
+}
 
-rules
+rules {
   - marks has one character per letter of the word: "G" when answer has the same letter in the same place, "Y" when the letter is elsewhere in answer and not yet accounted for, "." otherwise.
   - Accounting: first every G uses up its letter of answer; then, from left to right, a letter gets Y only while answer still has an unused copy of it, and that Y uses the copy up.
+}
 
-example "marks with repeated letters"
+example "marks with repeated letters" {
   type "paper" into draft
   click guess
   see word on row 1 = "PAPER"
@@ -53,15 +64,17 @@ example "marks with repeated letters"
   see marks on row 2 = "Y.G.."
   see draft = ""
   see result is hidden
+}
 
-example "winning"
+example "winning" {
   type "apple" into draft
   click guess
   see marks on row 1 = "GGGGG"
   see result = "Solved in 1"
   see guess is disabled
+}
 
-example "invalid and repeated guesses"
+example "invalid and repeated guesses" {
   type "app" into draft
   click guess
   see message = "Five letters, please"
@@ -78,8 +91,9 @@ example "invalid and repeated guesses"
   click guess
   see message = "Already tried"
   see guesses has 1 row
+}
 
-example "losing and the next game"
+example "losing and the next game" {
   type "hello" into draft
   click guess
   type "world" into draft
@@ -102,3 +116,4 @@ example "losing and the next game"
   type "ember" into draft
   click guess
   see marks on row 1 = "G..YY"
+}

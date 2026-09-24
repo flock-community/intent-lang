@@ -1,22 +1,26 @@
-app SupportDesk
+app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
+}
 
 extends support.helpdesk
 
 override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
 
-override state
+override state {
   sort: Sort = ByPriority          # we triage by priority first
+}
 
-add to header after pageTitle
-  text slaNote = "Urgent tickets are answered within the hour." as caption
+add to header after pageTitle {
+  text slaNote = "Urgent tickets are answered within the hour." as caption {
     visible when page is Inbox
+  }
+}
 
 drop example "the inbox at a glance"
 drop example "paging"                   # pages follow priority order now
 drop example "reading and replying"     # ticket #7 moved to page 2
 
-example "triage by priority"
+example "triage by priority" {
   see pageTitle = "Queue"
   see slaNote = "Urgent tickets are answered within the hour."
   see sort = ByPriority
@@ -24,18 +28,21 @@ example "triage by priority"
   see ticketId on row 2 = "#4"
   see ticketId on row 3 = "#1"
   snapshot "queue"
+}
 
-example "paging in priority order"
+example "paging in priority order" {
   click pager.next
   see pager.pageInfo = "Page 2 of 2"
   see ticketId on row 1 = "#7"
   see ticketId on row 2 = "#5"
   see ticketId on row 3 = "#3"
+}
 
-example "replying to an urgent ticket"
+example "replying to an urgent ticket" {
   click open on row with "#4"
   see detailSubject = "App crashes on upload"
   type "We are on it." into reply
   click send
   see thread has 2 rows
   see toast.message = "Reply sent"
+}

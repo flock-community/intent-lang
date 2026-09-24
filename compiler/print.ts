@@ -3,6 +3,7 @@
 import type { App, Binding, Element, Literal, Step } from "./ast.ts";
 import { LINE_BASE } from "./ast.ts";
 import { typeToString } from "./parse.ts";
+import { toBraces } from "./braces.ts";
 
 const q = (s: string) => JSON.stringify(s);
 
@@ -150,5 +151,6 @@ export function printApp(app: App): string {
   block(app.rules.length ? ["rules", ...app.rules.map((r) => `  - ${r}`)] : []);
   block(app.always.length ? ["always", ...app.always.map((s) => `  ${stepText(s)}${origin(app, s.line)}`)] : []);
   for (const ex of app.examples) block([`example ${q(ex.name)}`, ...ex.steps.map((s) => `  ${stepText(s)}`)]);
-  return out.join("\n");
+  // The canonical form has braces for blocks: what the compiler reads, and what `intent expand` shows.
+  return toBraces(out.join("\n"));
 }

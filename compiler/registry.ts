@@ -7,6 +7,7 @@
 // The registry is static files, so any file server can host it:
 //   <registry>/index.json                     { bundles: { "std.list": { versions: { "1.0.0": { sha, file, requires, published } } } } }
 //   <registry>/<bundle path>/<version>.intent
+import { fromBraces } from "./braces.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { App } from "./ast.ts";
@@ -50,7 +51,7 @@ export function readProject(path = PROJECT): Project | undefined {
   if (!existsSync(path)) return undefined;
   const p: Project = { name: "", requires: [] };
   let inRequires = false;
-  readFileSync(path, "utf8").split("\n").forEach((raw, i) => {
+  fromBraces(readFileSync(path, "utf8")).text.split("\n").forEach((raw, i) => {
     const line = raw.replace(/#.*$/, "").trimEnd();
     if (!line.trim()) return;
     let m: RegExpMatchArray | null;
@@ -58,7 +59,7 @@ export function readProject(path = PROJECT): Project | undefined {
     else if ((m = line.match(/^registry\s+(\S+)$/))) (p.registry = m[1]), (inRequires = false);
     else if (line === "requires") inRequires = true;
     else if (inRequires && (m = line.match(/^\s+([a-z][\w.]*)\s+(\d+(?:\.\d+){0,2})$/))) p.requires.push({ name: m[1], version: m[2], line: i + 1 });
-    else throw new Error(`intent.project:${i + 1}: expected \`project <name>\`, \`registry <folder or url>\`, or \`requires\` with indented \`<bundle> <version>\` lines`);
+    else throw new Error(`intent.project:${i + 1}: expected \`project <name>\`, \`registry <folder or url>\`, or \`requires\` with \`<bundle> <version>\` lines in its block`);
   });
   return p;
 }

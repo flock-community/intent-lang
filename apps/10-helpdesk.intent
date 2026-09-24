@@ -1,7 +1,8 @@
-app Helpdesk
+app Helpdesk {
   "A support desk for a small team: see what needs attention, triage tickets and answer customers."
+}
 
-design
+design {
   look "A calm, modern SaaS admin. Light neutral page background; white surfaces with a thin neutral border and a subtle shadow; comfortable spacing; dark neutral headings and muted neutral secondary text; the brand color for primary actions and the active navigation item."
   brand: indigo
   neutral: slate
@@ -11,6 +12,7 @@ design
   font: sans
   radius: large
   density: comfortable
+}
 
 component StatCard as card "A small uppercase muted label above a large semibold number."
 component PriorityBadge as badge "Tinted per value: Urgent in danger, High in warning, Normal in neutral, Low in success."
@@ -23,27 +25,30 @@ choice Status: Open | Pending | Solved
 choice StatusFilter: AllTickets "All" | OnlyOpen "Open" | OnlyPending "Pending" | OnlySolved "Solved"
 choice Sort: Newest "Newest first" | Oldest "Oldest first" | ByPriority "Priority"
 
-record Ticket
+record Ticket {
   id: Int
   subject: Text
   customer: Text
   priority: Priority
   status: Status
   assignee: Text
+}
 
-record Comment
+record Comment {
   ticket: Int
   author: Text
   body: Text
+}
 
-record Bar
+record Bar {
   label: Text
   count: Int
   share: Int
+}
 
-state
+state {
   page: Page = Inbox
-  tickets: List Ticket = table
+  tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     2  | "Invoice shows wrong VAT"      | "Piet de Vries" | High     | Open    | "Alex"
@@ -53,11 +58,13 @@ state
     6  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | ""
     7  | "Password rules unclear"       | "Iris de Boer"  | Normal   | Open    | "Alex"
     8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | ""
-  comments: List Comment = table
+  }
+  comments: List Comment = table {
     ticket | author         | body
     1      | "Mara Jansen"  | "I reset my password but the login page keeps rejecting it."
     1      | "Sam"          | "Thanks Mara, looking into it now."
     4      | "Joost Bakker" | "It happens with every file larger than 10 MB."
+  }
   search: Text = ""
   statusFilter: StatusFilter = AllTickets
   sort: Sort = Newest
@@ -72,8 +79,9 @@ state
   toast: Text = ""
   compactRows: Bool = false
   signature: Text = "The Support Team"
+}
 
-derive
+derive {
   matching = the tickets whose subject or customer contains search (trimmed, ignoring case), and whose status fits statusFilter (AllTickets fits every status)
   sorted = matching in the order of sort: Newest is highest id first; Oldest is lowest id first; ByPriority is Urgent, High, Normal, Low, and within one priority highest id first
   pageCount = the number of sorted tickets divided by 5, rounded up, but at least 1
@@ -82,43 +90,55 @@ derive
   current = the ticket whose id is selected
   thread = the comments whose ticket is selected, in their order
   byPriority = one Bar per priority, in the order Urgent, High, Normal, Low: label is the priority's name, count is the number of tickets with that priority that are not Solved, and share is count × 100 divided by the largest count of the four, rounded down (0 when all counts are 0)
+}
 
-screen
-  section sidebar as sidebar
+screen {
+  section sidebar as sidebar {
     heading "Helpdesk" as title
     select page as nav
-    section account as footer
+    section account as footer {
       text userInitials = "ST" as avatar
       text userName = "Sam Taylor" as caption
-  section content as main
-    section header as header
+    }
+  }
+  section content as main {
+    section header as header {
       text pageTitle = the label of page: "Inbox", "Reports" or "Settings" as title
-      field search "Search tickets" as search
+      field search "Search tickets" as search {
         visible when page is Inbox
+      }
       button newTicket "New ticket" as primary
-    text urgentAlert = "{urgentOpen} urgent tickets need attention" as alert
+    }
+    text urgentAlert = "{urgentOpen} urgent tickets need attention" as alert {
       visible when page is Inbox and urgentOpen is at least 3
-    section stats as grid
+    }
+    section stats as grid {
       visible when page is Inbox
       look "four cards in one row on wide screens, two per row on small screens"
-      section openStat as StatCard
+      section openStat as StatCard {
         text openLabel = "Open"
         text openValue = the number of Open tickets
-      section pendingStat as StatCard
+      }
+      section pendingStat as StatCard {
         text pendingLabel = "Pending"
         text pendingValue = the number of Pending tickets
-      section solvedStat as StatCard
+      }
+      section solvedStat as StatCard {
         text solvedLabel = "Solved"
         text solvedValue = the number of Solved tickets
-      section unassignedStat as StatCard
+      }
+      section unassignedStat as StatCard {
         text unassignedLabel = "Unassigned"
         text unassignedValue = the number of tickets that are not Solved and have no assignee
-    section inbox as card
+      }
+    }
+    section inbox as card {
       visible when page is Inbox
-      section filters as toolbar
+      section filters as toolbar {
         select statusFilter as chips
         select sort "Sort by" as dropdown
-      list shown of Ticket as table
+      }
+      list shown of Ticket as table {
         look "columns: ticket, subject, customer, priority, status, assignee, and the action on the right; rows are tighter when compactRows is on"
         text ticketId = "#{id}"
         text subject
@@ -127,116 +147,150 @@ screen
         text status as StatusBadge
         text assignee = the assignee, or "Unassigned" when it is empty
         button open "View" as link
-      section empty as EmptyState
+      }
+      section empty as EmptyState {
         visible when shown is empty
         text emptyTitle = "No tickets found"
         text emptyHint = "Try another search or filter."
-      section pager as footer
+      }
+      section pager as footer {
         text pageInfo = "Page {pageNumber} of {pageCount}"
-        button previous "Previous" as secondary
+        button previous "Previous" as secondary {
           enabled when pageNumber is above 1
-        button next "Next" as secondary
+        }
+        button next "Next" as secondary {
           enabled when pageNumber is below pageCount
-    section reports as card
+        }
+      }
+    }
+    section reports as card {
       visible when page is Reports
       heading "Resolution"
       progress solvedShare "Solved" = the share of tickets that are Solved, in percent, rounded down
       text solvedLine = "{number of Solved tickets} of {number of tickets} tickets solved"
       heading "Open work by priority"
-      list byPriority of Bar as bars
+      list byPriority of Bar as bars {
         look "a horizontal bar chart: label on the left, a bar whose length is the share, the count on the right"
         text label
         progress share
         text count
-    section settings as form
+      }
+    }
+    section settings as form {
       visible when page is Settings
       checkbox compactRows "Compact table rows" as toggle
       field signature "Reply signature" as textarea
       text preview = "Preview: {signature}" as caption
-  section detail as drawer
+    }
+  }
+  section detail as drawer {
     visible when selected is not 0
     text detailSubject = the subject of current as title
     text detailMeta = "#{id of current} · {customer of current}" as caption
     text detailPriority = the priority of current as PriorityBadge
     text detailStatus = the status of current as StatusBadge
-    list thread of Comment as timeline
+    list thread of Comment as timeline {
       text author
       text body
+    }
     field reply "Reply" as textarea
-    button send "Send reply" as primary
+    button send "Send reply" as primary {
       enabled when reply is not blank
-    button solve "Mark as solved" as secondary
+    }
+    button solve "Mark as solved" as secondary {
       enabled when current is not Solved
+    }
     button close "Close" as ghost
-  section newDialog "New ticket" as dialog
+  }
+  section newDialog "New ticket" as dialog {
     visible when showNew
     field newSubject "Subject"
     field newCustomer "Customer"
     select newPriority "Priority" as segmented
     checkbox notifyCustomer "Email the customer a confirmation" as toggle
-    button create "Create ticket" as primary
+    button create "Create ticket" as primary {
       enabled when newSubject is not blank and newCustomer is not blank
+    }
     button cancel "Cancel" as secondary
-  text toastMessage = toast as toast
+  }
+  text toastMessage = toast as toast {
     visible when toast is not empty
-  button dismiss "Dismiss" as icon
+  }
+  button dismiss "Dismiss" as icon {
     visible when toast is not empty
+  }
+}
 
-on type search
+on type search {
   - set pageNumber to 1
+}
 
-on choose statusFilter
+on choose statusFilter {
   - set pageNumber to 1
+}
 
-on choose sort
+on choose sort {
   - set pageNumber to 1
+}
 
-on choose page
+on choose page {
   - set selected to 0
+}
 
-on click previous
+on click previous {
   - decrease pageNumber by 1
+}
 
-on click next
+on click next {
   - increase pageNumber by 1
+}
 
-on click open
+on click open {
   - set selected to the id of that ticket
   - clear reply
+}
 
-on click close
+on click close {
   - set selected to 0
+}
 
-on click send
+on click send {
   - add a Comment to the end of comments with ticket = selected, author = "Sam" and body = reply trimmed
   - if current is Open, set its status to Pending
   - clear reply
   - set toast to "Reply sent"
+}
 
-on click solve
+on click solve {
   - set the status of current to Solved
   - set toast to "Ticket #<id of current> solved"
+}
 
-on click newTicket
+on click newTicket {
   - set showNew to true
   - clear newSubject and newCustomer; set newPriority to Normal and notifyCustomer to true
+}
 
-on click create
+on click create {
   - add a Ticket to the end of tickets with id = the highest id + 1, subject = newSubject trimmed, customer = newCustomer trimmed, priority = newPriority, status Open and assignee ""
   - set showNew to false
   - set toast to "Ticket #<new id> created", followed by " · customer notified" when notifyCustomer
   - set page to Inbox, search to "", statusFilter to AllTickets, sort to Newest and pageNumber to 1
+}
 
-on click cancel
+on click cancel {
   - set showNew to false
+}
 
-on click dismiss
+on click dismiss {
   - clear toast
+}
 
-always
+always {
   see shown has at most 5 rows
+}
 
-example "the inbox at a glance"
+example "the inbox at a glance" {
   snapshot "inbox"
   see pageTitle = "Inbox"
   see openValue = "5"
@@ -258,8 +312,9 @@ example "the inbox at a glance"
   see newDialog is hidden
   see toastMessage is hidden
   see userName = "Sam Taylor"
+}
 
-example "paging"
+example "paging" {
   click next
   see pageInfo = "Page 2 of 2"
   see shown has 3 rows
@@ -267,8 +322,9 @@ example "paging"
   see next is disabled
   click previous
   see ticketId on row 1 = "#8"
+}
 
-example "search and filters"
+example "search and filters" {
   click next
   type "invoice" into search
   see pageInfo = "Page 1 of 1"
@@ -287,16 +343,18 @@ example "search and filters"
   see ticketId on row 2 = "#3"
   choose Oldest in sort
   see ticketId on row 1 = "#3"
+}
 
-example "sorting by priority"
+example "sorting by priority" {
   choose ByPriority in sort
   see ticketId on row 1 = "#8"
   see ticketId on row 2 = "#4"
   see ticketId on row 3 = "#1"
   see ticketId on row 4 = "#6"
   see ticketId on row 5 = "#2"
+}
 
-example "reading and replying"
+example "reading and replying" {
   click open on row with "#4"
   see detailSubject = "App crashes on upload"
   see detailMeta = "#4 · Joost Bakker"
@@ -323,8 +381,9 @@ example "reading and replying"
   see pendingValue = "3"
   click close
   see detail is hidden
+}
 
-example "solving a ticket"
+example "solving a ticket" {
   click open on row with "#8"
   click solve
   see detailStatus = "Solved"
@@ -335,8 +394,9 @@ example "solving a ticket"
   click dismiss
   see toastMessage is hidden
   see dismiss is hidden
+}
 
-example "creating a ticket"
+example "creating a ticket" {
   click next
   click newTicket
   see newDialog is shown
@@ -363,8 +423,9 @@ example "creating a ticket"
   click newTicket
   click cancel
   see newDialog is hidden
+}
 
-example "reports"
+example "reports" {
   choose Reports in page
   see pageTitle = "Reports"
   see search is hidden
@@ -378,8 +439,9 @@ example "reports"
   see count on row 3 = "1"
   see share on row 4 = 33
   snapshot "reports"
+}
 
-example "settings"
+example "settings" {
   choose Settings in page
   see pageTitle = "Settings"
   see compactRows is unchecked
@@ -390,3 +452,4 @@ example "settings"
   snapshot "settings"
   choose Inbox in page
   see shown has 5 rows
+}

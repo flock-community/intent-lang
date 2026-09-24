@@ -83,7 +83,7 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
 7. **Lessons from a real app** (`docs/reviews/openouros.md`, three openouros slices written as
    specs in `runs/openouros/`), kept general: every construct must serve many apps, not one. In
    order: ~~v22 events and subscriptions~~ done, ~~v23 client layers (keys from screens)~~
-   done, v24 time and a steerable clock in api apps, v25 effects on actions
+   done, ~~v24 blocks with braces~~ done, v25 time and a steerable clock in api apps, v26 effects on actions
    (approval, permissions, outbox, compensation) with a `std.actions` layer, then stored state
    with identity and references, then unions of records and several targets per app. Also
    open: styled builds of screens that make calls, and Kotlin as a second API target. Wire

@@ -1,63 +1,81 @@
-app Board
+app Board {
   "A tiny kanban board with three columns and at most three cards in progress."
+}
 
 choice Column: Todo | Doing | Done
 
-record Card
+record Card {
   title: Text
   column: Column
+}
 
-state
+state {
   cards: List Card = []
   draft: Text = ""
+}
 
-derive
+derive {
   full = there are 3 cards in Doing
+}
 
-screen
+screen {
   field draft "New card"
-  button add "Add"
+  button add "Add" {
     enabled when draft is not blank
+  }
   heading "To do"
-  list todo of Card = the cards in Todo
+  list todo of Card = the cards in Todo {
     text title
-    button start "Start"
+    button start "Start" {
       enabled when not full
+    }
+  }
   heading "Doing"
-  list doing of Card = the cards in Doing
+  list doing of Card = the cards in Doing {
     text title
     button back "Back"
     button finish "Finish"
+  }
   heading "Done"
-  list done of Card = the cards in Done
+  list done of Card = the cards in Done {
     text title
-    button reopen "Reopen"
+    button reopen "Reopen" {
       enabled when not full
+    }
+  }
   text wip = "Doing {number of cards in Doing}/3"
+}
 
-on click add
+on click add {
   - add a card with the draft, trimmed, as title to Todo
   - clear draft
+}
 
-on click start
+on click start {
   - move the card to Doing
+}
 
-on click back
+on click back {
   - move the card back to Todo
+}
 
-on click finish
+on click finish {
   - move the card to Done
+}
 
-on click reopen
+on click reopen {
   - move the card back to Doing
+}
 
-rules
+rules {
   - A moved card goes to the end of its new column.
+}
 
-always
+always {
   see doing has at most 3 rows
+}
 
-example "a card moves along"
+example "a card moves along" {
   type " Write report " into draft
   click add
   see draft = ""
@@ -69,13 +87,15 @@ example "a card moves along"
   see wip = "Doing 1/3"
   click finish on row 1
   see title on row 1 of done = "Write report"
+}
 
-example "blank cards cannot be added"
+example "blank cards cannot be added" {
   see add is disabled
   type "  " into draft
   see add is disabled
+}
 
-example "the limit"
+example "the limit" {
   type "A" into draft
   click add
   type "B" into draft
@@ -93,8 +113,9 @@ example "the limit"
   see start on row with "D" is enabled
   click start on row with "D"
   see reopen on row with "A" is disabled
+}
 
-example "moved cards go to the end"
+example "moved cards go to the end" {
   type "A" into draft
   click add
   type "B" into draft
@@ -109,3 +130,4 @@ example "moved cards go to the end"
   see title on row 2 of todo = "C"
   click back on row with "B"
   see title on row 3 of todo = "B"
+}

@@ -1,21 +1,24 @@
-bundle support.tickets
+bundle support.tickets {
   "Support tickets: what customers ask, how urgent it is, where it stands."
+}
 
 choice Priority: Urgent | High | Normal | Low
 choice Status: Open | Pending | Solved
 
-record Ticket
+record Ticket {
   id: Int
   subject: Text
   customer: Text
   priority: Priority
   status: Status
   assignee: Text          # empty when nobody has picked it up
+}
 
-record Comment
+record Comment {
   ticket: Int             # the id of the ticket it belongs to
   author: Text
   body: Text
+}
 
 component PriorityBadge as badge "Tinted per value: Urgent in danger, High in warning, Normal in neutral, Low in success."
 component StatusBadge as badge "A colored dot before the text: Open in brand, Pending in warning, Solved in success."

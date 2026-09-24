@@ -1,19 +1,25 @@
 app ThroughChecks
 
-uses support.deskApi as desk
+uses support.deskApi as desk {
   tested with "apps/api/desk-api.intent"
-  through std.http.sendKey
+  through std.http.sendKey {
     key = password                        # expect: UNKNOWN_NAME
     colour = "red"                        # expect: UNKNOWN_NAME
+  }
+}
 
-uses support.ticketsApi as tickets
+uses support.ticketsApi as tickets {
   through std.http.cors                   # expect: BAD_BINDING
+}
 
-state
+state {
   count: Int = 0
+}
 
-screen
+screen {
   text shown = "{count}"
+}
 
-example "nothing"
+example "nothing" {
   see shown = "0"
+}

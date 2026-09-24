@@ -3,14 +3,17 @@ layer test.broken
 param keys: List Text                     # expect: BAD_BINDING
 param size: Nope = 1                      # expect: UNKNOWN_NAME
 
-before every request
+before every request {
   - every request passes on
+}
 
-examples with
+examples with {
   colour = "red"                          # expect: UNKNOWN_NAME
+}
 
-example "steps"
+example "steps" {
   request GET "/x"
   see status = 200
   click something                         # expect: STEP
   see total = 3                           # expect: UNKNOWN_NAME
+}

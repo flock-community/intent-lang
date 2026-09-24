@@ -1,10 +1,11 @@
-app TicketsApi
+app TicketsApi {
   "The support desk's tickets and comments, as an HTTP API."
+}
 
 implements support.ticketsApi
 
-state
-  tickets: List Ticket = table
+state {
+  tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     2  | "Invoice shows wrong VAT"      | "Piet de Vries" | High     | Open    | "Alex"
@@ -14,48 +15,58 @@ state
     6  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | ""
     7  | "Password rules unclear"       | "Iris de Boer"  | Normal   | Open    | "Alex"
     8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | ""
-  comments: List Comment = table
+  }
+  comments: List Comment = table {
     ticket | author         | body
     1      | "Mara Jansen"  | "I reset my password but the login page keeps rejecting it."
     1      | "Sam"          | "Thanks Mara, looking into it now."
+  }
+}
 
-endpoint listTickets
+endpoint listTickets {
   - answer 200 with the tickets whose status is status (every ticket when status is absent), highest id first
+}
 
-endpoint getTicket
+endpoint getTicket {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - answer 200 with that ticket
+}
 
-endpoint createTicket
+endpoint createTicket {
   - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
   - if customer, trimmed, is blank, answer 400 "Customer is required" and stop
   - add a Ticket to the end of tickets with id = the highest id in tickets + 1, subject and customer trimmed, the given priority, status Open and assignee ""
   - publish ticketCreated with the new ticket
   - answer 201 with the new ticket
+}
 
-endpoint solveTicket
+endpoint solveTicket {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if that ticket is Solved, answer 409 "Already solved" and stop
   - set its status to Solved
   - publish ticketSolved with the ticket
   - answer 200 with the ticket
+}
 
-endpoint addComment
+endpoint addComment {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if text, trimmed, is blank, answer 400 "Comment is empty" and stop
   - add a Comment to the end of comments with ticket = id, author trimmed and body = text trimmed
   - if the ticket is Open, set its status to Pending
   - answer 201 with the new comment
+}
 
-endpoint listComments
+endpoint listComments {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - answer 200 with the comments whose ticket is id, in their order
+}
 
-always
+always {
   see every row of listTickets.body: id is at least 1
   see createTicket.status is below 500
+}
 
-example "listing tickets"
+example "listing tickets" {
   call listTickets
   see listTickets.status = 200
   see listTickets.body has 8 rows
@@ -63,8 +74,9 @@ example "listing tickets"
   call listTickets with status = Open
   see listTickets.body has 5 rows
   see listTickets.body[2].subject = "Password rules unclear"
+}
 
-example "getting one ticket"
+example "getting one ticket" {
   call getTicket with id = 4
   see getTicket.status = 200
   see getTicket.body.subject = "App crashes on upload"
@@ -72,8 +84,9 @@ example "getting one ticket"
   call getTicket with id = 99
   see getTicket.status = 404
   see getTicket.body.error = "No such ticket"
+}
 
-example "creating a ticket"
+example "creating a ticket" {
   call createTicket with subject = "  Printer on fire ", customer = "Ann", priority = Urgent
   see createTicket.status = 201
   see createTicket.body.id = 9
@@ -83,8 +96,9 @@ example "creating a ticket"
   see ticketCreated.body.subject = "Printer on fire"
   call listTickets
   see listTickets.body has 9 rows
+}
 
-example "creating needs a subject and a customer"
+example "creating needs a subject and a customer" {
   call createTicket with subject = "   ", customer = "Ann", priority = Low
   see createTicket.status = 400
   see createTicket.body.error = "Subject is required"
@@ -95,8 +109,9 @@ example "creating needs a subject and a customer"
   call createTicket with subject = "Hi", customer = "Ann", priority = Soon
   see createTicket.status = 400
   see createTicket.body.error = "priority must be one of Urgent, High, Normal, Low"
+}
 
-example "solving a ticket"
+example "solving a ticket" {
   call solveTicket with id = 8
   see solveTicket.status = 200
   see solveTicket.body.status = "Solved"
@@ -105,8 +120,9 @@ example "solving a ticket"
   see solveTicket.status = 409
   see ticketSolved is absent
   see solveTicket.body.error = "Already solved"
+}
 
-example "commenting"
+example "commenting" {
   call addComment with id = 7, author = "Sam", text = " Checking the rules. "
   see addComment.status = 201
   see addComment.body.body = "Checking the rules."
@@ -117,3 +133,4 @@ example "commenting"
   see listComments.body[1].author = "Mara Jansen"
   call addComment with id = 7, author = "Sam", text = ""
   see addComment.status = 400
+}

@@ -1,5 +1,6 @@
-app OurDesk
+app OurDesk {
   "The standard helpdesk from the registry, with our own title."
+}
 
 extends support.helpdesk
 
@@ -7,5 +8,6 @@ override text pageTitle = the label of page: "Our inbox", "Reports" or "Settings
 
 drop example "the inbox at a glance"
 
-example "our title"
+example "our title" {
   see pageTitle = "Our inbox"
+}

@@ -35,46 +35,57 @@ So the same spec gives the same app, and a vague spec is caught instead of guess
 `apps/01-counter.intent`, complete:
 
 ```
-app Counter
+app Counter {
   "Count things up and down, never below zero."
+}
 
-state
+state {
   count: Int = 0
+}
 
-screen
+screen {
   text count
-  button down "−"
+  button down "−" {
     enabled when count is above 0
+  }
   button up "+"
   button reset "Reset"
+}
 
-on click up
+on click up {
   - increase count by 1
+}
 
-on click down
+on click down {
   - decrease count by 1
+}
 
-on click reset
+on click reset {
   - set count to 0
+}
 
-example "counting up and down"
+example "counting up and down" {
   click up
   click up
   see count = 2
   click down
   see count = 1
+}
 
-example "never below zero"
+example "never below zero" {
   see down is disabled
   click up
   see down is enabled
   click down
   see count = 0
   see down is disabled
+}
 ```
 
 Reading it top to bottom:
 
+- **Blocks** open with `{` at the end of a line and close with `}`. What is inside belongs to
+  that line: the steps of a handler, the modifiers of a button, the rows of a list.
 - **`app`** gives the app a name and a purpose (the quoted line). The compiler reads the
   purpose too.
 - **`state`** is what the app remembers, with a type and a starting value.
@@ -93,46 +104,56 @@ in the app leads back to its line in the spec.
 `apps/02-todo.intent`:
 
 ```
-app Todo
+app Todo {
   "A short list of things to do today."
+}
 
-record Item
+record Item {
   title: Text
   done: Bool = false
+}
 
 choice Filter: All | Open | Finished
 
-state
+state {
   items: List Item = []
   draft: Text = ""
   filter: Filter = All
+}
 
-derive
+derive {
   shown = the items that match filter: All shows every item, Open the items not done, Finished the items that are done
+}
 
-screen
+screen {
   heading "Today"
   field draft "New item"
-  button add "Add"
+  button add "Add" {
     enabled when draft is not blank
+  }
   select filter "Show"
-  list shown of Item
+  list shown of Item {
     checkbox done
     text title
     button remove "Delete"
-  text empty = "Nothing here"
+  }
+  text empty = "Nothing here" {
     visible when shown is empty
+  }
   text remaining = "{number of items not done} left"
+}
 
-on click add
+on click add {
   - if an item with the same title (trimmed, ignoring case) exists, do not add anything
   - otherwise add an Item with title = draft trimmed to the end of items
   - clear draft in both cases
+}
 
-on click remove
+on click remove {
   - remove that item from items
+}
 
-example "finishing and filtering"
+example "finishing and filtering" {
   type "Milk" into draft
   click add
   type "Bread" into draft
@@ -143,6 +164,7 @@ example "finishing and filtering"
   choose Open in filter
   see shown has 1 row
   see title on row 1 = "Bread"
+}
 ```
 
 - **`record`** is a kind of thing with fields; **`choice`** is a closed set of values.
@@ -166,8 +188,9 @@ sessions (40 sessions of 25 steps per build). From `apps/09-board.intent`, a kan
 progress:
 
 ```
-always
+always {
   see doing has at most 3 rows
+}
 ```
 
 If a build lets a fourth card in, the harness finds the session that does it and hands the
@@ -175,9 +198,10 @@ steps back to the compiler to repair. Numeric checks work too, on every row of a
 (`apps/07-shop.intent`):
 
 ```
-always
+always {
   see every row of products: left is at least 0
   see every row of cart: qty is at least 1
+}
 ```
 
 ## 4. Reuse: bundles, components and a design
@@ -186,28 +210,37 @@ Specs reuse specs. A **bundle** is a library under `lib/`. `lib/std/list.intent`
 pager as a **behaviour component**: it has params, its own state, a screen and handlers.
 
 ```
-bundle std.list
+bundle std.list {
   "Showing long lists in pieces."
+}
 
-component Pager as footer "The page info on the left; the previous and next buttons on the right."
+component Pager as footer "The page info on the left; the previous and next buttons on the right." {
   param items "the list to show one page at a time: a state or derived list"
   param size = 5
-  state
+  state {
     page: Int = 1
-  derive
+  }
+  derive {
     pageCount = the number of {items} divided by {size}, rounded up, but at least 1
     current = the smaller of {page} and {pageCount}
     visible = the {items} from position ({current} - 1) × {size} + 1 on, at most {size} of them
-  screen
+  }
+  screen {
     text pageInfo = "Page {current} of {pageCount}"
-    button previous "Previous" as secondary
+    button previous "Previous" as secondary {
       enabled when {current} is above 1
-    button next "Next" as secondary
+    }
+    button next "Next" as secondary {
       enabled when {current} is below {pageCount}
-  on click previous
+    }
+  }
+  on click previous {
     - set {page} to {current} - 1
-  on click next
+  }
+  on click next {
     - set {page} to {current} + 1
+  }
+}
 ```
 
 An app imports the bundle and places the component with `use`, binding its params
@@ -219,9 +252,10 @@ import std.list
 import std.feedback
 import support.tickets
 …
-      use pager = Pager
+      use pager = Pager {
         items = sorted
         size = 5
+      }
 ```
 
 Everything inside is then called `pager.…`: an example says `click pager.next` and
@@ -230,11 +264,12 @@ Everything inside is then called `pager.…`: an example says `click pager.next`
 **Looks** are words too. A bundle can carry a `design` (`lib/ui/admin.intent`):
 
 ```
-design
+design {
   look "A calm, modern SaaS admin. Light neutral page background; white surfaces with a thin neutral border and a subtle shadow; …"
   brand: indigo
   neutral: slate
   radius: large
+}
 ```
 
 Elements take a presentation (`as table`, `as sidebar`, `as secondary`) and an optional
@@ -254,25 +289,30 @@ type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/
 `apps/14-supportdesk.intent` tunes the standard helpdesk:
 
 ```
-app SupportDesk
+app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
+}
 
 extends support.helpdesk
 
 override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
 
-override state
+override state {
   sort: Sort = ByPriority          # we triage by priority first
+}
 
-add to header after pageTitle
-  text slaNote = "Urgent tickets are answered within the hour." as caption
+add to header after pageTitle {
+  text slaNote = "Urgent tickets are answered within the hour." as caption {
     visible when page is Inbox
+  }
+}
 
 drop example "paging"                   # pages follow priority order now
 
-example "triage by priority"
+example "triage by priority" {
   see pageTitle = "Queue"
   see ticketId on row 1 = "#8"
+}
 ```
 
 The base's examples still run unless you `drop` them by name. When the base changes, the
@@ -286,8 +326,9 @@ A project lists where its bundles come from and which versions it needs
 ```
 project consumer
 registry ../../registry
-requires
+requires {
   support.helpdesk 1.0
+}
 ```
 
 `intent install` downloads them and pins exact versions and hashes in `intent.lock`.
@@ -301,25 +342,29 @@ app, so a change that breaks users is a new major version.
 `profile api` describes an HTTP service. From `apps/api/tickets-api.intent`:
 
 ```
-app TicketsApi
+app TicketsApi {
   "The support desk's tickets and comments, as an HTTP API."
+}
 
 implements support.ticketsApi
 
-state
-  tickets: List Ticket = table
+state {
+  tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     …
+  }
+}
 
-endpoint createTicket
+endpoint createTicket {
   - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
   - if customer, trimmed, is blank, answer 400 "Customer is required" and stop
   - add a Ticket to the end of tickets with id = the highest id in tickets + 1, subject and customer trimmed, the given priority, status Open and assignee ""
   - publish ticketCreated with the new ticket
   - answer 201 with the new ticket
+}
 
-example "creating a ticket"
+example "creating a ticket" {
   call createTicket with subject = "  Printer on fire ", customer = "Ann", priority = Urgent
   see createTicket.status = 201
   see createTicket.body.id = 9
@@ -327,6 +372,7 @@ example "creating a ticket"
   see ticketCreated.body.id = 9
   call listTickets
   see listTickets.body has 9 rows
+}
 ```
 
 - Endpoint steps are sentences, like handlers. "answer 400 "…" and stop" refuses; the body
@@ -342,26 +388,29 @@ The endpoint above has no method or path: they come from a **contract**, a file 
 the service accepts and answers, and nothing about how (`lib/support/ticketsApi.intent`):
 
 ```
-contract support.ticketsApi
+contract support.ticketsApi {
   "The support desk's tickets and comments over HTTP: what clients send, and what they get back."
+}
 
 import support.tickets
 
 event ticketCreated: Ticket          # a ticket was created, by anyone
 event ticketSolved: Ticket           # a ticket was solved, by anyone
 
-endpoint createTicket POST "/tickets"
+endpoint createTicket POST "/tickets" {
   body subject: Text
   body customer: Text
   body priority: Priority
   answers 201 Ticket
   answers 400 Problem
+}
 
-endpoint solveTicket POST "/tickets/{id}/solve"
+endpoint solveTicket POST "/tickets/{id}/solve" {
   path id: Int
   answers 200 Ticket
   answers 404 Problem
   answers 409 Problem               # already solved
+}
 ```
 
 The contract is checked everywhere: the checker (every endpoint implemented, every status
@@ -381,20 +430,24 @@ implements support.deskApi
 
 # The first layer sees every request first and every answer last.
 use secure = std.http.secure
-use cors = std.http.cors
+use cors = std.http.cors {
   origins = "https://desk.example"
   headers = "content-type", "x-api-key"
-use auth = std.http.apiKey
-  keys = table
+}
+use auth = std.http.apiKey {
+  keys = table {
     secret         | owner
     "k-ann-7f3a"   | "Ann"
     "k-sam-91bc"   | "Sam"
+  }
   public = "/health"
+}
 
-endpoint solveTicket
+endpoint solveTicket {
   - if no ticket has that id, answer 404 "No such ticket" and stop
   - if that ticket's assignee is not the caller, answer 403 "Only the assignee can solve this ticket" and stop
   - …
+}
 ```
 
 `std.http.apiKey` **provides** `caller` (the owner of the key) to every endpoint, so steps can
@@ -403,21 +456,24 @@ say "the caller". Examples send headers: `call solveTicket with header x-api-key
 A layer is a small spec too. The whole of `lib/std/http/secure.intent`:
 
 ```
-layer std.http.secure
+layer std.http.secure {
   "Safe headers for a JSON API: answers are not sniffed, framed, cached, or leak where a request came from."
+}
 
-after every answer
+after every answer {
   - set header x-content-type-options to "nosniff"
   - set header x-frame-options to "DENY"
   - set header referrer-policy to "no-referrer"
   - set header cache-control to "no-store"
   - set header content-security-policy to "default-src 'none'; frame-ancestors 'none'"
   - every other header, the status and the body stay as they are
+}
 
-example "every answer gets the headers"
+example "every answer gets the headers" {
   request GET "/tickets"
   see status = 200
   see header x-content-type-options = "nosniff"
+}
 ```
 
 ## 10. A screen that talks to an API
@@ -426,37 +482,46 @@ A screen `uses` a contract, calls its endpoints, and handles the answers and eve
 (`apps/15-tickets-ui.intent`):
 
 ```
-app TicketsUi
+app TicketsUi {
   "A small front end for the tickets API: list, add and solve tickets."
+}
 
-uses support.ticketsApi as tickets
+uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"
+}
 
-state
+state {
   rows: List Ticket = []            # the tickets, newest first
   draft: Text = ""
   problem: Text = ""
+}
 
-on start
+on start {
   - call tickets.listTickets
+}
 
-on answer tickets.listTickets
+on answer tickets.listTickets {
   - if its status is 200, set rows to its body
+}
 
-on click add
+on click add {
   - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+}
 
-on answer tickets.createTicket
+on answer tickets.createTicket {
   - if its status is 201, clear draft and problem
   - otherwise set problem to the error in its body
+}
 
-on event tickets.ticketCreated
+on event tickets.ticketCreated {
   - if no row in rows has the id of its body, add its body at the start of rows
+}
 
-example "another agent adds a ticket"
+example "another agent adds a ticket" {
   call tickets.createTicket with subject = "Coffee machine broken", customer = "Iris", priority = Low
   see rows has 9 rows
   see subject on row 1 = "Coffee machine broken"
+}
 ```
 
 - **No mocks.** `tested with` names the real API spec. The examples run against a build of it,
@@ -473,39 +538,48 @@ A screen sends the user's key through a **client layer**, bound to its state
 (`apps/16-desk-ui.intent`):
 
 ```
-app DeskUi
+app DeskUi {
   "An agent's own tickets, after signing in with their API key."
+}
 
-uses support.deskApi as desk
+uses support.deskApi as desk {
   tested with "apps/api/desk-api.intent"
-  through std.http.sendKey
+  through std.http.sendKey {
     key = apiKey
+  }
+}
 
-state
+state {
   apiKey: Text = ""                # the key the agent signed in with
   mine: List Ticket = []
   problem: Text = ""
+}
 
-screen
+screen {
   field apiKey "API key"
-  button signIn "Show my tickets"
+  button signIn "Show my tickets" {
     enabled when apiKey is not blank
+  }
   …
+}
 
-on answer desk.myTickets
+on answer desk.myTickets {
   - if its status is 200, set mine to its body and clear problem
   - if its status is 401, clear mine and set problem to the error in its body
   - otherwise set problem to "Could not load your tickets"
+}
 
-example "a wrong key"
+example "a wrong key" {
   type "k-bob-0000" into apiKey
   click signIn
   see problem = "Unknown API key"
+}
 
-example "before signing in, nothing arrives"
+example "before signing in, nothing arrives" {
   call desk.takeTicket with header x-api-key = "k-ann-7f3a", id = 4
   see mine has 0 rows
   see problem is hidden
+}
 ```
 
 Signing in is just setting `apiKey`: every call and the event stream carry it from then on.

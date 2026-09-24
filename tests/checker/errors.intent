@@ -1,32 +1,38 @@
-app Errors
+app Errors {
   "Each line marked `expect` must produce that diagnostic."
+}
 
-record Item
+record Item {
   title: Txt                          # expect: UNKNOWN_NAME
   done: Bool
+}
 
-record Row
+record Row {
   name: Text
+}
 
 choice Color: Red | Green
 choice Mood: Happy | Red              # expect: DUPLICATE
 
-state
+state {
   count: Int = 1.5                    # expect: BAD_BINDING
   name: Text                          # expect: SYNTAX
   color: Color = Blue                 # expect: BAD_BINDING
   items: List Item = []
   label: Int = 0
   type: Text = ""                     # expect: RESERVED
-  rows: List Row = table
+  rows: List Row = table {
     name    | size                    # expect: UNKNOWN_NAME
     "a"     | 1
+  }
   pick: Text = ""
+}
 
-scren                                 # expect: SYNTAX
+scren {  # expect: SYNTAX
   text x
+}
 
-screen
+screen {
   text count
   text count                          # expect: DUPLICATE
   field label "Label"                 # expect: BAD_BINDING
@@ -34,19 +40,23 @@ screen
   button stop "Stop"
   select color
   select pick from items.done         # expect: BAD_BINDING
-  list items of Item
+  list items of Item {
     checkbox done
     text title
     button remove "x"
+  }
   text ghost                          # expect: UNKNOWN_NAME
+}
 
-on click goo                          # expect: UNKNOWN_NAME
+on click goo {  # expect: UNKNOWN_NAME
   - stop the count
+}
 
-on toggle stop                        # expect: BAD_BINDING
+on toggle stop {  # expect: BAD_BINDING
   - stop
+}
 
-example "bad steps"
+example "bad steps" {
   click count                         # expect: STEP
   see nope = 3                        # expect: UNKNOWN_NAME
   choose Purple in color              # expect: UNKNOWN_NAME
@@ -54,8 +64,10 @@ example "bad steps"
   click remove                        # expect: STEP
   toggle done on row 1
   wait 3s                             # expect: STEP
+}
 
-always
+always {
   see every row of nothing: x is at least 0          # expect: UNKNOWN_NAME
   see every row of items: price is at least 0        # expect: UNKNOWN_NAME
   see every row of items: title is sort of fine      # expect: SYNTAX
+}

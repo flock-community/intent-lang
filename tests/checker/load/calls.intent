@@ -1,43 +1,56 @@
 app CallsChecks
 
-uses support.ticketsApi as tickets
+uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"
+}
 
-state
+state {
   rows: List Ticket = []
+}
 
-screen
+screen {
   button reload "Reload"
   button open "Open"
-  list rows of Ticket
+  list rows of Ticket {
     text subject
+  }
+}
 
-on start
+on start {
   - call tickets.listTickets
+}
 
-on click reload                        # expect: UNKNOWN_NAME
+on click reload {  # expect: UNKNOWN_NAME
   - call tickets.listTicket
+}
 
-on click open                          # expect: NO_HANDLER
+on click open {  # expect: NO_HANDLER
   - call tickets.getTicket with id = 1
+}
 
-on answer tickets.listTickets
+on answer tickets.listTickets {
   - set rows to its body
+}
 
-on answer tickets.deleteTicket         # expect: UNKNOWN_NAME
+on answer tickets.deleteTicket {  # expect: UNKNOWN_NAME
   - set rows to its body
+}
 
-on answer shop.listTickets             # expect: UNKNOWN_NAME
+on answer shop.listTickets {  # expect: UNKNOWN_NAME
   - set rows to its body
+}
 
-on event tickets.ticketCreated
+on event tickets.ticketCreated {
   - add its body at the start of rows
+}
 
-on event tickets.ticketDeleted         # expect: UNKNOWN_NAME
+on event tickets.ticketDeleted {  # expect: UNKNOWN_NAME
   - set rows to []
+}
 
-example "loads"
+example "loads" {
   see rows has 8 rows
   call tickets.createTicket with subject = "A", customer = "B", priority = Low
   call tickets.makeTicket with subject = "A"                    # expect: UNKNOWN_NAME
   call tickets.createTicket with title = "A"                    # expect: UNKNOWN_NAME
+}

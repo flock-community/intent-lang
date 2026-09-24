@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./gen.ts";
+import { fromBraces } from "./braces.ts";
 
 export interface ProfileElement {
   kind: string;
@@ -28,7 +29,7 @@ export function parseProfile(text: string, file = "profile"): Profile {
   const p: Profile = { name: "", purpose: "", elements: [], clockVerbs: [] };
   let el: ProfileElement | undefined;
   let inClock = false;
-  text.split("\n").forEach((raw, i) => {
+  fromBraces(text).text.split("\n").forEach((raw, i) => {
     const line = raw.replace(/\s+#.*$/, "").trimEnd();
     if (!line.trim() || line.trim().startsWith("#")) return;
     const indented = /^\s/.test(line);

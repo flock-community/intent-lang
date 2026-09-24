@@ -1,22 +1,31 @@
-bundle std.list
+bundle std.list {
   "Showing long lists in pieces."
+}
 
-component Pager as footer "The page info on the left; the previous and next buttons on the right."
+component Pager as footer "The page info on the left; the previous and next buttons on the right." {
   param items "the list to show one page at a time: a state or derived list"
   param size = 5
-  state
+  state {
     page: Int = 1                # the page asked for; {current} is the page shown
-  derive
+  }
+  derive {
     pageCount = the number of {items} divided by {size}, rounded up, but at least 1
     current = the smaller of {page} and {pageCount}   # never past the last page, also when {items} gets shorter
     visible = the {items} from position ({current} - 1) × {size} + 1 on, at most {size} of them
-  screen
+  }
+  screen {
     text pageInfo = "Page {current} of {pageCount}"
-    button previous "Previous" as secondary
+    button previous "Previous" as secondary {
       enabled when {current} is above 1
-    button next "Next" as secondary
+    }
+    button next "Next" as secondary {
       enabled when {current} is below {pageCount}
-  on click previous
+    }
+  }
+  on click previous {
     - set {page} to {current} - 1
-  on click next
+  }
+  on click next {
     - set {page} to {current} + 1
+  }
+}

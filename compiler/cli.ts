@@ -7,6 +7,7 @@ import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
 import { existsSync, writeFileSync } from "node:fs";
 import { printApp } from "./print.ts";
+import { toBraces } from "./braces.ts";
 import { compileApp } from "./twin.ts";
 import type { Target } from "./gen.ts";
 import { converge, reanalyse } from "./converge.ts";
@@ -87,6 +88,19 @@ switch (cmd) {
     writeFileSync(out, genClient(app));
     console.log(`typed client for ${app.name} → ${out}`);
     process.exit(0);
+  }
+  case "fmt": {
+    // Rewrite specs in the canonical layout: blocks with braces. `--check` only reports.
+    let changed = 0;
+    for (const f of args) {
+      const text = readFileSync(f, "utf8");
+      const out = toBraces(text).replace(/\n*$/, "\n");
+      if (out === text) continue;
+      changed++;
+      if (flags.check) console.log(`${f}: not formatted`);
+      else (writeFileSync(f, out), console.log(`formatted ${f}`));
+    }
+    process.exit(flags.check && changed ? 1 : 0);
   }
   case "lock": {
     const rows = writeLock(args.map((f) => resolve(f)));

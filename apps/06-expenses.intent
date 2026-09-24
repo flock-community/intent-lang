@@ -1,79 +1,101 @@
-app Expenses
+app Expenses {
   "Share costs within a group and see who should pay whom."
+}
 
-record Person
+record Person {
   name: Text
+}
 
-record Expense
+record Expense {
   what: Text
   payer: Text
   amount: Decimal
+}
 
-record Balance
+record Balance {
   name: Text
   cents: Int
+}
 
-record Transfer
+record Transfer {
   line: Text
+}
 
-state
+state {
   people: List Person = []
   newName: Text = ""
   what: Text = ""
   amount: Text = ""
   payer: Text = ""
   expenses: List Expense = []
+}
 
-derive
+derive {
   shares = every expense is split over all people currently in people, in whole cents: each person gets the amount in cents divided by the number of people, rounded down; the remaining cents go one each to the first people in the order of people
   balances = one Balance per person, in the order of people: the cents they paid minus the sum of their shares
   transfers = settle up, starting from balances: while someone has a negative balance, take the person with the lowest balance (the debtor) and the person with the highest balance (the creditor), on a tie the one earlier in people; the debtor pays the creditor the smaller of the two amounts, and both balances change by that amount; one Transfer per payment, in that order, with line "<debtor> pays <creditor> <amount as money>"
+}
 
-screen
-  section group "People"
+screen {
+  section group "People" {
     field newName "Name"
-    button addPerson "Add"
+    button addPerson "Add" {
       enabled when newName is not blank and no person has that name (trimmed, ignoring case)
-    list people of Person
+    }
+    list people of Person {
       text name
-      button removePerson "Remove"
+      button removePerson "Remove" {
         enabled when that person paid no expense
-  section spending "Add an expense"
+      }
+    }
+  }
+  section spending "Add an expense" {
     visible when there are at least 2 people
     field what "What"
     field amount "Amount"
     select payer "Paid by" from people.name
-    button addExpense "Add expense"
+    button addExpense "Add expense" {
       enabled when what is not blank, amount reads as a decimal above 0, and payer is the name of one of the people
-  list expenses of Expense
+    }
+  }
+  list expenses of Expense {
     text what
     text paidBy = "{payer} paid {amount as money}"
     button removeExpense "Remove"
+  }
   text total = "Total {sum of all expense amounts as money}"
-  list balances of Balance
+  list balances of Balance {
     text name
     text balance = cents as money, with "+" in front when above 0: "+16.66", "-3.34", "0.00"
-  list transfers of Transfer
+  }
+  list transfers of Transfer {
     text line
-  text settled = "All settled"
+  }
+  text settled = "All settled" {
     visible when there are no transfers
+  }
+}
 
-on click addPerson
+on click addPerson {
   - add a Person with name = newName trimmed to the end of people
   - clear newName
+}
 
-on click removePerson
+on click removePerson {
   - remove that person from people
   - if payer is that person's name, set payer to ""
+}
 
-on click addExpense
+on click addExpense {
   - add an Expense to the end of expenses with what = what trimmed, payer = payer, and amount = amount read as a decimal, rounded to cents
   - clear what and amount; payer stays as it is
+}
 
-on click removeExpense
+on click removeExpense {
   - remove that expense from expenses
+}
 
-example "adding people"
+example "adding people" {
   see what is hidden
   type "Ann" into newName
   click addPerson
@@ -88,8 +110,9 @@ example "adding people"
   type "ann" into newName
   see addPerson is disabled
   see settled = "All settled"
+}
 
-example "sharing equally"
+example "sharing equally" {
   type "Ann" into newName
   click addPerson
   type "Bob" into newName
@@ -115,8 +138,9 @@ example "sharing equally"
   see what = ""
   see amount = ""
   see payer = "Ann"
+}
 
-example "remainder cents and settling up"
+example "remainder cents and settling up" {
   type "Ann" into newName
   click addPerson
   type "Bob" into newName
@@ -142,8 +166,9 @@ example "remainder cents and settling up"
   see balance on row 3 = "-13.33"
   see line on row 1 = "Cy pays Ann 13.33"
   see line on row 2 = "Bob pays Ann 3.33"
+}
 
-example "payers cannot be removed"
+example "payers cannot be removed" {
   type "Ann" into newName
   click addPerson
   type "Bob" into newName
@@ -157,8 +182,9 @@ example "payers cannot be removed"
   click removeExpense on row 1
   see removePerson on row 1 is enabled
   see settled is shown
+}
 
-example "checking the expense form"
+example "checking the expense form" {
   type "Ann" into newName
   click addPerson
   type "Bob" into newName
@@ -181,3 +207,4 @@ example "checking the expense form"
   click removePerson on row 2
   see payer = ""
   see people has 2 rows
+}

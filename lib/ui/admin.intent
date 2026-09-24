@@ -1,7 +1,8 @@
-bundle ui.admin
+bundle ui.admin {
   "A calm, modern admin look for internal tools."
+}
 
-design
+design {
   look "A calm, modern SaaS admin. Light neutral page background; white surfaces with a thin neutral border and a subtle shadow; comfortable spacing; dark neutral headings and muted neutral secondary text; the brand color for primary actions and the active navigation item."
   brand: indigo
   neutral: slate
@@ -11,6 +12,7 @@ design
   font: sans
   radius: large
   density: comfortable
+}
 
 component StatCard as card "A small uppercase muted label above a large semibold number."
 component EmptyState as empty "The title semibold, the hint as one line of muted text."

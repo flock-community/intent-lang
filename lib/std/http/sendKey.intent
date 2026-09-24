@@ -1,48 +1,57 @@
-layer std.http.sendKey
+layer std.http.sendKey {
   "Every call a screen makes carries the user's API key in a header, and so does its event stream."
   "The service side is std.http.apiKey."
+}
 
 param key: Text                              # the key; bind it to the screen's state (what the user signed in with)
 param keyHeader: Text = "x-api-key"          # the header the service reads the key from
 
-before every call
+before every call {
   - when key, trimmed, is not blank: set header keyHeader to key, trimmed
   - when key, trimmed, is blank: the call goes without that header (the service will refuse it)
   - the method, path, query, body and every other header stay as they are
+}
 
-examples with
+examples with {
   key = "k-ann-7f3a"
+}
 
-example "the key goes along"
+example "the key goes along" {
   request GET "/tickets/mine"
   see header x-api-key = "k-ann-7f3a"
   see body.method = "GET"
   see body.path = "/tickets/mine"
+}
 
-example "the event stream carries it too"
+example "the event stream carries it too" {
   request GET "/events"
   see header x-api-key = "k-ann-7f3a"
+}
 
-example "the call is otherwise unchanged"
+example "the call is otherwise unchanged" {
   request POST "/tickets/4/comments" with header content-type = "application/json", query page = 2, body text = "On it"
   see header content-type = "application/json"
   see header x-api-key = "k-ann-7f3a"
   see body.method = "POST"
   see body.query.page = "2"
   see body.body.text = "On it"
+}
 
-example "no key, no header"
+example "no key, no header" {
   given key = "   "
   request GET "/tickets/mine"
   see header x-api-key is absent
+}
 
-example "a key is sent trimmed"
+example "a key is sent trimmed" {
   given key = " k-sam-91bc "
   request GET "/tickets/mine"
   see header x-api-key = "k-sam-91bc"
+}
 
-example "another header"
+example "another header" {
   given keyHeader = "x-desk-key"
   request GET "/tickets/mine"
   see header x-desk-key = "k-ann-7f3a"
   see header x-api-key is absent
+}

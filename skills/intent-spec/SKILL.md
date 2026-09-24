@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v23** (see the changelog at the end of
+Language version this skill matches: **v24** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -40,8 +40,8 @@ List `lib/` and read the bundles before writing anything yourself:
 - An admin look: `import ui.admin` gives you the design, `StatCard` and `EmptyState`.
 - Domains: `support.tickets`, and more over time.
 
-Import with `import std.list`. Place a component with `use name = Component`, with indented
-bindings (`items = sorted`, no braces) and, when needed, `visible when …`. Then refer to its
+Import with `import std.list`. Place a component with `use name = Component { … }`, with its
+bindings in the block (`items = sorted`, no braces around the value) and, when needed, `visible when …`. Then refer to its
 names as `{name.x}` in your sentences and handlers (`set {toast.message} to "Saved"`), and as
 `name.x` in examples (`click pager.next`). A bundle's `design` becomes yours; your own
 `design` lines override it. If a bundle
@@ -52,6 +52,9 @@ candidate change to the bundle, and tell the user.
 
 Order: `app` → `import` → `design` / `component` → `choice` → `record` → `state` →
 `derive` → `screen` → `on …` → `rules` → `always` → `example`s.
+
+Write every block with braces (`screen {` … `}`), indented 2 spaces inside, and run
+`intent fmt <file>` when unsure: it lays the file out the canonical way.
 
 Habits that make builds identical *and* correct:
 

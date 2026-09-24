@@ -1,7 +1,9 @@
-profile api
+profile api {
   "HTTP services: what clients send, and what they get back."
+}
 
-element endpoint "a route: a method and a path; its steps say what happens to the state and what is answered"
+element endpoint "a route: a method and a path; its steps say what happens to the state and what is answered" {
   shows status: Int
   shows body: Json
   verb call "a client sends a request; the step is `call x with a = 1, b = \"…\"`"
+}

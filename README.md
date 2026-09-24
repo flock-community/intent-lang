@@ -6,41 +6,51 @@ You write **what an app must be** in a small, readable language. The harness tur
 *the same app*.
 
 ```
-app Board
+app Board {
   "A tiny kanban board with three columns and at most three cards in progress."
+}
 
 choice Column: Todo | Doing | Done
 
-record Card
+record Card {
   title: Text
   column: Column
+}
 
-state
+state {
   cards: List Card = []
   draft: Text = ""
+}
 
-screen
+screen {
   field draft "New card"
-  button add "Add"
+  button add "Add" {
     enabled when draft is not blank
-  list todo of Card = the cards in Todo
+  }
+  list todo of Card = the cards in Todo {
     text title
-    button start "Start"
+    button start "Start" {
       enabled when not full
+    }
+  }
   …
+}
 
-on click add
+on click add {
   - add a card with the draft, trimmed, as title to Todo
   - clear draft
+}
 
-always
+always {
   see doing has at most 3 rows
+}
 
-example "the limit"
+example "the limit" {
   type "A" into draft
   click add
   …
   see start on row with "D" is disabled
+}
 ```
 
 **New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md), Intent by example:** a counter, a
@@ -240,7 +250,7 @@ component Pager as footer "The page info on the left; previous and next on the r
     - increase {page} by 1
 ```
 
-An app uses it with `use pager = Pager` and indented bindings (`items = sorted`). The
+An app uses it with `use pager = Pager` and bindings in its block (`items = sorted`). The
 compiler expands this deterministically: names become `pager.next`, `pager.page`, and the
 DOM gets `data-el="pager.next"`.
 

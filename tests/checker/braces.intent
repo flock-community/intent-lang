@@ -1,0 +1,21 @@
+app BraceChecks {
+  "Blocks with braces: a stray brace and an unclosed block are errors."
+}
+
+state {
+  count: Int = 0
+}
+}                                          # expect: SYNTAX
+
+screen {
+  text count
+  button up "+"
+}
+
+on click up {
+  - increase count by 1
+}
+
+example "up" {                             # expect: SYNTAX
+  click up
+  see count = 1

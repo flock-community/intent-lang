@@ -1,8 +1,9 @@
-app CommunityWorkshops
+app CommunityWorkshops {
   "Upcoming community workshops: people see what is on, sign up, and cancel."
   "Each event has a fixed capacity; when it is full, new sign-ups join a waiting list."
   "When a confirmed person cancels, the first person waiting for that event gets the place."
   "The organiser sees, per event, who is signed up and who is waiting."
+}
 
 import ui.admin
 import std.list
@@ -11,20 +12,22 @@ import std.feedback
 choice SignupStatus: Confirmed | Waiting
 choice EventFilter: All "All" | Open "With places left"
 
-record Workshop
+record Workshop {
   title: Text             # unique; sign-ups refer to it
   date: Text              # shown as written, e.g. "12 Oct"
   location: Text
   capacity: Int
+}
 
-record Signup
+record Signup {
   workshop: Text          # the title of the workshop
   name: Text
   email: Text
   status: SignupStatus
+}
 
-state
-  events: List Workshop = table
+state {
+  events: List Workshop = table {
     title                  | date     | location             | capacity
     "Bread Baking Basics"  | "12 Oct" | "Community Kitchen"  | 3
     "Bike Repair"          | "14 Oct" | "Old Fire Station"   | 2
@@ -35,7 +38,8 @@ state
     "Seed Swap"            | "8 Nov"  | "Library Hall"       | 10
     "Watercolour Sketching" | "15 Nov" | "Clay Studio"       | 6
     "Repair Café"          | "22 Nov" | "Old Fire Station"   | 4
-  signups: List Signup = table
+  }
+  signups: List Signup = table {
     workshop                   | name            | email                  | status
     "Bread Baking Basics"      | "Mia de Vries"  | "mia@example.org"      | Confirmed
     "Bread Baking Basics"      | "Tom Bakker"    | "tom@example.org"      | Confirmed
@@ -47,13 +51,15 @@ state
     "Beekeeping for Beginners" | "Daan Meijer"   | "daan@example.org"     | Confirmed
     "Beekeeping for Beginners" | "Emma de Boer"  | "emma@example.org"     | Confirmed
     "Repair Café"              | "Lucas Dekker"  | "lucas@example.org"    | Confirmed
+  }
   filter: EventFilter = All
   chosenEvent: Text = "Bread Baking Basics"   # the event the forms and the organiser view are about
   name: Text = ""
   email: Text = ""
   cancelEmail: Text = ""
+}
 
-derive
+derive {
   openEvents = the events that have fewer Confirmed signups than their capacity, in list order
   shownEvents = all events when filter is All; openEvents when filter is Open
   chosen = the workshop in events whose title is chosenEvent
@@ -61,104 +67,137 @@ derive
   waitingList = the Waiting signups whose workshop is chosenEvent, in list order
   placesLeft = the capacity of chosen minus the number of attendees, but at least 0
   emailIsValid = email, trimmed, contains exactly one "@", has at least one character before the "@", and has a "." with at least one character on each side of it after the "@"
+}
 
-screen
-  section top as header
+screen {
+  section top as header {
     heading "Community workshops"
-    text subtitle = "Upcoming events, sign-ups and waiting lists"
+    text subtitle = "Upcoming events, sign-ups and waiting lists" {
       look "Muted secondary text under the title."
+    }
+  }
 
-  section content as main
-    section eventsCard as card
-      section eventsBar as toolbar
+  section content as main {
+    section eventsCard as card {
+      section eventsBar as toolbar {
         heading "Upcoming events"
         select filter as segmented
-      list eventList of Workshop = {pager.visible} as table
+      }
+      list eventList of Workshop = {pager.visible} as table {
         visible when shownEvents is not empty
         look "A header row: Event, Date, Location, Places, and an empty header over the Manage column. The row whose title is chosenEvent has a light brand tint."
         text title
         text date
         text location
-        text places = "Full" when this workshop has no places left; "1 place left" when it has exactly 1; otherwise "{n} places left" where n is its capacity minus its number of Confirmed signups as badge
+        text places = "Full" when this workshop has no places left; "1 place left" when it has exactly 1; otherwise "{n} places left" where n is its capacity minus its number of Confirmed signups as badge {
           look "Tinted success when places are left and danger when the event is full."
+        }
         button pick "Manage" as link
-      section noEvents as EmptyState
+      }
+      section noEvents as EmptyState {
         visible when shownEvents is empty
         text noEventsTitle = "No events with places left"
         text noEventsHint = "Every upcoming workshop is full. Switch to All to see them."
-      section pagerBar
+      }
+      section pagerBar {
         visible when shownEvents is not empty
-        use pager = Pager
+        use pager = Pager {
           items = shownEvents
           size = 4
+        }
+      }
+    }
 
-    section chosenHeader as header
+    section chosenHeader as header {
       text chosenTitle = "{chosenEvent}" as title
       text chosenWhen = "{date of chosen} · {location of chosen}" as caption
+    }
 
-    section stats as grid
-      section confirmedStat as StatCard
+    section stats as grid {
+      section confirmedStat as StatCard {
         text confirmedLabel = "Signed up"
         text confirmedValue = "{the number of attendees} of {capacity of chosen}"
-      section placesStat as StatCard
+      }
+      section placesStat as StatCard {
         text placesLabel = "Places left"
         text placesValue = "{placesLeft}"
-      section waitingStat as StatCard
+      }
+      section waitingStat as StatCard {
         text waitingLabel = "Waiting"
         text waitingValue = "{the number of waitingList}"
+      }
+    }
 
-    section forms as grid
-      section signUpCard as card
-        section signUpForm as form
+    section forms as grid {
+      section signUpCard as card {
+        section signUpForm as form {
           select chosenEvent "Event" from events.title
           field name "Name"
           field email "Email"
           button signUp = "Join the waiting list" when chosen has no places left; otherwise "Sign up" as primary
-      section cancelCard as card
-        section cancelForm as form
+        }
+      }
+      section cancelCard as card {
+        section cancelForm as form {
           text cancelHint = "Cancel a sign-up for {chosenEvent} by email address." as caption
           field cancelEmail "Email"
-          button cancel "Cancel sign-up" as danger
+          button cancel "Cancel sign-up" as danger {
             enabled when cancelEmail is not blank
+          }
+        }
+      }
+    }
 
-    section peopleGrid as grid
-      section attendeesCard as card
+    section peopleGrid as grid {
+      section attendeesCard as card {
         heading "Signed up"
-        list attendeeList of Signup = {attendees} as table
+        list attendeeList of Signup = {attendees} as table {
           look "A header row: Name, Email."
           text name
           text email as caption
-        section noAttendees as EmptyState
+        }
+        section noAttendees as EmptyState {
           visible when attendees is empty
           text noAttendeesTitle = "Nobody yet"
           text noAttendeesHint = "Sign-ups for this event appear here."
-      section waitingCard as card
+        }
+      }
+      section waitingCard as card {
         heading "Waiting list"
-        list waitingRows of Signup = {waitingList} as table
+        list waitingRows of Signup = {waitingList} as table {
           look "A header row: Name, Email."
           text name
           text email as caption
-        section noWaiting as EmptyState
+        }
+        section noWaiting as EmptyState {
           visible when waitingList is empty
           text noWaitingTitle = "Nobody waiting"
           text noWaitingHint = "When the event is full, new sign-ups queue here in order."
+        }
+      }
+    }
+  }
 
   use toast = Toast
+}
 
-on choose filter
+on choose filter {
   - set pager.page to 1
   - set toast.message to "Showing all events." when filter is All; "Showing events with places left." when filter is Open
+}
 
-on choose chosenEvent
+on choose chosenEvent {
   - clear cancelEmail
   - set toast.message to "Managing {chosenEvent}."
+}
 
-on click pick
+on click pick {
   - set chosenEvent to the title of that workshop
   - clear cancelEmail
   - set toast.message to "Managing {chosenEvent}."
+}
 
-on click signUp
+on click signUp {
   - if name is blank, set toast.message to "Please enter a name." and do nothing else
   - if emailIsValid is false, set toast.message to "Please enter a valid email address." and do nothing else
   - if a signup for chosenEvent already has the email (both trimmed, compared ignoring upper and lower case), set toast.message to "{email, trimmed} is already on the list for {chosenEvent}." and do nothing else
@@ -166,27 +205,31 @@ on click signUp
   - otherwise add a Signup with workshop chosenEvent, name trimmed, email trimmed and status Waiting to signups, and set toast.message to "{chosenEvent} is full. {name, trimmed} is number {n} on the waiting list." where n is the number of waitingList after adding
   - clear name and email
   - if pager.page is above pager.pageCount, set pager.page to pager.pageCount
+}
 
-on click cancel
+on click cancel {
   - find the signup for chosenEvent whose email equals cancelEmail, both trimmed, compared ignoring upper and lower case
   - if there is none, set toast.message to "No sign-up for {cancelEmail, trimmed} on {chosenEvent}." and do nothing else
   - remove that signup from signups
   - if it was Confirmed and waitingList is not empty, set the status of the first signup in waitingList to Confirmed and set toast.message to "Cancelled {a}. {b} moved up from the waiting list." where a is the name of the removed signup and b the name of the promoted one
   - otherwise set toast.message to "Cancelled {a}'s sign-up for {chosenEvent}." where a is the name of the removed signup
   - clear cancelEmail
+}
 
-rules
+rules {
   - For every event, the number of Confirmed signups never exceeds its capacity.
   - Nobody is Waiting for an event while that event has places left: a freed place always goes to the first Waiting signup for that event.
   - One email (ignoring upper and lower case) appears at most once per workshop in signups.
   - The waiting list keeps sign-up order; a promoted person keeps their position relative to the other attendees.
   - Every click on signUp, cancel or pick and every choice of filter or chosenEvent sets toast.message.
+}
 
-always
+always {
   see eventList has at most 4 rows
   see attendeeList has at most 10 rows
+}
 
-example "the first page of events"
+example "the first page of events" {
   see eventList has 4 rows
   see title on row 1 = "Bread Baking Basics"
   see date on row 1 = "12 Oct"
@@ -208,8 +251,9 @@ example "the first page of events"
   see cancelHint = "Cancel a sign-up for Bread Baking Basics by email address."
   see toast.message is hidden
   snapshot "events overview"
+}
 
-example "paging through the events"
+example "paging through the events" {
   click pager.next
   see title on row 1 = "Knitting Circle"
   see pager.pageInfo = "Page 2 of 3"
@@ -219,8 +263,9 @@ example "paging through the events"
   see pager.next is disabled
   click pager.previous
   see pager.pageInfo = "Page 2 of 3"
+}
 
-example "signing up takes a place"
+example "signing up takes a place" {
   type "Ann Smith" into name
   type "ann@example.org" into email
   see signUp = "Sign up"
@@ -235,8 +280,9 @@ example "signing up takes a place"
   see email = ""
   see signUp = "Join the waiting list"
   snapshot "signed up with toast"
+}
 
-example "a full event puts new sign-ups on the waiting list"
+example "a full event puts new sign-ups on the waiting list" {
   type "Ann Smith" into name
   type "ann@example.org" into email
   click signUp
@@ -253,8 +299,9 @@ example "a full event puts new sign-ups on the waiting list"
   click toast.dismiss
   see toast.message is hidden
   snapshot "full event with waiting list"
+}
 
-example "cancelling gives the place to the first person waiting"
+example "cancelling gives the place to the first person waiting" {
   click pick on row with "Bike Repair"
   see chosenTitle = "Bike Repair"
   see toast.message = "Managing Bike Repair."
@@ -270,8 +317,9 @@ example "cancelling gives the place to the first person waiting"
   see confirmedValue = "2 of 2"
   see places on row 2 = "Full"
   see cancelEmail = ""
+}
 
-example "cancelling from the waiting list promotes nobody"
+example "cancelling from the waiting list promotes nobody" {
   choose "Bike Repair" in chosenEvent
   type "liam@example.org" into cancelEmail
   click cancel
@@ -279,29 +327,33 @@ example "cancelling from the waiting list promotes nobody"
   see attendeeList has 2 rows
   see waitingRows has 1 rows
   see name on row 1 of waitingRows = "Eva Smit"
+}
 
-example "cancelling a confirmed place when nobody waits frees it"
+example "cancelling a confirmed place when nobody waits frees it" {
   type "tom@example.org" into cancelEmail
   click cancel
   see toast.message = "Cancelled Tom Bakker's sign-up for Bread Baking Basics."
   see attendeeList has 1 rows
   see places on row 1 = "2 places left"
   see placesValue = "2"
+}
 
-example "cancelling an unknown email changes nothing"
+example "cancelling an unknown email changes nothing" {
   type "nobody@example.org" into cancelEmail
   click cancel
   see toast.message = "No sign-up for nobody@example.org on Bread Baking Basics."
   see attendeeList has 2 rows
+}
 
-example "the cancel button needs an email"
+example "the cancel button needs an email" {
   see cancel is disabled
   type "   " into cancelEmail
   see cancel is disabled
   type "tom@example.org" into cancelEmail
   see cancel is enabled
+}
 
-example "an invalid email is refused"
+example "an invalid email is refused" {
   type "Ann Smith" into name
   type "ann.example.org" into email
   click signUp
@@ -314,21 +366,24 @@ example "an invalid email is refused"
   see toast.message = "Please enter a valid email address."
   see attendeeList has 2 rows
   snapshot "invalid email"
+}
 
-example "a blank name is refused"
+example "a blank name is refused" {
   type "ann@example.org" into email
   click signUp
   see toast.message = "Please enter a name."
   see attendeeList has 2 rows
+}
 
-example "the same email cannot sign up twice for one event"
+example "the same email cannot sign up twice for one event" {
   type "Mia again" into name
   type "mia@example.org" into email
   click signUp
   see toast.message = "mia@example.org is already on the list for Bread Baking Basics."
   see attendeeList has 2 rows
+}
 
-example "filtering to events with places left"
+example "filtering to events with places left" {
   choose Open in filter
   see toast.message = "Showing events with places left."
   see title on row 1 = "Bread Baking Basics"
@@ -341,23 +396,26 @@ example "filtering to events with places left"
   see pager.pageInfo = "Page 1 of 3"
   see title on row 2 = "Bike Repair"
   snapshot "filtered to places left"
+}
 
-example "an event that fills up leaves the filtered list"
+example "an event that fills up leaves the filtered list" {
   type "Ann Smith" into name
   type "ann@example.org" into email
   click signUp
   choose Open in filter
   see title on row 1 = "Intro to Pottery"
   see pager.pageInfo = "Page 1 of 2"
+}
 
-example "filter changes go back to the first page"
+example "filter changes go back to the first page" {
   click pager.next
   click pager.next
   choose Open in filter
   see pager.pageInfo = "Page 1 of 2"
   see title on row 1 = "Bread Baking Basics"
+}
 
-example "email case does not matter"
+example "email case does not matter" {
   type "Mia again" into name
   type "MIA@example.org" into email
   click signUp
@@ -367,8 +425,9 @@ example "email case does not matter"
   click cancel
   see toast.message = "Cancelled Tom Bakker's sign-up for Bread Baking Basics."
   see attendeeList has 1 rows
+}
 
-example "the page never goes past the last page"
+example "the page never goes past the last page" {
   choose Open in filter
   click pager.next
   see pager.pageInfo = "Page 2 of 2"
@@ -412,3 +471,4 @@ example "the page never goes past the last page"
   see eventList has 4 rows
   see title on row 1 = "Intro to Pottery"
   see title on row 4 = "Watercolour Sketching"
+}

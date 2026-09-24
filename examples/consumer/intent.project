@@ -1,4 +1,5 @@
 project consumer
 registry ../../registry
-requires
+requires {
   support.helpdesk 1.0
+}

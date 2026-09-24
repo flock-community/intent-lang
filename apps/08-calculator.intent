@@ -1,13 +1,15 @@
-app Calculator
+app Calculator {
   "A pocket calculator that works like the cheap ones: operations happen in the order they are typed, without precedence."
+}
 
-record Key
+record Key {
   label: Text
+}
 
 choice Op: Plus | Minus | Times | Divide
 
-state
-  keys: List Key = table
+state {
+  keys: List Key = table {
     label
     "7"
     "8"
@@ -25,33 +27,40 @@ state
     "."
     "="
     "+"
+  }
   display: Text = "0"
   acc: Decimal = 0          # the running result
   pending: Maybe Op = nothing
   typing: Bool = false      # true while the user is typing a number
   failed: Bool = false
+}
 
-screen
+screen {
   text display
-  list keys of Key
+  list keys of Key {
     button press = label
+  }
   button clear "C"
+}
 
-on click press
+on click press {
   - if failed, do nothing
   - a digit: if typing, append it to display (but a display of "0" is replaced by the digit, and at most 12 digits are kept: more are ignored); if not typing, display becomes the digit and typing becomes true
   - ".": if typing and display has no ".", append it; if typing and display has a ".", ignore it; if not typing, display becomes "0." and typing becomes true
   - an operator (÷ × − +): if pending is set and typing, first compute acc <pending> display and show the result; if pending is not set, acc becomes the number on display; then pending becomes this operator and typing becomes false (so pressing two operators in a row just replaces pending)
   - "=": if pending is set, compute acc <pending> display, show the result, and set pending to nothing and typing to false; otherwise do nothing
+}
 
-on click clear
+on click clear {
   - go back to the initial state
+}
 
-rules
+rules {
   - Computing a result: dividing by 0 sets failed and shows "Error"; so does a result whose size is 1000000000000 or more. Otherwise acc becomes the result and display shows it with Fmt.decimal 8.
   - When typing, display shows exactly the typed characters.
+}
 
-example "no precedence"
+example "no precedence" {
   click press on row with "2"
   click press on row with "+"
   click press on row with "3"
@@ -60,8 +69,9 @@ example "no precedence"
   click press on row with "4"
   click press on row with "="
   see display = "20"
+}
 
-example "decimals"
+example "decimals" {
   click press on row with "1"
   click press on row with "÷"
   click press on row with "3"
@@ -74,8 +84,9 @@ example "decimals"
   click press on row with "2"
   click press on row with "="
   see display = "0.3"
+}
 
-example "typing numbers"
+example "typing numbers" {
   see display = "0"
   click press on row with "0"
   see display = "0"
@@ -86,16 +97,18 @@ example "typing numbers"
   click press on row with "."
   click press on row with "3"
   see display = "12.53"
+}
 
-example "operators in a row"
+example "operators in a row" {
   click press on row with "2"
   click press on row with "×"
   click press on row with "−"
   click press on row with "3"
   click press on row with "="
   see display = "-1"
+}
 
-example "going on after equals"
+example "going on after equals" {
   click press on row with "2"
   click press on row with "+"
   click press on row with "3"
@@ -108,8 +121,9 @@ example "going on after equals"
   see display = "20"
   click press on row with "7"
   see display = "7"
+}
 
-example "division by zero"
+example "division by zero" {
   click press on row with "5"
   click press on row with "÷"
   click press on row with "0"
@@ -120,8 +134,9 @@ example "division by zero"
   click clear
   see display = "0"
   see press on row 16 = "+"
+}
 
-example "twelve digits at most"
+example "twelve digits at most" {
   click press on row with "9"
   click press on row with "9"
   click press on row with "9"
@@ -140,3 +155,4 @@ example "twelve digits at most"
   click press on row with "1"
   click press on row with "="
   see display = "Error"
+}

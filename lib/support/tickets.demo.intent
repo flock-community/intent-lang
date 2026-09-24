@@ -1,21 +1,27 @@
-app TicketsDemo
+app TicketsDemo {
   "Proves support.tickets: its records, choices and badges."
+}
 
 import support.tickets
 
-state
-  tickets: List Ticket = table
+state {
+  tickets: List Ticket = table {
     id | subject          | customer | priority | status  | assignee
     1  | "Cannot log in"  | "Ann"    | Urgent   | Open    | ""
     2  | "Wrong invoice"  | "Ben"    | Low      | Solved  | "Sam"
+  }
+}
 
-screen
-  list tickets of Ticket
+screen {
+  list tickets of Ticket {
     text subject
     text priority as PriorityBadge
     text status as StatusBadge
+  }
+}
 
-example "tickets with their badges"
+example "tickets with their badges" {
   see tickets has 2 rows
   see priority on row 1 = "Urgent"
   see status on row 2 = "Solved"
+}

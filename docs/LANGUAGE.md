@@ -1,4 +1,4 @@
-# Intent — language reference (v23)
+# Intent — language reference (v24)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -24,7 +24,20 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
 
 ## 2. Files and lexical rules
 
-- One app per `.intent` file. UTF‑8. Indentation is 2 spaces per level; tabs are an error.
+- One app per `.intent` file. UTF‑8.
+- **Blocks:** a line that ends with `{` opens a block; `}` on a line of its own closes it. Inside
+  a block, indent 2 spaces per level (`intent fmt` lays a file out). Tabs are an error.
+
+  ```
+  screen {
+    button add "Add" {
+      enabled when draft is not blank
+    }
+  }
+  ```
+
+  A file without braces is read by its indentation alone (the form before v24); `intent fmt`
+  turns it into braces.
 - `#` starts a comment (outside strings). Blank lines are ignored.
 - Names: element, field and state names are `lowerCamel`; app, record and choice names and
   choice values are `UpperCamel`.
@@ -36,23 +49,23 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
 A file is a sequence of top-level blocks, in any order:
 
 ```
-app Name                    # first line of an app; indented lines = purpose (strings)
+app Name { "purpose" }      # first line of an app; its block holds the purpose (strings)
 bundle std.name             # first line of a library file instead (§4b)
 import std.list             # reuse a bundle (§4b)
 extends support.helpdesk    # refine a published app (§4c): override, add to, drop
-record Name                 # a data shape; indented `field: Type [= default]`
+record Name { … }           # a data shape: `field: Type [= default]` lines
 choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is what users see
 type Email = Text matching /…/  # a refined type: a base type with one precise rule (§3a)
 design                      # optional: how the app looks (§4a)
 component Name "look"       # optional: a reusable look for sections/elements (§4a)
-state                       # what the app remembers; indented `field: Type = default`
+state { … }                 # what the app remembers: `field: Type = default` lines
 clock every 1s              # optional: the app receives a tick every interval
-derive                      # named values computed from state: `name = sentence`
-screen                      # what the user sees, top to bottom (§4)
-on <verb> <element>         # what happens (§5); indented `- sentence` lines
-rules                       # invariants in words; indented `- sentence` lines
-always                      # invariants the harness checks after every action; indented `see` steps
-example "name"              # proof (§6); indented steps
+derive { … }                # named values computed from state: `name = sentence`
+screen { … }                # what the user sees, top to bottom (§4)
+on <verb> <element> { … }   # what happens (§5): `- sentence` lines
+rules { … }                 # invariants in words: `- sentence` lines
+always { … }                # invariants the harness checks after every action: `see` steps
+example "name" { … }        # proof (§6): steps
 ```
 
 Types: `Text`, `Int`, `Decimal`, `Bool`, `List T`, `Maybe T`, a record name, a choice name.
@@ -63,11 +76,13 @@ Seed data for a `List <Record>` is written as a table. Columns are record fields
 fields take the record's defaults:
 
 ```
-state
-  products: List Product = table
+state {
+  products: List Product = table {
     name      | price | stock
     "Apple"   | 0.40  | 10
     "Bread"   | 2.35  | 3
+  }
+}
 ```
 
 ## 3a. Refined types
@@ -105,7 +120,7 @@ type Price = Decimal from 0
 | `progress` | `progress name ["Label"] [= expr]` | a value 0–100 as a bar | — |
 | `use` | `use name = Component` + bindings | a behaviour component (§4b) | what it offers |
 
-Modifiers, indented under an element:
+Modifiers, in the element's block:
 
 - `visible when <sentence>` — the element (or section) is absent from the screen otherwise.
 - `enabled when <sentence>` — buttons only; a disabled button cannot be clicked.
@@ -147,11 +162,12 @@ Binding (checked by the compiler):
   across the app.
 
 `as <presentation>` goes at the end of the element's line. When that line is long (a long
-`= …` sentence), put it on an indented line of its own instead:
+`= …` sentence), put it in the element's block instead:
 
 ```
-text places = "Full" when its signups reach its capacity, otherwise "{n} places left"
+text places = "Full" when its signups reach its capacity, otherwise "{n} places left" {
   as badge
+}
 ```
 
 ## 4a. Look: design, components, presentations
@@ -236,41 +252,52 @@ All imported names share one namespace; a name declared twice is an error. A bun
 events, rules and `always` checks:
 
 ```
-component Pager as footer "The page info on the left; previous and next on the right."
+component Pager as footer "The page info on the left; previous and next on the right." {
   param items "the list to show one page at a time"   # required
   param size = 5                                      # with a default
-  state
+  state {
     page: Int = 1
-  derive
+  }
+  derive {
     pageCount = the number of {items} divided by {size}, rounded up, but at least 1
     visible = the {items} on page {page}, {size} per page
-  screen
+  }
+  screen {
     text pageInfo = "Page {page} of {pageCount}"
-    button next "Next" as secondary
+    button next "Next" as secondary {
       enabled when {page} is below {pageCount}
-  on click next
+    }
+  }
+  on click next {
     - increase {page} by 1
+  }
+}
 ```
 
 Inside a component, write its own names and its params in braces (`{page}`, `{items}`), so
 that every use gets its own copy. The checker warns (`UNSCOPED`) when you don't.
 
-An app places a component with `use`, and binds its params in indented lines:
+An app places a component with `use`, and binds its params in its block:
 
 ```
-screen
-  list shown of Ticket = {pager.visible} as table
+screen {
+  list shown of Ticket = {pager.visible} as table {
     text subject
-  use pager = Pager
+  }
+  use pager = Pager {
     items = sorted
     size = 5
+  }
+}
 
-on type search
+on type search {
   - set {pager.page} to 1
+}
 
-example "paging"
+example "paging" {
   click pager.next
   see pager.pageInfo = "Page 2 of 2"
+}
 ```
 
 Everything in the component is then called `<use name>.<name>`: `pager.next`, `pager.page`,
@@ -282,9 +309,10 @@ required inside components, and recommended in app sentences. A binding value
 A `use` can also take `visible when …` and `look "…"`, like any element:
 
 ```
-  use pager = Pager
+  use pager = Pager {
     items = sorted
     visible when sorted is not empty
+  }
 ```
 
 The look of a bundle component's elements belongs to the bundle; an app cannot restyle
@@ -310,24 +338,28 @@ A published app (an `app` file in `lib/`, e.g. `lib/support/helpdesk.intent`) ca
 of another spec. The new spec starts as a copy of the base and names every change:
 
 ```
-app SupportDesk
+app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
+}
 
 extends support.helpdesk
 
 override text pageTitle = the label of page: "Queue", "Reports" or "Settings" as title
 
-override state
+override state {
   sort: Sort = ByPriority          # we triage by priority first
+}
 
-add to header after pageTitle
+add to header after pageTitle {
   text slaNote = "Urgent tickets are answered within the hour." as caption
+}
 
 drop example "paging"              # pages follow priority order now
 
-example "paging in priority order"
+example "paging in priority order" {
   click pager.next
   see ticketId on row 1 = "#7"
+}
 ```
 
 - `override <element line>` replaces an element, by name. `override derive`,
@@ -355,9 +387,10 @@ A project lists the bundles it needs in `intent.project`, at its root:
 ```
 project our-desk
 registry https://registry.example.org       # or a folder: ./registry
-requires
+requires {
   support.helpdesk 1.0
   std.list 1.2
+}
 ```
 
 `intent install` (and `intent build`, before compiling) picks versions with **minimal version
@@ -389,7 +422,7 @@ app TicketsApi
 profile api
 import support.tickets
 
-endpoint createTicket POST "/tickets"
+endpoint createTicket POST "/tickets" {
   body subject: Text
   body customer: Text
   body priority: Priority
@@ -397,12 +430,14 @@ endpoint createTicket POST "/tickets"
   - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
   - add a Ticket to the end of tickets with id = the highest id in tickets + 1, …
   - answer 201 with the new ticket
+}
 
-example "creating a ticket"
+example "creating a ticket" {
   call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
   see createTicket.status = 201
   see createTicket.body.id = 9
   see listTickets.body[1].id = 9          # after `call listTickets`; lists count from 1
+}
 ```
 
 - `path x: T` (appears in the path as `{x}`), `query x: T` and `body x: T` are the input;
@@ -434,27 +469,30 @@ and examples. The app that provides the service `implements` it and writes only 
 contract support.ticketsApi
 import support.tickets
 
-endpoint createTicket POST "/tickets"
+endpoint createTicket POST "/tickets" {
   body subject: Text
   body customer: Text
   body priority: Priority
   answers 201 Ticket
   answers 400 Problem                # Problem is built in: { "error": "…" }
+}
 
-example "solving a new ticket"
+example "solving a new ticket" {
   call createTicket with subject = "Printer on fire", customer = "Ann", priority = Urgent
   call solveTicket with id = {createTicket.body.id}     # a value from an earlier answer
   see solveTicket.status = 200
+}
 ```
 
 ```
 app TicketsApi
 implements support.ticketsApi
 
-endpoint createTicket                  # the signature comes from the contract
+endpoint createTicket {  # the signature comes from the contract
   - if subject, trimmed, is blank, answer 400 "Subject is required" and stop
   - …
   - answer 201 with the new ticket
+}
 ```
 
 Contracts cannot fail silently:
@@ -485,21 +523,26 @@ answers come back as events:
 
 ```
 app TicketsUi
-uses support.ticketsApi as tickets              # the contract; its types come with it
+uses support.ticketsApi as tickets {  # the contract; its types come with it
   tested with "apps/api/tickets-api.intent"     # the provider the examples run against
+}
 
-on start
+on start {
   - call tickets.listTickets
+}
 
-on answer tickets.listTickets
+on answer tickets.listTickets {
   - if its status is 200, set rows to its body
+}
 
-on click add
+on click add {
   - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+}
 
-on answer tickets.createTicket
+on answer tickets.createTicket {
   - if its status is 201, clear draft and problem, and call tickets.listTickets
   - otherwise set problem to the error in its body
+}
 ```
 
 - `uses <contract> as <alias>` makes the contract's endpoints callable as `<alias>.<endpoint>`.
@@ -531,10 +574,11 @@ another client calling the provider: the screen does not see the answer, only th
 publishes. That is how an example proves that the screen follows changes made elsewhere:
 
 ```
-example "another agent adds a ticket"
+example "another agent adds a ticket" {
   call tickets.createTicket with subject = "Coffee machine broken", customer = "Iris", priority = Low
   see rows has 9 rows
   see subject on row 1 = "Coffee machine broken"
+}
 ```
 
 Random sessions mix in the other-client calls the examples make (with whole numbers varied), so
@@ -554,21 +598,25 @@ app DeskApi
 profile api
 
 use secure = std.http.secure          # safe headers on every answer
-use cors = std.http.cors              # which web pages may call
+use cors = std.http.cors {  # which web pages may call
   origins = "https://desk.example"
   headers = "content-type", "x-api-key"
-use auth = std.http.apiKey            # who calls; provides `caller`
-  keys = table
+}
+use auth = std.http.apiKey {  # who calls; provides `caller`
+  keys = table {
     secret       | owner
     "k-ann-7f3a" | "Ann"
+  }
   public = "/health"
+}
 
-endpoint solveTicket POST "/tickets/{id}/solve"
+endpoint solveTicket POST "/tickets/{id}/solve" {
   path id: Int
   - if that ticket's assignee is not the caller, answer 403 "Only the assignee can solve this ticket" and stop
+}
 ```
 
-- `use <name> = <layer>` binds the layer's params in indented lines: a literal, literals
+- `use <name> = <layer>` binds the layer's params in its block: a literal, literals
   separated by commas (a list), or a `table`. Params with a default may be left out.
 - Layers run in the order of the `use` lines: the first sees every request first and every
   answer last. A layer that answers (a refused key, a preflight) stops the request: later layers
@@ -600,10 +648,12 @@ the client side of `std.http.apiKey`. Its examples send `request …` and see th
 leaves: `see header x-api-key = "…"`, `see body.path = "/tickets/mine"`.
 
 ```
-uses support.deskApi as desk
+uses support.deskApi as desk {
   tested with "apps/api/desk-api.intent"
-  through std.http.sendKey
+  through std.http.sendKey {
     key = apiKey                    # bound to the screen's state: the key the user typed
+  }
+}
 ```
 
 A client layer's params bind to the screen's **state** (a name) or to literals. The harness
@@ -630,7 +680,7 @@ on start                # once, when the app starts
 on answer tickets.listTickets   # the answer to a call (§4g)
 ```
 
-Each indented `- sentence` is one step, applied in order. Refer to declared names exactly.
+Each `- sentence` in the block is one step, applied in order. Refer to declared names exactly.
 Sentences may be conditional ("if draft is blank, do nothing").
 
 Idioms the compiler reads the same way every time:
@@ -674,8 +724,9 @@ only in the examples. A check on an element that is not on the screen is skipped
 counting rows, `has at most N rows` and `has at least N rows` are allowed too:
 
 ```
-always
+always {
   see doing has at most 3 rows
+}
 ```
 
 The harness checks `always` rules in examples, in its own exploration of each build, and in
@@ -684,11 +735,12 @@ the differential sessions. `see x has N rows` (exactly N) works too.
 Numbers and rows:
 
 ```
-always
+always {
   see lowCount is at least 0                                 # the number an element shows
   see every row of cart: qty is at least 1                   # checked on each row
   see every row of events: confirmed is at most capacity     # against another element of the same row
   see every row of shown: status = "Open"                    # also: is shown / hidden / …
+}
 ```
 
 The number is read from what the element shows ("10 left" → 10, "× 2" → 2, a progress bar's
@@ -715,6 +767,7 @@ places where the spec is not yet precise.
 |---|---|---|
 | `SYNTAX` | error | a line does not match any form |
 | `INDENT` | error | tabs, odd indentation, or a child where none is allowed |
+| `SYNTAX` | error | also: a `}` without its `{`, or a `{` that is never closed |
 | `UNKNOWN_NAME` | error | a reference to an undeclared element, field, type or value |
 | `BAD_BINDING` | error | e.g. `field x` where state `x` is not Text |
 | `DUPLICATE` | error | a name declared twice in one scope |
@@ -817,6 +870,9 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v24: blocks with braces (`screen { … }`), the canonical form; files without braces are still
+  read by indentation. `intent fmt` lays a file out in braces. The compiler reads braces.
 
 - v23: a client's layers: `before every call` in a layer, `through <layer>` under `uses` with
   params bound to state or literals (`std.http.sendKey`); `given` in a layer's examples;

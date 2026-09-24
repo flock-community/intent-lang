@@ -1,80 +1,100 @@
-app DeskUi
+app DeskUi {
   "An agent's own tickets, after signing in with their API key."
   "The list follows changes made elsewhere: a ticket taken in another tab shows up here."
+}
 
-uses support.deskApi as desk
+uses support.deskApi as desk {
   tested with "apps/api/desk-api.intent"
-  through std.http.sendKey
+  through std.http.sendKey {
     key = apiKey
+  }
+}
 
-state
+state {
   apiKey: Text = ""                # the key the agent signed in with
   mine: List Ticket = []           # the agent's tickets, as the desk last listed them
   problem: Text = ""
+}
 
-screen
+screen {
   field apiKey "API key"
-  button signIn "Show my tickets"
+  button signIn "Show my tickets" {
     enabled when apiKey is not blank
-  text problem
+  }
+  text problem {
     visible when problem is not empty
-  list mine of Ticket
+  }
+  list mine of Ticket {
     text subject
     text status
-    button solve "Solve"
+    button solve "Solve" {
       enabled when its status is not Solved
+    }
+  }
+}
 
-on click signIn
+on click signIn {
   - call desk.myTickets
+}
 
-on answer desk.myTickets
+on answer desk.myTickets {
   - if its status is 200, set mine to its body and clear problem
   - if its status is 401, clear mine and set problem to the error in its body
   - otherwise set problem to "Could not load your tickets"
+}
 
-on click solve
+on click solve {
   - call desk.solveTicket with id = the id of that ticket
+}
 
-on answer desk.solveTicket
+on answer desk.solveTicket {
   - if its status is 200, clear problem
   - if its status is 401, 403, 404 or 409, set problem to the error in its body
   - otherwise set problem to "Could not solve the ticket"
+}
 
-on event desk.ticketSolved
+on event desk.ticketSolved {
   - replace the ticket in mine with the same id as its body by its body
+}
 
-on event desk.ticketAssigned
+on event desk.ticketAssigned {
   - call desk.myTickets
+}
 
-example "a wrong key"
+example "a wrong key" {
   type "k-bob-0000" into apiKey
   click signIn
   see problem = "Unknown API key"
   see mine has 0 rows
+}
 
-example "Sam's own tickets"
+example "Sam's own tickets" {
   see signIn is disabled
   type "k-sam-91bc" into apiKey
   click signIn
   see mine has 2 rows
   see subject on row 1 = "Feature request: dark mode"
   see problem is hidden
+}
 
-example "Sam solves a ticket"
+example "Sam solves a ticket" {
   type "k-sam-91bc" into apiKey
   click signIn
   click solve on row with "Cannot log in after reset"
   see status on row 2 = "Solved"
   see solve on row 2 is disabled
+}
 
-example "a ticket Sam takes in another tab shows up"
+example "a ticket Sam takes in another tab shows up" {
   type "k-sam-91bc" into apiKey
   click signIn
   call desk.takeTicket with header x-api-key = "k-sam-91bc", id = 4
   see mine has 3 rows
   see subject on row 1 = "Export to CSV is empty"
+}
 
-example "before signing in, nothing arrives"
+example "before signing in, nothing arrives" {
   call desk.takeTicket with header x-api-key = "k-ann-7f3a", id = 4
   see mine has 0 rows
   see problem is hidden
+}

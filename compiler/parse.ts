@@ -3,6 +3,7 @@ import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
+import { fromBraces } from "./braces.ts";
 import type { App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
@@ -71,7 +72,10 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   const diags: Diagnostic[] = [];
   const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
-  const roots = buildLineTree(src, err);
+  // Blocks with braces are read as their indented form, line for line (so line numbers stay).
+  const braces = fromBraces(src);
+  for (const e of braces.errors) err(e.line, "SYNTAX", e.message);
+  const roots = buildLineTree(braces.text, err);
   const app = emptyApp();
   app.imports = [];
   const ctx: Ctx = { err, warn, pendingWaits: [], clockLine: 0 };

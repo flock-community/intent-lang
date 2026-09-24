@@ -1,59 +1,76 @@
-app TicketsUi
+app TicketsUi {
   "A small front end for the tickets API: list, add and solve tickets."
   "The list stays up to date when other agents add or solve tickets."
+}
 
-uses support.ticketsApi as tickets
+uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"
+}
 
-state
+state {
   rows: List Ticket = []            # the tickets, newest first
   draft: Text = ""
   problem: Text = ""
+}
 
-screen
+screen {
   field draft "New ticket"
-  button add "Add"
+  button add "Add" {
     enabled when draft is not blank
-  text problem
+  }
+  text problem {
     visible when problem is not empty
-  list rows of Ticket
+  }
+  list rows of Ticket {
     text subject
     text status
-    button solve "Solve"
+    button solve "Solve" {
       enabled when its status is not Solved
+    }
+  }
+}
 
-on start
+on start {
   - call tickets.listTickets
+}
 
-on answer tickets.listTickets
+on answer tickets.listTickets {
   - if its status is 200, set rows to its body
+}
 
-on click add
+on click add {
   - call tickets.createTicket with subject = draft, customer = "Web" and priority = Normal
+}
 
-on answer tickets.createTicket
+on answer tickets.createTicket {
   - if its status is 201, clear draft and problem
   - otherwise set problem to the error in its body
+}
 
-on click solve
+on click solve {
   - call tickets.solveTicket with id = the id of that ticket
+}
 
-on answer tickets.solveTicket
+on answer tickets.solveTicket {
   - if its status is 200, clear problem
   - otherwise set problem to the error in its body
+}
 
-on event tickets.ticketCreated
+on event tickets.ticketCreated {
   - if no row in rows has the id of its body, add its body at the start of rows
+}
 
-on event tickets.ticketSolved
+on event tickets.ticketSolved {
   - replace the row in rows with the same id as its body by its body
+}
 
-example "the list loads from the api"
+example "the list loads from the api" {
   see rows has 8 rows
   see subject on row 1 = "Refund for double charge"
   see status on row 1 = "Open"
+}
 
-example "adding a ticket"
+example "adding a ticket" {
   see add is disabled
   type "Printer on fire" into draft
   see add is enabled
@@ -62,19 +79,23 @@ example "adding a ticket"
   see subject on row 1 = "Printer on fire"
   see draft = ""
   see problem is hidden
+}
 
-example "solving a ticket"
+example "solving a ticket" {
   click solve on row with "Refund for double charge"
   see status on row 1 = "Solved"
   see solve on row 1 is disabled
+}
 
-example "another agent adds a ticket"
+example "another agent adds a ticket" {
   call tickets.createTicket with subject = "Coffee machine broken", customer = "Iris", priority = Low
   see rows has 9 rows
   see subject on row 1 = "Coffee machine broken"
+}
 
-example "another agent solves a ticket first"
+example "another agent solves a ticket first" {
   call tickets.solveTicket with id = 8
   see status on row 1 = "Solved"
   see solve on row 1 is disabled
   see problem is hidden
+}
