@@ -1,0 +1,34 @@
+app EffectOrder
+
+import pay.payments
+
+uses pay.paymentsApi as pay {
+  tested with "apps/api/payments-api.intent"
+}
+
+state {
+  last: Charge or nothing = nothing
+}
+
+screen {
+  button buy "Buy"
+  button buyLate "Buy, receipt first"
+}
+
+on click buy {
+  - call @pay.charge with @amount = 1250 and @description = "Yoga"
+  - call @pay.sendReceipt with @id = 1 and @email = "ann@example.com"
+}
+
+on click buyLate {
+  - call @pay.sendReceipt with @id = 1 and @email = "ann@example.com"
+  - call @pay.charge with @amount = 1250 and @description = "Yoga"   # expect: PIVOT
+}
+
+on answer pay.charge {
+  - set @last to its body
+}
+
+on answer pay.sendReceipt {
+  stop
+}

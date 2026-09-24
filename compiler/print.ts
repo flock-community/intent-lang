@@ -31,6 +31,12 @@ function duration(ms: number): string {
   return `${ms}ms`;
 }
 
+/** `effect external` and `undone by …` of an endpoint. */
+const effectLines = (ep: NonNullable<App["endpoints"]>[number], ind: string): string[] => [
+  ...(ep.effect ? [`${ind}effect external`] : []),
+  ...(ep.undoneBy ? [`${ind}undone by ${ep.undoneBy.endpoint}${ep.undoneBy.args.length ? ` with ${ep.undoneBy.args.map((a) => `${a.name} = ${a.value}`).join(", ")}` : ""}`] : []),
+];
+
 export function stepText(s: Step): string {
   const at = "at" in s && s.at ? ` on row ${s.at.with !== undefined ? `with ${q(s.at.with)}` : s.at.row}${s.at.list ? ` of ${s.at.list}` : ""}` : "";
   switch (s.do) {
@@ -144,6 +150,7 @@ export function printApp(app: App): string {
         `  endpoint ${ep.name} ${ep.method} ${q(ep.path)}${ep.note ? `  # ${ep.note}` : ""}`,
         ...ep.params.map((p) => `    ${p.in} ${p.name}: ${typeToString(p.type)}`),
         ...(ep.answers ?? []).map((a) => `    answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`),
+        ...effectLines(ep, "    "),
       ]),
       ...(c.contract.events ?? []).map((e) => `  event ${e.name}: ${typeToString(e.type)}${e.note ? `  # ${e.note}` : ""}`),
     ]);
@@ -175,6 +182,7 @@ export function printApp(app: App): string {
       `endpoint ${ep.name} ${ep.method} ${q(ep.path)}${origin(app, ep.line, ep.note)}`,
       ...ep.params.map((p) => `  ${p.in} ${p.name}: ${typeToString(p.type)}`),
       ...(ep.returns ? [`  returns ${typeToString(ep.returns)}`] : []),
+      ...effectLines(ep, "  "),
       ...body(ep, "  "),
     ]);
   for (const j of app.jobs ?? []) block([`every ${j.name.slice(5)}`, ...body(j, "  ")]);

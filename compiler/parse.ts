@@ -367,12 +367,23 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
       const type = m[2] ? parseType(m[2]) : undefined;
       if (m[2] && !type) err(c.line, "SYNTAX", `\`${m[2]}\` is not a type`, c.indent + 1);
       (ep.answers ??= []).push({ status: Number(m[1]), type, line: c.line });
+    } else if ((m = c.text.match(/^effect\s+(\S+)$/))) {
+      if (m[1] === "external") ep.effect = { kind: "external", line: c.line };
+      else err(c.line, "SYNTAX", `the only effect is \`effect external\` (it reaches outside the system: money, mail, another company's service). Keys and retries follow from the method, so there is no other kind to declare`, c.indent + 1);
+    } else if ((m = c.text.match(new RegExp(`^undone\\s+by\\s+(${LOWER})(?:\\s+with\\s+(.+))?$`)))) {
+      const args: { name: string; value: string }[] = [];
+      for (const part of m[2] ? m[2].split(/\s*,\s*/) : []) {
+        const a = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(@[a-z][\\w.]*)$`));
+        if (a) args.push({ name: a[1], value: a[2] });
+        else err(c.line, "SYNTAX", `\`${part}\`: write \`name = @${name}.body.field\` (from this call's answer) or \`name = @param\` (from this call)`, c.indent + 1);
+      }
+      ep.undoneBy = { endpoint: m[1], args, line: c.line };
     } else if ((m = c.text.match(/^returns\s+(.+)$/))) {
       const type = parseType(m[1]);
       if (!type) err(c.line, "SYNTAX", `\`${m[1]}\` is not a type`, c.indent + 1);
       else ep.returns = type;
     } else if (/^(- |if\s|else\b|answer\s|stop$)/.test(c.text)) stmts.push(c);
-    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, `- step`, `if … {`, `answer …` or `stop`", c.indent + 1);
+    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, `effect external`, `undone by …`, `- step`, `if … {`, `answer …` or `stop`", c.indent + 1);
   }
   if (stmts.length) {
     ep.body = parseStmts(stmts, err);
@@ -460,6 +471,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     check(app, err, warn, clockLine, used);
     checkRefs(app, err, warn);
     checkBodies(app, err, warn);
+    checkEffects(app, err, warn);
     checkHints(app, warn);
   }
   diagnostics.sort((a, b) => a.line - b.line || a.col - b.col);
@@ -474,8 +486,71 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   check(app, err, warn, clockLine, used);
   checkRefs(app, err, warn);
   checkBodies(app, err, warn);
+  checkEffects(app, err, warn);
   checkHints(app, warn);
   return diags;
+}
+
+/**
+ * Effects (docs/design/effects.md): `undone by` names an endpoint of the same service, binds
+ * every param it needs, from this call's params or its answer; a read has no effect. On the
+ * calling side, a point of no return (external, no `undone by`) comes after the steps that can
+ * still be undone.
+ */
+function checkEffects(app: App, err: Err, warn: Err) {
+  const own = (line: number) => line < LINE_BASE;
+  const eps = app.endpoints ?? [];
+  const records = new Map(app.records.map((r) => [r.name, r]));
+  // The type at `a.b.c` inside a type, through records (and lists' items not: a field of a list is a mistake).
+  const fieldPath = (t: Type | undefined, path: string[]): Type | undefined => {
+    for (const f of path) {
+      const inner: Type | undefined = t?.k === "Maybe" ? t.of : t;
+      const r = inner?.k === "Named" ? records.get(inner.name) : undefined;
+      t = r?.fields.find((x) => x.name === f)?.type;
+      if (!t) return undefined;
+    }
+    return t;
+  };
+  for (const ep of eps) {
+    // Declared in this file (an implementing app gets them from its contract, checked there).
+    if (ep.method === "GET" && ep.effect && own(ep.effect.line)) err(ep.effect.line, "EFFECT", `endpoint ${ep.name} is a GET: it only reads, so it has no effect to declare`);
+    const u = ep.undoneBy;
+    if (!u || !own(u.line)) continue;
+    if (ep.method === "GET") {
+      err(u.line, "EFFECT", `endpoint ${ep.name} is a GET: a read has nothing to undo`);
+      continue;
+    }
+    const undo = eps.find((e) => e.name === u.endpoint);
+    if (!undo) {
+      err(u.line, "UNKNOWN_NAME", `no endpoint \`${u.endpoint}\` in this service to undo ${ep.name} with${suggest(u.endpoint, eps.map((e) => e.name))}`);
+      continue;
+    }
+    if (undo === ep) err(u.line, "EFFECT", `endpoint ${ep.name} cannot undo itself`);
+    else if (undo.undoneBy) err(u.line, "EFFECT", `\`${undo.name}\` has an \`undone by\` of its own: an undo is the last step back, it is not undone again`);
+    const ok = ep.answers?.find((a) => a.status < 300 && a.type)?.type ?? ep.returns;
+    for (const a of u.args) {
+      if (!undo.params.some((p) => p.name === a.name)) err(u.line, "UNKNOWN_NAME", `\`${undo.name}\` has no param \`${a.name}\`${suggest(a.name, undo.params.map((p) => p.name))}`);
+      const path = a.value.slice(1).split(".");
+      if (path[0] === ep.name && path[1] === "body") {
+        if (!ok) err(u.line, "EFFECT", `${a.value}: ${ep.name} answers no body to take it from`);
+        else if (path.length > 2 && !fieldPath(ok, path.slice(2))) err(u.line, "UNKNOWN_NAME", `${a.value}: ${ep.name}'s answer (${typeToString(ok)}) has no \`${path.slice(2).join(".")}\``);
+      } else if (!(path.length === 1 && ep.params.some((p) => p.name === path[0]))) err(u.line, "UNKNOWN_NAME", `${a.value}: bind to \`@${ep.name}.body.<field>\` (this call's answer) or to one of its params (${ep.params.map((p) => `@${p.name}`).join(", ") || "it has none"})`);
+    }
+    for (const p of undo.params) if (p.type.k !== "Maybe" && !u.args.some((a) => a.name === p.name)) err(u.line, "EFFECT", `\`${undo.name}\` needs \`${p.name}\`: bind it (\`with ${p.name} = …\`)`);
+  }
+  // Calling side: in one handler, a point of no return goes last.
+  for (const h of app.handlers) {
+    if (!own(h.line) || !app.clients?.length) continue;
+    let pivot: { name: string; line: number } | undefined;
+    for (const [i, st] of h.steps.entries())
+      for (const m of st.matchAll(/\bcall\s+@?([a-z]\w*)\.([a-z]\w*)/gi)) {
+        const target = app.clients.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2]);
+        if (!target?.effect) continue;
+        const line = h.stepLines?.[i] ?? h.line;
+        if (!target.undoneBy) pivot ??= { name: `${m[1]}.${m[2]}`, line };
+        else if (pivot) warn(line, "PIVOT", `\`${m[1]}.${m[2]}\` can be undone, but it comes after \`${pivot.name}\` (line ${pivot.line}), which cannot: put the step that cannot be undone last, after everything that can still fail`);
+      }
+  }
 }
 
 /** Hints: unguarded absent values, and rules that read like invariants. */

@@ -1,0 +1,58 @@
+app PaymentsApi {
+  "A payment service for tests and demos: it keeps charges, refunds them once, and sends receipts."
+}
+
+import pay.payments
+
+implements pay.paymentsApi
+
+state {
+  stored charges: List Charge = []
+  stored receipts: List Int = []     # the ids of the charges a receipt was sent for
+}
+
+endpoint charge {
+  if @amount is below 1 {
+    answer 400 "Amount must be at least 1 cent"
+  }
+  if @description, trimmed, is blank {
+    answer 400 "Description is required"
+  }
+  - add a @Charge to the end of @charges with @id = the highest @id in @charges + 1 (1 when there are none), the given @amount, @description trimmed and @status @Paid
+  answer 201 with the new charge
+}
+
+endpoint refund {
+  if no charge has that @id {
+    answer 404 "No such charge"
+  }
+  if that charge is @Refunded {
+    answer 409 "Already refunded"
+  }
+  - set its @status to @Refunded
+  answer 200 with the charge
+}
+
+endpoint getCharge {
+  if no charge has that @id {
+    answer 404 "No such charge"
+  }
+  answer 200 with that charge
+}
+
+endpoint sendReceipt {
+  if no charge has that @id {
+    answer 404 "No such charge"
+  }
+  - add @id to the end of @receipts
+  answer 204
+}
+
+example "kept after a restart" {
+  call charge with amount = 1250, description = "Yoga"
+  restart
+  call getCharge with id = 1
+  see getCharge.status = 200
+  call charge with amount = 300, description = "Tea"
+  see charge.body.id = 2
+}

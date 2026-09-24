@@ -1,0 +1,72 @@
+app EffectChecks {
+  "Effects: what reaches outside, and what takes it back."
+}
+
+profile api
+
+record Booking {
+  id: Int
+  day: Text
+}
+
+state {
+  bookings: List Booking = []
+}
+
+endpoint reserve POST "/bookings" {
+  body day: Text
+  returns Booking
+  effect external
+  undone by cancel with id = @reserve.body.id
+  - add a @Booking to the end of @bookings with @id = the number of @bookings + 1 and the given @day
+  answer 201 with the new booking
+}
+
+endpoint cancel POST "/bookings/{id}/cancel" {
+  path id: Int
+  returns Booking
+  - remove the booking whose @id is @id from @bookings
+  answer 200 with that booking
+}
+
+endpoint charge POST "/charges" {
+  body day: Text
+  returns Booking
+  effect external
+  undone by refund with id = @charge.body.code        # expect: UNKNOWN_NAME
+  answer 201 with a @Booking with @id = 1 and the given @day
+}
+
+endpoint refund POST "/refunds" {
+  body id: Int
+  returns Booking
+  effect sometimes                                    # expect: SYNTAX
+  answer 200 with a @Booking with @id = 1 and @day = "x"
+}
+
+endpoint look GET "/bookings" {
+  returns List Booking
+  effect external                                     # expect: EFFECT
+  answer 200 with @bookings
+}
+
+endpoint again POST "/again" {
+  body day: Text
+  returns Booking
+  undone by again with day = @day                     # expect: EFFECT
+  answer 201 with a @Booking with @id = 1 and the given @day
+}
+
+endpoint gone POST "/gone" {
+  body day: Text
+  returns Booking
+  undone by nothing                                   # expect: UNKNOWN_NAME
+  answer 201 with a @Booking with @id = 1 and the given @day
+}
+
+example "reserve and cancel" {
+  call reserve with day = "Mon"
+  see reserve.status = 201
+  call cancel with id = 1
+  see cancel.status = 200
+}

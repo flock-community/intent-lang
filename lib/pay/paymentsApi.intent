@@ -1,0 +1,75 @@
+contract pay.paymentsApi {
+  "Taking payments and giving them back, over HTTP. Money leaves the customer: every charge reaches outside, and a refund is how it is undone."
+}
+
+import pay.payments
+
+endpoint charge POST "/charges" {
+  body amount: Int                    # in cents
+  body description: Text
+  answers 201 Charge
+  answers 400 Problem
+  effect external
+  undone by refund with id = @charge.body.id
+}
+
+endpoint refund POST "/charges/{id}/refund" {
+  path id: Int
+  answers 200 Charge
+  answers 404 Problem
+  answers 409 Problem                 # already refunded
+}
+
+endpoint getCharge GET "/charges/{id}" {
+  path id: Int
+  answers 200 Charge
+  answers 404 Problem
+}
+
+endpoint sendReceipt POST "/charges/{id}/receipt" {
+  path id: Int
+  body email: Text
+  answers 204
+  answers 404 Problem
+  effect external                     # an email cannot be unsent
+}
+
+example "a charge and its refund" {
+  call charge with amount = 1250, description = " Yoga, 10 classes "
+  see charge.status = 201
+  see charge.body.id = 1
+  see charge.body.description = "Yoga, 10 classes"
+  see charge.body.status = "Paid"
+  call refund with id = 1
+  see refund.status = 200
+  see refund.body.status = "Refunded"
+  call getCharge with id = 1
+  see getCharge.body.status = "Refunded"
+}
+
+example "a refund happens once" {
+  call charge with amount = 500, description = "Drop-in class"
+  call refund with id = 1
+  call refund with id = 1
+  see refund.status = 409
+  see refund.body.error = "Already refunded"
+  call refund with id = 7
+  see refund.status = 404
+}
+
+example "what a charge needs" {
+  call charge with amount = 0, description = "Nothing"
+  see charge.status = 400
+  see charge.body.error = "Amount must be at least 1 cent"
+  call charge with amount = 100, description = "  "
+  see charge.status = 400
+  see charge.body.error = "Description is required"
+}
+
+example "a receipt" {
+  call charge with amount = 900, description = "Mat rental"
+  call sendReceipt with id = 1, email = "ann@example.com"
+  see sendReceipt.status = 204
+  call sendReceipt with id = 2, email = "ann@example.com"
+  see sendReceipt.status = 404
+}

@@ -538,12 +538,17 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
   for (const d of app.derive) map[`derive ${d.name}`] = { kind: "derive", ...where(app, d.line) };
   for (const h of app.handlers) {
     const key = `on ${h.verb}${h.target ? " " + h.target : ""}`;
-    map[key] = { kind: "handler", ...where(app, h.line) };
+    // The effects a handler can cause, inferred from the endpoints it calls (nobody writes them).
+    const effects = h.steps.flatMap((st) => [...st.matchAll(/\bcall\s+@?([a-z]\w*)\.([a-z]\w*)/gi)]).flatMap((m) => {
+      const ep = app.clients?.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2]);
+      return ep?.effect ? [`${m[1]}.${m[2]}: external${ep.undoneBy ? `, undone by ${m[1]}.${ep.undoneBy.endpoint}` : ", cannot be undone"}`] : [];
+    });
+    map[key] = { kind: "handler", ...where(app, h.line), ...(effects.length ? { effects } : {}) };
     h.stepLines?.forEach((l, i) => (map[`${key} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
   }
   // Services: every endpoint and its steps, the events, and the layers it runs behind.
   for (const ep of app.endpoints ?? []) {
-    map[`endpoint ${ep.name}`] = { kind: "endpoint", ...where(app, ep.line) };
+    map[`endpoint ${ep.name}`] = { kind: "endpoint", ...where(app, ep.line), ...(ep.effect ? { effects: [`external${ep.undoneBy ? `, undone by ${ep.undoneBy.endpoint}` : ", cannot be undone"}`] } : {}) };
     ep.stepLines?.forEach((l, i) => (map[`endpoint ${ep.name} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
   }
   for (const e of app.events ?? []) map[`event ${e.name}`] = { kind: "event", ...where(app, e.line) };

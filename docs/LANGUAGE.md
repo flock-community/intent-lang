@@ -1,4 +1,4 @@
-# Intent — language reference (v32)
+# Intent — language reference (v33)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -599,6 +599,43 @@ Contracts cannot fail silently:
 - **Versions are computed on publish:** a removed endpoint, param or answer, or a changed type,
   makes a new major version.
 
+**Effects.** An endpoint that reaches outside the system (money, mail, another company's service)
+says so, and says what takes it back:
+
+```
+endpoint charge POST "/charges" {
+  body amount: Int
+  body description: Text
+  answers 201 Charge
+  answers 400 Problem
+  effect external
+  undone by refund with id = @charge.body.id
+}
+
+endpoint sendReceipt POST "/charges/{id}/receipt" {
+  path id: Int
+  body email: Text
+  answers 204
+  effect external                     # an email cannot be unsent
+}
+```
+
+- `effect external` is the only effect word. Without it an endpoint changes only the service's own
+  data (a GET only reads). Retrying safely follows from the method, not from a declaration.
+- `undone by <endpoint> with <param> = …` names the endpoint that compensates. It is a new action,
+  not a rollback (a refund, a cancellation), with its params bound to this call's params (`@amount`)
+  or its answer (`@charge.body.id`). An `external` endpoint without `undone by` is a **point of no
+  return**.
+- The checker requires the undo endpoint to exist, to be bound completely, and not to have an undo
+  of its own (`EFFECT`). In a screen's handler, a call that cannot be undone should come after the
+  calls that can (`PIVOT`): what can still fail goes first.
+- The effects a handler can cause are not written; they follow from the endpoints it calls, and
+  the source map lists them per handler (`effects`).
+- The harness's part (a key per call, sending again when an answer is lost, recognising a repeat,
+  undo, agreement before an external call) is designed in `docs/design/effects.md` and comes in
+  the next versions. The guarantee it aims for is *effectively once*: delivered at least once, and
+  recognised when repeated. No system can promise "exactly once" over a network.
+
 ## 4g. Calling an API from a screen
 
 A screen that talks to a service names the service's contract and calls its endpoints. The
@@ -911,6 +948,8 @@ places where the spec is not yet precise.
 | `UNREACHABLE` | error | a step after `stop` or `answer` in the same block |
 | `NO_ANSWER` | error | an endpoint that does not `answer` on every path |
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
+| `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own |
+| `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
 | `UNGUARDED` | warning | a sentence uses a `T or nothing` value without saying what happens when there is none |
 | `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
@@ -1005,6 +1044,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v33: effects on contract endpoints: `effect external` and `undone by <endpoint> with …`; the
+  checker (`EFFECT`, `PIVOT`); effects per handler in the source map. `lib/pay` (payments: charge,
+  refund, receipt) and `apps/api/payments-api.intent`. The harness part follows
+  `docs/design/effects.md`.
 
 - v32: `stored` state fields survive a restart (a screen keeps them in the browser, an api in a
   data file); `restart` in examples, also in random sessions, and a check that stored fields come

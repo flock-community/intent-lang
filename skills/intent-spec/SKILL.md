@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v32** (see the changelog at the end of
+Language version this skill matches: **v33** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -243,6 +243,14 @@ items, their history, an API's records), and leave what belongs to one visit (a 
 filter, an open drawer) unmarked. Prove it with an example that changes both kinds, says
 `restart`, and sees the stored part kept and the rest back at its default. For an API, also
 check that new ids continue after a restart.
+
+## 5i. Effects: money, mail, other companies
+
+When an endpoint reaches outside the system, mark it `effect external` in the contract and say
+what takes it back: `undone by refund with id = @charge.body.id`. If nothing can take it back
+(an email, a message to another company), leave out `undone by`: it is a point of no return, and
+in a handler it goes after every call that can still fail. Don't mark endpoints that only change
+the service's own data, and never annotate handlers: their effects follow from what they call.
 
 ## 5f. A screen that uses an API
 

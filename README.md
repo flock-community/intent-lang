@@ -423,6 +423,14 @@ saved data fell back to the spec's defaults (in the first TypeScript run it did 
 data is now checked against the spec's types). The tickets server kept a new ticket across a
 restart, and the next id continued.
 
+**Effects** (v33). A contract says which endpoints reach outside the system and what takes them
+back: `effect external` and `undone by refund with id = @charge.body.id`. The design for the
+harness's part (`docs/design/effects.md`) follows the practice of Stripe, the IETF
+Idempotency-Key draft, AWS, sagas and Temporal. `lib/pay` and `apps/api/payments-api.intent`
+use it. The first build showed a trap in the runtime (`answer(204)` took its body type from the
+surrounding answers, and both compilers stumbled on it the same way); after the fix both built on
+the first attempt, twin-verified.
+
 **Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
 under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
 to the event stream. The layer is a verified spec of its own, run by the runtime for both

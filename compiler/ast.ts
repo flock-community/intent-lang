@@ -170,6 +170,9 @@ export interface Endpoint {
   returns?: Type; // undefined: the answer has no body
   answers?: { status: number; type?: Type; line: number }[]; // the contract: every status it may answer, with its body type
   signatureOnly?: boolean; // `endpoint name` in an app that implements a contract: method, path and params come from it
+  effect?: { kind: "external"; line: number }; // `effect external`: reaches outside the system (money, mail, another company)
+  // `undone by cancel with id = @reserve.body.id`: the endpoint that compensates, its args bound to this call (its params, its answer)
+  undoneBy?: { endpoint: string; args: { name: string; value: string }[]; line: number };
   body?: Stmt[];
   steps: string[];
   stepLines?: number[];

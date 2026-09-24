@@ -1,0 +1,12 @@
+bundle pay.payments {
+  "Payments: an amount taken from a customer, and given back."
+}
+
+choice ChargeStatus: Paid | Refunded
+
+record Charge {
+  id: Int
+  amount: Int                      # in cents
+  description: Text
+  status: ChargeStatus
+}

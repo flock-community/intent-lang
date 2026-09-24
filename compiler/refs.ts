@@ -114,7 +114,11 @@ export function declaredNames(app: App): Set<string> {
   for (const l of app.layers ?? []) for (const p of l.spec?.provides ?? []) names.add(p.name);
   for (const c of app.clients ?? []) {
     names.add(c.alias);
-    for (const e of c.contract.endpoints ?? []) names.add(`${c.alias}.${e.name}`);
+    for (const e of c.contract.endpoints ?? []) {
+      names.add(`${c.alias}.${e.name}`);
+      // `call @pay.sendReceipt with @email = …`: the endpoint's params are named in the call.
+      for (const p of e.params) names.add(p.name);
+    }
     for (const e of c.contract.events ?? []) names.add(`${c.alias}.${e.name}`);
   }
   return names;

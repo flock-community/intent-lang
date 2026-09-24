@@ -25,7 +25,9 @@ export interface EndpointDesc {
 
 export type Response = { status: number; body: unknown };
 
-/** A successful answer: the status and the body (records, lists, texts, numbers). */
+/** A successful answer: the status and the body (records, lists, texts, numbers); without a body (204), the body is null. */
+export function answer<S extends number>(status: S): { status: S; body: null };
+export function answer<S extends number, B>(status: S, body: B): { status: S; body: B };
 export function answer<S extends number, B = null>(status: S, body?: B): { status: S; body: B } {
   return { status, body: (body === undefined ? null : JSON.parse(JSON.stringify(body))) as B };
 }
