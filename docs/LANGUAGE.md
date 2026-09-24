@@ -747,7 +747,7 @@ on answer tickets.listTickets   # the answer to a call (§4g)
 ```
 
 Each `- sentence` in the block is one step, applied in order. Refer to declared names exactly.
-Sentences may be conditional ("if draft is blank, do nothing").
+Choices are structure (`if … { } else { }`, below); the steps themselves are plain sentences.
 
 Idioms the compiler reads the same way every time:
 

@@ -193,8 +193,7 @@ need: minimal version selection never upgrades behind your back.
 ## 5d. An API instead of a screen
 
 Write `profile api` and `endpoint` blocks (§4e of the reference). Reuse the same domain bundle
-as the screen. Every endpoint needs examples: the happy path, each refusal ("answer 404 … and
-stop"), and a missing or invalid input (the harness answers those itself). Check list order
+as the screen. Every endpoint needs examples: the happy path, each refusal (`if … { answer 404 "…" }`), and a missing or invalid input (the harness answers those itself). Check list order
 explicitly (`see listTickets.body[1].id = 9`).
 
 ## 5e. Contracts between services

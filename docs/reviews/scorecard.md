@@ -110,4 +110,5 @@ Total weight: 100.
 
 | Version | Date | Total | Scored by | File |
 |---|---|---|---|---|
-| v26 | 2026-09-24 | see file | independent reviewer | [scores/v26.md](scores/v26.md) |
+| v26 | 2026-09-24 | 70.4 | independent reviewer | [scores/v26.md](scores/v26.md) |
+| v29 | 2026-09-24 | 74.0 | independent reviewer | [scores/v29.md](scores/v29.md) |

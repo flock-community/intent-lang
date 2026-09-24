@@ -547,6 +547,10 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
     ep.stepLines?.forEach((l, i) => (map[`endpoint ${ep.name} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
   }
   for (const e of app.events ?? []) map[`event ${e.name}`] = { kind: "event", ...where(app, e.line) };
+  for (const j of app.jobs ?? []) {
+    map[`every ${j.name.slice(5)}`] = { kind: "job", ...where(app, j.line) };
+    j.stepLines?.forEach((l, i) => (map[`every ${j.name.slice(5)} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
+  }
   for (const l of app.layers ?? []) map[`layer ${l.alias}`] = { kind: "layer", ...where(app, l.line) };
   for (const c of app.clients ?? []) if (c.through) map[`through ${c.alias}`] = { kind: "layer", ...where(app, c.through.line) };
   app.rules.forEach((_, i) => app.ruleLines?.[i] && (map[`rule ${i + 1}`] = { kind: "rule", ...where(app, app.ruleLines[i]) }));

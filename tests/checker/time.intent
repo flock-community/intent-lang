@@ -5,6 +5,7 @@ app TimeChecks {
 state {
   due: Date = 2026-09-24
   at: DateTime = 2026-09-24 09:00
+  never: Date = 2026-02-30                 # expect: BAD_BINDING
   wrong: Date = "tomorrow"                 # expect: BAD_BINDING
   count: Int = 0
 }
@@ -20,5 +21,10 @@ on click up {
 
 example "no clock" {
   wait 1d                                  # expect: STEP
+  see due = 2026-09-24
+}
+
+example "units" {
+  wait 10 days                             # expect: SYNTAX
   see due = 2026-09-24
 }

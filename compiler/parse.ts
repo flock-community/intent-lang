@@ -1,4 +1,5 @@
 // Parser + checker for .intent files. Deterministic: same text in, same IR and diagnostics out.
+import { parseDate, parseDateTime } from "../runtime/ts/fmt.ts";
 import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
@@ -169,9 +170,11 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(/^examples\s+start\s+at\s+(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)$/))) {
       // The clock at the start of every example and random session (default 2026-01-05 09:00, a Monday).
       app.startsAt = m[1].length === 10 ? `${m[1]}T09:00` : m[1].replace(" ", "T");
+      if (parseDateTime(app.startsAt) !== app.startsAt) err(node.line, "SYNTAX", `${m[1]} is not a moment that exists`);
     } else if ((m = t.match(/^every\s+(\d+(?:ms|s|m|h|d))$/))) {
       // An api's recurring work: `every 15m { - … }`, run by the clock (and by `wait` in tests).
       const ms = parseDuration(m[1])!;
+      if (ms < 60000) err(node.line, "SYNTAX", "recurring work runs at most once a minute: `every 1m` or more");
       (app.jobs ??= []).push({ every: ms, name: `every${m[1]}`, ...parseBody(node, err), line: node.line });
     } else if ((m = t.match(/^every\s+endpoint\s+answers\s+([1-5]\d\d)(?:\s+(.+))?$/))) {
       // What any endpoint may answer (a layer's 401, a 429): \`every endpoint answers 401 Problem\`.
@@ -179,7 +182,8 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       if (m[2] && !type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
       else (app.everyAnswer ??= []).push({ status: Number(m[1]), type, line: node.line });
     } else if (t.startsWith("every ")) {
-      err(node.line, "SYNTAX", "expected `every endpoint answers 401 Problem`");
+      const unit = t.match(/^every\s+(\d+)\s*(minutes?|hours?|days?|seconds?)$/);
+      err(node.line, "SYNTAX", unit ? `write the interval as \`every ${unit[1]}${unit[2][0] === "s" ? "s" : unit[2][0]}\` (s, m, h or d)` : "expected `every 15m { … }` (recurring work) or `every endpoint answers 401 Problem`");
     } else if (t.startsWith("event ")) {
       err(node.line, "SYNTAX", "expected `event name: Type` (the payload), for example `event ticketCreated: Ticket`");
     } else if (t.startsWith("endpoint")) {
@@ -510,7 +514,9 @@ function checkRefs(app: App, err: Err, warn: Err) {
   const walk = (els: App["screen"]) => els.forEach((el) => (elements.add(el.name), walk(el.children)));
   walk(app.screen);
   const data = new Set([...app.state.map((f) => f.name), ...app.derive.map((d) => d.name)]);
-  const hinted = new Set([...names].filter((n) => (!elements.has(n) || data.has(n)) && n !== "error" && !CLOCK_NAMES.includes(n)));
+  // Time words ("3 days", "@days days after") and the clock's own words are English more often than names.
+  const TIME_WORDS = ["second", "seconds", "minute", "minutes", "hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years"];
+  const hinted = new Set([...names].filter((n) => (!elements.has(n) || data.has(n)) && n !== "error" && !CLOCK_NAMES.includes(n) && !TIME_WORDS.includes(n)));
   const rowItems = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
   for (const s of sentences(app)) {
     if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
@@ -974,10 +980,14 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target, check: m[3] !== undefined ? { is: "eq", value: parseString(m[3])! } : { is: "hidden" }, line } };
   }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
+  if ((m = t.match(/^wait\s+(\d+)\s+(seconds?|minutes?|hours?|days?)$/))) {
+    err(line, "SYNTAX", `write the time as \`wait ${m[1]}${m[2][0] === "s" ? "s" : m[2][0]}\` (s, m, h or d)`, col);
+    return;
+  }
   if ((m = t.match(/^wait\s+(\S+)$/))) {
     const ms = parseDuration(m[1]);
     if (ms === undefined) {
-      err(line, "SYNTAX", "expected a duration such as `3s`", col);
+      err(line, "SYNTAX", "expected a duration such as `3s`, `30m`, `2h` or `1d`", col);
       return;
     }
     return { step: { do: "tick", times: 0, ms, line }, waitMs: ms };
@@ -1544,8 +1554,8 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
     case "Int": return l.k === "number" && Number.isInteger(l.v) && !l.raw.includes(".");
     case "Decimal": return l.k === "number";
     case "Bool": return l.k === "bool";
-    case "Date": return l.k === "date";
-    case "DateTime": return l.k === "dateTime";
+    case "Date": return l.k === "date" && parseDate(l.v) === l.v;
+    case "DateTime": return l.k === "dateTime" && parseDateTime(l.v) === l.v;
     case "List": return l.k === "emptyList" || l.k === "table";
     case "Maybe": return l.k === "nothing" || literalFits(l, t.of, choices);
     case "Named": {
