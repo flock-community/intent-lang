@@ -235,19 +235,25 @@ Specs can now reuse specs. A **bundle** (`lib/std/list.intent`, starting with `b
 holds records, choices, components and a design. An app pulls it in with `import std.list`.
 
 ```
-component Pager as footer "The page info on the left; previous and next on the right."
+component Pager as footer "The page info on the left; previous and next on the right." {
   param items "the list to show one page at a time"
   param size = 5
-  state
+  state {
     page: Int = 1
-  derive
-    visible = the {items} on page {page}, {size} per page
-  screen
+  }
+  derive {
+    visible = the @items on page @page, @size per page
+  }
+  screen {
     text pageInfo = "Page {page} of {pageCount}"
-    button next "Next" as secondary
-      enabled when {page} is below {pageCount}
-  on click next
-    - increase {page} by 1
+    button next "Next" as secondary {
+      enabled when @page is below @pageCount
+    }
+  }
+  on click next {
+    - increase @page by 1
+  }
+}
 ```
 
 An app uses it with `use pager = Pager` and bindings in its block (`items = sorted`). The

@@ -188,7 +188,7 @@ text places = "Full" when its signups reach its capacity, otherwise "{n} places 
 ## 4a. Look: design, components, presentations
 
 ```
-design
+design {
   look "A calm SaaS admin: light neutral page, white surfaces with a thin border …"
   brand: indigo          # colour roles → Tailwind palettes: brand, neutral, accent,
   neutral: slate         #   success, warning, danger, info
@@ -196,12 +196,14 @@ design
   font: sans             # sans | serif | mono
   radius: large          # none | small | medium | large | xl | full
   density: comfortable   # compact | comfortable | spacious
+}
 
 component StatCard as card "A small uppercase muted label above a large number."
 
-section openStat as StatCard
+section openStat as StatCard {
   text openLabel = "Open"
   text openValue = the number of @Open @tickets
+}
 ```
 
 A component can start from a built-in presentation (`component StatCard as card "…"`). Its

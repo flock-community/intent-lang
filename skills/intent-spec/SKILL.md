@@ -132,7 +132,9 @@ What the checker's warnings usually mean:
 
 - `UNPROVEN`: the element is never checked by an example. Add a `see`.
 - `UNANCHORED`: the sentence names nothing declared, so it is probably vague.
-- `UNSCOPED`: inside a component, write its own names in braces.
+- `UNSCOPED`: inside a component, write its own names with `@` (`@page`).
+- `UNMARKED`: a sentence uses a declared name without `@`. Mark it, or reword if you meant the English word.
+- `IMPORT`: a name arrives through another spec. Add the `import` the message names.
 - `NOT_YET`: the language cannot say this yet. Tell the user, and propose the addition
   (see "Growing the language" in the reference) instead of working around it.
 - `LOCK`: a bundle changed. Review what changed before running `intent lock`.
@@ -238,7 +240,7 @@ should not update it again.
 - Start the file with `bundle area.name` in `lib/area/name.intent`. A bundle holds records,
   choices, components and a design. Behaviour lives inside components.
 - In components, declare `param`s (with defaults where sensible), and write every own name
-  and param in braces.
+  and param with `@` (`@page`, `@items`).
 - Prove the bundle with a demo app, `lib/area/name.demo.intent`, whose examples cover its
   behaviour. Build it before other apps rely on it.
 - After any change: check the demo and the apps that use the bundle, then run `intent lock`.
