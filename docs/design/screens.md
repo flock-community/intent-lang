@@ -1,6 +1,8 @@
 # Design: several screens
 
-Status: design. Today an app has one `screen`. Real apps have several: a list and a detail page,
+Status: built in v36 (`docs/LANGUAGE.md` §4i). One change from this design: element names are
+unique in the whole app for now, not per screen, so handlers and `data-el` need no qualified names.
+Before v36 an app had one `screen`. Real apps have several: a list and a detail page,
 a catalogue and a publisher page (the registry's hub), settings. Faking it with sections that are
 shown or hidden loses what users expect from pages: an address to share, the back button, a
 page that loads what it shows.

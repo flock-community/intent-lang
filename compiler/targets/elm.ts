@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs } from "../calls.ts";
-import { cap, cellFor, dataField, events, hasData, hasInvariants, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -90,7 +90,7 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui
+${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
   out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec. -}\ntype alias Clock =\n    { now : DateTime, today : Date }\n\n\n`);
@@ -125,7 +125,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   // Events
   const evs = events(app);
   out.push(`{-| Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. -}\ntype Msg\n    = ${[...evs
-    .map((e) => e.tag + (e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app)]
+    .map((e) => e.tag + (e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])]
     .join("\n    | ")}\n\n`);
   out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. -}\n\n`);
 
@@ -150,8 +150,40 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     return el.visibleWhen ? `Maybe ${t.includes(" ") ? `(${t})` : t}` : t;
   };
   const rowFields = (els: Element[]): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [ident(e.name), fieldType(e)]);
-  const screenFields = rowFields(app.screen);
-  out.push(`{-| What \`view\` returns: one field per dynamic element on the screen. -}\n` + elmRecord("Screen", screenFields) + "\n");
+  if (hasScreens(app)) {
+    const scs = app.screens!;
+    const rec = (fields: [string, string][]) => (fields.length ? `{ ${fields.map(([n, t]) => `${n} : ${t}`).join(", ")} }` : "{}");
+    out.push(`{-| Where the app is: one variant per screen, with its path params. The harness keeps it (the address after #). -}\ntype Route\n    = ${scs.map((s) => `${cap(s.name)}Route${s.params.length ? ` ${rec(s.params.map((p) => [p.name, elmType(p.type)]))}` : ""}`).join("\n    | ")}\n\n\n`);
+    out.push(`{-| Where to go after an update: \`go to\` a screen, \`go back\`, or stay. -}\ntype Go\n    = Stay\n    | GoTo Route\n    | GoBack\n\n\n`);
+    out.push(`{-| What \`view\` returns: the current screen, with one field per dynamic element on it. -}\ntype Screen\n    = ${scs.map((s) => `${cap(s.name)}Screen ${rec(rowFields(app.screen.filter((e) => e.screen === s.name)))}`).join("\n    | ")}\n\n\n`);
+    // Addresses ↔ routes: the harness's. An address that fits no screen is the first screen.
+    const first = `${cap(scs[0].name)}Route${scs[0].params.length ? ` { ${scs[0].params.map((p) => `${p.name} = ${p.type.k === "Int" ? "0" : '""'}`).join(", ")} }` : ""}`;
+    const branch = (s: (typeof scs)[number]): string => {
+      const segs = s.path.split("/").filter(Boolean);
+      const pat = `[ ${segs.map((g, i) => (/^\{[a-z]\w*\}$/i.test(g) ? `a${i}` : q(g))).join(", ")} ]`.replace("[  ]", "[]");
+      const holes = segs.flatMap((g, i) => (/^\{([a-z]\w*)\}$/i.test(g) ? [{ name: g.slice(1, -1), v: `a${i}` }] : []));
+      // Each param read in turn; one that does not fit makes it the first screen.
+      let body = `${cap(s.name)}Route${holes.length ? ` { ${holes.map((h) => `${h.name} = ${h.name}`).join(", ")} }` : ""}`;
+      for (const h of [...holes].reverse()) {
+        const p = s.params.find((x) => x.name === h.name)!;
+        const read = p.type.k === "Int" ? `String.toInt ${h.v}` : `Url.percentDecode ${h.v}`;
+        body = `case ${read} of\n                Just ${h.name} ->\n                    ${body.replace(/\n/g, "\n        ")}\n\n                Nothing ->\n                    ${first}`;
+      }
+      return `        ${pat} ->\n            ${body}\n`;
+    };
+    out.push(`{-| The route an address shows ("/tickets/3"); an address that fits no screen shows the first. -}\nrouteFromPath : String -> Route\nrouteFromPath path =\n    case List.filter (\\s -> s /= "") (String.split "/" (Maybe.withDefault "" (List.head (String.split "?" path)))) of\n${scs.map(branch).join("\n")}\n        _ ->\n            ${first}\n\n\n`);
+    out.push(`{-| The address of a route. -}\npathOf : Route -> String\npathOf r =\n    case r of\n${scs
+      .map((s) => `        ${cap(s.name)}Route${s.params.length ? " p" : ""} ->\n            ${s.path.split(/(\{[a-z]\w*\})/i).filter((x) => x !== "").map((x) => {
+        const h = x.match(/^\{([a-z]\w*)\}$/i);
+        if (!h) return q(x);
+        const p = s.params.find((y) => y.name === h[1])!;
+        return p.type.k === "Int" ? `String.fromInt p.${h[1]}` : `Url.percentEncode p.${h[1]}`;
+      }).join(" ++ ")}\n`)
+      .join("\n")}\n\n`);
+  } else {
+    const screenFields = rowFields(app.screen);
+    out.push(`{-| What \`view\` returns: one field per dynamic element on the screen. -}\n` + elmRecord("Screen", screenFields) + "\n");
+  }
   for (const a of aliases) out.push(a + "\n");
 
   // toNode
@@ -179,7 +211,12 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       default: return "";
     }
   };
-  out.push(`toNode : Screen -> Ui.Node\ntoNode s =\n    Ui.NScreen ${q(app.name)}\n        (List.filterMap identity\n            [ ${items(app.screen, "s", 1).join("\n            , ")}\n            ]\n        )\n\n`);
+  if (hasScreens(app))
+    out.push(`toNode : Screen -> Ui.Node\ntoNode screen =\n    case screen of\n${app.screens!.map((sc) => {
+      const els = app.screen.filter((e) => e.screen === sc.name);
+      return `        ${cap(sc.name)}Screen s ->\n            Ui.NScreen ${q(app.name)}\n                (List.filterMap identity\n                    [ ${items(els, "s", 1).join("\n                    , ")}\n                    ]\n                )\n`;
+    }).join("\n")}\n`);
+  else out.push(`toNode : Screen -> Ui.Node\ntoNode s =\n    Ui.NScreen ${q(app.name)}\n        (List.filterMap identity\n            [ ${items(app.screen, "s", 1).join("\n            , ")}\n            ]\n        )\n\n`);
 
   // fromWire
   const cases = evs.map((e) => {
@@ -188,7 +225,8 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
     return `        ${pat} ->\n            ${body}\n`;
   });
-  out.push(`fromWire : Ui.Wire -> Maybe Msg\nfromWire w =\n    case ( w.on, w.target ) of\n${cases.join("\n")}\n        _ ->\n            Nothing\n`);
+  const nav = hasScreens(app) ? `        ( "navigate", path ) ->\n            Just (ScreenOpened (routeFromPath path))\n\n` : "";
+  out.push(`fromWire : Ui.Wire -> Maybe Msg\nfromWire w =\n    case ( w.on, w.target ) of\n${nav}${cases.join("\n")}\n        _ ->\n            Nothing\n`);
   if (hasClients(app) || hasData(app)) out.push(`\n\n${genElmJson(app)}`);
   if (hasData(app)) out.push(genElmData(app));
   if (hasClients(app)) out.push(`\n\n${genElmCalls(app)}`);
@@ -367,6 +405,7 @@ const elmWorkerPorts = (app: App) => {
   const calls = hasClients(app);
   const c = usesClock(app);
   const inv = hasData(app);
+  const sc = hasScreens(app);
   const st = hasStored(app);
   const upd = c ? "App.update clock" : "App.update";
   return `port module Worker exposing (main)
@@ -455,8 +494,8 @@ main =
                     screen =
                         Ui.encode (Spec.toNode (App.view${c ? " clock" : ""} next))
                 in
-                ( { app = next${calls ? ", pending = []" : ""}${c ? ", clock = clock" : ""} }
-                , observe ${calls || inv ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}${inv ? `( "data", Spec.encodeData (App.data next) ), ` : ""}( "screen", screen )${calls ? `, ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) )` : ""} ])` : "screen"}
+                ( { app = ${sc ? "App.settled next" : "next"}${calls ? ", pending = []" : ""}${c ? ", clock = clock" : ""} }
+                , observe ${calls || inv || sc ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}${inv ? `( "data", Spec.encodeData (App.data next) ), ` : ""}${sc ? `( "go", Maybe.withDefault J.null (Maybe.map J.string next.go) ), ` : ""}( "screen", screen )${calls ? `, ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) )` : ""} ])` : "screen"}
                 )
         , subscriptions = \\_ -> act identity
         }
@@ -658,6 +697,138 @@ export const elmAnswerMsgs = (app: App) => [...clientEndpoints(app).map((c) => `
 
 const elmEncode = elmEncoder;
 
+/**
+ * Apps with several screens: the module the entries use instead of App. The harness keeps where
+ * the app is (the route) and turns the app's `Go` into an address; the app only says where to go.
+ */
+export function genElmNav(app: App): string {
+  const calls = hasClients(app);
+  const c = usesClock(app);
+  const ck = c ? "clock " : "";
+  const exposing = ["Model", "init", "update", "view", "settled", ...(hasData(app) ? ["data"] : []), ...(hasStored(app) ? ["restore"] : []), ...(hasThrough(app) ? ["through"] : [])];
+  return `module AppNav exposing (${exposing.join(", ")})
+
+{-| Generated from ${app.name}.intent — do not edit. The screens around the app module: the route is
+the harness's (the address after #); the app says where to go (\`Go\`), the harness goes there.
+-}
+
+import App as Inner
+import Spec exposing (..)
+
+
+{-| The app's model, where it is, and the address to show next (after \`go to\` or \`go back\`). -}
+type alias Model =
+    { inner : Inner.Model, route : Route, go : Maybe String }
+
+
+start : Route
+start =
+    routeFromPath "/"
+
+
+init : ${c ? "Clock -> " : ""}${calls ? "( Model, List Call )" : "Model"}
+init ${ck}=
+${calls ? `    let
+        ( m, cs ) =
+            Inner.init ${ck}
+    in
+    ( { inner = m, route = start, go = Nothing }, cs )` : `    { inner = Inner.init ${ck}, route = start, go = Nothing }`}
+
+
+update : ${c ? "Clock -> " : ""}Msg -> Model -> ${calls ? "( Model, List Call )" : "Model"}
+update ${ck}msg m =
+    let
+        route =
+            case msg of
+                ScreenOpened r ->
+                    r
+
+                _ ->
+                    m.route
+
+        ${calls ? "( inner, cs, go )" : "( inner, go )"} =
+            Inner.update ${ck}route msg m.inner
+    in
+    ${calls ? "( { inner = inner, route = route, go = address go }, cs )" : "{ inner = inner, route = route, go = address go }"}
+
+
+address : Go -> Maybe String
+address go =
+    case go of
+        Stay ->
+            Nothing
+
+        GoTo r ->
+            Just (pathOf r)
+
+        GoBack ->
+            Just "back"
+
+
+view : ${c ? "Clock -> " : ""}Model -> Screen
+view ${ck}m =
+    Inner.view ${ck}m.route m.inner
+
+
+{-| The model with its next address taken (the entry shows it). -}
+settled : Model -> Model
+settled m =
+    { m | go = Nothing }
+${hasData(app) ? `
+
+data : Model -> Data
+data m =
+    Inner.data m.inner
+` : ""}${hasStored(app) ? `
+
+restore : Stored -> Model -> Model
+restore saved m =
+    { m | inner = Inner.restore saved m.inner }
+` : ""}${hasThrough(app) ? `
+
+through : Model -> Through
+through m =
+    Inner.through m.inner
+` : ""}`;
+}
+
+/** The browser entry of an app with several screens: the address comes in (`navigate`), `go` goes out (`goTo`). */
+function withScreens(main: string): string {
+  const one = (text: string, from: string, to: string) => {
+    if (text.split(from).length !== 2) throw new Error(`screens: Main.elm has no single \`${from.trim()}\``);
+    return text.replace(from, to);
+  };
+  let m = one(main, "\nimport App\n", "\nimport AppNav as App\n");
+  m = one(m, "\n\ntype In\n    = FromUi Ui.Wire", "\n\nport navigate : (String -> msg) -> Sub msg\n\n\nport goTo : String -> Cmd msg\n\n\ntype In\n    = FromUi Ui.Wire\n    | FromNav String");
+  m = one(m, "                            FromUi w ->\n                                Spec.fromWire w\n", "                            FromUi w ->\n                                Spec.fromWire w\n\n                            FromNav path ->\n                                Spec.fromWire { on = \"navigate\", target = path, key = \"\", text = \"\", value = \"\" }\n");
+  // The update becomes `step`; after it, an address the app asked for goes out.
+  const head = "        , update =\n            \\i model ->\n";
+  const a = m.indexOf(head);
+  const b = m.indexOf("        , view =");
+  if (a < 0 || b < 0) throw new Error("screens: Main.elm has no update to wrap");
+  const body = m.slice(a + head.length, b);
+  m = m.slice(0, a) + "        , update = \\i model -> withNav (step i model)\n" + m.slice(b);
+  m = one(m, "        , subscriptions = \\_ -> Sub.batch [ ", "        , subscriptions = \\_ -> Sub.batch [ navigate FromNav, ").replace("[ navigate FromNav,  ]", "[ navigate FromNav ]");
+  m = m.replace(/\s*$/, "") + `
+
+
+step : In -> Model -> ( Model, Cmd In )
+step i model =
+${body.trimEnd()}
+
+
+withNav : ( Model, Cmd In ) -> ( Model, Cmd In )
+withNav ( model, cmd ) =
+    case model.app.go of
+        Just path ->
+            ( { model | app = App.settled model.app }, Cmd.batch [ cmd, goTo path ] )
+
+        Nothing ->
+            ( model, cmd )
+`;
+  return m;
+}
+
 /** The build directory of an Elm app: the runtime, the generated interface and the entries. */
 export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, string> = {}): { appFile: string; specSource: string } {
   mkdirSync(join(dir, "src"), { recursive: true });
@@ -666,15 +837,16 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
   copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
   const spec = genElmSpec(app);
   writeFileSync(join(dir, "src/Spec.elm"), spec);
-  if (!hasClients(app) && !usesClock(app) && !hasStored(app) && hasInvariants(app)) {
+  if (!hasClients(app) && !usesClock(app) && !hasStored(app) && !hasScreens(app) && hasInvariants(app)) {
     // Checks in `always` need the data from the test worker; the browser entry stays plain.
     writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
     writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
     writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
-  } else if (hasClients(app) || usesClock(app) || hasStored(app)) {
-    writeFileSync(join(dir, "src/Main.elm"), genElmMainPorts(app));
+  } else if (hasClients(app) || usesClock(app) || hasStored(app) || hasScreens(app)) {
+    writeFileSync(join(dir, "src/Main.elm"), hasScreens(app) ? withScreens(genElmMainPorts(app)) : genElmMainPorts(app));
+    if (hasScreens(app)) writeFileSync(join(dir, "src/AppNav.elm"), genElmNav(app));
     for (const f of ["store.ts", "api.ts", "fmt.ts"]) copyFileSync(join(ROOT, "runtime/ts", f), join(dir, f));
-    writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
+    writeFileSync(join(dir, "src/Worker.elm"), hasScreens(app) ? elmWorkerPorts(app).replace("\nimport App\n", "\nimport AppNav as App\n") : elmWorkerPorts(app));
     copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
     copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
     writeThrough(app, dir, layerDirs);
@@ -698,7 +870,12 @@ const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };
 (globalThis as any).intentConnect = (app: any) => {
   if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(localClock()), 15000);
   if (app.ports.save) app.ports.save.subscribe((data: Record<string, unknown>) => save(KEY, data, storedFields));
-  if (!app.ports.request) return;
+${hasScreens(app) ? `  // Several screens: the address after # is where the app is; the app's \\\`go to\\\` / \\\`go back\\\` change it.
+  const address = () => decodeURI(location.hash.slice(1)) || "/";
+  app.ports.goTo.subscribe((p: string) => (p === "back" ? history.back() : (location.hash = p)));
+  window.addEventListener("hashchange", () => app.ports.navigate.send(address()));
+  app.ports.navigate.send(address());
+` : ""}  if (!app.ports.request) return;
   let latest: Record<string, Record<string, unknown>> = {};
   let stream: { refresh: () => void } | undefined;
   // The client layers' config arrives from the app after every update (and after init): reopen the streams it changes.
@@ -758,6 +935,7 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
   let made: CallOut[] = [];
   let through: Record<string, Record<string, unknown>> = {};
   let data: unknown;
+  let go: string | null = null;
   let waiting: ((v: any) => void) | undefined;
   app.ports.observe.subscribe((v: any) => {
     // Apps that make calls observe { screen, calls }.
@@ -765,6 +943,7 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
       made.push(...(v.calls ?? []));
       if (v.data !== undefined) data = v.data;
       if (v.through) through = v.through;
+      if (v.go) go = v.go;
       v = v.screen;
     }
     last = v;
@@ -797,6 +976,11 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
     },
     through: async () => through,
     data: async () => data,
+    nav: async () => {
+      const g = go;
+      go = null;
+      return g;
+    },
   };
 }
 
@@ -845,6 +1029,7 @@ Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-
     through: "- `through : Model -> Through` (exposed too): for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
     clock: `Clock (this app reads @now or @today): \`init\`, \`update\` and \`view\` take the clock as their FIRST argument: \`init : Clock -> …\`, \`update : Clock -> Msg -> Model -> …\`, \`view : Clock -> Model -> Screen\`. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,
     data: "Data (this spec has sentences in `always`): also expose `data : Model -> Data` (the `Data` record in Spec: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
+    screens: "Screens (this spec has several): `update` and `view` also get where the app is, a `Route` (in Spec: `TicketRoute { id }` for `screen ticket`; `@id` is that field), right before the message or model: `update : Route -> Msg -> Model -> ( Model, Go )` (with calls: `( Model, List Call, Go )`), `view : Route -> Model -> Screen`, which returns the current screen's variant (`TicketScreen { … }`). `Go` is `GoTo (TicketRoute { id = … })` for a `go to` step, `GoBack` for `go back`, or `Stay`. When a screen is shown (a link, an address, going back), the harness sends `ScreenOpened route`: do what `on open <that screen>` says, and nothing for a screen without one. The route is the harness's: never keep a copy in the model. With a clock, it comes first: `update : Clock -> Route -> Msg -> Model -> …`, `view : Clock -> Route -> Model -> Screen`.",
     stored: "Stored state (this spec has `stored` fields): also expose `data : Model -> Data` and `restore : Stored -> Model -> Model`. `restore saved model` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
   },
   open: openElm,

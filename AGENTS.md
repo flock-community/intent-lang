@@ -87,7 +87,8 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    ~~v29 structure for control words~~ done, ~~v30 `T or nothing`~~ done, ~~v31 invariants over
    the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`), ~~v32 stored
    state (survives a restart)~~ done, ~~v33 effects declared on contracts~~ done, ~~v34 effectively once (keys, retries, `unknown`,
-   `steer` faults)~~ done. Next, per `docs/design/effects.md` (grounded in Stripe, IETF, AWS, sagas,
+   `steer` faults)~~ done, ~~v35 registry feedback~~ done, ~~v36 several screens~~ done (converge at
+   v35: 72/72, `runs/r35-converge/`). Next, per `docs/design/effects.md` (grounded in Stripe, IETF, AWS, sagas,
    Temporal): the durable outbox (pending calls survive a restart), then undo and agreement
    (`std.actions`). Later (the language is alpha): diagnostics that
    carry their fix and `intent fix` with pinned `language vN`; identity and references for stored

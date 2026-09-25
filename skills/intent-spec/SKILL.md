@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v35** (see the changelog at the end of
+Language version this skill matches: **v36** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -243,6 +243,15 @@ items, their history, an API's records), and leave what belongs to one visit (a 
 filter, an open drawer) unmarked. Prove it with an example that changes both kinds, says
 `restart`, and sees the stored part kept and the rest back at its default. For an API, also
 check that new ids continue after a restart.
+
+## 5k. Several screens
+
+When an app has pages (a list and a detail, a catalogue and a publisher page), give each screen a
+name and an address: `screen ticket "/tickets/{id}" { path id: Int … }`. Move with
+`go to @ticket with @id = …` and `go back`; load what a screen shows in `on open <screen>`, not in
+the click that led there, so the address and the back button work too. Keep element names unique
+across screens. Prove it with examples that `open "/tickets/3"`, `go back`, and
+`see screen = …` (`apps/19-ticket-pages.intent`). Don't fake pages with sections shown or hidden.
 
 ## 5j. Sign-up, keys and secrets
 

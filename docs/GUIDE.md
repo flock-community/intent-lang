@@ -733,6 +733,38 @@ checks after every `restart` that they came back exactly as they were. An API do
 `apps/api/tickets-api.intent` keeps its tickets, and a new ticket after a restart still gets
 the next id.
 
+## 12b. Several screens
+
+An app with pages gives each screen a name and an address. From `apps/19-ticket-pages.intent`:
+
+```
+screen ticket "/tickets/{id}" {
+  path id: Int
+  text title = "#{@id} {the @subject of the ticket whose @id is @id, or "No such ticket" when there is none}"
+  text state = "{the @status of the ticket whose @id is @id, or "" when there is none}"
+  text seen = "Ticket pages opened: {@visits}"
+  button solve "Solve" {
+    enabled when the ticket whose @id is @id is @Open
+  }
+  button back "Back"
+}
+
+on click open {
+  - go to @ticket with @id = the @id of that ticket
+}
+…
+example "a ticket by its address" {
+  open "/tickets/3"
+  see title = "#3 Dark mode"
+  see solve is disabled
+  go back
+  see screen = list
+}
+```
+
+The harness keeps where the app is: in the browser the address after `#`, with the back button;
+in tests a history the driver keeps, the same for Elm and TypeScript.
+
 ## 13. Examples: the steps you can use
 
 ```
@@ -742,6 +774,7 @@ see count = 2                       see add is disabled            see empty is 
 see shown has 1 row                 see stock is at least 0        see every row of cart: qty is at least 1
 wait 3s / wait 1d / tick 5 times    snapshot "queue"               restart   (screens and apis)
 steer pay lose answer / lose request / duplicate / fail 3               (a screen's api)
+open "/tickets/3"   go back   see screen = ticket   see path = "/tickets/3"   (several screens)
 call createTicket with a = 1        see createTicket.body.id = 9   see ticketCreated is absent   (apis)
 call x with header x-api-key = "…"  see x.header.vary = "origin"   request OPTIONS "/tickets" with header origin = "…"
 ```

@@ -433,6 +433,17 @@ and TypeScript (checked by the parity test, including leap years and dates befor
 at most three an hour) built on the first attempt and twin-verified; the habits screen is the
 same in Elm and TypeScript in 60 of 60 random sessions with 286 waits.
 
+**Several screens** (v36). `screen ticket "/tickets/{id}" { path id: Int … }`, `go to @ticket with
+@id = …`, `go back` and `on open ticket`. The harness owns where the app is: a generated `Route`, the
+address after `#` in the browser (with the back button), and a history the test driver keeps for
+every target. `apps/19-ticket-pages.intent` built on the first attempt in Elm and TypeScript,
+twin-verified, and converge found Elm and TypeScript the same app in every session. The first
+TypeScript build showed a gap in the interface (`update` did not get the route; the repaired code
+copied it into the model): fixed in the harness, and it builds first time since. A handwritten
+Elm app and the LLM's TypeScript app behaved identically in 40 of 40 random sessions, which checks
+the two targets' routing against each other. Converge at v35 on the 12 measured apps: 72/72 first
+try; it found one ambiguity in the calculator spec (a trailing "." in a number), now fixed.
+
 **Checked rules and stored state** (v31, v32). A sentence in `always` (`- no two @dones have the
 same @habit and the same @day`) is compiled once per spec by a separate stage and checked on
 the app's data after every step; a planted bug (a habit done tomorrow) was caught at its line. A
@@ -537,7 +548,7 @@ runs/                 build outputs and reports (history.jsonl is kept)
   `grid`, `row` and `sidebar`, but sizes are still words in `look`.
 - The Kit's drawer has no backdrop and overlaps the page: consistent in every build, but a
   design flaw. Stable is not the same as good.
-- One screen per app. No navigation or randomness yet. HTTP calls (v20) and stored state
+- No randomness yet (except `@newToken`). HTTP calls (v20) and stored state
   (v32) show the pattern for each: the harness owns the effect, and the spec names it.
 - Styled builds of screens that make calls are not in the harness yet.
 - Behaviour sentences are natural language. Stability comes from the typed interface,

@@ -1,7 +1,10 @@
 // The toolchains a build uses (elm, tsc, esbuild, tailwindcss), from the Intent installation.
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { run as proc } from "./proc.ts";
-import { ROOT } from "./targets/shared.ts";
+
+// The installation, found from this file (not imported: this module is loaded early, from many places).
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const bin = (name: string) => join(ROOT, "node_modules/.bin", name);
 
