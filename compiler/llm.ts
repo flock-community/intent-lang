@@ -4,6 +4,7 @@
 // `llm` and `model` in the compiler's options (config.ts).
 import { claudeCli } from "./providers/claude-cli.ts";
 import { anthropic } from "./providers/anthropic.ts";
+import { openai } from "./providers/openai.ts";
 import { config } from "./config.ts";
 
 export interface LlmResult {
@@ -23,6 +24,7 @@ export interface Provider {
 const PROVIDERS: Record<string, (model: string) => Provider> = {
   "claude-cli": claudeCli,
   anthropic,
+  openai,
 };
 
 /** The model this run compiles with (pinned in intent.lock). */

@@ -58,9 +58,10 @@ Elm error message for an undeclared status now matches TypeScript's.
    resume a stopped twin build; measure on recorded edits before making it the default.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done (`bin` in package.json, a
    readiness check over node, the project, the lock, the toolchain and the provider); the
-   **Anthropic API provider** done (`compiler/providers/anthropic.ts`, `llm anthropic`,
-   unit-tested in `tests/providers.test.ts`; a small converge run with it is next); an
-   OpenAI-compatible provider and a probe from another vendor still open.
+   **Anthropic API provider** and an **OpenAI-compatible provider** done
+   (`compiler/providers/anthropic.ts`, `compiler/providers/openai.ts`, `llm anthropic` /
+   `llm openai`, unit-tested in `tests/providers.test.ts`; a small converge run with one of them is
+   next); a probe from another vendor still open.
 6. **Smaller**: platforms for screens and Elm (with a parity test); ~~`list x of Text`~~ done
    (v41: a list of plain values shows each value as a row; `apps/21-tags.intent`); plain-text
    answers; per-screen element names; ~~`budget` option~~ done (`compiler { budget N }`, stops

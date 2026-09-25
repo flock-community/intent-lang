@@ -124,8 +124,10 @@ compiler {
 
 Keys never go in a file. The `claude-cli` provider runs the Claude Code CLI with its own sign-in
 (`claude login`, or `ANTHROPIC_API_KEY` in the environment). The `anthropic` provider
-(`llm anthropic`) calls the Anthropic Messages API directly with `ANTHROPIC_API_KEY`; a new
-provider is a module in `compiler/providers/` and a line in the registry (`compiler/llm.ts`).
+(`llm anthropic`) calls the Anthropic Messages API directly with `ANTHROPIC_API_KEY`, and `openai`
+(`llm openai`) speaks to any OpenAI-compatible `/chat/completions` API (`OPENAI_API_KEY`,
+`OPENAI_BASE_URL`). A new provider is a module in `compiler/providers/` and a line in the registry
+(`compiler/llm.ts`).
 
 ## How the harness makes the LLM stable
 

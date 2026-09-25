@@ -2,6 +2,7 @@
 // the errors, with fetch stubbed so no network is touched.
 import assert from "node:assert/strict";
 import { anthropic } from "../compiler/providers/anthropic.ts";
+import { openai } from "../compiler/providers/openai.ts";
 
 const realFetch = globalThis.fetch;
 const stub = (body: unknown, ok = true, status = 200) => {
@@ -27,5 +28,18 @@ stub({ content: [{ type: "text", text: "x" }], usage: { input_tokens: 100, outpu
 r = await anthropic("mystery").complete("sys", "user");
 assert.equal(r.costUsd, 0, "an unknown model costs 0");
 
+// The OpenAI-compatible provider.
+delete process.env.OPENAI_API_KEY;
+r = await openai("gpt-4o-mini").complete("sys", "user");
+assert.match(r.error ?? "", /OPENAI_API_KEY/, "no key is an error, not a call");
+process.env.OPENAI_API_KEY = "k-test";
+stub({ choices: [{ message: { content: "hi" } }], usage: { prompt_tokens: 1_000_000, completion_tokens: 1_000_000 } });
+r = await openai("gpt-4o-mini").complete("sys", "user");
+assert.equal(r.text, "hi", "the first choice's message is the text");
+assert.equal(Math.round(r.costUsd * 100) / 100, 0.75, "1M in at 0.15 + 1M out at 0.6");
+stub({ error: { message: "no such model" } }, false, 404);
+r = await openai("gpt-4o-mini").complete("sys", "user");
+assert.match(r.error ?? "", /no such model/, "an API error comes back as the error");
+
 globalThis.fetch = realFetch;
-console.log("ok providers: anthropic maps content, usage and errors");
+console.log("ok providers: anthropic and openai map content, usage and errors");
