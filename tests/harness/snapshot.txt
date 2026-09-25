@@ -131,8 +131,8 @@ apps/08-calculator.intent elm src/Main.elm 42c44d3bef38
 apps/08-calculator.intent elm src/Spec.elm a8b6ebade134
 apps/08-calculator.intent elm src/Ui.elm b4c4e378ed6a
 apps/08-calculator.intent elm src/Worker.elm a80db3779849
-apps/08-calculator.intent elm prompt fd262a919c39 repair d3a38ffd931f
-apps/08-calculator.intent elm prompt-probe 7072a781f8dc repair 96278f4638ef
+apps/08-calculator.intent elm prompt bbe80ba484a8 repair 861d4d2e3748
+apps/08-calculator.intent elm prompt-probe 1b364cb3caf0 repair af8530dc36b2
 apps/08-calculator.intent ts fmt.ts fafbad5d8176
 apps/08-calculator.intent ts index.html eb68b35a67c3
 apps/08-calculator.intent ts main.ts 8fd12f39e6ad
@@ -140,8 +140,8 @@ apps/08-calculator.intent ts spec.ts e97bf10bebc9
 apps/08-calculator.intent ts test-entry.ts a75d0960c500
 apps/08-calculator.intent ts tsconfig.json 422c41f4ed20
 apps/08-calculator.intent ts ui.ts 559c5e945c8a
-apps/08-calculator.intent ts prompt a20d289d2bc3 repair 1bf749114c39
-apps/08-calculator.intent ts prompt-probe 3df5c0643f5f repair fa1ff794dafe
+apps/08-calculator.intent ts prompt 757a7df006d6 repair 986b782309e5
+apps/08-calculator.intent ts prompt-probe b1bea8e76f31 repair eb054108d5c8
 apps/09-board.intent elm elm.json 31fa92f7020b
 apps/09-board.intent elm index.html 03408f22dd2c
 apps/09-board.intent elm src/Fmt.elm fa5242ef18aa
