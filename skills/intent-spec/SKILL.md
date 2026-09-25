@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v37** (see the changelog at the end of
+Language version this skill matches: **v38** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -293,6 +293,13 @@ write any of that. What you do write: what the screen shows when the outcome of 
 call is **unknown** (`else if its status is unknown { … }`: "don't pay again, we'll let you
 know"), and examples that make the way go wrong: `steer pay lose answer` then two clicks prove
 nothing was charged twice; `steer pay fail 3` proves the unknown message (`apps/18-checkout.intent`).
+
+To take an effect back, keep the original call's answer in state (`charge: Charge or nothing`) and
+write `undo @pay.charge` in the handler; the harness calls the `undone by` endpoint with the bound
+arguments from that answer, so you never reassemble a refund. Handle the undo's answer with
+`on answer pay.refund` (the checker warns `NO_HANDLER` without it), and prove a lost answer does
+not refund twice: charge, then `steer pay lose answer`, then click refund and see one refund
+(`apps/18-checkout.intent`).
 
 ## 5f. A screen that uses an API
 

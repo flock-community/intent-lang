@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
-import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs } from "../calls.ts";
+import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
 import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
@@ -662,8 +662,13 @@ export function genElmJson(app: App): string {
 
 export function genElmCalls(app: App): string {
   const eps = clientEndpoints(app);
+  const undos = undoables(app);
   const out: string[] = [];
-  out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message. -}\ntype Call\n    = ${eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")} }` : ""}`).join("\n    | ")}\n\n\n`);
+  const callVariants = [
+    ...eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")} }` : ""}`),
+    ...undos.map((u) => `${u.tag} { answer : ${elmType(u.answer)}${u.usesArgs ? `, ${u.of.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")}` : ""} }`),
+  ];
+  out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \`undo\` takes an effect back (\`undo @pay.charge\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \`undone by\`, answered as that endpoint's \`…Answered\`." : ""} -}\ntype Call\n    = ${callVariants.join("\n    | ")}\n\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);
     const unknown = c.ep.effect ? [`${c.tag}Unknown String`] : [];
@@ -675,16 +680,27 @@ export function genElmCalls(app: App): string {
     out.push(`{-| A call as it leaves, with the config of its api's client layer. -}\ncallOut : Through -> Call -> J.Value\ncallOut th c =\n    let\n        v =\n            callToJson c\n\n        alias =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v) |> String.split "." |> List.head |> Maybe.withDefault ""\n\n        config =\n            case alias of\n${th.map((t) => `                ${q(t.alias)} ->\n                    J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${t.alias}.${x.param}`)} )`).join(", ")} ]\n`).join("\n")}\n                _ ->\n                    J.null\n    in\n    J.object [ ( "endpoint", D.decodeValue (D.field "endpoint" D.value) v |> Result.withDefault J.null ), ( "args", D.decodeValue (D.field "args" D.value) v |> Result.withDefault J.null ), ( "config", config ) ]\n\n\n`);
     out.push(`{-| The client layers' config from the app's state, for the event streams. -}\nencodeThrough : Through -> J.Value\nencodeThrough th =\n    J.object [ ${th.map((t) => `( ${q(t.alias)}, J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${t.alias}.${x.param}`)} )`).join(", ")} ] )`).join(", ")} ]\n\n\n`);
   }
-  out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${eps
-    .map((c) => {
+  const callCases = [
+    ...eps.map((c) => {
       const args = c.ep.params.map((p) => `( ${q(p.name)}, ${elmEncoder(app, p.type, `a.${p.name}`)} )`);
       return `        ${c.tag}${c.ep.params.length ? " a" : ""} ->\n            J.object [ ( "endpoint", J.string ${q(c.name)} ), ( "args", J.object [ ${args.join(", ")} ] ) ]\n`;
-    })
-    .join("\n")}\n\n`);
+    }),
+    ...undos.map((u) => {
+      const args = u.args.map((a) => {
+        const v = a.from === "answer" ? ["u.answer", ...a.path].join(".") : `u.${a.path[0]}`;
+        return `( ${q(a.name)}, ${elmEncoder(app, a.type, v)} )`;
+      });
+      return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ) ]\n`;
+    }),
+  ];
+  out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${callCases.join("\n")}\n\n`);
   out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault ("unexpected answer " ++ String.fromInt status) (D.decodeValue (D.field "error" D.string) v)\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err e ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit: " ++ D.errorToString e)\n    in\n    case endpoint of\n${eps
     .map((c) => {
       const cases = (c.ep.answers ?? []).map((a) => `                        ${a.status} ->\n                            ${a.type ? `body ${elmDecoder(app, a.type)} ${c.tag}${a.status} ${c.tag}Failed` : `${c.tag}${a.status}`}\n`);
-      const byStatus = `(case status of\n${cases.join("\n")}\n                        _ ->\n                            ${c.tag}Failed failure\n                    )`;
+      // The same message TypeScript's `conforms` gives: an answer the contract does not declare.
+      const statuses = (c.ep.answers ?? []).map((a) => a.status).join(", ");
+      const fallback = `${c.tag}Failed (if status == 0 then failure else endpoint ++ " answered " ++ String.fromInt status ++ ", which the contract does not declare (${statuses})")`;
+      const byStatus = `(case status of\n${cases.join("\n")}\n                        _ ->\n                            ${fallback}\n                    )`;
       return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    ${c.ep.effect ? `(if unknown then\n                        ${c.tag}Unknown failure\n\n                     else\n                        ${byStatus.replace(/\n/g, "\n    ")}\n                    )` : byStatus}\n                )\n`;
     })
     .join("\n")}\n        _ ->\n            Nothing\n`);
@@ -1025,6 +1041,7 @@ Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-
 - \`init\` and \`update\` also return the calls to make, in the order the steps say: \`( model, [ TicketsCreateTicket { subject = …, customer = …, priority = … } ] )\`. No step says "call": return \`[]\`.
 - \`on start\`: the calls \`init\` returns. \`on answer tickets.createTicket\`: the message \`TicketsCreateTicketAnswered answer\`; the answer has one variant per status the contract declares (\`TicketsCreateTicket201 ticket\`, \`TicketsCreateTicket400 problem\`) plus \`TicketsCreateTicketFailed reason\`.
 - "if its status is 201" matches that variant; "its body" is the value it carries. "otherwise" covers every other variant, Failed included.
+- To take an effect back (\`undo @pay.charge\`): the call is \`PayChargeUndo { answer = <the answer the original call got> }\`, with the original params too when the undo's binding reads them. The reply is the \`…Answered\` message of the endpoint the contract names in \`undone by\`.
 - Every argument of a call is given; an absent optional one is \`Nothing\`.`,
     through: "- `through : Model -> Through` (exposed too): for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
     clock: `Clock (this app reads @now or @today): \`init\`, \`update\` and \`view\` take the clock as their FIRST argument: \`init : Clock -> …\`, \`update : Clock -> Msg -> Model -> …\`, \`view : Clock -> Model -> Screen\`. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,

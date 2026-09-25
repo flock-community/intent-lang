@@ -484,6 +484,18 @@ the provider's replay switched off, that example failed at its line (charge 2 in
 The tickets and desk screens and the notices and desk APIs rebuilt twin-verified with faults and
 duplicate requests in their random sessions.
 
+**Undo** (v38). A screen takes an effect back with `undo @pay.charge`: it keeps the original
+answer in state (`charge: Charge or nothing`), and the harness calls the contract's `undone by`
+endpoint with the arguments bound from that answer, through the effectively-once path with its
+own key. `apps/18-checkout.intent` gained a Refund button and a `on answer pay.refund` handler,
+and proves on both targets that a lost answer refunds once. Checker errors point at an `undo`
+whose endpoint has no `undone by`, and the undo's answer is required to be handled. When the
+provider's replay was switched off, the lost-answer example failed at its line (409, "Already
+refunded"); with a planted wrong refund id it failed too ("No such charge"). Both targets built
+twin-verified with 6/6 examples, and a direct comparison of the two builds agreed on every screen
+in 25 sessions (this also fixed the Elm error message for a status the contract does not declare,
+which had differed from TypeScript's).
+
 **Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
 under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
 to the event stream. The layer is a verified spec of its own, run by the runtime for both

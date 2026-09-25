@@ -1,35 +1,28 @@
 # Working plan
 
-Where the work stands (2026-09-25, language v37) and what comes next, in order. Each step: build,
+Where the work stands (2026-09-25, language v38) and what comes next, in order. Each step: build,
 verify (examples, twin build, harness snapshot, `npm test`, a planted bug where it applies), update
 `docs/LANGUAGE.md` + changelog, `skills/intent-spec/SKILL.md`, README, then commit and push.
 
 ## State
 
-- Language v37; last converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`), calculator
-  ambiguity fixed. Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`).
+- Language v38; last converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`), calculator
+  ambiguity fixed. Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`). Undo proven
+  (below) but not yet in `converge` (it does not build providers for screens-with-calls).
 - `npm test` includes the harness snapshot (`tests/harness/`): refactors must leave it unchanged;
   deliberate changes `--update` and review the diff.
 - Targets and providers are modules (`compiler/targets/`, `compiler/providers/`); options in
   `intent.project` `compiler { … }` (`intent config`).
 
-## In progress: undo (effects phase 3, `docs/design/effects.md`)
+## Done: undo (effects phase 3, `docs/design/effects.md`)
 
-Done, not yet proven end to end:
-- checker: `undo @alias.endpoint` must name an endpoint with `undone by` (EFFECT), and its undo
-  endpoint's answer should be handled (NO_HANDLER) — `compiler/parse.ts`;
-- `undoables(app)` in `compiler/calls.ts`; TypeScript Call variant `{ undo: "pay.charge"; answer;
-  args? }` and `callToJson` computing the `undone by` args from the binding — `compiler/targets/ts.ts`;
-- guard: a non-TS build of an app with `undo` stops with a message (`compiler/build.ts`).
-
-Next:
-1. Elm: `PayChargeUndo { answer : Charge }` in `genElmCalls` (`compiler/targets/elm.ts`, `type Call`
-   and `callToJson`), then drop the guard.
-2. Prompt: one line in each target's `calls` rule about `undo`.
-3. Reference §4f/§4g: `undo @pay.charge` step; skill; changelog v38.
-4. Prove it: add a Refund button to `apps/18-checkout.intent` (`undo @pay.charge` with the charge
-   kept in state, `on answer pay.refund`), examples incl. `steer pay lose answer` on the refund (no
-   double refund: keyed replay), twin-build both targets, a planted bug (refund args wrong).
+v38: `undo @pay.charge` in a handler calls the `undone by` endpoint with its arguments from the
+original call's answer, through the effectively-once path with its own key. Elm and TypeScript both
+generate the call (`PayChargeUndo { answer }` / `{ undo: "pay.charge", answer }`). Proven by
+`apps/18-checkout.intent`'s Refund button: 6/6 examples on both targets, twin-verified; a lost
+answer refunds once (the retry replays; with replay off the example fails 409 "Already refunded");
+a planted wrong refund id fails "No such charge"; Elm≡TS on every screen in 25 sessions. The
+Elm error message for an undeclared status now matches TypeScript's.
 
 ## Then, in order
 
@@ -49,4 +42,4 @@ Next:
 5. **Distribution**: an `intent` bin and npm package; `intent doctor`; a second provider
    (Anthropic API, OpenAI-compatible) measured with converge; a probe from another vendor.
 6. **Smaller**: platforms for screens and Elm (with a parity test); `list x of Text`; plain-text
-   answers; per-screen element names; `budget` option; Spectavity adopting v35–v37 features.
+   answers; per-screen element names; `budget` option; Spectavity adopting v35–v38 features.

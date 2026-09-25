@@ -1,4 +1,4 @@
-# Intent — language reference (v37)
+# Intent — language reference (v38)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -720,8 +720,8 @@ endpoint sendReceipt POST "/charges/{id}/receipt" {
   Keys are kept per caller for 24 hours, with the stored state. Screens send a key with every call
   (the same for every attempt). "Exactly once" is not promised: no system can over a network; this
   is delivered at least once, and recognised when repeated.
-- Undo and agreement before an external call are designed in `docs/design/effects.md` and come
-  next.
+- A screen takes an effect back with `undo @alias.endpoint` (§4g); agreement before an external
+  call is designed in `docs/design/effects.md` and comes next.
 
 ## 4g. Calling an API from a screen
 
@@ -803,6 +803,33 @@ two builds that handle someone else's change differently count as different apps
 
 The checker reports a call to an endpoint the contract does not have, and warns when a call's
 answer is never handled.
+
+**Taking an effect back.** `undo @alias.endpoint` in a handler calls the endpoint the contract
+names in `undone by`, with its arguments taken from the answer the original call got. The app keeps
+that answer (for example `charge: Charge or nothing`); the step reads it and the harness builds the
+compensating call, so an app never reassembles a refund itself. The undo's own answer is handled
+like any other (`on answer pay.refund`; without it the checker warns `NO_HANDLER`). It goes out
+through the same effectively-once path with its own key, so a lost answer is sent again with the
+same key and the provider replays instead of refunding twice.
+
+```
+on click refund {
+  - set @refunding to true
+  if there is a @charge {
+    - undo @pay.charge
+  }
+}
+
+on answer pay.refund {
+  - set @refunding to false
+  if its status is 200 {
+    - set @charge to nothing
+    - set @message to "Refunded: charge {the @id in its body}"
+  } else {
+    - set @message to "Refund failed: {the error}"
+  }
+}
+```
 
 ## 4h. Layers: reusable parts of an HTTP service
 
@@ -1050,7 +1077,7 @@ places where the spec is not yet precise.
 | `UNREACHABLE` | error | a step after `stop` or `answer` in the same block |
 | `NO_ANSWER` | error | an endpoint that does not `answer` on every path |
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
-| `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own |
+| `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone |
 | `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
 | `UNGUARDED` | warning | a sentence uses a `T or nothing` value without saying what happens when there is none |
 | `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
@@ -1147,6 +1174,13 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v38: undo on the calling side: `undo @alias.endpoint` in a handler calls the `undone by`
+  endpoint with its arguments from the original call's answer, through the effectively-once path
+  with its own key; `undo @…` reports `EFFECT` for an endpoint that cannot be undone and
+  `NO_HANDLER` when the undo's answer is not handled. The call carries the answer in Elm
+  (`PayChargeUndo { answer = … }`) and TypeScript (`{ undo: "pay.charge", answer }`); a lost answer
+  replays instead of refunding twice. Proven by `apps/18-checkout.intent`'s Refund button.
 
 - v37: platform functions: `platform <name>` with `function f(x: T): R` and examples, implemented by
   the installation (`runtime/ts/platform/`); `std.crypto.sha256`, `intent.tools.check`;

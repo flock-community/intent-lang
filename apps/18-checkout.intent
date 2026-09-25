@@ -11,12 +11,17 @@ uses pay.paymentsApi as pay {
 state {
   message: Text = ""
   paying: Bool = false
+  refunding: Bool = false
+  charge: Charge or nothing = nothing
 }
 
 screen {
   text pass = "Yoga, 10 classes: € 125.00"
   button buy "Pay" {
     enabled when not @paying
+  }
+  button refund "Refund" {
+    enabled when there is a @charge and not @refunding
   }
   text message {
     visible when @message is not empty
@@ -31,11 +36,29 @@ on click buy {
 on answer pay.charge {
   - set @paying to false
   if its status is 201 {
+    - set @charge to its body
     - set @message to "Paid: charge {the @id in its body}"
   } else if its status is unknown {
     - set @message to "We could not confirm the payment yet. Please don't pay again; we will let you know."
   } else {
     - set @message to "Payment failed: {the error}"
+  }
+}
+
+on click refund {
+  - set @refunding to true
+  if there is a @charge {
+    - undo @pay.charge
+  }
+}
+
+on answer pay.refund {
+  - set @refunding to false
+  if its status is 200 {
+    - set @charge to nothing
+    - set @message to "Refunded: charge {the @id in its body}"
+  } else {
+    - set @message to "Refund failed: {the error}"
   }
 }
 
@@ -65,4 +88,20 @@ example "the service is down for a moment" {
   steer pay fail 2
   click buy
   see message = "Paid: charge 1"
+}
+
+example "refunding" {
+  click buy
+  see message = "Paid: charge 1"
+  click refund
+  see message = "Refunded: charge 1"
+  see refund is disabled
+}
+
+example "a lost answer does not refund twice" {
+  click buy
+  see message = "Paid: charge 1"
+  steer pay lose answer
+  click refund
+  see message = "Refunded: charge 1"
 }
