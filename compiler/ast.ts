@@ -196,8 +196,21 @@ export interface Endpoint {
   note?: string;
 }
 
+/** \`function sha256(text: Text): Text\` in a platform: a pure, exact function (docs/design/platform.md). */
+export interface PlatformFunction {
+  name: string;
+  params: { name: string; type: Type }[];
+  returns: Type;
+  line: number;
+  note?: string;
+}
+
 export interface App {
-  kind?: "app" | "bundle" | "contract" | "layer";
+  kind?: "app" | "bundle" | "contract" | "layer" | "platform";
+  /** A platform (\`platform std.crypto\`): functions the installation implements in reviewed code, never the LLM. */
+  functions?: PlatformFunction[];
+  /** The platforms an app imports (their functions are available by name). */
+  platforms?: { name: string; functions: PlatformFunction[]; records: RecordDecl[] }[];
   // A layer (kind "layer"): what an app configures, what it hands to endpoints, and its two steps lists.
   params?: LayerParam[];
   provides?: Field[];

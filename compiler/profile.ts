@@ -61,9 +61,14 @@ export function parseProfile(text: string, file = "profile"): Profile {
 }
 
 let cached: Profile | undefined;
-/** The UI profile, from the Intent installation. */
+// Bundled into a service (platform intent.tools) there is no installation to read the profile from:
+// the build puts its text in here (esbuild --define). Run from the installation, it is not defined.
+declare const INTENT_UI_PROFILE: string | undefined;
+const bundled = typeof INTENT_UI_PROFILE === "string" ? INTENT_UI_PROFILE : undefined;
+
+/** The UI profile, from the Intent installation (or the text bundled in). */
 export function uiProfile(): Profile {
-  return (cached ??= parseProfile(readFileSync(join(ROOT, "lib/profile/ui.intent"), "utf8"), "lib/profile/ui.intent"));
+  return (cached ??= parseProfile(bundled ?? readFileSync(join(ROOT, "lib/profile/ui.intent"), "utf8"), "lib/profile/ui.intent"));
 }
 
 /** verb → element kind, for `on <verb> <element>` and example steps. */

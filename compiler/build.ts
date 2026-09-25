@@ -57,6 +57,10 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
     return res;
   }
+  if (app.platforms?.length && !api && !layer) {
+    res.attempts.push({ stage: "compile", detail: "platform functions are for services (the api profile) so far: a screen cannot use them yet (docs/design/platform.md)" });
+    return res;
+  }
   if (app.screens?.length && !tm.prompt.screens) {
     res.attempts.push({ stage: "compile", detail: `apps with several screens are not in the ${target} harness yet (docs/design/screens.md)` });
     return res;
@@ -86,7 +90,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       return res;
     }
   }
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length);
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length);
 
   let code = "";
   let problems = "";

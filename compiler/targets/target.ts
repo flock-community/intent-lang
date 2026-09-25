@@ -56,6 +56,6 @@ export interface ServiceModule {
   compileLayer(dir: string): Promise<string>;
   /** The files an api build copies from a verified layer build. */
   layerFiles: string[];
-  prompt: { rules: string; skeleton: string; coding: string; clock: string };
+  prompt: { rules: string; skeleton: string; coding: string; clock: string; platform: string };
   layerPrompt: { rules: string; skeleton: string; clientRules: string; clientSkeleton: string };
 }

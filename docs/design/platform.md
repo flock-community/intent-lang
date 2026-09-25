@@ -1,6 +1,7 @@
 # Design: platform functions
 
-Status: design. Asked for by the registry (Spectavity): a service that computes a release's
+Status: built in v37 for services (TypeScript); screens and Elm later. Asked for by the registry
+(Spectavity): a service that computes a release's
 version itself must hash the uploaded spec and run the Intent checker on it, instead of
 trusting what the publisher sends.
 

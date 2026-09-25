@@ -1,0 +1,37 @@
+platform intent.tools {
+  "The Intent toolchain for services about specs, such as a registry: check a spec and compute what publishing it would record."
+}
+
+record Checked {
+  ok: Bool                     # it passes the checker
+  problems: List Text          # the checker's errors, as "line: message"
+  kind: Text                   # "app", "bundle", "contract", "layer" or "platform"; "" when it does not say
+  name: Text
+  api: List Text               # its public names, as `intent publish` computes them
+  examples: List Text          # a fingerprint per example: behaviour is part of a version
+  sha: Text                    # the digest `intent publish` and intent.lock record
+}
+
+function check(source: Text): Checked      # a spec without imports; one with imports is not ok, with that as its problem
+
+example "a spec that checks" {
+  call check with source = "app Tiny {\n  \"One button.\"\n}\n\nstate {\n  count: Int = 0\n}\n\nscreen {\n  text count\n  button up \"+\"\n}\n\non click up {\n  - increase @count by 1\n}\n\nexample \"up\" {\n  click up\n  see count = \"1\"\n}\n"
+  see check.ok = true
+  see check.kind = "app"
+  see check.name = "Tiny"
+  see check.problems has 0 rows
+  see check.examples has 1 row
+}
+
+example "a spec that does not" {
+  call check with source = "app Broken {\n  \"No screen.\"\n}\n"
+  see check.ok = false
+  see check.problems has 1 row
+}
+
+example "a spec that imports" {
+  call check with source = "bundle my.things {\n  \"Things.\"\n}\n\nimport std.list\n"
+  see check.ok = false
+  see check.kind = "bundle"
+  see check.problems has 1 row
+}

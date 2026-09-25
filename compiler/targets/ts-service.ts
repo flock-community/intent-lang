@@ -2,7 +2,7 @@
 // (typed handlers, endpoint descriptions), the fixed router, server and test client, the typed
 // client for a contract, a layer's interface and stub app, what the prompt says, and the toolchain.
 // The drivers that run examples and random requests against a build stay in api.ts and layer.ts.
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App, Endpoint, Type } from "../ast.ts";
 import { LINE_BASE } from "../ast.ts";
@@ -63,7 +63,7 @@ export function genApiSpec(app: App): string {
   return `// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
-
+${(app.platforms ?? []).map((p) => `/** Platform ${p.name}: ${p.functions.map((f) => f.name).join(", ")}. Exact, reviewed code from the Intent installation: use these, never write your own. */\nexport { ${p.functions.map((f) => f.name).join(", ")} } from "./platform/${p.name}.js";\n`).join("")}
 ${tsDomain(app)}${hasData(app) ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
 ${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
@@ -377,6 +377,11 @@ ${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(a
   copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
   const spec = genApiSpec(app);
   writeFileSync(join(dir, "spec.ts"), spec);
+  // Platform functions: their declared signatures here; the compile step bundles the installation's code.
+  if (app.platforms?.length) {
+    mkdirSync(join(dir, "platform"), { recursive: true });
+    for (const p of app.platforms) writeFileSync(join(dir, "platform", `${p.name}.d.ts`), platformDeclarations(p));
+  }
   writeFileSync(join(dir, "server.ts"), SERVER);
   writeFileSync(join(dir, "test-entry.ts"), TEST_ENTRY);
   writeFileSync(
@@ -556,6 +561,13 @@ Each \`every <interval> { … }\` block is recurring work: export \`jobs\` typed
 
 /** api profile: type-check, then bundle the test client and the server. */
 async function compileApi(dir: string): Promise<string> {
+  // Platform functions: the installation's reviewed implementation, bundled next to its declaration.
+  const platformDir = join(dir, "platform");
+  for (const d of existsSync(platformDir) ? readdirSync(platformDir).filter((f) => f.endsWith(".d.ts")) : []) {
+    const name = d.slice(0, -".d.ts".length);
+    const b = await run(bin("esbuild"), [join(ROOT, "runtime/ts/platform", `${name}.ts`), "--bundle", "--format=esm", "--platform=node", `--outfile=${join(platformDir, `${name}.js`)}`, `--define:INTENT_UI_PROFILE=${JSON.stringify(readFileSync(join(ROOT, "lib/profile/ui.intent"), "utf8"))}`, "--log-level=error"], dir);
+    if (!b.ok) return clean(b.out);
+  }
   const t = await run(bin("tsc"), ["-p", "."], dir);
   if (!t.ok) return clean(t.out);
   for (const [entry, out] of [["test-entry.ts", "test.mjs"], ["server.ts", "server.mjs"]]) {
@@ -573,6 +585,13 @@ async function compileLayer(dir: string): Promise<string> {
   return b.ok ? "" : clean(b.out);
 }
 
+/** A platform's functions as TypeScript declarations (the implementation is the installation's). */
+function platformDeclarations(p: NonNullable<App["platforms"]>[number]): string {
+  return `// Generated from platform ${p.name} — do not edit. Implemented by the Intent installation (runtime/ts/platform/${p.name}.ts).
+${p.records.map((r) => `export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n`).join("")}
+${p.functions.map((f) => `/**${f.note ? ` ${f.note}` : ""} */\nexport declare function ${f.name}(${f.params.map((x) => `${x.name}: ${tsType(x.type)}`).join(", ")}): ${tsType(f.returns)};\n`).join("\n")}`;
+}
+
 // ---------------------------------------------------------------- the service module
 
 export const tsService: ServiceModule = {
@@ -581,6 +600,6 @@ export const tsService: ServiceModule = {
   scaffoldLayer,
   compileLayer,
   layerFiles: LAYER_FILES,
-  prompt: { rules: API_TARGET_RULES, skeleton: API_APP_SKELETON, coding: API_CODING_RULES, clock: API_CLOCK_RULE },
+  prompt: { rules: API_TARGET_RULES, skeleton: API_APP_SKELETON, coding: API_CODING_RULES, clock: API_CLOCK_RULE, platform: "This api imports platform functions (their names are in spec.ts, from `./platform/…`): a sentence that names one (`the @sha256 of the given @source`) calls exactly that function, imported from `./spec.ts`. They are the installation's reviewed code: never write your own version of what they do." },
   layerPrompt: { rules: LAYER_RULES, skeleton: LAYER_SKELETON, clientRules: CLIENT_LAYER_RULES, clientSkeleton: CLIENT_LAYER_SKELETON },
 };

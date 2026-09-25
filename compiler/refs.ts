@@ -109,6 +109,8 @@ export function declaredNames(app: App): Set<string> {
     for (const v of c.values) names.add(v);
   }
   for (const r of app.refined ?? []) names.add(r.name);
+  // Functions of the platforms the app imports (`the @sha256 of the given @source`).
+  for (const p of app.platforms ?? []) for (const f of p.functions) names.add(f.name);
   // Screens (`go to @ticket`) and their path params (`@id` while that screen is shown).
   for (const s of app.screens ?? []) {
     names.add(s.name);

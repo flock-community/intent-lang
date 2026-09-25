@@ -433,6 +433,13 @@ and TypeScript (checked by the parity test, including leap years and dates befor
 at most three an hour) built on the first attempt and twin-verified; the habits screen is the
 same in Elm and TypeScript in 60 of 60 random sessions with 286 waits.
 
+**Platform functions** (v37). Work that needs no judgement but can't be written well in sentences
+(a hash, running the checker) is declared in a `platform` file and implemented by the
+installation, never the compiler: `std.crypto.sha256` (checked against the standard's vectors and
+against Node on 501 inputs) and `intent.tools.check`. `apps/api/specs-api.intent` stores specs
+that pass the checker with the digest it computed itself; it built first try, twin-verified,
+and its server runs on its own, with the checker bundled in.
+
 **Several screens** (v36). `screen ticket "/tickets/{id}" { path id: Int … }`, `go to @ticket with
 @id = …`, `go back` and `on open ticket`. The harness owns where the app is: a generated `Route`, the
 address after `#` in the browser (with the back button), and a history the test driver keeps for

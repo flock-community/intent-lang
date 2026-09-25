@@ -297,8 +297,8 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     const parsed = parseSyntax(text);
     offsetLines(parsed.app, idx * LINE_BASE);
     diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-    if (parsed.app.kind !== "bundle") err(fromLine, "BAD_BINDING", `${shown(path)} is not a bundle (it starts with \`${parsed.app.kind ?? "?"}\`)`);
-    else if (parsed.app.name !== name) err(idx * LINE_BASE + 1, "BAD_BINDING", `this file must declare \`bundle ${name}\` (it declares \`bundle ${parsed.app.name}\`)`);
+    if (parsed.app.kind !== "bundle" && parsed.app.kind !== "platform") err(fromLine, "BAD_BINDING", `${shown(path)} is not a bundle or a platform (it starts with \`${parsed.app.kind ?? "?"}\`)`);
+    else if (parsed.app.name !== name) err(idx * LINE_BASE + 1, "BAD_BINDING", `this file must declare \`${parsed.app.kind} ${name}\` (it declares \`${parsed.app.kind} ${parsed.app.name}\`)`);
     const digest = sha(text);
     bundles.push({ name, file: shown(path), sha: digest });
     if (!opts.ignoreLock) {
@@ -311,6 +311,11 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     return parsed.app;
   };
   for (const imp of app.imports ?? []) loadBundle(imp.bundle, imp.line);
+  // Platforms an app imports: their functions are available by name (the installation implements them).
+  for (const imp of app.imports ?? []) {
+    const p = loaded.get(imp.bundle);
+    if (p?.kind === "platform" && !app.platforms?.some((x) => x.name === p.name)) (app.platforms ??= []).push({ name: p.name, functions: p.functions ?? [], records: p.records });
+  }
 
   // Merge declarations of all loaded bundles. One flat namespace: a clash is an error.
   const owner = new Map<string, string>();

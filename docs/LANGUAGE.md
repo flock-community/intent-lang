@@ -1,4 +1,4 @@
-# Intent — language reference (v36)
+# Intent — language reference (v37)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -284,6 +284,29 @@ on open ticket {
 - Examples: `open "/tickets/3"` arrives by address, `go back` presses the back button, and
   `see screen = ticket` / `see path = "/tickets/3"` check where the app is. Every example starts
   at `/`. Random sessions go back and open the examples' addresses too.
+
+## 4j. Platform functions
+
+Some work needs no judgement but cannot be written well in sentences: a hash, a format, running a
+checker. A **platform** declares such functions; the Intent installation implements them in
+reviewed code, never the compiler, so every build calls the same code:
+
+```
+platform std.crypto
+function sha256(text: Text): Text          # 64 lower-case hex digits
+
+example "the standard's test vectors" {
+  call sha256 with text = "abc"
+  see sha256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+}
+```
+
+An app imports a platform like a bundle and names its functions in sentences:
+`import std.crypto`, then `@digest = the @sha256 of the given @source`. A platform's examples run
+against its implementation in the installation's tests. Platforms so far: `std.crypto`
+(`sha256`) and `intent.tools` (`check`: a spec's checker result, public names, example
+fingerprints and digest, as `intent publish` computes them; a spec with imports is not checked
+alone). They are for services (the api profile) so far.
 
 ## 4a. Look: design, components, presentations
 
@@ -1124,6 +1147,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v37: platform functions: `platform <name>` with `function f(x: T): R` and examples, implemented by
+  the installation (`runtime/ts/platform/`); `std.crypto.sha256`, `intent.tools.check`;
+  `apps/api/specs-api.intent` records what it computes, never what a sender claims.
 
 - v36: several screens: `screen <name> "<path>"` with `path x: T`, `go to @screen with …`,
   `go back`, `on open <screen>`; `open`, `go back`, `see screen`, `see path` in examples. The harness

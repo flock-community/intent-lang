@@ -48,11 +48,12 @@ export interface TwinResult {
  * copied into builds. A change there (a new generated interface, a fixed runtime) is a new build.
  */
 let harness: string | undefined;
+const filesIn = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesIn(join(dir, e.name)) : [join(dir, e.name)]));
 function harnessDigest(): string {
   const files = [
     ...["gen.ts", "calls.ts", "api.ts", "layer.ts", "prompt.ts", "build.ts", "exec.ts", "diff.ts", "invariants.ts", "toolchain.ts", "tools.ts", "styled.ts"].map((f) => join(ROOT, "compiler", f)),
     ...readdirSync(join(ROOT, "compiler/targets")).map((f) => join(ROOT, "compiler/targets", f)),
-    ...readdirSync(join(ROOT, "runtime/ts")).map((f) => join(ROOT, "runtime/ts", f)),
+    ...filesIn(join(ROOT, "runtime/ts")),
     ...readdirSync(join(ROOT, "runtime/elm")).map((f) => join(ROOT, "runtime/elm", f)),
   ];
   return (harness ??= sha(files.map((f) => readFileSync(f, "utf8")).join("\0")));

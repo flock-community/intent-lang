@@ -44,7 +44,7 @@ export const PROBE_RULES = `You are the PROBE compiler of a twin build. Another 
 
 /** Apps with `stored` state: the harness keeps it (localStorage, a file on the server) and puts it back after a restart. */
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false): string {
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const t = targetModule(target);
   const lang = t.fence;
@@ -76,7 +76,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
+${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${platforms ? `# Platform functions\n\n${svc.prompt.platform}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
   return `# Language reference
 
 ${language}

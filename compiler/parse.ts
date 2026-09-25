@@ -87,12 +87,12 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   roots.forEach((node, i) => {
     const t = node.text;
     let m: RegExpMatchArray | null;
-    if ((m = t.match(new RegExp(`^(app|bundle|contract|layer)\\s+(\\S+)$`)))) {
+    if ((m = t.match(new RegExp(`^(app|bundle|contract|layer|platform)\\s+(\\S+)$`)))) {
       if (i !== 0) err(node.line, "SYNTAX", `\`${m[1]}\` must be the first block`);
       if (app.name) err(node.line, "DUPLICATE", "only one `app` or `bundle` per file");
       const ok = m[1] === "app" ? new RegExp(`^${UPPER}$`).test(m[2]) : new RegExp(`^${BUNDLE_NAME}$`).test(m[2]);
       if (!ok) err(node.line, "SYNTAX", m[1] === "app" ? "an app name is UpperCamel: `app Helpdesk`" : `a ${m[1]} name is lower case with dots: \`${m[1]} std.list\``);
-      app.kind = m[1] as "app" | "bundle" | "contract" | "layer";
+      app.kind = m[1] as "app" | "bundle" | "contract" | "layer" | "platform";
       if (app.kind === "layer") app.profile = "api";
       app.name = m[2];
       for (const c of node.children) {
@@ -139,6 +139,18 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if (app.kind === "layer" && /^before\s+every\s+call$/.test(t)) {
       if (app.beforeCall) err(node.line, "DUPLICATE", "one `before every call` per layer");
       app.beforeCall = { ...parseBody(node, err), line: node.line };
+    } else if (app.kind === "platform" && (m = t.match(new RegExp(`^function\\s+(${LOWER})\\s*\\(([^)]*)\\)\\s*:\\s*(.+)$`)))) {
+      // \`function sha256(text: Text): Text\`: a signature; the installation implements it.
+      const params: { name: string; type: Type }[] = [];
+      for (const part of m[2].split(",").map((x) => x.trim()).filter(Boolean)) {
+        const pm = part.match(new RegExp(`^(${LOWER})\\s*:\\s*(.+)$`));
+        const type = pm ? parseType(pm[2]) : undefined;
+        if (!pm || !type) err(node.line, "SYNTAX", `\`${part}\`: a param looks like \`name: Type\``);
+        else params.push({ name: pm[1], type });
+      }
+      const returns = parseType(m[3]);
+      if (!returns) err(node.line, "SYNTAX", `\`${m[3]}\` is not a type`);
+      else (app.functions ??= []).push({ name: m[1], params, returns, line: node.line, note: node.note });
     } else if (app.kind === "layer" && /^examples\s+with$/.test(t)) {
       app.exampleConfig = node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b);
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
@@ -209,6 +221,23 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   if (app.kind === "bundle") {
     const behaviour = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.always.length || app.examples.length || app.rules.length;
     if (behaviour) err(1, "SYNTAX", "a bundle holds records, choices, components and a design; state, screens and behaviour go inside a component, examples in the bundle's demo app");
+  }
+  if (app.kind === "platform") {
+    // A platform declares functions, and the records they take and give; its examples prove the implementation.
+    const other = app.state.length || app.derive.length || app.screen.length || app.handlers.length || app.components.length || app.endpoints?.length || app.layers?.length || app.rules.length;
+    if (other) err(1, "SYNTAX", "a platform holds records, choices, `function` signatures and examples; behaviour is in the installation's code");
+    if (!app.functions?.length) err(1, "SYNTAX", "a platform declares at least one `function name(param: Type): Type`");
+    const fns = new Map((app.functions ?? []).map((f) => [f.name, f]));
+    for (const ex of app.examples)
+      for (const s of ex.steps) {
+        if (s.do === "call") {
+          const f = fns.get(s.endpoint);
+          if (!f) err(s.line, "UNKNOWN_NAME", `no function \`${s.endpoint}\`${suggest(s.endpoint, [...fns.keys()])}`);
+          else for (const a of s.args) if (!f.params.some((p) => p.name === a.name)) err(s.line, "UNKNOWN_NAME", `\`${s.endpoint}\` has no param \`${a.name}\``);
+        } else if (s.do === "see") {
+          if (!fns.has(s.target.split(/[.[]/)[0])) err(s.line, "UNKNOWN_NAME", `\`see ${s.target}\`: see a function's latest result (\`see ${[...fns.keys()][0]} = …\`, \`see ${[...fns.keys()][0]}.field = …\`)`);
+        } else err(s.line, "STEP", "a platform's example calls its functions (`call f with x = …`) and sees their results (`see f = …`)");
+      }
   }
   if (app.kind === "layer") {
     // A layer wraps every request of an api: no state, no endpoints, no screen.
@@ -489,7 +518,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
   const warn: Err = (line, code, message, col = 1) => diagnostics.push({ level: "warning", code, line, col, message });
   if (app.imports?.length) err(app.imports[0].line, "SYNTAX", "this file imports bundles; check it with `intent check` (which resolves imports), not `parse()`");
   // Semantic checks run even after syntax errors, so one pass reports as much as possible.
-  else if (app.name && app.kind !== "bundle") {
+  else if (app.name && app.kind !== "bundle" && app.kind !== "platform") {
     const used = expandUses(app, err, warn);
     check(app, err, warn, clockLine, used);
     checkRefs(app, err, warn);
@@ -505,6 +534,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
 /** Semantic checks on a complete (expanded) app. */
 export function checkApp(app: App, clockLine: number, used = new Set<string>()): Diagnostic[] {
   const diags: Diagnostic[] = [];
+  if (app.kind === "platform") return diags; // checked while parsing (its functions and examples)
   const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
   check(app, err, warn, clockLine, used);

@@ -1,0 +1,70 @@
+app SpecsApi {
+  "Keeps specs that pass the Intent checker; what it records about each is computed here, never taken from the sender."
+}
+
+profile api
+
+import std.crypto
+import intent.tools
+
+record Entry {
+  name: Text
+  kind: Text
+  digest: Text                 # the SHA-256 of the source
+  sha: Text                    # the digest intent publish records
+  names: Int                   # how many public names it has
+  examples: Int
+}
+
+record Refusal {
+  error: Text
+  problems: List Text
+}
+
+state {
+  stored entries: List Entry = []
+}
+
+endpoint submit POST "/specs" {
+  body source: Text
+  answers 201 Entry
+  answers 422 Refusal
+  if the @check of the given @source is not @ok {
+    answer 422 with a @Refusal with @error = "The spec does not pass the checker" and @problems = the @problems of that result
+  }
+  if an @Entry in @entries has the @name of that result as its @name {
+    - remove that entry from @entries
+  }
+  - add an @Entry to the end of @entries with @name, @kind and @sha from that result, @digest = the @sha256 of the given @source, @names = the number of its @api and @examples = the number of its @examples
+  answer 201 with the new entry
+}
+
+endpoint get GET "/specs/{name}" {
+  path name: Text
+  answers 200 Entry
+  answers 404 Problem
+  if no entry in @entries has that @name {
+    answer 404 "No such spec"
+  }
+  answer 200 with that entry
+}
+
+example "a spec that checks is kept, with what was computed" {
+  call submit with source = "app Tiny {\n  \"One button.\"\n}\n\nstate {\n  count: Int = 0\n}\n\nscreen {\n  text count\n  button up \"+\"\n}\n\non click up {\n  - increase @count by 1\n}\n\nexample \"up\" {\n  click up\n  see count = \"1\"\n}\n"
+  see submit.status = 201
+  see submit.body.name = "Tiny"
+  see submit.body.kind = "app"
+  see submit.body.examples = 1
+  see submit.body.digest = "eee7a55d0d5adcfa81bda669e991aceecb075a12845ecd1104eec0c034fb51e1"
+  call get with name = "Tiny"
+  see get.status = 200
+}
+
+example "a spec that does not check is refused" {
+  call submit with source = "app Broken {\n  \"No screen.\"\n}\n"
+  see submit.status = 422
+  see submit.body.error = "The spec does not pass the checker"
+  see submit.body.problems has 1 row
+  call get with name = "Broken"
+  see get.status = 404
+}
