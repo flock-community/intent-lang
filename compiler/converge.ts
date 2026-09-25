@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } f
 import { basename, join, resolve } from "node:path";
 import type { App } from "./ast.ts";
 import { buildOnce, type BuildResult } from "./build.ts";
+import { buildDeps } from "./twin.ts";
 import { runJobsIsolated, type Action, type ExploreResult, type TraceResult, type Violation } from "./exec.ts";
 import { actionText, compare, exploreJobs, makeTraces, type Divergence } from "./fuzz.ts";
 import { ROOT, type Target } from "./gen.ts";
@@ -73,12 +74,15 @@ export async function converge(files: string[], o: ConvergeOptions): Promise<App
       const src = app ? printApp(app) : "";
       if (!app) throw new Error(`${file} does not pass the checker`);
       const name = basename(file, ".intent");
+      // The builds an app is tested against (its providers and layers), as `build` resolves them.
+      const deps = await buildDeps(app, { styled: o.styled, kit: o.kit, twin: "auto", sessions: o.traces, length: o.length, repairs: 3, log: (m) => console.log(`${name}: ${m}`) });
+      if ("problem" in deps) throw new Error(`${file}: ${deps.problem}`);
       const jobs: Promise<BuildResult & { id: string }>[] = [];
       for (const target of o.targets)
         for (let i = 1; i <= o.builds; i++) {
           const id = `${target}-${i}`;
           jobs.push(
-            run(() => buildOnce(app, basename(file), src, target, join(o.out, name, id), { styled: o.styled, kit: o.kit, log: (m) => console.log(`${name} ${id}: ${m}`) })).then((r) => ({ ...r, id })),
+            run(() => buildOnce(app, basename(file), src, target, join(o.out, name, id), { styled: o.styled, kit: o.kit, providers: deps.providers, layers: deps.layers, log: (m) => console.log(`${name} ${id}: ${m}`) })).then((r) => ({ ...r, id })),
           );
         }
       return { file, name, app, results: await Promise.all(jobs) };

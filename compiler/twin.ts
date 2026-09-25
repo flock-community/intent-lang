@@ -111,25 +111,34 @@ async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<
   return { layers };
 }
 
-export async function compileApp(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions): Promise<TwinResult> {
+/**
+ * The builds an app is tested against before it is built itself: its `tested with` providers (for
+ * a screen that makes calls) and the layers its api runs behind. `converge` resolves the same ones
+ * `build` does, so a screen-with-calls or an api behind layers converges too.
+ */
+export async function buildDeps(app: App, o: TwinOptions): Promise<{ providers?: Record<string, string>; layers?: Record<string, string> } | { problem: string }> {
   let layerDirs: Record<string, string> | undefined;
   if (app.layers?.length || app.clients?.some((c) => c.through)) {
     const r = await ensureLayers(app, o);
-    if ("problem" in r) {
-      o.log(r.problem);
-      return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: r.costUsd };
-    }
+    if ("problem" in r) return { problem: r.problem };
     layerDirs = r.layers;
   }
   let providers: Record<string, string> | undefined;
   if (hasClients(app)) {
     const p = await ensureProviders(app, o);
-    if ("problem" in p) {
-      o.log(p.problem);
-      return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: p.costUsd };
-    }
+    if ("problem" in p) return { problem: p.problem };
     providers = p.providers;
   }
+  return { providers, layers: layerDirs };
+}
+
+export async function compileApp(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions): Promise<TwinResult> {
+  const deps = await buildDeps(app, o);
+  if ("problem" in deps) {
+    o.log(deps.problem);
+    return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: 0 };
+  }
+  const { providers, layers: layerDirs } = deps;
   const key = cacheKey(specText, target, o);
   const cached = join(CACHE, key);
   const meta = existsSync(join(cached, "intent-build.json")) ? JSON.parse(readFileSync(join(cached, "intent-build.json"), "utf8")) : undefined;
