@@ -165,6 +165,12 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   ]);
   const cost = a.costUsd + b.costUsd;
   const base = { target, dir: out, cached: false, builds: [a, b], costUsd: cost };
+  // The budget stopped a compiler: do not ship a half-built twin as verified.
+  const overBudget = (r: BuildResult) => r.attempts.some((x) => x.stage === "llm" && String(x.detail).startsWith("over budget"));
+  if (overBudget(a) || overBudget(b)) {
+    o.log("stopped: over the LLM budget");
+    return { ...base, ok: false, verified: "none" };
+  }
   if (!a.ok) return { ...base, ok: false, verified: "none" };
   if (!b.ok) {
     // The probe could not find a different reading that passes every example: nothing to compare.

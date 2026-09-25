@@ -55,4 +55,5 @@ Elm error message for an undeclared status now matches TypeScript's.
    readiness check over node, the project, the lock, the toolchain and the provider); a second
    provider (Anthropic API, OpenAI-compatible) measured with converge; a probe from another vendor.
 6. **Smaller**: platforms for screens and Elm (with a parity test); `list x of Text`; plain-text
-   answers; per-screen element names; `budget` option; Spectavity adopting v35–v38 features.
+   answers; per-screen element names; ~~`budget` option~~ done (`compiler { budget N }`, stops
+   calling the LLM once the run has spent it); Spectavity adopting v35–v38 features.

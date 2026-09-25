@@ -34,14 +34,23 @@ export function provider(): Provider {
   return (chosen ??= PROVIDERS[name](model()));
 }
 
+/** What this run has spent on the LLM so far (the `budget` option is checked against it). */
+export let spentUsd = 0;
+
 export async function complete(system: string, prompt: string): Promise<LlmResult> {
+  // A run's budget (options `budget`, default 0 = no limit): once it is spent, no further call goes
+  // out, so an unattended run (converge, a script) cannot spend more than was allowed.
+  const budget = config().budget ?? 0;
+  if (budget > 0 && spentUsd >= budget) return { text: "", costUsd: 0, ms: 0, error: `over budget ($${spentUsd.toFixed(2)} of $${budget.toFixed(2)}): raise \`budget\` or INTENT_BUDGET` };
   let p: Provider;
   try {
     p = provider();
   } catch (e) {
     return { text: "", costUsd: 0, ms: 0, error: (e as Error).message };
   }
-  return p.complete(system, prompt);
+  const r = await p.complete(system, prompt);
+  spentUsd += r.costUsd;
+  return r;
 }
 
 /** The code inside the last fenced block (or the whole text when there is none). */

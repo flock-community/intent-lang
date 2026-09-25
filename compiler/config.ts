@@ -14,9 +14,10 @@ export interface CompilerConfig {
   sessions: number; // random sessions that compare a twin build
   length: number; // steps per session
   repairs: number; // how often a build that fails its checks goes back to the compiler with the problems
+  budget: number; // stop spending on the LLM after this many US dollars in this run (0: no limit)
 }
 
-export const DEFAULTS: CompilerConfig = { llm: "claude-cli", model: "claude-opus-5-5", twin: "auto", sessions: 24, length: 20, repairs: 3 };
+export const DEFAULTS: CompilerConfig = { llm: "claude-cli", model: "claude-opus-5-5", twin: "auto", sessions: 24, length: 20, repairs: 3, budget: 0 };
 
 /** The option names, what each takes, and its environment variable. */
 export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string }> = {
@@ -27,6 +28,7 @@ export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string
   sessions: { takes: "a whole number, at least 1", env: "INTENT_SESSIONS" },
   length: { takes: "a whole number, at least 1", env: "INTENT_LENGTH" },
   repairs: { takes: "a whole number, 0 or more", env: "INTENT_REPAIRS" },
+  budget: { takes: "US dollars, 0 for no limit (a run stops calling the LLM after this)", env: "INTENT_BUDGET" },
 };
 
 export type Source = "flag" | "environment" | "intent.project" | "default";
@@ -55,6 +57,11 @@ function parse(key: keyof CompilerConfig, raw: string, where: string): CompilerC
     case "repairs": {
       const n = Number(raw);
       if (!Number.isInteger(n) || n < 0) throw bad();
+      return n;
+    }
+    case "budget": {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) throw bad();
       return n;
     }
     case "targets": {

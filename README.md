@@ -118,6 +118,7 @@ compiler {
   sessions 24                # random sessions comparing a twin build
   length 20                  # steps per session
   repairs 3                  # a build that fails its checks goes back with the problems (0: stop)
+  budget 0                   # stop calling the LLM after this many US dollars (0: no limit)
 }
 ```
 

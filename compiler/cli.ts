@@ -260,7 +260,7 @@ switch (cmd) {
 
 Options (a flag wins over the environment, which wins over \`compiler { … }\` in intent.project):
   --llm <provider>   --model <name>   --target elm,ts   --twin auto|always|off
-  --sessions <n>     --length <n>     --repairs <n> (0: fail at the first problem)
+  --sessions <n>     --length <n>     --repairs <n> (0: fail at the first problem)   --budget <usd>
 Keys stay in the environment (the provider reads them), never in a file.`);
     process.exit(2);
 }

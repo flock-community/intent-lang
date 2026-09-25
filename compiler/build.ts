@@ -102,6 +102,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     if (r.error) {
       res.attempts.push({ stage: "llm", detail: r.error });
       log(`attempt ${attempt}: llm error ${r.error}`);
+      if (r.error.startsWith("over budget")) break; // no point in trying again
       continue;
     }
     writeFileSync(join(dir, `log/response-${attempt}.md`), r.text);
