@@ -1705,6 +1705,21 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (!app.screens?.length) err(s.line, "STEP", `\`see ${s.target}\` is for apps with several screens`);
         else if (s.check.is !== "eq") err(s.line, "STEP", `write \`see ${s.target} = ${s.target === "screen" ? app.screens[0].name : '"/"'}\``);
         else if (s.target === "screen" && !app.screens.some((sc) => sc.name === (s.check as { value: string }).value)) err(s.line, "UNKNOWN_NAME", `no screen \`${(s.check as { value: string }).value}\`${suggest((s.check as { value: string }).value, app.screens.map((sc) => sc.name))}`);
+        else if (s.target === "path") {
+          const value = (s.check as { value: string }).value;
+          const screen = app.screens.find((sc) => screenMatch(sc.path, value));
+          if (!screen) err(s.line, "STEP", `\`${value}\` is no screen's address (${app.screens.map((sc) => sc.path).join(", ")})`);
+          else {
+            const parts = screen.path.split("/");
+            const actual = value.split("?")[0].split("/");
+            for (const [i, part] of parts.entries()) {
+              const m = part.match(/^\{([a-z]\w*)\}$/);
+              const p = m && screen.params.find((x) => x.name === m[1]);
+              const seg = decodeURIComponent(actual[i] ?? "");
+              if (p && p.type.k === "Int" && !/^-?\d+$/.test(seg)) err(s.line, "STEP", `\`${seg}\` is not an Int for \`${m![1]}\` in ${screen.path}`);
+            }
+          }
+        }
         continue;
       }
       const cands = findEl(s.target).filter((c) => (at ? c.list && (!at.list || c.list.name === at.list) : !c.list));
