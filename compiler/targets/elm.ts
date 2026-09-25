@@ -871,7 +871,7 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
       join(dir, "glue.ts"),
       `// The JavaScript side of the Elm app: calls with fetch (through each api's client layer), answers and
 // events in, and the local clock (at the start, then every 15 seconds).
-import { fetchCall, listen, newKey, type CallDesc, type CallOut, type Outgoing } from "./calls.ts";
+import { fetchCall, gate, listen, newKey, type CallDesc, type CallOut, type Outgoing } from "./calls.ts";
 import { outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
 import { localClock } from "./clock.ts";
@@ -897,17 +897,40 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
 ` : ""}  if (!app.ports.request) return;
   let latest: Record<string, Record<string, unknown>> = {};
   let stream: { refresh: () => void } | undefined;
+  // Each call gets its idempotency key when it is made: every attempt sends the same one. The call
+  // is written to a durable outbox first, so a reload sends an unanswered call again with that key.
+  const box = outbox(${q(`intent:${app.name}:outbox`)});
+  const send = (call: CallOut) => fetchCall(endpoints, call, (alias: string, req: Outgoing) => apply(alias, req, call.config ?? undefined), call.config).then((a) => { if (!a.unknown) box.done(call.key!); app.ports.answer.send(a); });
+  // The agreement gate (\`through std.actions\`): a call with no permission waits for approval; a
+  // rejected one is dropped. The permissions arrive on the \`through\` port after every update.
+  const held: CallOut[] = [];
+  const decide = (call: CallOut) => gate(latest[call.endpoint.split(".")[0]], call.endpoint, endpoints.find((e) => e.name === call.endpoint)?.external);
+  const release = () => {
+    for (let i = held.length - 1; i >= 0; i--) {
+      const call = held[i];
+      const how = decide(call);
+      if (how === "hold" || how === "stop") continue;
+      held.splice(i, 1);
+      if (how === "reject") continue;
+      box.put(call);
+      send(call);
+    }
+  };
   // The client layers' config arrives from the app after every update (and after init): reopen the streams it changes.
   if (app.ports.through)
     app.ports.through.subscribe((t: Record<string, Record<string, unknown>>) => {
       latest = t;
       stream?.refresh();
+      release();
     });
-  // Each call gets its idempotency key when it is made: every attempt sends the same one. The call
-  // is written to a durable outbox first, so a reload sends an unanswered call again with that key.
-  const box = outbox(${q(`intent:${app.name}:outbox`)});
-  const send = (call: CallOut) => fetchCall(endpoints, call, (alias: string, req: Outgoing) => apply(alias, req, call.config ?? undefined), call.config).then((a) => { if (!a.unknown) box.done(call.key!); app.ports.answer.send(a); });
-  app.ports.request.subscribe((c: any) => { const call = { ...c, key: newKey() } as CallOut; box.put(call); send(call); });
+  app.ports.request.subscribe((c: any) => {
+    const call = { ...c, key: newKey() } as CallOut;
+    const how = decide(call);
+    if (how === "hold") { held.push(call); return; }
+    if (how === "reject") return;
+    box.put(call);
+    send(call);
+  });
   for (const call of box.pending()) send(call);
   stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias]));
 };

@@ -138,18 +138,27 @@ export function listen(events: Record<string, string[]>, deliver: (e: { event: s
   return { refresh };
 }
 
+/** What the agreement gate decides for a call: send it, hold it for approval, drop it (rejected),
+ *  or refuse it (the emergency stop). `config` is the `std.actions` layer's params from the state. */
+export type Gate = "send" | "hold" | "reject" | "stop";
+
+export function gate(config: Record<string, unknown> | undefined, name: string, external: boolean | undefined): Gate {
+  if (!config || (!("stop" in config) && !("agree" in config))) return "send";
+  if (config.stop === true) return "stop";
+  if (!external) return "send";
+  const list = (k: string) => (Array.isArray(config[k]) ? (config[k] as string[]) : []);
+  const short = name.split(".")[1];
+  const has = (k: string) => list(k).includes(name) || list(k).includes(short);
+  if (has("rejected")) return "reject";
+  return has("agree") ? "send" : "hold";
+}
+
 /**
- * The agreement gate (`through std.actions`): while the emergency stop is on, or no standing
- * permission covers an `external` call, it does not go out; the app gets a failed answer with the
- * reason. A permission is an endpoint name ("pay.charge") in the app's state.
+ * The agreement gate's refusal: the emergency stop (the only case that is answered at once). A
+ * call with no permission is held for approval instead (`gate` returns "hold").
  */
 export function refused(config: Record<string, unknown> | undefined, name: string, external: boolean | undefined, _args: Record<string, unknown>): string | undefined {
-  if (!config || (!("stop" in config) && !("agree" in config))) return undefined;
-  if (config.stop === true) return "external calls are stopped (the emergency stop is on)";
-  if (!external) return undefined;
-  const agree = Array.isArray(config.agree) ? (config.agree as string[]) : [];
-  const short = name.split(".")[1];
-  return agree.includes(name) || agree.includes(short) ? undefined : `no standing permission covers ${name}`;
+  return gate(config, name, external) === "stop" ? "external calls are stopped (the emergency stop is on)" : undefined;
 }
 
 /**

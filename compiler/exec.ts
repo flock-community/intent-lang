@@ -4,7 +4,7 @@
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { outgoing, persist, refused, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
+import { gate, outgoing, persist, refused, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
@@ -270,10 +270,7 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
       if (res.headers?.["idempotent-replayed"] === "true") notes.push("replayed");
       return { endpoint: c.endpoint, status: res.status, body: res.body };
     };
-    // The agreement gate (`through std.actions`): a refused call does not go out, and is answered
-    // once, so the app sees a plain failure rather than `unknown`.
-    const no = mine ? refused(c.config, c.endpoint, endpoints.find((e) => e.name === c.endpoint)?.external, c.args) : undefined;
-    const answer = no ? { endpoint: c.endpoint, status: 0, error: no } : mine ? await persist(endpoints.find((e) => e.name === c.endpoint), attempt) : await attempt();
+    const answer = mine ? await persist(endpoints.find((e) => e.name === c.endpoint), attempt) : await attempt();
     return { alias, answer, events, note: notes.length ? ` (${notes.join(", ")})` : "" };
   };
   // The events a call published go to the screen right after its answer, in the order published.
@@ -297,16 +294,56 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     }
     return made;
   };
+  const held: CallOut[] = [];
+  const withKey = (c: CallOut): CallOut => (c.key ? c : { ...c, key: `${c.endpoint.split(".")[0]}-${++made}` });
+  // The agreement gate (`through std.actions`): a call with no permission waits for approval, a
+  // rejected one is dropped, and the emergency stop answers at once.
+  const gateOf = (c: CallOut) => gate(c.config, c.endpoint, endpoints.find((e) => e.name === c.endpoint)?.external);
   const settle = async (first: CallOut[] = []) => {
-    const queue: CallOut[] = [...first, ...(await raw.calls!())];
+    const queue: CallOut[] = [...first, ...(await raw.calls!())].map(withKey);
     for (let n = 0; queue.length; n++) {
       if (n >= 100) throw new Error("the calls do not settle: 100 answers in a row led to new calls");
       const c = queue.shift()!;
+      const decision = gateOf(c);
+      if (decision === "hold") {
+        held.push(c);
+        log.push(`${c.endpoint} ${stable(c.args)} → held for approval`);
+        continue;
+      }
+      if (decision === "reject") {
+        log.push(`${c.endpoint} ${stable(c.args)} → rejected`);
+        continue;
+      }
+      if (decision === "stop") {
+        log.push(`${c.endpoint} ${stable(c.args)} → stopped`);
+        await raw.send({ on: "answer", target: c.endpoint, answer: { endpoint: c.endpoint, status: 0, error: refused(c.config, c.endpoint, undefined, c.args)! } });
+        queue.push(...(await raw.calls!()));
+        continue;
+      }
       const { alias, answer, events, note } = await send(c);
       log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${note}`);
       await raw.send({ on: "answer", target: c.endpoint, answer });
       const made = await raw.calls!();
       queue.push(...(await deliverEvents(alias, events)), ...made);
+    }
+  };
+  // After an update, a held call whose endpoint was just allowed goes out (with its original key);
+  // one that was rejected is dropped. The emergency stop keeps it pending.
+  const release = async () => {
+    for (let i = held.length - 1; i >= 0; i--) {
+      const c = held[i];
+      const config = (await raw.through?.())?.[c.endpoint.split(".")[0]] as Record<string, unknown> | undefined;
+      const decision = gate(config, c.endpoint, endpoints.find((e) => e.name === c.endpoint)?.external);
+      if (decision === "hold" || decision === "stop") continue;
+      held.splice(i, 1);
+      if (decision === "reject") {
+        log.push(`${c.endpoint} ${stable(c.args)} → rejected`);
+        continue;
+      }
+      const { alias, answer, events, note } = await send(c);
+      log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${note} (approved)`);
+      await raw.send({ on: "answer", target: c.endpoint, answer });
+      await settle(await deliverEvents(alias, events));
     }
   };
   await settle();
@@ -336,6 +373,7 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
       }
       await raw.send(w);
       await settle();
+      await release();
     },
   };
 }

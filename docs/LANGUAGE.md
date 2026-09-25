@@ -1,4 +1,4 @@
-# Intent — language reference (v41)
+# Intent — language reference (v42)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -919,23 +919,25 @@ signed in gets none, as in the browser.
 **Agreement before an external call.** `through std.actions` gates the calls a screen makes: an
 endpoint the contract marks `effect external` goes out only when a standing permission covers it
 (`agree`, a list of endpoint names in the screen's state), and none goes out while the emergency
-stop is on (`stop`). A refused call never reaches the service: the screen gets a failed answer
-with the reason (`{the error}`), so it can show it, and can add the permission and try again.
-Counting and a maximum amount per permission, and a pending/approve flow, follow
-(`docs/design/effects.md`).
+stop is on (`stop`). A call with no permission is **held for approval**: it does not reach the
+service yet, and the screen can show that it is waiting. Approving adds the endpoint to `agree`
+(the harness then sends the held call, with its original key); rejecting adds it to `rejected`
+(the held call is dropped). A call while stopped is answered at once with the reason
+(`{the error}`), so the screen can show it.
 
 ```
 uses pay.paymentsApi as pay {
   tested with "apps/api/payments-api.intent"
   through std.actions {
     agree = allowed                 # List Text: the endpoints that may reach outside
+    rejected = rejected             # List Text: a person rejected these; held calls are dropped
     stop = stopped                  # Bool: the emergency stop
   }
 }
 ```
 
-A gate refusal is an answer, not a stuck call: its `else` branch carries the reason. `apps/20-approval.intent`
-shows a payment refused without a permission, let through after `approve`, and blocked by the stop.
+`apps/20-approval.intent` shows a payment held, approved, rejected and stopped. Counting and a
+maximum amount per permission follow (`docs/design/effects.md`).
 
 **What every endpoint may answer.** A service behind layers answers things its endpoints do not
 (a 401 from `std.http.apiKey`). The contract says so once, and every endpoint's answers include
@@ -1227,6 +1229,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v42: agreement, pending: a call with no standing permission is held for approval instead of
+  refused. Approving adds the endpoint to `agree` and the harness sends the held call with its
+  original key; rejecting adds it to `rejected` and the held call is dropped. `std.actions` gained
+  the `rejected` param; `apps/20-approval.intent` proves held → approved, held → rejected and the
+  stop, on both targets (25/25 sessions identical).
 
 - v41: `list x of Text` (or Int, Decimal, Bool, Date, DateTime): a list of plain values shows each
   value as a row, with no row elements to declare. `see x has N rows` checks it

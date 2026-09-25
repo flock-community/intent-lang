@@ -4,14 +4,16 @@ layer std.actions {
 }
 
 param agree: List Text = []          # the endpoints that may reach outside ("pay.charge")
+param rejected: List Text = []       # the endpoints a person rejected: a held call is dropped
 param stop: Bool = false             # the emergency stop: nothing external goes out while it is on
 
 before every call {
-  - the request goes as it is: the harness decides whether the call goes out at all
+  - the request goes as it is: the harness decides whether the call goes out at all, holds it for approval, or drops it
 }
 
 examples with {
   agree = []
+  rejected = []
   stop = false
 }
 

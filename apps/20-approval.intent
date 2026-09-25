@@ -1,5 +1,5 @@
 app Approval {
-  "A payment that only goes out once a person allows it: without a standing permission the call is refused, and an Allow button lets it through; a Stop button blocks every external call."
+  "A payment that goes out only after a person allows it: without a permission the call waits, Approve lets it through, Reject drops it, and Stop blocks every external call."
 }
 
 import pay.payments
@@ -8,20 +8,30 @@ uses pay.paymentsApi as pay {
   tested with "apps/api/payments-api.intent"
   through std.actions {
     agree = allowed
+    rejected = rejected
     stop = stopped
   }
 }
 
 state {
   allowed: List Text = []             # the endpoints that may reach outside
+  rejected: List Text = []            # the endpoints a person rejected: a held call is dropped
   stopped: Bool = false
+  waiting: Bool = false
   message: Text = ""
 }
 
 screen {
   text pass = "Yoga, 10 classes: € 125.00"
-  button buy "Pay"
-  button allow "Allow this payment"
+  button buy "Pay" {
+    enabled when not @waiting
+  }
+  button allow "Approve" {
+    enabled when @waiting
+  }
+  button reject "Reject" {
+    enabled when @waiting
+  }
   button stop "Stop everything"
   text message {
     visible when @message is not empty
@@ -29,11 +39,20 @@ screen {
 }
 
 on click buy {
+  - set @waiting to true
+  - set @message to "Waiting for approval"
   - call @pay.charge with @amount = 12500 and @description = "Yoga, 10 classes"
 }
 
 on click allow {
+  - set @waiting to false
   - add "pay.charge" to the end of @allowed
+}
+
+on click reject {
+  - set @waiting to false
+  - set @message to "Payment rejected"
+  - add "pay.charge" to the end of @rejected
 }
 
 on click stop {
@@ -41,6 +60,7 @@ on click stop {
 }
 
 on answer pay.charge {
+  - set @waiting to false
   if its status is 201 {
     - set @message to "Paid: charge {the @id in its body}"
   } else if its status is unknown {
@@ -50,15 +70,25 @@ on answer pay.charge {
   }
 }
 
-example "no permission yet" {
+example "held, then approved" {
   click buy
-  see message = "Payment failed: no standing permission covers pay.charge"
+  see message = "Waiting for approval"
+  see buy is disabled
+  see allow is enabled
+  click allow
+  see message = "Paid: charge 1"
+  see buy is enabled
+  see allow is disabled
 }
 
-example "allowed once" {
-  click allow
+example "held, then rejected" {
   click buy
-  see message = "Paid: charge 1"
+  see message = "Waiting for approval"
+  see reject is enabled
+  click reject
+  see message = "Payment rejected"
+  see buy is enabled
+  see reject is disabled
 }
 
 example "the emergency stop" {

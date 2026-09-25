@@ -216,7 +216,7 @@ function genTsEntriesCalls(app: App): { main: string; test: string } {
   const main = `import * as App from "./app.ts";
 import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
-import { fetchCall, listen, newKey, type CallOut, type Outgoing } from "./calls.ts";
+import { fetchCall, gate, listen, newKey, type CallOut, type Outgoing } from "./calls.ts";
 import { outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
 ${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
@@ -231,10 +231,32 @@ ${hasThrough(app) ? "const configFor = (alias: string) => (App.through(current) 
 // reload, a call that was never answered goes out again with the same idempotency key.
 const box = outbox(${q(`intent:${app.name}:outbox`)});
 const send = (call: CallOut, config: Record<string, unknown> | undefined) => fetchCall(callEndpoints, call, via, config).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
+${hasThrough(app) ? `const held: CallOut[] = [];
+const decide = (call: CallOut) => gate(configFor(call.endpoint.split(".")[0]), call.endpoint, callEndpoints.find((e) => e.name === call.endpoint)?.external);
 const perform = (calls: Call[]) => {
-  // Each call gets its idempotency key now, when it is made: every attempt sends the same one.
-  for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call, ${hasThrough(app) ? 'configFor(call.endpoint.split(".")[0])' : "undefined"}); }
+  for (const c of calls) {
+    const call = { ...callToJson(c), key: newKey() };
+    const how = decide(call);
+    if (how === "hold") { held.push(call); continue; }
+    if (how === "reject") continue;
+    box.put(call as CallOut & { key: string });
+    send(call, configFor(call.endpoint.split(".")[0]));
+  }
 };
+const release = () => {
+  for (let i = held.length - 1; i >= 0; i--) {
+    const call = held[i];
+    const how = decide(call);
+    if (how === "hold" || how === "stop") continue;
+    held.splice(i, 1);
+    if (how === "reject") continue;
+    box.put(call as CallOut & { key: string });
+    send(call, configFor(call.endpoint.split(".")[0]));
+  }
+};` : `const perform = (calls: Call[]) => {
+  for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call, undefined); }
+};
+const release = () => {};`}
 let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
@@ -242,6 +264,7 @@ dispatch = mount(document.getElementById("app")!, {
 ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
     for (const call of box.pending()) send(call, ${hasThrough(app) ? 'configFor(call.endpoint.split(".")[0])' : "undefined"});
     perform(r.calls);
+    release();
     return r.model;
   },
   step: (w, m) => {
@@ -250,6 +273,7 @@ ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (save
     const r = App.update(e, m${c ? ", localClock()" : ""});
 ${st ? "    save(KEY, App.data(r.model), storedFields);\n" : ""}    current = r.model;
     perform(r.calls);
+    release();
     stream?.refresh();
     return r.model;
   },

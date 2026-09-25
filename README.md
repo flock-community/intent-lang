@@ -505,13 +505,14 @@ it when the answer arrives (in both targets' browser entries, `runtime/ts/outbox
 reload sends an unanswered call again with the same key instead of losing it or making a new one.
 `tests/outbox.test.ts` covers the store, and the generated entries are compiled for both targets.
 
-**Agreement** (v40, first slice). `through std.actions { agree = allowed  stop = stopped }` gates a
-screen's calls: an `effect external` endpoint goes out only when it is in `allowed` (a `List Text` in
-the screen's state), and none goes out while `stopped` is on. A refused call never reaches the
-service and is answered with the reason, so the app shows it and can add the permission and try
-again. `apps/20-approval.intent` proves a payment refused, allowed and stopped, on both targets
-(25/25 sessions identical). Pending / approve / edit / reject and per-permission counts and amounts
-are next.
+**Agreement** (v40–v42). `through std.actions { agree = allowed  rejected = rejected  stop = stopped }`
+gates a screen's calls: an `effect external` endpoint goes out only when it is in `allowed` (a
+`List Text` in the screen's state). With no permission the call is **held for approval** — the
+service never sees it yet, and the screen can show it is waiting; Approve adds the endpoint to
+`allowed` and the harness sends the held call with its original key, Reject adds it to `rejected`
+and the call is dropped. None goes out while `stopped` is on. `apps/20-approval.intent` proves held
+→ approved, held → rejected and stopped, on both targets (25/25 sessions identical). Per-permission
+counts and amounts are next.
 
 **Undo** (v38). A screen takes an effect back with `undo @pay.charge`: it keeps the original
 answer in state (`charge: Charge or nothing`), and the harness calls the contract's `undone by`

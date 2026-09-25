@@ -26,11 +26,10 @@ Elm error message for an undeclared status now matches TypeScript's.
 
 ## Then, in order
 
-1. **Agreement** (`std.actions`, effects design): ~~the gate~~ done (v40: `through std.actions`
-   with `agree`/`stop`; a refused external call is answered with the reason, never sent;
-   `apps/20-approval.intent`, both targets, 25/25 identical). Next: external calls wait for
-   approve / edit / reject (pending in stored state), standing permissions with count, period and
-   amount, four eyes.
+1. **Agreement** (`std.actions`, effects design): ~~the gate and pending / approve / reject~~ done
+   (v40–v42: `through std.actions` with `agree`/`rejected`/`stop`; a held call is sent with its
+   original key on approve and dropped on reject; `apps/20-approval.intent`, both targets, 25/25
+   identical). Next: standing permissions with count, period and amount; four eyes.
 2. **Durable outbox**: ~~a pending call and its key survive a restart~~ done (`runtime/ts/outbox.ts`:
    a call is written with its key before it goes out, cleared on the answer, and re-sent after a
    reload with the same key; wired into both targets' browser entries, tested in

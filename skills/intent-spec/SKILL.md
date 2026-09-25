@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v41** (see the changelog at the end of
+Language version this skill matches: **v42** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -310,11 +310,13 @@ arguments from that answer, so you never reassemble a refund. Handle the undo's 
 not refund twice: charge, then `steer pay lose answer`, then click refund and see one refund
 (`apps/18-checkout.intent`).
 
-When a person must agree first, add `through std.actions { agree = allowed  stop = stopped }` under
-`uses`: an `effect external` call goes out only when its endpoint is in `allowed` (a `List Text` in
-the screen's state), and none goes out while `stopped` is true. A refused call is answered with the
-reason, so show it in the `else` branch and give the user a button that adds the endpoint to
-`allowed`; prove refused / allowed / stopped (`apps/20-approval.intent`).
+When a person must agree first, add `through std.actions { agree = allowed  rejected = rejected
+stop = stopped }` under `uses`: an `effect external` call goes out only when its endpoint is in
+`allowed` (a `List Text` in the screen's state); with no permission it waits. Give the user an
+Approve button that adds the endpoint to `allowed` (the harness then sends the held call with its
+original key) and a Reject button that adds it to `rejected` (the held call is dropped); none goes
+out while `stopped` is true. Prove held → approved, held → rejected and stopped
+(`apps/20-approval.intent`).
 
 ## 5f. A screen that uses an API
 
