@@ -49,7 +49,8 @@ Elm error message for an undeclared status now matches TypeScript's.
      (`compiler/fix.ts`, `tests/fix.test.ts`).
 4. **Incremental builds** (`docs/design/incremental.md`): units, dependencies, `@spec` regions,
    resume a stopped twin build; measure on recorded edits before making it the default.
-5. **Distribution**: an `intent` bin and npm package; `intent doctor`; a second provider
-   (Anthropic API, OpenAI-compatible) measured with converge; a probe from another vendor.
+5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done (`bin` in package.json, a
+   readiness check over node, the project, the lock, the toolchain and the provider); a second
+   provider (Anthropic API, OpenAI-compatible) measured with converge; a probe from another vendor.
 6. **Smaller**: platforms for screens and Elm (with a parity test); `list x of Text`; plain-text
    answers; per-screen element names; `budget` option; Spectavity adopting v35–v38 features.

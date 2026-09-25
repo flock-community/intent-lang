@@ -84,6 +84,7 @@ reference on purpose: whoever changes the language updates the skill in the same
 
 ```sh
 npm install
+node compiler/cli.ts doctor                         # is this machine and project ready to build?
 node compiler/cli.ts check apps/*.intent            # syntax + consistency checker (add --json for editors)
 node compiler/cli.ts fix apps/03-tipsplit.intent     # the checker's mechanical fixes (adds `language v39`)
 node compiler/cli.ts review apps/09-board.intent    # what does the spec leave to defaults? (1 LLM call)
@@ -96,6 +97,9 @@ npm test                                            # checker regression + Elm/T
 ```
 
 Open any build's `index.html` directly in a browser.
+
+`npm link` puts the same commands behind `intent` (the package's `bin` entry); `intent doctor`
+says whether this machine and project are ready.
 
 ### Configuration
 

@@ -1,8 +1,10 @@
+#!/usr/bin/env node
 // intent CLI: check | build | converge
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { basename, resolve } from "node:path";
 import { formatDiagnostics } from "./parse.ts";
-import { load as loadSpec, sha, writeLock } from "./load.ts";
+import { compilerPins, load as loadSpec, readCompilerLock, sha, writeLock } from "./load.ts";
 import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
 import { existsSync, writeFileSync } from "node:fs";
@@ -16,6 +18,7 @@ import { review } from "./review.ts";
 import { closeBrowser } from "./browser.ts";
 import { config, configWithSources, OPTIONS, setFlags } from "./config.ts";
 import { TARGETS } from "./targets/index.ts";
+import { bin } from "./tools.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -132,6 +135,29 @@ switch (cmd) {
     }
     process.exit(flags.check && changed ? 1 : 0);
   }
+  case "doctor": {
+    // Is this machine and project ready to build? Nothing is guessed: each line says what was found.
+    const ok: boolean[] = [];
+    const line = (name: string, good: boolean, detail: string) => {
+      ok.push(good);
+      console.log(`${good ? "ok  " : "MISS"} ${name.padEnd(9)} ${detail}`);
+    };
+    const major = Number(process.versions.node.split(".")[0]);
+    line("node", major >= 22, `v${process.versions.node}${major >= 22 ? "" : " (22+ can run the .ts sources directly)"}`);
+    const project = readProject();
+    const locked = existsSync(resolve("intent.lock"));
+    line("project", !!project || locked, project ? "intent.project / intent.lock found" : locked ? "intent.lock found" : "none here (run `intent lock` to start one)");
+    const pins = compilerPins();
+    const lock = readCompilerLock();
+    line("language", !lock.language || pins.language === lock.language, lock.language && pins.language !== lock.language ? `${pins.languageVersion} (intent.lock is older: run \`intent lock\`)` : `${pins.languageVersion}`);
+    line("model", !lock.model || pins.model === lock.model, lock.model && pins.model !== lock.model ? `${pins.model} (intent.lock pins ${lock.model})` : pins.model);
+    for (const t of ["elm", "esbuild"]) line(t, existsSync(bin(t)), existsSync(bin(t)) ? bin(t) : "not installed (npm install)");
+    const c = config();
+    const found = c.llm === "claude-cli" ? spawnSync("which", ["claude"], { encoding: "utf8" }).status === 0 : true;
+    line("llm", found, `${c.llm}${c.llm === "claude-cli" ? (found ? " (claude in PATH)" : " (claude not in PATH: run `claude login`, or set ANTHROPIC_API_KEY)") : ""}`);
+    console.log(ok.every(Boolean) ? "\nintent looks ready." : "\nsomething above needs attention.");
+    process.exit(ok.every(Boolean) ? 0 : 1);
+  }
   case "lock": {
     const rows = writeLock(args.map((f) => resolve(f)));
     for (const r of rows) console.log(`locked ${r.name} sha256:${r.sha}  ${r.file}`);
@@ -229,6 +255,7 @@ switch (cmd) {
                                            stop when the two compilers disagree
   intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N] [--out dir] [--tag name]
   intent reanalyse <file.intent>... --out <earlier run dir>   re-test existing builds
+  intent doctor                            is this machine ready to build?
   intent config                            the compiler's options and where each comes from
 
 Options (a flag wins over the environment, which wins over \`compiler { … }\` in intent.project):

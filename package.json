@@ -2,6 +2,9 @@
   "name": "intentlang",
   "private": true,
   "type": "module",
+  "bin": {
+    "intent": "compiler/cli.ts"
+  },
   "scripts": {
     "intent": "node compiler/cli.ts",
     "check": "node compiler/cli.ts check apps/*.intent",
