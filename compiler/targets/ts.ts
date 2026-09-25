@@ -216,7 +216,8 @@ function genTsEntriesCalls(app: App): { main: string; test: string } {
   const main = `import * as App from "./app.ts";
 import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
-import { fetchCall, listen, newKey, type Outgoing } from "./calls.ts";
+import { fetchCall, listen, newKey, type CallOut, type Outgoing } from "./calls.ts";
+import { outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
 ${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
@@ -226,15 +227,20 @@ let dispatch: (w: Wire) => void = () => {};
 let current: App.Model;
 // Every call and event stream goes through its api's client layer, with the config from the current state.
 const via = (alias: string, req: Outgoing) => apply(alias, req, ${configOf});
+// Calls are written to a durable outbox before they go out and cleared when answered: after a
+// reload, a call that was never answered goes out again with the same idempotency key.
+const box = outbox(${q(`intent:${app.name}:outbox`)});
+const send = (call: CallOut) => fetchCall(callEndpoints, call, via).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
 const perform = (calls: Call[]) => {
   // Each call gets its idempotency key now, when it is made: every attempt sends the same one.
-  for (const c of calls) fetchCall(callEndpoints, { ...callToJson(c), key: newKey() }, via).then((a) => dispatch({ on: "answer", target: a.endpoint, answer: a }));
+  for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call); }
 };
 let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
     const r = App.init(${c ? "localClock()" : ""});
 ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
+    for (const call of box.pending()) send(call);
     perform(r.calls);
     return r.model;
   },
@@ -466,6 +472,7 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
   if (hasClients(app)) {
     copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
     copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+    copyFileSync(join(ROOT, "runtime/ts/outbox.ts"), join(dir, "outbox.ts"));
     writeThrough(app, dir, layerDirs);
   }
   const spec = genTsSpec(app);

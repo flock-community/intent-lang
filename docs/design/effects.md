@@ -2,12 +2,13 @@
 
 Status: v33 built the declarations (`effect external`, `undone by`, the checks). v34 built
 "once": the service remembers keys, screens send a key per call and send it again, `unknown`
-answers, and the faults `lose request`, `lose answer`, `duplicate` and `fail n`. Not built yet:
-the durable outbox (a pending call and its key surviving a restart of the screen), the faults
-`slow`, `restart after effect` and `expire keys`, retries over 409-while-running (a service here
-answers one request at a time, so it never happens), undo and agreement. This design follows the
-practice of people and systems that handle effects for a living (sources at the end); where it
-departs from them, it says why.
+answers, and the faults `lose request`, `lose answer`, `duplicate` and `fail n`. v38 built undo.
+Now built: the durable outbox (`runtime/ts/outbox.ts`): a call is written down with its key before
+it goes out and cleared when answered, and a reload sends an unanswered call again with that key.
+Not built yet: the faults `slow`, `restart after effect` and `expire keys`, retries over
+409-while-running (a service here answers one request at a time, so it never happens), and
+agreement. This design follows the practice of people and systems that handle effects for a living
+(sources at the end); where it departs from them, it says why.
 
 Most of what an app does can be taken back: a changed field, a new row. Some actions reach
 outside and cannot be taken back by changing state: charging a card, sending an email, booking

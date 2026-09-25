@@ -864,13 +864,15 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
     for (const f of ["store.ts", "api.ts", "fmt.ts"]) copyFileSync(join(ROOT, "runtime/ts", f), join(dir, f));
     writeFileSync(join(dir, "src/Worker.elm"), hasScreens(app) ? elmWorkerPorts(app).replace("\nimport App\n", "\nimport AppNav as App\n") : elmWorkerPorts(app));
     copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+    copyFileSync(join(ROOT, "runtime/ts/outbox.ts"), join(dir, "outbox.ts"));
     copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
     writeThrough(app, dir, layerDirs);
     writeFileSync(
       join(dir, "glue.ts"),
       `// The JavaScript side of the Elm app: calls with fetch (through each api's client layer), answers and
 // events in, and the local clock (at the start, then every 15 seconds).
-import { fetchCall, listen, newKey, type CallDesc, type Outgoing } from "./calls.ts";
+import { fetchCall, listen, newKey, type CallDesc, type CallOut, type Outgoing } from "./calls.ts";
+import { outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
 import { localClock } from "./clock.ts";
 import { load, save } from "./store.ts";
@@ -901,8 +903,12 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
       latest = t;
       stream?.refresh();
     });
-  // Each call gets its idempotency key when it is made: every attempt sends the same one.
-  app.ports.request.subscribe((c: any) => fetchCall(endpoints, { ...c, key: newKey() }, (alias: string, req: Outgoing) => apply(alias, req, c.config ?? undefined)).then((a) => app.ports.answer.send(a)));
+  // Each call gets its idempotency key when it is made: every attempt sends the same one. The call
+  // is written to a durable outbox first, so a reload sends an unanswered call again with that key.
+  const box = outbox(${q(`intent:${app.name}:outbox`)});
+  const send = (call: CallOut) => fetchCall(endpoints, call, (alias: string, req: Outgoing) => apply(alias, req, call.config ?? undefined)).then((a) => { if (!a.unknown) box.done(call.key!); app.ports.answer.send(a); });
+  app.ports.request.subscribe((c: any) => { const call = { ...c, key: newKey() } as CallOut; box.put(call); send(call); });
+  for (const call of box.pending()) send(call);
   stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias]));
 };
 `,

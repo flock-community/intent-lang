@@ -495,6 +495,11 @@ the provider's replay switched off, that example failed at its line (charge 2 in
 The tickets and desk screens and the notices and desk APIs rebuilt twin-verified with faults and
 duplicate requests in their random sessions.
 
+**Durable outbox.** A screen writes a call to an outbox with its key before it goes out and clears
+it when the answer arrives (in both targets' browser entries, `runtime/ts/outbox.ts`), so a page
+reload sends an unanswered call again with the same key instead of losing it or making a new one.
+`tests/outbox.test.ts` covers the store, and the generated entries are compiled for both targets.
+
 **Undo** (v38). A screen takes an effect back with `undo @pay.charge`: it keeps the original
 answer in state (`charge: Charge or nothing`), and the harness calls the contract's `undone by`
 endpoint with the arguments bound from that answer, through the effectively-once path with its
