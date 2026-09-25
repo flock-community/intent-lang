@@ -11,5 +11,5 @@
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["compiler/*.ts", "runtime/ts/*.ts", "tests/**/*.ts"]
+  "include": ["compiler/**/*.ts", "runtime/ts/*.ts", "tests/**/*.ts"]
 }

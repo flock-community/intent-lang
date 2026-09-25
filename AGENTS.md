@@ -123,5 +123,8 @@ goes there first.
 `README.md` covers usage, architecture and results. `docs/LANGUAGE.md` is the reference;
 it is also the compiler's prompt, so keep it accurate. `apps/` holds the example specs.
 `compiler/` holds the parser/checker, code generation, the LLM stages, the drivers and the
-pipeline. `runs/history.jsonl` holds every measured round.
+pipeline. Target languages are modules in `compiler/targets/` (one interface, `target.ts`) and
+LLM providers in `compiler/providers/` (`llm.ts`): a new language or provider is a module and a
+line in a registry, and must pass the same examples, `always` rules and twin builds, with a
+converge run recorded for it. `runs/history.jsonl` holds every measured round.
 Checks: `npm test`, `npx tsc --noEmit -p .`, `node compiler/cli.ts check apps/*.intent`.

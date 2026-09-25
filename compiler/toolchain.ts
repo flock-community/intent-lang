@@ -1,75 +1,15 @@
 // Compile a scaffolded build directory with the real target toolchain.
-import { run as proc } from "./proc.ts";
-import { copyFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { ROOT, type Target } from "./gen.ts";
-
-const bin = (name: string) => join(ROOT, "node_modules/.bin", name);
-
-// A build may live anywhere (a project outside the installation): packages the runtime needs (preact,
-// Node's types) come from the installation, so nothing depends on where the build directory is.
-const env = { ...process.env, NODE_PATH: [join(ROOT, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(":") };
-
-async function run(cmd: string, args: string[], cwd: string): Promise<{ ok: boolean; out: string }> {
-  const r = await proc(cmd, args, { cwd, timeoutMs: 180_000, env });
-  return { ok: r.ok, out: `${r.stdout}${r.stderr}`.trim() };
-}
+import type { Target } from "./gen.ts";
+import { targetModule } from "./targets/index.ts";
+import { bin, clean, run } from "./tools.ts";
 
 /** Returns compiler errors (empty string when the build compiled). */
-export async function compile(target: Target, dir: string): Promise<string> {
-  if (target === "elm") {
-    const w = await run(bin("elm"), ["make", "src/Worker.elm", "--optimize", "--output=worker.js"], dir);
-    if (!w.ok) return clean(w.out);
-    copyFileSync(join(dir, "worker.js"), join(dir, "worker.cjs"));
-    const m = await run(bin("elm"), ["make", "src/Main.elm", "--optimize", "--output=main.js"], dir);
-    if (!m.ok) return clean(m.out);
-    if (existsSync(join(dir, "through.ts"))) {
-      // The client layers, for the test driver.
-      const t = await run(bin("esbuild"), ["through.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=through.mjs", "--log-level=error"], dir);
-      if (!t.ok) return clean(t.out);
-    }
-    if (existsSync(join(dir, "glue.ts"))) {
-      // Apps that make calls: the fetch glue for the browser.
-      const g = await run(bin("esbuild"), ["glue.ts", "--bundle", "--format=iife", "--outfile=glue.js", "--log-level=error"], dir);
-      if (!g.ok) return clean(g.out);
-    }
-    return "";
-  }
-  const t = await run(bin("tsc"), ["-p", "."], dir);
-  if (!t.ok) return clean(t.out);
-  const b1 = await run(bin("esbuild"), ["main.ts", "--bundle", "--format=iife", "--outfile=main.js", "--log-level=error"], dir);
-  if (!b1.ok) return clean(b1.out);
-  const b2 = await run(bin("esbuild"), ["test-entry.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=test.mjs", "--log-level=error"], dir);
-  if (!b2.ok) return clean(b2.out);
-  if (existsSync(join(dir, "through.ts"))) {
-    // The client layers, for the test driver.
-    const t = await run(bin("esbuild"), ["through.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=through.mjs", "--log-level=error"], dir);
-    if (!t.ok) return clean(t.out);
-  }
-  return "";
-}
-
-// Drop progress noise, keep the messages.
-function clean(s: string): string {
-  return s
-    .split("\n")
-    .filter((l) => !/^(Compiling|Success|Dependencies|Starting|Verifying|Building)/.test(l.trim()))
-    .join("\n")
-    .trim()
-    .slice(0, 6000);
-}
+export const compile = (target: Target, dir: string): Promise<string> => targetModule(target).compile(dir);
 
 /** Styled builds: the browser bundle with the LLM-written Look, plus Tailwind. */
 export async function compileStyled(target: Target, dir: string): Promise<string> {
-  if (target === "elm") {
-    const m = await run(bin("elm"), ["make", "src/Main.elm", "--optimize", "--output=main.js"], dir);
-    if (!m.ok) return clean(m.out);
-  } else {
-    const t = await run(bin("tsc"), ["-p", "."], dir);
-    if (!t.ok) return clean(t.out);
-    const b = await run(bin("esbuild"), ["main.tsx", "--bundle", "--format=iife", "--outfile=main.js", "--log-level=error"], dir);
-    if (!b.ok) return clean(b.out);
-  }
+  const built = await targetModule(target).compileStyled(dir);
+  if (built) return built;
   const tw = await run(bin("tailwindcss"), ["-i", "theme.css", "-o", "style.css"], dir);
   return tw.ok ? "" : clean(tw.out);
 }

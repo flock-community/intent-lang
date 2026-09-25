@@ -9,6 +9,9 @@ import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
 import { varyOther } from "./fuzz.ts";
+import { targetModule } from "./targets/index.ts";
+import type { Session } from "./targets/target.ts";
+import type { Target } from "./gen.ts";
 import { difference, stable } from "./diff.ts";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -75,14 +78,6 @@ function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]
   }
 }
 
-interface Session {
-  observe(): Promise<Obs>;
-  send(w: object): Promise<void>;
-  calls?(): Promise<CallOut[]>;
-  through?(): Promise<Record<string, Record<string, unknown>>>;
-  data?(): Promise<unknown>;
-  clock?(): Promise<{ now: string; today: string }>;
-}
 
 /**
  * Apps that make calls (\`providers.json\` in the build): after every event, the calls it made are
@@ -277,62 +272,8 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
 }
 
 
-async function openRawSession(dir: string, target: string, clock?: { now: string; today: string }): Promise<Session> {
-  if (target === "ts") {
-    const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
-    const s = mod.start(clock);
-    return { observe: async () => s.observe(), send: async (w) => s.send(w), calls: async () => (s.calls ? s.calls() : []), through: async () => (s.through ? s.through() : {}), data: async () => (s.data ? s.data() : undefined) };
-  }
-  const require = createRequire(import.meta.url);
-  const { Elm } = require(join(dir, "worker.cjs"));
-  // A worker that takes flags (the clock, or nothing) says so in its type.
-  const takesFlags = readFileSync(join(dir, "src/Worker.elm"), "utf8").includes("Program D.Value");
-  const app = takesFlags ? Elm.Worker.init({ flags: clock ?? null }) : Elm.Worker.init();
-  let last: Obs | undefined;
-  let made: CallOut[] = [];
-  let through: Record<string, Record<string, unknown>> = {};
-  let data: unknown;
-  let waiting: ((v: Obs) => void) | undefined;
-  app.ports.observe.subscribe((v: Obs) => {
-    // Apps that make calls observe { screen, calls }.
-    if (v && v.screen) {
-      made.push(...(v.calls ?? []));
-      if (v.data !== undefined) data = v.data;
-      if (v.through) through = v.through;
-      v = v.screen;
-    }
-    last = v;
-    waiting?.(v);
-  });
-  // Elm delivers port messages asynchronously: wait for the observation that answers this event.
-  const deliver = (w: object) =>
-    new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Elm worker produced no observation within 5s")), 5000);
-      waiting = () => {
-        clearTimeout(timer);
-        waiting = undefined;
-        resolve();
-      };
-      try {
-        app.ports.act.send(w);
-      } catch (e) {
-        clearTimeout(timer);
-        reject(e);
-      }
-    });
-  await deliver({ on: "noop" });
-  return {
-    observe: async () => last,
-    send: deliver,
-    calls: async () => {
-      const out = made;
-      made = [];
-      return out;
-    },
-    through: async () => through,
-    data: async () => data,
-  };
-}
+/** A session on a compiled build, as its target opens it. */
+const openRawSession = (dir: string, target: string, clock?: { now: string; today: string }): Promise<Session> => targetModule(target as Target).open(dir, clock);
 
 // ---------------------------------------------------------------- observation helpers
 

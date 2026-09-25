@@ -475,8 +475,15 @@ docs/LANGUAGE.md      language reference (also sent to the LLM)
 apps/*.intent         example specs, easy → hard
 compiler/
   parse.ts            parser + checker (syntax checker, lints)
-  gen.ts              deterministic codegen: types, Screen, Event, glue, entry points
-  prompt.ts, llm.ts   the compiler prompt; one pure `claude -p` call
+  gen.ts              deterministic codegen: the door to the targets
+  targets/            one module per target language, behind one interface (target.ts):
+    elm.ts, ts.ts       generated interface, entries, prompt rules, toolchain, test session
+    shared.ts           what every target shares (folders, naming, events, data, layers)
+    index.ts            the targets there are
+  prompt.ts           the compiler prompt (language-neutral; each target adds its own part)
+  llm.ts              the LLM as a provider module (INTENT_LLM, INTENT_MODEL)
+  providers/          one module per LLM provider: claude-cli.ts (the Claude Code CLI)
+  tools.ts            the toolchains (elm, tsc, esbuild), from the installation
   build.ts            one build: scaffold → LLM → compile → examples → invariants, repair loop
   exec.ts             runs examples / sessions against a build (Elm worker or TS bundle)
   fuzz.ts             blind + guided sessions, divergence analysis
@@ -491,7 +498,7 @@ compiler/
   print.ts            canonical printer (`intent expand`): what the LLM reads
   twin.ts             `intent build`: twin compilation, the build cache, providers first
   api.ts              api profile harness: typed handlers, router, test client, `intent client`
-  calls.ts            screens that call APIs: Call / answer types, JSON, answer messages
+  calls.ts            screens that call APIs: endpoints, events, client layers (targets write the types)
   layer.ts            layers: generated interface, stub app, driver, random requests
   registry.ts         `intent install` / `intent publish`
 lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets

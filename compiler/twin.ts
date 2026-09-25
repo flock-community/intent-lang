@@ -49,7 +49,8 @@ export interface TwinResult {
 let harness: string | undefined;
 function harnessDigest(): string {
   const files = [
-    ...["gen.ts", "calls.ts", "api.ts", "layer.ts", "prompt.ts", "build.ts", "exec.ts", "diff.ts", "invariants.ts", "toolchain.ts", "styled.ts"].map((f) => join(ROOT, "compiler", f)),
+    ...["gen.ts", "calls.ts", "api.ts", "layer.ts", "prompt.ts", "build.ts", "exec.ts", "diff.ts", "invariants.ts", "toolchain.ts", "tools.ts", "styled.ts"].map((f) => join(ROOT, "compiler", f)),
+    ...readdirSync(join(ROOT, "compiler/targets")).map((f) => join(ROOT, "compiler/targets", f)),
     ...readdirSync(join(ROOT, "runtime/ts")).map((f) => join(ROOT, "runtime/ts", f)),
     ...readdirSync(join(ROOT, "runtime/elm")).map((f) => join(ROOT, "runtime/elm", f)),
   ];
