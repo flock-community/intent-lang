@@ -33,7 +33,8 @@ Elm error message for an undeclared status now matches TypeScript's.
 3. **From the v36 score** (`docs/reviews/scores/v36.md`):
    - stored-data migration (a record change must not silently reset data) and identity/references
      between records (replacing `the ticket whose @id is @id`);
-   - loops and lookups as parser forms with a checked "none" case;
+   - ~~loops as a parser form~~ done (v39: `for each @x in @xs where … { … }`; the notices API
+     uses it); lookups ("the @xs where …, ordered by …", with a checked none case) still open;
    - ~~twin-compile the `always` checks~~ done (`invariants-probe.mjs`: a second, independent
      reading, compared on the app's data; a disagreement stops the build and names the sentence);
    - ~~put APIs and screens-with-calls in `converge`~~ done (v38: `buildDeps` resolves providers

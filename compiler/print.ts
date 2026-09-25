@@ -109,7 +109,10 @@ function body(b: { body?: Stmt[]; steps: string[] }, ind: string): string[] {
       if (s.k === "step") out.push(`${i}- ${s.text}`);
       else if (s.k === "answer") out.push(`${i}answer ${s.text}`);
       else if (s.k === "stop") out.push(`${i}stop`);
-      else
+      else if (s.k === "for") {
+        out.push(`${i}for each @${s.name} in ${s.list}${s.where ? ` where ${s.where}` : ""}`);
+        walk(s.body, i + "  ");
+      } else
         s.branches.forEach((br, n) => {
           out.push(`${i}${br.cond === undefined ? "else" : `${n ? "else if" : "if"} ${br.cond}`}`);
           walk(br.body, i + "  ");

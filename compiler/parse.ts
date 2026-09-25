@@ -679,6 +679,7 @@ function checkBodies(app: App, err: Err, warn: Err) {
       if (s.k === "step" && s.line < LINE_BASE && (/^(if|when)\s/i.test(s.text) || /^otherwise\b/i.test(s.text) || /\band stop\b/.test(s.text)))
         warn(s.line, "UNSTRUCTURED", `write control words as structure: \`if <condition> { … } else { … }\`, \`answer …\` and \`stop\` instead of "${s.text.slice(0, 40)}${s.text.length > 40 ? "…" : ""}"`);
       if (s.k === "if") s.branches.forEach((br) => walk(br.body, where, canAnswer));
+      if (s.k === "for") walk(s.body, where, canAnswer);
     });
   };
   for (const h of app.handlers) if (h.body) walk(h.body, `on ${h.verb}${h.target ? " " + h.target : ""}`, false);
@@ -720,6 +721,10 @@ function checkNothing(app: App, warn: Err) {
         const last = only.body[only.body.length - 1];
         if (s.branches.length === 1 && only.cond !== undefined && last && (last.k === "stop" || last.k === "answer"))
           for (const x of optional) if (handles(only.cond, x)) guarded = new Set([...guarded, x]);
+      }
+      if (s.k === "for") {
+        if (s.where) for (const x of reads(s.where)) if (!guarded.has(x)) hint(s.line, x, where);
+        walk(s.body, guarded, where);
       }
     }
   };
@@ -834,9 +839,12 @@ function parseStmts(children: Line[], err: (l: number, c: string, m: string, col
       const prev = out[out.length - 1];
       if (!prev || prev.k !== "if" || prev.branches[prev.branches.length - 1].cond === undefined) err(c.line, "SYNTAX", "`else` belongs right after an `if` block: `} else {`", c.indent + 1);
       else prev.branches.push({ cond: m[1], body: parseStmts(c.children, err), line: c.line });
+    } else if ((m = c.text.match(/^for\s+each\s+@?([a-z]\w*)\s+in\s+@?([a-z]\w*(?:\.[a-z]\w*)*)(?:\s+where\s+(.+))?$/))) {
+      if (!c.children.length) err(c.line, "SYNTAX", "`for each …` needs a block: `for each @x in @xs where … {` with the steps inside, then `}`", c.indent + 1);
+      out.push({ k: "for", name: m[1], list: `@${m[2]}`, where: m[3], body: parseStmts(c.children, err), line: c.line });
     } else if ((m = c.text.match(/^answer\s+(.+)$/))) out.push({ k: "answer", text: m[1], line: c.line });
     else if (c.text === "stop") out.push({ k: "stop", line: c.line });
-    else err(c.line, "SYNTAX", "a step is `- sentence`, `if <condition> {`, `} else {`, `answer …` or `stop`", c.indent + 1);
+    else err(c.line, "SYNTAX", "a step is `- sentence`, `if <condition> {`, `for each @x in @xs where … {`, `} else {`, `answer …` or `stop`", c.indent + 1);
   }
   return out;
 }
@@ -849,6 +857,7 @@ export function flattenBody(body: Stmt[]): { steps: string[]; lines: number[] } 
     for (const s of b) {
       if (s.k === "step") (steps.push(s.text), lines.push(s.line));
       else if (s.k === "answer") (steps.push(`answer ${s.text}`), lines.push(s.line));
+      else if (s.k === "for") (steps.push(`for each @${s.name} in ${s.list}${s.where ? ` where ${s.where}` : ""}`), lines.push(s.line), walk(s.body));
       else if (s.k === "if")
         for (const br of s.branches) {
           if (br.cond !== undefined) (steps.push(`if ${br.cond}`), lines.push(br.line));

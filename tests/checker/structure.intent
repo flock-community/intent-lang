@@ -1,15 +1,22 @@
 app StructureChecks {
-  "if / else / answer / stop: misplaced or unreachable steps are errors, prose control words a hint."
+  "if / else / answer / stop / for each: misplaced or unreachable steps are errors, prose control words a hint."
+}
+
+record Row {
+  id: Int
 }
 
 state {
   count: Int = 0
+  rows: List Row = []
 }
 
 screen {
   text count
   button up "+"
   button down "-"
+  button clear "Clear"
+  button nuke "Nuke"
 }
 
 on click up {
@@ -25,6 +32,17 @@ on click up {
 on click down {
   - if @count is 0, do nothing and stop    # expect: UNSTRUCTURED
   - decrease @count by 1
+}
+
+on click clear {
+  for each @row in @rows where @row.id is above 0 {
+    - remove @row from @rows
+  }
+}
+
+on click nuke {
+  for each @row in @rows                   # expect: SYNTAX
+  stop
 }
 
 example "up" {

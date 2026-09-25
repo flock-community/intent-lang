@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v38** (see the changelog at the end of
+Language version this skill matches: **v39** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -91,6 +91,11 @@ Habits that make builds identical *and* correct:
   … else`, never separate `if`s (with separate ones, more than one can apply). Use "that <item>"
   for the clicked row in a handler,
   and "its" for the row's item in a row expression (§5 of the reference).
+- **Structure, not prose, for loops:** run steps once per row with
+  `for each @notice in @notices where @notice.expiresAt is at or before @now { … }`; the loop's
+  name and its record's fields are in scope inside, rows come in the list's order, and an empty
+  list runs the block no times. To keep rows, add them to an empty result instead of removing
+  while reading.
 - **Absent is `nothing`:** a value that may be missing is `T or nothing` with default `nothing`;
   never a stand-in like `0` or `""` with a comment explaining it. Where you use it, say what
   happens when there is none: `if there is a @selected { … }`, an early

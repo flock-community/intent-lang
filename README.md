@@ -499,6 +499,13 @@ twin-verified with 6/6 examples, and a direct comparison of the two builds agree
 in 25 sessions (this also fixed the Elm error message for a status the contract does not declare,
 which had differed from TypeScript's).
 
+**Loops** (v39). Running steps once per row is structure, not prose: `for each @notice in @notices
+where @notice.expiresAt is at or before @now { … }` in a handler, an endpoint or an `every` block.
+The loop's name and its record's fields are in scope inside it; an empty list runs the block no
+times. `apps/api/notices-api.intent` replaced its one long sentence ("every notice whose … is
+removed …, and for each one publish …") with the form and built twin-verified, 4/4 examples; the
+generated service builds a keep-list instead of removing while reading.
+
 **Client layers** (v23) let a screen call a key-protected API. `through std.http.sendKey`
 under `uses`, with `key = apiKey` bound to the screen's state, adds the key to every call and
 to the event stream. The layer is a verified spec of its own, run by the runtime for both

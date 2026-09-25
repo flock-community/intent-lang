@@ -44,7 +44,10 @@ endpoint list GET "/notices" {
 }
 
 every 1m {
-  - every notice whose @expiresAt is at or before @now is removed from @notices, in the order of @notices, and for each one publish @noticeExpired with that notice
+  for each @notice in @notices where @notice.expiresAt is at or before @now {
+    - remove @notice from @notices
+    - publish @noticeExpired with @notice
+  }
 }
 
 example "a notice lives for its minutes" {

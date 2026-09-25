@@ -1,4 +1,4 @@
-# Intent — language reference (v38)
+# Intent — language reference (v39)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -956,6 +956,22 @@ Idioms the compiler reads the same way every time:
   the chain run in any case, unless a branch ended with `stop` (a handler) or `answer …` (an
   endpoint, or a layer's `before every request`). A step after `stop` or `answer` in the same
   block never runs, and is an error. An endpoint must `answer` on every path.
+- **Loops are structure, not prose.** Running steps once per row of a list is a `for each` block.
+  `where` (optional) says which rows; the loop's name is the row inside it, and the row's fields
+  are read by name (`@expiresAt`):
+
+  ```
+  every 1m {
+    for each @notice in @notices where @notice.expiresAt is at or before @now {
+      - remove @notice from @notices
+      - publish @noticeExpired with @notice
+    }
+  }
+  ```
+
+  Rows are visited in the list's own order; the block runs once per row. To keep some rows, add
+  them to an empty result (`- add @row to @keep`) rather than removing from the list being read.
+  A list that may be empty needs no guard: with no rows, the block runs no times.
 - A step written as prose control ("- if …, … and stop", "- otherwise …") still reads, but the
   checker hints (`UNSTRUCTURED`) to write it as structure.
 - **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
@@ -1179,6 +1195,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v39: loops as structure: `for each @x in @xs where <condition> { … }` in a handler, an endpoint
+  or an `every` block, with the loop's name (and its record's fields) in scope inside. It replaces
+  the long "every notice whose … is removed …, and for each one …" sentence (`apps/api/notices-api.intent`).
 
 - v38: undo on the calling side: `undo @alias.endpoint` in a handler calls the `undone by`
   endpoint with its arguments from the original call's answer, through the effectively-once path

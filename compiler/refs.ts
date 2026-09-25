@@ -23,7 +23,13 @@ export function codeParts(text: string): string[] {
 /** The same body with every sentence (steps, conditions, answers) rewritten. */
 export function mapBody(body: Stmt[], f: (text: string) => string): Stmt[] {
   return body.map((s) =>
-    s.k === "step" || s.k === "answer" ? { ...s, text: f(s.text) } : s.k === "if" ? { k: "if" as const, branches: s.branches.map((b) => ({ ...b, cond: b.cond === undefined ? undefined : f(b.cond), body: mapBody(b.body, f) })) } : s,
+    s.k === "step" || s.k === "answer"
+      ? { ...s, text: f(s.text) }
+      : s.k === "if"
+        ? { k: "if" as const, branches: s.branches.map((b) => ({ ...b, cond: b.cond === undefined ? undefined : f(b.cond), body: mapBody(b.body, f) })) }
+        : s.k === "for"
+          ? { ...s, where: s.where === undefined ? undefined : f(s.where), body: mapBody(s.body, f) }
+          : s,
   );
 }
 
@@ -100,6 +106,18 @@ export function declaredNames(app: App): Set<string> {
     }
   };
   walk(app.screen);
+  // `for each @x in @xs`: the loop's own name is declared inside it (fields of its row are
+  // already names, from the records above).
+  const loopVars = (b?: Stmt[]) => {
+    for (const s of b ?? []) {
+      if (s.k === "for") (names.add(s.name), loopVars(s.body));
+      else if (s.k === "if") for (const br of s.branches) loopVars(br.body);
+    }
+  };
+  for (const h of app.handlers) loopVars(h.body);
+  for (const ep of app.endpoints ?? []) loopVars(ep.body);
+  for (const j of app.jobs ?? []) loopVars(j.body);
+  for (const b of [app.before, app.after, app.beforeCall]) loopVars(b?.body);
   for (const r of app.records) {
     names.add(r.name);
     for (const f of r.fields) names.add(f.name);

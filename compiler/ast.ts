@@ -96,6 +96,7 @@ export interface ScreenDecl {
 export type Stmt =
   | { k: "step"; text: string; line: number }
   | { k: "if"; branches: { cond?: string; body: Stmt[]; line: number }[] } // cond undefined: `else`
+  | { k: "for"; name: string; list: string; where?: string; body: Stmt[]; line: number } // `for each @x in @xs where … { … }`
   | { k: "answer"; text: string; line: number } // `answer 404 "No such ticket"`, `answer 200 with the ticket`
   | { k: "stop"; line: number };
 
