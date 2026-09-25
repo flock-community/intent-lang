@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v40** (see the changelog at the end of
+Language version this skill matches: **v41** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -98,6 +98,8 @@ Habits that make builds identical *and* correct:
   name and its record's fields are in scope inside, rows come in the list's order, and an empty
   list runs the block no times. To keep rows, add them to an empty result instead of removing
   while reading.
+- **Lists:** `list items of Item { … }` declares the row's elements inside the block; `list tags
+  of Text` shows each value as a row and has no row block. Check either with `see x has N rows`.
 - **Absent is `nothing`:** a value that may be missing is `T or nothing` with default `nothing`;
   never a stand-in like `0` or `""` with a comment explaining it. Where you use it, say what
   happens when there is none: `if there is a @selected { … }`, an early

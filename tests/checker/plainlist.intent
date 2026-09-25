@@ -1,13 +1,18 @@
 app PlainList {
-  "A list of plain texts is not yet in the language."
+  "A list of plain values shows each value as a row; it has no row elements."
 }
 
 state {
   tags: List Text = []
+  nums: List Int = []
+  more: List Text = []
 }
 
 screen {
-  list tags of Text {                     # expect: NOT_YET
+  list tags of Text
+  list nums of Text                                    # expect: BAD_BINDING
+  list things of Bogus                                 # expect: UNKNOWN_NAME # expect: SYNTAX
+  list more of Text {                                  # expect: SYNTAX
     text value
   }
 }

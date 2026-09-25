@@ -1235,7 +1235,7 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
       err(k.line, "SYNTAX", 'expected `visible when …`, `enabled when …` or `look "…"`', k.indent + 1);
     }
   }
-  if (kind === "list" && !el.children.some((e) => e.kind !== "heading")) err(c.line, "SYNTAX", "a list needs row elements, indented under it", col);
+  if (kind === "list" && !["Text", "Int", "Decimal", "Bool", "Date", "DateTime"].includes(el.of ?? "") && !el.children.some((e) => e.kind !== "heading")) err(c.line, "SYNTAX", "a list needs row elements, indented under it", col);
   if (kind === "field" && inList) err(c.line, "NOT_YET", "a field inside a list row is not in the language yet", col);
   if (kind === "select" && inList) err(c.line, "NOT_YET", "a select inside a list row is not in the language yet", col);
   return el;
@@ -1482,8 +1482,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       if (el.kind === "list") {
         lists.push(el);
-        // A list of plain values is NOT_YET (below): its rows have no fields to check.
-        if (!PLAIN.includes(el.of!)) walk(el.children, el, new Map());
+        // A list of plain values shows each value as a row: it has no row elements to declare.
+        if (PLAIN.includes(el.of!)) {
+          if (el.children.length) err(el.line, "SYNTAX", `\`list ${el.name} of ${el.of}\` shows each value as a row; it has no row elements to declare`);
+        } else walk(el.children, el, new Map());
       } else if (el.kind === "section") walk(el.children, list, scope);
     }
   };
@@ -1529,15 +1531,11 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (!el.expr && !(list ? rowField : st || derived.has(el.name))) err(el.line, "UNKNOWN_NAME", `\`progress ${el.name}\` shows nothing: declare state or derive \`${el.name}\` (0–100), or write \`progress ${el.name} = …\``);
         break;
       case "list":
-        if (PLAIN.includes(el.of!)) {
-          err(el.line, "NOT_YET", `a list shows rows of a record, not of plain ${el.of} values (yet): declare a record with one field (\`record ${el.name[0].toUpperCase() + el.name.slice(1)}Row { value: ${el.of} }\`) and list that, or show the values joined in one text`);
-          break;
-        }
-        if (!records.has(el.of!)) err(el.line, "UNKNOWN_NAME", `unknown record \`${el.of}\`${suggest(el.of!, [...records.keys()])}`);
+        if (!PLAIN.includes(el.of!) && !records.has(el.of!)) err(el.line, "UNKNOWN_NAME", `unknown record or value type \`${el.of}\`${suggest(el.of!, [...records.keys(), ...PLAIN])}`);
         if (!el.expr) {
           const f = st;
           if (!f && !derived.has(el.name)) err(el.line, "UNKNOWN_NAME", `\`list ${el.name}\` shows nothing: declare state or derive \`${el.name}\`, or write \`list ${el.name} of ${el.of} = …\``);
-          else if (f && !(f.type.k === "List" && f.type.of.k === "Named" && f.type.of.name === el.of))
+          else if (f && !(f.type.k === "List" && typeToString(f.type.of) === el.of))
             err(el.line, "BAD_BINDING", `state \`${el.name}\` must be \`List ${el.of}\` (is ${typeToString(f.type)})`);
         }
         break;

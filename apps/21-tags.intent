@@ -1,0 +1,32 @@
+app Tags {
+  "Tags, each value in its own row."
+}
+
+state {
+  tags: List Text = []
+  draft: Text = ""
+}
+
+screen {
+  text heading = "Tags"
+  list tags of Text
+  field draft
+  button add "Add"
+}
+
+on click add {
+  if @draft, trimmed, is blank {
+    stop
+  }
+  - add @draft, trimmed, to the end of @tags
+  - set @draft to ""
+}
+
+example "adding tags" {
+  type "yoga" into draft
+  click add
+  see tags has 1 row
+  type "pilates" into draft
+  click add
+  see tags has 2 rows
+}

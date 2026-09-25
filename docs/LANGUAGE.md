@@ -1,4 +1,4 @@
-# Intent — language reference (v40)
+# Intent — language reference (v41)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -219,6 +219,9 @@ Binding (checked by the compiler):
 - `checkbox x` edits state `x` (a `Bool`), or inside a list the row item's `Bool` field
   `x`. Toggling flips it.
 - `list x` without `=` shows state or derived value `x`, which must be a list.
+- `list x of Record { … }` shows the rows of that record (the row's elements are declared inside
+  the block). `list x of Text` (or Int, Decimal, Bool, Date, DateTime) shows each value as a row:
+  it has no row elements, so `see x has N rows` is how an example checks it.
 - Element names are unique in the app, also across screens (`ticketBack`, §4i), except inside a
   list, where row elements have their own scope. Sections do not create a scope.
 - A section title and a field label are fixed text. To show a changing title, use
@@ -1224,6 +1227,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v41: `list x of Text` (or Int, Decimal, Bool, Date, DateTime): a list of plain values shows each
+  value as a row, with no row elements to declare. `see x has N rows` checks it
+  (`apps/21-tags.intent`, both targets).
 
 - v40: agreement, first slice: `through std.actions` (`lib/std/actions.intent`) gates a screen's
   calls. An `effect external` endpoint goes out only when a standing permission covers it

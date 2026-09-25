@@ -143,7 +143,7 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
       if (el.visibleWhen) return `${v} === null ? null : ${node(el, v)}`;
       return node(el, v);
     });
-  const list = (xs: string[]) => `[${xs.join(", ")}].filter((x): x is Node => x !== null)`;
+  const list = (xs: string[]) => (xs.length ? `[${xs.join(", ")}].filter((x): x is Node => x !== null)` : `([] as Node[])`);
   const node = (el: Element, v: string): string => {
     switch (el.kind) {
       case "text": return `{ k: "text", n: ${q(el.name)}, v: ${v} } as Node`;
