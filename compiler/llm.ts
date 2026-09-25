@@ -1,8 +1,9 @@
 // The LLM behind every compiler stage, as a provider module: one pure call, system prompt and
 // prompt in, text and cost out. A provider changes how code is produced, never what counts as
-// correct (the examples, `always` rules and twin builds decide that). Chosen with INTENT_LLM
-// (default: the Claude Code CLI); the model with INTENT_MODEL.
+// correct (the examples, `always` rules and twin builds decide that). Which provider and model:
+// `llm` and `model` in the compiler's options (config.ts).
 import { claudeCli } from "./providers/claude-cli.ts";
+import { config } from "./config.ts";
 
 export interface LlmResult {
   text: string;
@@ -22,14 +23,15 @@ const PROVIDERS: Record<string, (model: string) => Provider> = {
   "claude-cli": claudeCli,
 };
 
-export const MODEL = process.env.INTENT_MODEL ?? "claude-opus-5-5";
+/** The model this run compiles with (pinned in intent.lock). */
+export const model = (): string => config().model;
 
 let chosen: Provider | undefined;
 /** The provider for this run (chosen on first use, so commands without an LLM never need one). */
 export function provider(): Provider {
-  const name = process.env.INTENT_LLM ?? "claude-cli";
-  if (!PROVIDERS[name]) throw new Error(`INTENT_LLM=${name} is not a provider; there are: ${Object.keys(PROVIDERS).join(", ")}`);
-  return (chosen ??= PROVIDERS[name](MODEL));
+  const name = config().llm;
+  if (!PROVIDERS[name]) throw new Error(`llm \`${name}\` is not a provider; there are: ${Object.keys(PROVIDERS).join(", ")}`);
+  return (chosen ??= PROVIDERS[name](model()));
 }
 
 export async function complete(system: string, prompt: string): Promise<LlmResult> {

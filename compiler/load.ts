@@ -10,7 +10,7 @@ import { expandUses } from "./expand.ts";
 import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, parseSyntax, typeToString } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
-import { MODEL } from "./llm.ts";
+import { model } from "./llm.ts";
 import { printApp } from "./print.ts";
 
 export const LIB = join(PROJECT_ROOT, "lib");
@@ -72,7 +72,7 @@ export function readLockVersions(): Map<string, string> {
  */
 export function compilerPins(): { language: string; languageVersion: string; model: string } {
   const doc = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
-  return { language: sha(doc), languageVersion: doc.match(/language reference \((v\d+)/)?.[1] ?? "?", model: MODEL };
+  return { language: sha(doc), languageVersion: doc.match(/language reference \((v\d+)/)?.[1] ?? "?", model: model() };
 }
 
 export function readCompilerLock(): { language?: string; model?: string } {

@@ -96,6 +96,29 @@ npm test                                            # checker regression + Elm/T
 
 Open any build's `index.html` directly in a browser.
 
+### Configuration
+
+The compiler's options live in the `compiler` block of `intent.project`; the environment and
+command-line flags override them (flag > environment > file > default). `intent config` shows
+every option and where its value came from.
+
+```
+project our-desk
+
+compiler {
+  llm claude-cli             # the provider (compiler/providers/); INTENT_LLM, --llm
+  model claude-opus-5-5      # pinned in intent.lock; INTENT_MODEL, --model
+  targets elm, ts            # what `build` makes; services use the targets that can build them
+  twin auto                  # auto | always | off
+  sessions 24                # random sessions comparing a twin build
+  length 20                  # steps per session
+  attempts 4                 # compile attempts (the first, then repairs)
+}
+```
+
+Keys never go in a file. The `claude-cli` provider runs the Claude Code CLI with its own sign-in
+(`claude login`, or `ANTHROPIC_API_KEY` in the environment).
+
 ## How the harness makes the LLM stable
 
 The idea: **take away every degree of freedom that does not need judgement**, and check

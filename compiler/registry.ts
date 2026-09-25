@@ -21,6 +21,8 @@ export interface Project {
   name: string;
   registry?: string;
   requires: { name: string; version: string; line: number }[];
+  /** How the compiler runs (the `compiler` block: `model …`, `twin …`): option → raw value, checked in config.ts. */
+  compiler?: Record<string, string>;
 }
 
 export interface IndexEntry {
@@ -51,15 +53,19 @@ export function readProject(path = PROJECT): Project | undefined {
   if (!existsSync(path)) return undefined;
   const p: Project = { name: "", requires: [] };
   let inRequires = false;
+  let inCompiler = false;
   fromBraces(readFileSync(path, "utf8")).text.split("\n").forEach((raw, i) => {
     const line = raw.replace(/#.*$/, "").trimEnd();
     if (!line.trim()) return;
     let m: RegExpMatchArray | null;
-    if ((m = line.match(/^project\s+(\S+)$/))) (p.name = m[1]), (inRequires = false);
-    else if ((m = line.match(/^registry\s+(\S+)$/))) (p.registry = m[1]), (inRequires = false);
-    else if (line === "requires") inRequires = true;
+    if ((m = line.match(/^project\s+(\S+)$/))) (p.name = m[1]), (inRequires = inCompiler = false);
+    else if ((m = line.match(/^registry\s+(\S+)$/))) (p.registry = m[1]), (inRequires = inCompiler = false);
+    else if (line === "requires") (inRequires = true), (inCompiler = false);
+    else if (line === "compiler") (inCompiler = true), (inRequires = false), (p.compiler ??= {});
     else if (inRequires && (m = line.match(/^\s+([a-z][\w.]*)\s+(\d+(?:\.\d+){0,2})$/))) p.requires.push({ name: m[1], version: m[2], line: i + 1 });
-    else throw new Error(`intent.project:${i + 1}: expected \`project <name>\`, \`registry <folder or url>\`, or \`requires\` with \`<bundle> <version>\` lines in its block`);
+    else if (inCompiler && (m = line.match(/^\s+(llm|model|targets|twin|sessions|length|attempts)\s+(.+)$/))) p.compiler![m[1]] = m[2].trim();
+    else if (inCompiler) throw new Error(`intent.project:${i + 1}: in \`compiler\`: \`llm\`, \`model\`, \`targets\`, \`twin\`, \`sessions\`, \`length\` or \`attempts\`, then its value (keys stay in the environment)`);
+    else throw new Error(`intent.project:${i + 1}: expected \`project <name>\`, \`registry <folder or url>\`, \`requires\` with \`<bundle> <version>\` lines, or \`compiler\` with options, in its block`);
   });
   return p;
 }

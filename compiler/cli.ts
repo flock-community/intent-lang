@@ -13,6 +13,8 @@ import type { Target } from "./gen.ts";
 import { converge, reanalyse } from "./converge.ts";
 import { review } from "./review.ts";
 import { closeBrowser } from "./browser.ts";
+import { config, configWithSources, OPTIONS, setFlags } from "./config.ts";
+import { TARGETS } from "./targets/index.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -20,6 +22,14 @@ const args: string[] = [];
 for (let i = 0; i < rest.length; i++) {
   if (rest[i].startsWith("--")) flags[rest[i].slice(2)] = rest[i + 1]?.startsWith("--") || rest[i + 1] === undefined ? "true" : rest[++i];
   else args.push(rest[i]);
+}
+// The compiler's options: flags win over the environment, which wins over intent.project.
+setFlags(flags);
+try {
+  configWithSources();
+} catch (e) {
+  console.error((e as Error).message);
+  process.exit(1);
 }
 
 function load(file: string) {
@@ -135,11 +145,14 @@ switch (cmd) {
     const file = args[0];
     const { app, src } = load(file);
     if (!app) process.exit(1);
-    const targets = (flags.target ?? (app.profile === "api" ? "ts" : "elm,ts")).split(",") as Target[];
+    const c = config();
+    // A service (an api, a layer) is built by the configured targets that can build services.
+    const service = app.profile === "api" || app.kind === "layer";
+    const wanted = (c.targets ?? (service ? ["ts"] : ["elm", "ts"])) as Target[];
+    const targets = service ? (wanted.filter((t) => TARGETS[t].service).length ? wanted.filter((t) => TARGETS[t].service) : (["ts"] as Target[])) : wanted;
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
-    const twin = (flags.twin ?? "auto") as "auto" | "always" | "off";
     const results = await Promise.all(
-      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin, log: (m) => console.log(`[${t}] ${m}`) })),
+      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, sessions: c.sessions, length: c.length, attempts: c.attempts, log: (m) => console.log(`[${t}] ${m}`) })),
     );
     await closeBrowser();
     for (const r of results) {
@@ -170,6 +183,16 @@ switch (cmd) {
     console.log(`full report: ${report}`);
     process.exit(reports.every((r) => r.builds.every((b) => b.ok)) ? 0 : 1);
   }
+  case "config": {
+    // The compiler's options for this project, and where each came from.
+    const { config: c, from } = configWithSources();
+    for (const key of Object.keys(OPTIONS) as (keyof typeof OPTIONS)[]) {
+      const v = c[key];
+      const shown = Array.isArray(v) ? v.join(", ") : v === undefined ? "(per spec: elm, ts for screens; ts for services)" : String(v);
+      console.log(`${key.padEnd(9)} ${shown.padEnd(24)} ${from[key]}${OPTIONS[key].env ? `  (${OPTIONS[key].env})` : ""}`);
+    }
+    process.exit(0);
+  }
   default:
     console.log(`usage:
   intent check <file.intent>... [--json]   syntax and consistency check
@@ -183,6 +206,12 @@ switch (cmd) {
                                            auto: reuse a verified build, else compile twice and
                                            stop when the two compilers disagree
   intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N] [--out dir] [--tag name]
-  intent reanalyse <file.intent>... --out <earlier run dir>   re-test existing builds`);
+  intent reanalyse <file.intent>... --out <earlier run dir>   re-test existing builds
+  intent config                            the compiler's options and where each comes from
+
+Options (a flag wins over the environment, which wins over \`compiler { … }\` in intent.project):
+  --llm <provider>   --model <name>   --target elm,ts   --twin auto|always|off
+  --sessions <n>     --length <n>     --attempts <n>
+Keys stay in the environment (the provider reads them), never in a file.`);
     process.exit(2);
 }

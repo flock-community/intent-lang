@@ -28,6 +28,7 @@ export interface TwinOptions {
   twin: "auto" | "always" | "off"; // auto: twin unless a verified build is cached
   sessions?: number;
   length?: number;
+  attempts?: number; // compile attempts per build (the first, then repairs)
   log: (m: string) => void;
 }
 
@@ -79,7 +80,7 @@ async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: R
     const dir = join(PROJECT_ROOT, ".intent/providers", c.providerDigest ?? c.alias);
     if (!providerBuilds.has(dir)) {
       o.log(`building the provider ${c.testedWith} first`);
-      providerBuilds.set(dir, compileApp(loaded.app, c.testedWith, text, "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, log: (m) => o.log(`provider ${c.alias}: ${m}`) }));
+      providerBuilds.set(dir, compileApp(loaded.app, c.testedWith, text, "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, attempts: o.attempts, log: (m) => o.log(`provider ${c.alias}: ${m}`) }));
     }
     const r = await providerBuilds.get(dir)!;
     costUsd += r.cached ? 0 : r.costUsd;
@@ -99,7 +100,7 @@ async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<
     const dir = join(PROJECT_ROOT, ".intent/layers", `${l.layer}-${l.digest}`);
     if (!layerBuilds.has(dir)) {
       o.log(`building the layer ${l.layer} first`);
-      layerBuilds.set(dir, compileApp(l.spec!, `${l.layer}.intent`, printApp(l.spec!), "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, log: (m) => o.log(`layer ${l.alias}: ${m}`) }));
+      layerBuilds.set(dir, compileApp(l.spec!, `${l.layer}.intent`, printApp(l.spec!), "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, attempts: o.attempts, log: (m) => o.log(`layer ${l.alias}: ${m}`) }));
     }
     const r = await layerBuilds.get(dir)!;
     costUsd += r.cached ? 0 : r.costUsd;
@@ -138,7 +139,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     o.log(`cache hit (${meta.verified}-verified build of this exact spec and compiler)`);
     return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
   }
-  const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs };
+  const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs, maxAttempts: o.attempts };
   if (o.twin === "off") {
     const r = await buildOnce(app, specFile, specText, target, out, { ...opts, log: o.log });
     if (r.ok) store(out, cached, "single", key);
