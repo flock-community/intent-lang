@@ -216,7 +216,7 @@ function genTsEntriesCalls(app: App): { main: string; test: string } {
   const main = `import * as App from "./app.ts";
 import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
-import { fetchCall, gate, listen, newKey, type CallOut, type Outgoing } from "./calls.ts";
+import { fetchCall, gate, newKey, listen, type CallOut, type Outgoing, type Usage } from "./calls.ts";
 import { outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
 ${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
@@ -232,15 +232,16 @@ ${hasThrough(app) ? "const configFor = (alias: string) => (App.through(current) 
 const box = outbox(${q(`intent:${app.name}:outbox`)});
 const send = (call: CallOut, config: Record<string, unknown> | undefined) => fetchCall(callEndpoints, call, via, config).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
 ${hasThrough(app) ? `const held: CallOut[] = [];
-const decide = (call: CallOut) => gate(configFor(call.endpoint.split(".")[0]), call.endpoint, callEndpoints.find((e) => e.name === call.endpoint)?.external);
+const used: Record<string, Usage[]> = {};
+const decide = (call: CallOut) => gate(configFor(call.endpoint.split(".")[0]), call.endpoint, callEndpoints.find((e) => e.name === call.endpoint)?.external, call.args, used, Date.now());
+const letGo = (call: CallOut) => { (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call as CallOut & { key: string }); send(call, configFor(call.endpoint.split(".")[0])); };
 const perform = (calls: Call[]) => {
   for (const c of calls) {
     const call = { ...callToJson(c), key: newKey() };
     const how = decide(call);
     if (how === "hold") { held.push(call); continue; }
     if (how === "reject") continue;
-    box.put(call as CallOut & { key: string });
-    send(call, configFor(call.endpoint.split(".")[0]));
+    letGo(call);
   }
 };
 const release = () => {
@@ -250,8 +251,7 @@ const release = () => {
     if (how === "hold" || how === "stop") continue;
     held.splice(i, 1);
     if (how === "reject") continue;
-    box.put(call as CallOut & { key: string });
-    send(call, configFor(call.endpoint.split(".")[0]));
+    letGo(call);
   }
 };` : `const perform = (calls: Call[]) => {
   for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call, undefined); }

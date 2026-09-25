@@ -871,7 +871,7 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
       join(dir, "glue.ts"),
       `// The JavaScript side of the Elm app: calls with fetch (through each api's client layer), answers and
 // events in, and the local clock (at the start, then every 15 seconds).
-import { fetchCall, gate, listen, newKey, type CallDesc, type CallOut, type Outgoing } from "./calls.ts";
+import { fetchCall, gate, listen, newKey, type CallDesc, type CallOut, type Outgoing, type Usage } from "./calls.ts";
 import { outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
 import { localClock } from "./clock.ts";
@@ -904,7 +904,9 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
   // The agreement gate (\`through std.actions\`): a call with no permission waits for approval; a
   // rejected one is dropped. The permissions arrive on the \`through\` port after every update.
   const held: CallOut[] = [];
-  const decide = (call: CallOut) => gate(latest[call.endpoint.split(".")[0]], call.endpoint, endpoints.find((e) => e.name === call.endpoint)?.external);
+  const used: Record<string, Usage[]> = {};
+  const decide = (call: CallOut) => gate(latest[call.endpoint.split(".")[0]], call.endpoint, endpoints.find((e) => e.name === call.endpoint)?.external, call.args, used, Date.now());
+  const letGo = (call: CallOut) => { (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call); send(call); };
   const release = () => {
     for (let i = held.length - 1; i >= 0; i--) {
       const call = held[i];
@@ -912,8 +914,7 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
       if (how === "hold" || how === "stop") continue;
       held.splice(i, 1);
       if (how === "reject") continue;
-      box.put(call);
-      send(call);
+      letGo(call);
     }
   };
   // The client layers' config arrives from the app after every update (and after init): reopen the streams it changes.
@@ -928,8 +929,7 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
     const how = decide(call);
     if (how === "hold") { held.push(call); return; }
     if (how === "reject") return;
-    box.put(call);
-    send(call);
+    letGo(call);
   });
   for (const call of box.pending()) send(call);
   stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias]));

@@ -5,11 +5,11 @@ Status: v33 built the declarations (`effect external`, `undone by`, the checks).
 answers, and the faults `lose request`, `lose answer`, `duplicate` and `fail n`. v38 built undo.
 Now built: the durable outbox (`runtime/ts/outbox.ts`): a call is written down with its key before
 it goes out and cleared when answered, and a reload sends an unanswered call again with that key.
-v40–v42 built agreement's first two slices: the gate and pending / approve / reject. Not built
-yet: the faults `slow`, `restart after effect` and `expire keys`, retries over 409-while-running (a
-service here answers one request at a time, so it never happens), and agreement's counting,
-amounts and four eyes. This design follows the practice of people and systems that handle effects
-for a living (sources at the end); where it departs from them, it says why.
+v40–v43 built agreement: the gate, pending / approve / reject, and permissions with bounds. Not
+built yet: the faults `slow`, `restart after effect` and `expire keys`, retries over
+409-while-running (a service here answers one request at a time, so it never happens), pending in
+stored state, and four eyes. This design follows the practice of people and systems that handle
+effects for a living (sources at the end); where it departs from them, it says why.
 
 Most of what an app does can be taken back: a changed field, a new row. Some actions reach
 outside and cannot be taken back by changing state: charging a card, sending an email, booking
@@ -112,30 +112,30 @@ through the same outbox:
 
 ## Agreement: `through std.actions` on the calling side
 
-Built (v40–v42, first two slices): the gate and pending/approve/reject. `lib/std/actions.intent`
-carries the agreement in params bound to the screen's state, and the runtime holds a call with no
-permission (approving sends it with its original key; rejecting drops it) and refuses any while the
-emergency stop is on (`apps/20-approval.intent`). Next: counting, amounts and four eyes.
+Built (v40–v43): the gate, pending/approve/reject, and permissions with bounds.
+`lib/std/actions.intent` carries the agreement in params bound to the screen's state. A call with
+no covering permission is held; approving adds a `Permission` (`endpoint`, `count`, `per`, `upTo`)
+and the harness sends the held call with its original key; rejecting drops it; the stop refuses at
+once. The harness counts calls per endpoint to enforce `count`/`per`. `apps/20-approval.intent`
+proves it. Next: pending in stored state, and four eyes.
 
 ```
 uses booking.api as booking {
   tested with "apps/api/booking-api.intent"
   through std.actions {
-    agree = allowed             # List Text: the endpoints that may reach outside
+    agree = permissions         # List Permission: endpoint, count, per, upTo
     rejected = rejected         # List Text: a person rejected these; held calls are dropped
     stop = stopped              # Bool: the emergency stop
   }
 }
 ```
 
-- **Built:** a call with no standing permission is held for approval; the app shows it as waiting,
-  approves (the harness sends the held call with its original key) or rejects (it is dropped). A
-  call while stopped is answered at once with the reason. The refusal/approval is not `unknown`, so
-  it is not retried.
-- **Next:** a permission becomes a richer record: `{ endpoint, count, per, upTo }`, a number of
-  calls per period and, for money, a maximum amount (OpenAI rates financial impact separately); a
-  grant is one-time or standing (Anthropic). Pending calls live in stored state (the durable outbox
-  already keeps a call and its key across a reload). Four eyes (the approver is not the requester)
+- **Built:** a call with no covering permission (or one that breaks a permission's count, period or
+  amount) is held for approval; the app shows it as waiting, approves (the harness sends the held
+  call with its original key) or rejects (it is dropped). A call while stopped is answered at once
+  with the reason. The refusal/approval is not `unknown`, so it is not retried.
+- **Next:** pending calls live in stored state, so a restart does not lose them (the durable outbox
+  already keeps a call and its key across a reload); four eyes (the approver is not the requester)
   is an optional param.
 
 ## How it is tested
@@ -166,9 +166,9 @@ steer booking expire keys        # a late retry after the keys expired
 2. **v34: once.** `std.http.once` with its examples; keys, the durable outbox and retries in the
    runtime; the `Unknown` answer; `steer` faults in examples and random sessions. Rebuild the
    ticket and desk APIs and screens with it.
-3. **v38: undo**, **v40–v42: agreement.** `undo @x`; `std.actions` with the gate, the emergency
-   stop, and pending / approve / reject — `apps/20-approval.intent`. Next: count / period / amount,
-   four eyes.
+3. **v38: undo**, **v40–v43: agreement.** `undo @x`; `std.actions` with the gate, the emergency
+   stop, pending / approve / reject, and permissions with count / period / amount —
+   `apps/20-approval.intent`. Next: pending in stored state, four eyes.
 4. **Then:** openouros's six action scenarios (UC4) as specs against these, as the held-out test.
 
 ## What stays out

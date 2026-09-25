@@ -1,5 +1,5 @@
 app Approval {
-  "A payment that goes out only after a person allows it: without a permission the call waits, Approve lets it through, Reject drops it, and Stop blocks every external call."
+  "A payment that goes out only after a person allows it: without a permission the call waits, a one-time permission lets one payment through, Reject drops it, and Stop blocks every external call."
 }
 
 import pay.payments
@@ -7,15 +7,15 @@ import pay.payments
 uses pay.paymentsApi as pay {
   tested with "apps/api/payments-api.intent"
   through std.actions {
-    agree = allowed
+    agree = permissions
     rejected = rejected
     stop = stopped
   }
 }
 
 state {
-  allowed: List Text = []             # the endpoints that may reach outside
-  rejected: List Text = []            # the endpoints a person rejected: a held call is dropped
+  permissions: List Permission = []
+  rejected: List Text = []
   stopped: Bool = false
   waiting: Bool = false
   message: Text = ""
@@ -46,7 +46,7 @@ on click buy {
 
 on click allow {
   - set @waiting to false
-  - add "pay.charge" to the end of @allowed
+  - add a @Permission to the end of @permissions with @endpoint = "pay.charge", @count = 1, @per = 0 and @upTo = 12500
 }
 
 on click reject {
@@ -79,6 +79,14 @@ example "held, then approved" {
   see message = "Paid: charge 1"
   see buy is enabled
   see allow is disabled
+}
+
+example "one permission, one payment" {
+  click buy
+  click allow
+  see message = "Paid: charge 1"
+  click buy
+  see message = "Waiting for approval"
 }
 
 example "held, then rejected" {

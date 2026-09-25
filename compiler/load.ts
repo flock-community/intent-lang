@@ -268,6 +268,9 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
           else if (locked !== sha(text)) err(l.line, "LOCK", `the layer \`${l.layer}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
         }
         l.spec = loaded.app;
+        // A client layer's records and choices are the app's too (`std.actions` declares Permission).
+        for (const r of loaded.app.records ?? []) if (!app.records.some((x) => x.name === r.name)) app.records.push(r);
+        for (const c of loaded.app.choices ?? []) if (!app.choices.some((x) => x.name === c.name)) app.choices.push(c);
         l.digest = sha(printApp(loaded.app)).slice(0, 12);
         const params = new Map((loaded.app.params ?? []).map((p) => [p.name, p]));
         for (const b of l.bindings) {

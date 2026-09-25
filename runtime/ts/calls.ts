@@ -138,27 +138,46 @@ export function listen(events: Record<string, string[]>, deliver: (e: { event: s
   return { refresh };
 }
 
+/** A standing permission: an endpoint, how many calls a period allows, and the most each may amount to. */
+export interface Permission {
+  endpoint: string; // "pay.charge"
+  count: number; // calls allowed per period (a one-time grant: 1)
+  per: number; // the period in minutes (0: the count applies forever)
+  upTo: number; // the most each call may amount to (0: no limit)
+}
+/** A call already let through, for enforcing a permission's count and period. */
+export interface Usage {
+  at: number; // milliseconds since the epoch
+  amount: number;
+}
+
 /** What the agreement gate decides for a call: send it, hold it for approval, drop it (rejected),
  *  or refuse it (the emergency stop). `config` is the `std.actions` layer's params from the state. */
 export type Gate = "send" | "hold" | "reject" | "stop";
 
-export function gate(config: Record<string, unknown> | undefined, name: string, external: boolean | undefined): Gate {
+export function gate(config: Record<string, unknown> | undefined, name: string, external: boolean | undefined, args: Record<string, unknown> = {}, usage: Record<string, Usage[]> = {}, now = 0): Gate {
   if (!config || (!("stop" in config) && !("agree" in config))) return "send";
   if (config.stop === true) return "stop";
   if (!external) return "send";
-  const list = (k: string) => (Array.isArray(config[k]) ? (config[k] as string[]) : []);
   const short = name.split(".")[1];
-  const has = (k: string) => list(k).includes(name) || list(k).includes(short);
-  if (has("rejected")) return "reject";
-  return has("agree") ? "send" : "hold";
+  const reject = Array.isArray(config.rejected) ? (config.rejected as string[]) : [];
+  if (reject.includes(name) || reject.includes(short)) return "reject";
+  const agree = Array.isArray(config.agree) ? (config.agree as Permission[]) : [];
+  const match = agree.filter((p) => p && (p.endpoint === name || p.endpoint === short));
+  if (!match.length) return "hold"; // no standing permission: wait for approval
+  const amount = Number(args.amount ?? 0);
+  const used = usage[name] ?? usage[short] ?? [];
+  const ok = match.some((p) => {
+    if (p.upTo > 0 && amount > p.upTo) return false;
+    const recent = p.per > 0 ? used.filter((x) => now - x.at < p.per * 60_000) : used;
+    return recent.length < p.count;
+  });
+  return ok ? "send" : "hold";
 }
 
-/**
- * The agreement gate's refusal: the emergency stop (the only case that is answered at once). A
- * call with no permission is held for approval instead (`gate` returns "hold").
- */
-export function refused(config: Record<string, unknown> | undefined, name: string, external: boolean | undefined, _args: Record<string, unknown>): string | undefined {
-  return gate(config, name, external) === "stop" ? "external calls are stopped (the emergency stop is on)" : undefined;
+/** The one refusal answered at once: the emergency stop. A call with no permission is held. */
+export function refused(config: Record<string, unknown> | undefined, _name: string, _external: boolean | undefined, _args: Record<string, unknown>): string | undefined {
+  return config && config.stop === true ? "external calls are stopped (the emergency stop is on)" : undefined;
 }
 
 /**

@@ -4,7 +4,7 @@
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { gate, outgoing, persist, refused, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
+import { gate, outgoing, persist, refused, type Answer, type CallDesc, type CallOut, type Outgoing, type Usage } from "../runtime/ts/calls.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
@@ -297,14 +297,24 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
   const held: CallOut[] = [];
   const withKey = (c: CallOut): CallOut => (c.key ? c : { ...c, key: `${c.endpoint.split(".")[0]}-${++made}` });
   // The agreement gate (`through std.actions`): a call with no permission waits for approval, a
-  // rejected one is dropped, and the emergency stop answers at once.
-  const gateOf = (c: CallOut) => gate(c.config, c.endpoint, endpoints.find((e) => e.name === c.endpoint)?.external);
+  // rejected one is dropped, and the emergency stop answers at once. `usage` enforces a
+  // permission's count and period (`now`, from the test clock, in the same unit as `usage[].at`).
+  const externalOf = (c: CallOut) => endpoints.find((e) => e.name === c.endpoint)?.external;
+  const nowMs = async (): Promise<number> => {
+    const clock = await raw.clock?.();
+    return clock?.now ? Date.parse(clock.now) : Date.now();
+  };
+  const usage: Record<string, Usage[]> = {};
+  const note = (c: CallOut, now: number) => {
+    if (externalOf(c)) (usage[c.endpoint] ??= []).push({ at: now, amount: Number((c.args as { amount?: unknown }).amount ?? 0) });
+  };
   const settle = async (first: CallOut[] = []) => {
     const queue: CallOut[] = [...first, ...(await raw.calls!())].map(withKey);
+    const now = await nowMs();
     for (let n = 0; queue.length; n++) {
       if (n >= 100) throw new Error("the calls do not settle: 100 answers in a row led to new calls");
       const c = queue.shift()!;
-      const decision = gateOf(c);
+      const decision = gate(c.config, c.endpoint, externalOf(c), c.args, usage, now);
       if (decision === "hold") {
         held.push(c);
         log.push(`${c.endpoint} ${stable(c.args)} → held for approval`);
@@ -320,8 +330,9 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
         queue.push(...(await raw.calls!()));
         continue;
       }
-      const { alias, answer, events, note } = await send(c);
-      log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${note}`);
+      const { alias, answer, events, note: why } = await send(c);
+      note(c, now);
+      log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${why}`);
       await raw.send({ on: "answer", target: c.endpoint, answer });
       const made = await raw.calls!();
       queue.push(...(await deliverEvents(alias, events)), ...made);
@@ -330,18 +341,20 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
   // After an update, a held call whose endpoint was just allowed goes out (with its original key);
   // one that was rejected is dropped. The emergency stop keeps it pending.
   const release = async () => {
+    const now = await nowMs();
     for (let i = held.length - 1; i >= 0; i--) {
       const c = held[i];
       const config = (await raw.through?.())?.[c.endpoint.split(".")[0]] as Record<string, unknown> | undefined;
-      const decision = gate(config, c.endpoint, endpoints.find((e) => e.name === c.endpoint)?.external);
+      const decision = gate(config, c.endpoint, externalOf(c), c.args, usage, now);
       if (decision === "hold" || decision === "stop") continue;
       held.splice(i, 1);
       if (decision === "reject") {
         log.push(`${c.endpoint} ${stable(c.args)} → rejected`);
         continue;
       }
-      const { alias, answer, events, note } = await send(c);
-      log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${note} (approved)`);
+      const { alias, answer, events, note: why } = await send(c);
+      note(c, now);
+      log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${why} (approved)`);
       await raw.send({ on: "answer", target: c.endpoint, answer });
       await settle(await deliverEvents(alias, events));
     }

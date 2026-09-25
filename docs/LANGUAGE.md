@@ -1,4 +1,4 @@
-# Intent — language reference (v42)
+# Intent — language reference (v43)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -918,26 +918,28 @@ signed in gets none, as in the browser.
 
 **Agreement before an external call.** `through std.actions` gates the calls a screen makes: an
 endpoint the contract marks `effect external` goes out only when a standing permission covers it
-(`agree`, a list of endpoint names in the screen's state), and none goes out while the emergency
-stop is on (`stop`). A call with no permission is **held for approval**: it does not reach the
-service yet, and the screen can show that it is waiting. Approving adds the endpoint to `agree`
-(the harness then sends the held call, with its original key); rejecting adds it to `rejected`
-(the held call is dropped). A call while stopped is answered at once with the reason
-(`{the error}`), so the screen can show it.
+(`agree`, a list of `Permission` records in the screen's state), and none goes out while the
+emergency stop is on (`stop`). A `Permission` says the endpoint, `count` calls per `per` minutes
+(0: forever) and the most each call may amount to (`upTo`, 0: no amount limit); a call that breaks
+one of them is not covered. A call with no permission is **held for approval**: it does not reach
+the service yet, and the screen can show that it is waiting. Approving adds a permission (the
+harness then sends the held call, with its original key); rejecting adds the endpoint to `rejected`
+(the held call is dropped). A call while stopped is answered at once with the reason (`{the error}`),
+so the screen can show it.
 
 ```
 uses pay.paymentsApi as pay {
   tested with "apps/api/payments-api.intent"
   through std.actions {
-    agree = allowed                 # List Text: the endpoints that may reach outside
-    rejected = rejected             # List Text: a person rejected these; held calls are dropped
-    stop = stopped                  # Bool: the emergency stop
+    agree = permissions           # List Permission: endpoint, count, per, upTo
+    rejected = rejected           # List Text: a person rejected these; held calls are dropped
+    stop = stopped                # Bool: the emergency stop
   }
 }
 ```
 
-`apps/20-approval.intent` shows a payment held, approved, rejected and stopped. Counting and a
-maximum amount per permission follow (`docs/design/effects.md`).
+`apps/20-approval.intent` shows a payment held, approved once (a one-time permission), rejected
+and stopped.
 
 **What every endpoint may answer.** A service behind layers answers things its endpoints do not
 (a 401 from `std.http.apiKey`). The contract says so once, and every endpoint's answers include
@@ -1229,6 +1231,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v43: agreement, permissions with bounds: `std.actions`'s `agree` is a list of `Permission`
+  records (`endpoint`, `count`, `per`, `upTo`), so a standing permission says how many calls a
+  period allows and the most each may amount to; a call that breaks one is held. A client layer's
+  records now merge into the app (like a server layer's). `apps/20-approval.intent` proves a
+  one-time permission lets exactly one payment through, on both targets.
 
 - v42: agreement, pending: a call with no standing permission is held for approval instead of
   refused. Approving adds the endpoint to `agree` and the harness sends the held call with its

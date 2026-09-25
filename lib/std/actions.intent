@@ -1,9 +1,16 @@
 layer std.actions {
-  "External calls go out only when a standing permission covers them; while the emergency stop is on, none goes out."
+  "External calls go out only when a standing permission covers them; with none the call waits for approval, and while the emergency stop is on, none goes out."
   "The harness gates the calls with the bound permissions (docs/design/effects.md); this layer only carries them."
 }
 
-param agree: List Text = []          # the endpoints that may reach outside ("pay.charge")
+record Permission {
+  endpoint: Text                     # "pay.charge"
+  count: Int                         # how many calls the period allows (a one-time grant: 1)
+  per: Int                           # the period in minutes (0: the count applies forever)
+  upTo: Int                          # the most each call may amount to (0: no amount limit)
+}
+
+param agree: List Permission = []    # the standing permissions
 param rejected: List Text = []       # the endpoints a person rejected: a held call is dropped
 param stop: Bool = false             # the emergency stop: nothing external goes out while it is on
 
@@ -12,7 +19,10 @@ before every call {
 }
 
 examples with {
-  agree = []
+  agree = table {
+    endpoint     | count | per | upTo
+    "pay.charge" | 1     | 60  | 0
+  }
   rejected = []
   stop = false
 }
