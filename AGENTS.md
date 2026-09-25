@@ -128,3 +128,6 @@ LLM providers in `compiler/providers/` (`llm.ts`): a new language or provider is
 line in a registry, and must pass the same examples, `always` rules and twin builds, with a
 converge run recorded for it. `runs/history.jsonl` holds every measured round.
 Checks: `npm test`, `npx tsc --noEmit -p .`, `node compiler/cli.ts check apps/*.intent`.
+`npm test` includes the harness snapshot (`tests/harness/snapshot.ts`): every generated file and
+prompt for every spec and target. A refactor must leave it unchanged; a deliberate change updates
+it (`--update`) and the diff shows what builds will now get.
