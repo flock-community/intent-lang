@@ -1040,9 +1040,12 @@ always {
 The harness checks every such sentence after every step of every example and random session.
 A separate compiler stage turns the sentences into checks, once per spec and apart from the
 app's code, so an app cannot bend a check to its own reading; every build of the spec runs the
-same checks. The app hands its data over (every state field, generated as `Data`). A sentence
-that does not hold fails the build like any `always` check, with the steps that led there and the
-data at that moment. `rules` stays for guidance the compiler reads but nothing checks (how
+same checks. A check is only as right as its reading of the sentence, so the stage compiles a
+second, independent reading (a probe) as well, and the driver compares the two on the app's real
+data: where they disagree, the sentence is ambiguous and the build stops and says so instead of
+trusting one reading. The app hands its data over (every state field, generated as `Data`). A
+sentence that does not hold fails the build like any `always` check, with the steps that led there
+and the data at that moment. `rules` stays for guidance the compiler reads but nothing checks (how
 something is done, what a word means); a rule that reads like an invariant gets an `UNCHECKED`
 hint to move it to `always`.
 

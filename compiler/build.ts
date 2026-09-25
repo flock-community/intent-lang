@@ -141,9 +141,12 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       const v = "error" in ex ? undefined : (ex as ExploreResult[]).find((e) => e.violation)?.violation;
       if (v) {
         const w = where(app, v.line);
-        problems = `All examples pass, but this session breaks the rule at ${w.file}:${w.line} (\`${w.text}\`): ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map((a) => ("endpoint" in a ? callText(a as unknown as Call) : actionText(a))).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
+        const head = v.ambiguous
+          ? `The sentence in \`always\` at ${w.file}:${w.line} (\`${w.text}\`) is read two ways`
+          : `All examples pass, but this session breaks the rule at ${w.file}:${w.line} (\`${w.text}\`)`;
+        problems = `${head}: ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map((a) => ("endpoint" in a ? callText(a as unknown as Call) : actionText(a))).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
         res.attempts.push({ stage: "always", detail: `line ${v.line}: ${v.message}` });
-        log(`attempt ${attempt}: breaks always (line ${v.line})`);
+        log(`attempt ${attempt}: ${v.ambiguous ? "always is read two ways" : "breaks always"} (line ${v.line})`);
         continue;
       }
     }

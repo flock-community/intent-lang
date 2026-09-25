@@ -453,7 +453,10 @@ try; it found one ambiguity in the calculator spec (a trailing "." in a number),
 
 **Checked rules and stored state** (v31, v32). A sentence in `always` (`- no two @dones have the
 same @habit and the same @day`) is compiled once per spec by a separate stage and checked on
-the app's data after every step; a planted bug (a habit done tomorrow) was caught at its line. A
+the app's data after every step; a planted bug (a habit done tomorrow) was caught at its line.
+Since v38 the stage also compiles a second, independent reading (a probe), and the driver compares
+the two on the app's data: a disagreement stops the build and names the sentence, instead of
+trusting one reading. A
 state field marked `stored` survives a restart: in the browser's local storage, or in a data file
 on the server. `restart` in an example starts the app again, random sessions restart now and
 then, and after every restart the harness checks that the stored fields came back unchanged.

@@ -34,10 +34,13 @@ Elm error message for an undeclared status now matches TypeScript's.
    - stored-data migration (a record change must not silently reset data) and identity/references
      between records (replacing `the ticket whose @id is @id`);
    - loops and lookups as parser forms with a checked "none" case;
-   - twin-compile the `always` checks; ~~put APIs and screens-with-calls in `converge`~~ done
-     (v38: `buildDeps` resolves providers and layers for `converge` too; checkout 4/4, 100%);
-     run doc snippets through `check` in `npm test`; fix the stale doc lines it lists
-     (LANGUAGE.md:62, :220, :652, :1101; README counts; `Maybe T` in a checker message).
+   - ~~twin-compile the `always` checks~~ done (`invariants-probe.mjs`: a second, independent
+     reading, compared on the app's data; a disagreement stops the build and names the sentence);
+   - ~~put APIs and screens-with-calls in `converge`~~ done (v38: `buildDeps` resolves providers
+     and layers for `converge` too; checkout 4/4, 100%);
+   - ~~run doc snippets through `check` in `npm test`, and fix the stale doc lines~~ done
+     (`tests/docs/snippets.ts`, ```` ```intent ```` blocks; durations, names, events, publish,
+     randomness, `T or nothing`, README counts).
 4. **Incremental builds** (`docs/design/incremental.md`): units, dependencies, `@spec` regions,
    resume a stopped twin build; measure on recorded edits before making it the default.
 5. **Distribution**: an `intent` bin and npm package; `intent doctor`; a second provider

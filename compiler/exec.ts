@@ -45,6 +45,7 @@ export interface Violation {
   line: number;
   message: string;
   restart?: boolean; // not an \`always\` rule: stored state that did not survive a restart
+  ambiguous?: boolean; // not a broken rule: the sentence is read two ways (the probe disagrees)
   actions: Action[];
   screen: string;
 }
@@ -71,6 +72,8 @@ export interface TraceResult {
 function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]): Violation | undefined {
   // A sentence in `always` over the data (checked by openSession).
   if (obs?.dataViolation) return { line: obs.dataViolation.line, message: obs.dataViolation.message, restart: obs.dataViolation.restart, actions: [...actions], screen: `${describe(obs)}\n\nThe app's data (from data(model)):\n${JSON.stringify(obs.dataViolation.data, null, 1).slice(0, 2500)}` };
+  // The sentence is read two ways (the probe disagrees): not a broken rule, an imprecise sentence.
+  if (obs?.dataAmbiguity) return { line: obs.dataAmbiguity.line, message: obs.dataAmbiguity.message, ambiguous: true, actions: [...actions], screen: describe(obs) };
   for (const s of always ?? []) {
     if (s.do !== "see") continue;
     if (!s.every && s.check.is !== "hidden" && s.check.is !== "shown" && "missing" in locate(obs, s.target)) continue;
@@ -94,7 +97,9 @@ function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]
 async function openSession(dir: string, target: string): Promise<Session> {
   const session = await restartable(dir, await navigable(dir, await openSessionInner(dir, target)));
   if (!existsSync(join(dir, "invariants.mjs"))) return session;
-  const mod = await import(pathToFileURL(join(dir, "invariants.mjs")).href + `?t=${Date.now()}`);
+  const loadChecks = async (file: string) => ((await import(pathToFileURL(join(dir, file)).href + `?t=${Date.now()}`)).invariants ?? []) as { line: number; holds: (d: unknown, c: unknown) => boolean }[];
+  const checks = await loadChecks("invariants.mjs");
+  const probes = existsSync(join(dir, "invariants-probe.mjs")) ? await loadChecks("invariants-probe.mjs") : undefined;
   const texts: { line: number; text: string }[] = JSON.parse(readFileSync(join(dir, "invariants.json"), "utf8"));
   return {
     ...session,
@@ -102,15 +107,24 @@ async function openSession(dir: string, target: string): Promise<Session> {
       const obs = await session.observe();
       const data = await session.data?.();
       const clock = (await session.clock?.()) ?? clockAt("2026-01-05T09:00");
-      for (const [i, check] of (mod.invariants as { line: number; holds: (d: unknown, c: unknown) => boolean }[]).entries()) {
-        let holds: boolean;
-        try {
-          holds = !!check.holds(data, clock);
-        } catch (e) {
-          holds = false;
+      let ambiguity: { line: number; message: string } | undefined;
+      for (const [i, check] of checks.entries()) {
+        const holds = (c: { holds: (d: unknown, c: unknown) => boolean } | undefined) => {
+          try {
+            return !!c!.holds(data, clock);
+          } catch {
+            return false;
+          }
+        };
+        const a = holds(check);
+        const b = probes ? holds(probes[i]) : a;
+        if (a !== b) {
+          ambiguity ??= { line: check.line, message: `the check for "${texts[i].text}" is inconclusive: a second, independent reading disagrees (one holds, the other does not); make the sentence precise` };
+          continue;
         }
-        if (!holds) return { ...obs, dataViolation: { line: check.line, message: `"${texts[i].text}" does not hold`, data } };
+        if (!a) return { ...obs, dataViolation: { line: check.line, message: `"${texts[i].text}" does not hold`, data } };
       }
+      if (ambiguity) return { ...obs, dataAmbiguity: ambiguity };
       return obs;
     },
   };
@@ -615,7 +629,8 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
           obs = await s.observe();
           const v = brokenInvariant(obs, job.always, []);
           if (v) {
-            failure = { line: step.line, message: v.restart ? `${v.message} (stored at line ${v.line})` : `after this step, the rule \`always\` (line ${v.line}) is broken: ${v.message}`, screen: v.screen };
+            const why = v.restart ? `${v.message} (stored at line ${v.line})` : v.ambiguous ? `the sentence in \`always\` (line ${v.line}) is read two ways: ${v.message}` : `after this step, the rule \`always\` (line ${v.line}) is broken: ${v.message}`;
+            failure = { line: step.line, message: why, screen: v.screen };
             break;
           }
         }
