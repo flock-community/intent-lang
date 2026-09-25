@@ -24,6 +24,22 @@ endpoint read GET "/count" {
   answer 200 with @count
 }
 
+endpoint stopInstead PATCH "/stop" {
+  returns Int
+  if @count is above 5 {
+    stop                                   # expect: STEP
+  }
+  answer 200 with @count
+}
+
+endpoint silent PUT "/silent" {
+  returns Int
+  if @count is above 1 {
+    answer 409                             # expect: STEP
+  }
+  answer 200 with @count
+}
+
 example "bump" {
   call bump
   call read

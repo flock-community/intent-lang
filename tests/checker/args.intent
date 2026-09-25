@@ -28,6 +28,12 @@ endpoint note POST "/notes" {
   answer 200 with @notes
 }
 
+endpoint day GET "/day" {
+  query at: Date
+  returns Date
+  answer 200 with @at
+}
+
 example "lists and records" {
   call want with needs = [{ bundle = "std.list", minimum = "1.0" }, { bundle = "support.tickets", minimum = "2.1" }]
   see want.status = 200
@@ -38,4 +44,6 @@ example "lists and records" {
   call want with needs = { bundle = "std.list", minimum = "1" }       # expect: STEP
   call note with text = "one\ntwo"
   see note.body = "one\ntwo"
+  call day with at = 2026-02-28
+  call day with at = 2026-02-30                                      # expect: STEP
 }

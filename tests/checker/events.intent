@@ -5,8 +5,13 @@ state {
   count: Int = 0
 }
 
+record Thing {
+  id: Int
+}
+
 event counted: Int
 event counted: Int                        # expect: DUPLICATE
+event thing: Thing
 
 endpoint bump POST "/bump" {
   returns Int
@@ -19,4 +24,7 @@ example "bump" {
   call bump
   see counted.body = 1
   see counted.status = 200                # expect: UNKNOWN_NAME
+  see thing.body.id = 1
+  see thing.body.nope = 1                 # expect: UNKNOWN_NAME
+  see thing.body.id = "one"               # expect: STEP
 }

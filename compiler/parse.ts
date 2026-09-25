@@ -676,6 +676,7 @@ function checkBodies(app: App, err: Err, warn: Err) {
     b.forEach((s, i) => {
       if (i > 0 && ends(b[i - 1], true)) err(lineOf(s), "UNREACHABLE", `this never runs: the step before it ${b[i - 1].k === "stop" ? "stops" : "answers"} (${where})`);
       if (s.k === "answer" && !canAnswer) err(s.line, "STEP", `\`answer\` is for an endpoint (or a layer's \`before every request\`); ${where} has no request to answer`);
+      if (s.k === "stop" && where.startsWith("endpoint")) err(s.line, "STEP", "an endpoint ends a path with `answer …`, not `stop`: a path that stops answers nothing");
       if (s.k === "step" && s.line < LINE_BASE && (/^(if|when)\s/i.test(s.text) || /^otherwise\b/i.test(s.text) || /\band stop\b/.test(s.text)))
         warn(s.line, "UNSTRUCTURED", `write control words as structure: \`if <condition> { … } else { … }\`, \`answer …\` and \`stop\` instead of "${s.text.slice(0, 40)}${s.text.length > 40 ? "…" : ""}"`);
       if (s.k === "if") s.branches.forEach((br) => walk(br.body, where, canAnswer));
@@ -1845,6 +1846,10 @@ function checkApi(
         for (const m of st.matchAll(/\banswer\s+([1-5]\d\d)\b/g))
           if (!declared.has(Number(m[1]))) err(ep.stepLines?.[i] ?? ep.line, "CONTRACT", `endpoint ${ep.name} answers ${m[1]}, which its contract does not declare (${[...declared].join(", ")}); add \`answers ${m[1]} …\` to the contract, or answer differently`);
     }
+    // A refusal says why: `answer 409` with nothing after it tells the caller nothing.
+    for (const [i, st] of ep.steps.entries())
+      for (const m of st.matchAll(/\banswer\s+([45]\d\d)\s*$/g))
+        err(ep.stepLines?.[i] ?? ep.line, "STEP", `\`answer ${m[1]}\` needs a message: write \`answer ${m[1]} "…"\``);
   }
   // Events: declared once, with a payload type; \`publish x\` in steps names a declared event.
   const events = new Map<string, NonNullable<App["events"]>[number]>();
@@ -1858,6 +1863,30 @@ function checkApi(
     for (const [i, st] of ep.steps.entries())
       for (const m of st.matchAll(/\bpublish(?:es)?\s+@?([a-z]\w*)/gi))
         if (!events.has(m[1])) err(ep.stepLines?.[i] ?? ep.line, "UNKNOWN_NAME", `${"every" in ep ? `every ${ep.name.slice(5)}` : `endpoint ${ep.name}`} publishes \`${m[1]}\`, which is not a declared event${suggest(m[1], [...events.keys()])}; declare it with \`event ${m[1]}: <Type>\``);
+  // A path into an answer or event body: `body.items[1].id`. Returns the type it lands on, or what is wrong.
+  const bodyWalk = (t: Type, ps: string[], listNeeded: boolean): string | Type => {
+    let cur: Type = t;
+    for (const [i, p] of ps.entries()) {
+      if (cur.k === "Maybe") cur = cur.of;
+      if (listNeeded && i === ps.length - 1 && cur.k === "List") cur = cur.of; // `see every row of x.body: field`
+      if (p.startsWith("[")) {
+        if (cur.k !== "List") return `\`${p}\` needs a list, but this is ${typeToString(cur)}`;
+        cur = cur.of;
+        continue;
+      }
+      const rec = cur.k === "Named" ? ctx.records.get(cur.name) : undefined;
+      const f = rec?.fields.find((x) => x.name === p);
+      if (!f) return `${typeToString(cur)} has no \`${p}\`${rec ? ` (${rec.fields.map((x) => x.name).join(", ")})` : ""}`;
+      cur = f.type;
+    }
+    if (listNeeded && (cur.k === "Maybe" ? cur.of : cur).k !== "List") return `this is ${typeToString(cur)}, not a list`;
+    return cur;
+  };
+  const checkBodyEq = (target: string, s: Extract<Step, { do: "see" }>, t: Type) => {
+    // The value compared with must be one the field can hold: `see x.body.id = "ten"` is a mistake.
+    if (s.check.is === "eq" && !(t.k === "Named" && ctx.records.has(t.name) ? (s.check as { value: string }).value.startsWith("{") : valueFits(t, (s.check as { value: string }).value, ctx.choices)))
+      err(s.line, "STEP", `\`${target}\` is ${typeToString(t)}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
+  };
   // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`; `see <event>.body…` (what the latest call published).
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
     for (const s of ex.steps) {
@@ -1873,6 +1902,8 @@ function checkApi(
           else {
             const wrong = argShape(a.value, param.type, app);
             if (wrong) err(s.line, "STEP", `\`${a.name}\`: ${wrong}`);
+            // A date literal must be a real day: `day = 2026-02-30` is not a Date.
+            else if (dateType(param.type) && !literalFits(a.value, param.type, ctx.choices)) err(s.line, "STEP", `\`${a.name}\` does not fit ${typeToString(param.type)}: ${JSON.stringify(String((a.value as { v?: unknown }).v ?? a.value.k))}`);
           }
         }
       } else if (s.do === "request") {
@@ -1886,8 +1917,19 @@ function checkApi(
         const target = s.every ?? s.target;
         const h = target.split(/[.[]/)[0];
         if (events.has(h)) {
-          // \`see ticketCreated.body.subject = "…"\`: the event as the latest call published it; \`see ticketCreated is absent\`.
+          // `see ticketCreated.body.subject = "…"`: the event as the latest call published it; `see ticketCreated is absent`.
           if (part !== undefined && part !== "body") err(s.line, "UNKNOWN_NAME", `an event has a \`body\`: \`see ${h}.body.<field>\``);
+          else {
+            // The path into the body must exist in the event's payload type.
+            const parts = (target.match(/[a-z]\w*|\[\d+\]/gi) ?? []).slice(1);
+            if (parts[0] === "body") {
+              const rest = [...parts.slice(1), ...(s.every ? [s.target] : [])];
+              const r = bodyWalk(events.get(h)!.type, rest, s.check.is === "rows");
+              const shown = `${target}${s.every ? `: ${s.target}` : ""}`;
+              if (typeof r === "string") err(s.line, "UNKNOWN_NAME", `\`${shown}\`: ${r}`);
+              else checkBodyEq(shown, s, r);
+            }
+          }
           continue;
         }
         if (!eps.has(h)) err(s.line, "UNKNOWN_NAME", `\`${h}\` is not an endpoint or an event; check a response as \`see ${[...eps.keys()][0] ?? "endpoint"}.status = 200\` or \`….body.<field>\``);
@@ -1936,6 +1978,12 @@ function checkApi(
   }
   for (const ep of eps.values()) if (!app.examples.some((ex) => ex.steps.some((s) => s.do === "call" && s.endpoint === ep.name))) warn(ep.line, "UNPROVEN", `endpoint \`${ep.name}\` is never called in an example`);
   if (!app.examples.length) warn(1, "NO_EXAMPLES", "the api has no examples; nothing proves its behaviour");
+}
+
+/** Is this a Date or DateTime (or `T or nothing` of one)? */
+function dateType(t: Type): boolean {
+  if (t.k === "Maybe") return dateType(t.of);
+  return t.k === "Date" || t.k === "DateTime";
 }
 
 function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boolean {
