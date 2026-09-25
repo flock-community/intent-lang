@@ -4,7 +4,7 @@
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { outgoing, persist, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
+import { outgoing, persist, refused, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
@@ -270,7 +270,10 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
       if (res.headers?.["idempotent-replayed"] === "true") notes.push("replayed");
       return { endpoint: c.endpoint, status: res.status, body: res.body };
     };
-    const answer = mine ? await persist(endpoints.find((e) => e.name === c.endpoint), attempt) : await attempt();
+    // The agreement gate (`through std.actions`): a refused call does not go out, and is answered
+    // once, so the app sees a plain failure rather than `unknown`.
+    const no = mine ? refused(c.config, c.endpoint, endpoints.find((e) => e.name === c.endpoint)?.external, c.args) : undefined;
+    const answer = no ? { endpoint: c.endpoint, status: 0, error: no } : mine ? await persist(endpoints.find((e) => e.name === c.endpoint), attempt) : await attempt();
     return { alias, answer, events, note: notes.length ? ` (${notes.join(", ")})` : "" };
   };
   // The events a call published go to the screen right after its answer, in the order published.

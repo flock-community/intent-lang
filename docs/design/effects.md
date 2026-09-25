@@ -5,10 +5,11 @@ Status: v33 built the declarations (`effect external`, `undone by`, the checks).
 answers, and the faults `lose request`, `lose answer`, `duplicate` and `fail n`. v38 built undo.
 Now built: the durable outbox (`runtime/ts/outbox.ts`): a call is written down with its key before
 it goes out and cleared when answered, and a reload sends an unanswered call again with that key.
-Not built yet: the faults `slow`, `restart after effect` and `expire keys`, retries over
-409-while-running (a service here answers one request at a time, so it never happens), and
-agreement. This design follows the practice of people and systems that handle effects for a living
-(sources at the end); where it departs from them, it says why.
+v40 built the first slice of agreement: the gate in `std.actions`. Not built yet: the faults
+`slow`, `restart after effect` and `expire keys`, retries over 409-while-running (a service here
+answers one request at a time, so it never happens), and agreement's pending / approve / reject and
+count / amount. This design follows the practice of people and systems that handle effects for a
+living (sources at the end); where it departs from them, it says why.
 
 Most of what an app does can be taken back: a changed field, a new row. Some actions reach
 outside and cannot be taken back by changing state: charging a card, sending an email, booking
@@ -111,25 +112,33 @@ through the same outbox:
 
 ## Agreement: `through std.actions` on the calling side
 
+Built (v40, first slice): the gate. `lib/std/actions.intent` carries the agreement in two params
+bound to the screen's state, and the runtime refuses an `external` call that no standing permission
+covers, or any while the emergency stop is on, answering it with the reason instead of sending it
+(`apps/20-approval.intent`). Next: pending/approve, counting, amounts and four eyes.
+
 ```
 uses booking.api as booking {
   tested with "apps/api/booking-api.intent"
   through std.actions {
-    agree = @permissions        # standing permissions, from the app's stored state
+    agree = allowed             # List Text: the endpoints that may reach outside
+    stop = stopped              # Bool: the emergency stop
   }
 }
 ```
 
-- An `external` call waits until it is agreed to. The app shows it as pending (the harness adds
+- **Built:** an `external` call the gate refuses never reaches the service; the app gets a failed
+  answer with the reason and can show it, add the permission, and try again. The refusal is a
+  plain failure (status 0), not `unknown`, so it is not retried.
+- **Next:** an approved-but-not-yet-sent call waits as **pending** (the harness adds
   `on pending booking.reserve`), and the decisions are **approve, edit, reject** (LangGraph's
   human-in-the-loop; "respond" is a message to the requester and stays the app's own business).
-- A standing permission covers calls without asking: `{ endpoint, count, per, upTo }`, a number
-  of calls per period and, for money, a maximum amount (OpenAI rates financial impact
-  separately). A grant is one-time or standing (Anthropic).
-- Pending calls live in stored state, so a restart does not lose them (LangGraph's
-  checkpointer).
-- An emergency stop is a param: while on, nothing external goes out and pending calls stay
-  pending. Four eyes (the approver is not the requester) is an optional param.
+- A standing permission becomes a richer record: `{ endpoint, count, per, upTo }`, a number of
+  calls per period and, for money, a maximum amount (OpenAI rates financial impact separately).
+  A grant is one-time or standing (Anthropic).
+- Pending calls live in stored state, so a restart does not lose them (LangGraph's checkpointer);
+  the durable outbox already keeps a call and its key across a reload.
+- Four eyes (the approver is not the requester) is an optional param.
 
 ## How it is tested
 
@@ -159,8 +168,9 @@ steer booking expire keys        # a late retry after the keys expired
 2. **v34: once.** `std.http.once` with its examples; keys, the durable outbox and retries in the
    runtime; the `Unknown` answer; `steer` faults in examples and random sessions. Rebuild the
    ticket and desk APIs and screens with it.
-3. **Next: undo and agreement.** `undo @x`; `std.actions` (pending, approve / edit / reject,
-   standing permissions with count, period and amount, emergency stop, four eyes).
+3. **v38: undo**, and **v40: agreement, first slice.** `undo @x`; `std.actions` with the gate
+   (standing permissions as endpoint names, emergency stop) — `apps/20-approval.intent`. Next:
+   pending / approve / edit / reject, count / period / amount, four eyes.
 4. **Then:** openouros's six action scenarios (UC4) as specs against these, as the held-out test.
 
 ## What stays out

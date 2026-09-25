@@ -1,0 +1,23 @@
+layer std.actions {
+  "External calls go out only when a standing permission covers them; while the emergency stop is on, none goes out."
+  "The harness gates the calls with the bound permissions (docs/design/effects.md); this layer only carries them."
+}
+
+param agree: List Text = []          # the endpoints that may reach outside ("pay.charge")
+param stop: Bool = false             # the emergency stop: nothing external goes out while it is on
+
+before every call {
+  - the request goes as it is: the harness decides whether the call goes out at all
+}
+
+examples with {
+  agree = []
+  stop = false
+}
+
+example "the call itself is unchanged" {
+  request POST "/charges" with body amount = 12500, body description = "Yoga"
+  see body.method = "POST"
+  see body.path = "/charges"
+  see body.body.amount = 12500
+}

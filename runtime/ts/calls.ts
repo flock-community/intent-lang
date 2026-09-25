@@ -139,11 +139,28 @@ export function listen(events: Record<string, string[]>, deliver: (e: { event: s
 }
 
 /**
+ * The agreement gate (`through std.actions`): while the emergency stop is on, or no standing
+ * permission covers an `external` call, it does not go out; the app gets a failed answer with the
+ * reason. A permission is an endpoint name ("pay.charge") in the app's state.
+ */
+export function refused(config: Record<string, unknown> | undefined, name: string, external: boolean | undefined, _args: Record<string, unknown>): string | undefined {
+  if (!config || (!("stop" in config) && !("agree" in config))) return undefined;
+  if (config.stop === true) return "external calls are stopped (the emergency stop is on)";
+  if (!external) return undefined;
+  const agree = Array.isArray(config.agree) ? (config.agree as string[]) : [];
+  const short = name.split(".")[1];
+  return agree.includes(name) || agree.includes(short) ? undefined : `no standing permission covers ${name}`;
+}
+
+/**
  * Perform a call over HTTP: sent again (with the same idempotency key) when the answer is lost, a
  * 5xx or a 429, up to three attempts. Never throws: no answer is status 0 with an error.
  */
-export async function fetchCall(eps: CallDesc[], c: CallOut, via?: Via): Promise<Answer> {
-  return persist(eps.find((e) => e.name === c.endpoint), () => fetchOnce(eps, c, via), backoff);
+export async function fetchCall(eps: CallDesc[], c: CallOut, via?: Via, config?: Record<string, unknown>): Promise<Answer> {
+  const desc = eps.find((e) => e.name === c.endpoint);
+  const no = refused(config, c.endpoint, desc?.external, c.args);
+  if (no) return { endpoint: c.endpoint, status: 0, error: no };
+  return persist(desc, () => fetchOnce(eps, c, via), backoff);
 }
 
 async function fetchOnce(eps: CallDesc[], c: CallOut, via?: Via): Promise<Answer> {

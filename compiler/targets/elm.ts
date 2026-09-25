@@ -906,7 +906,7 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
   // Each call gets its idempotency key when it is made: every attempt sends the same one. The call
   // is written to a durable outbox first, so a reload sends an unanswered call again with that key.
   const box = outbox(${q(`intent:${app.name}:outbox`)});
-  const send = (call: CallOut) => fetchCall(endpoints, call, (alias: string, req: Outgoing) => apply(alias, req, call.config ?? undefined)).then((a) => { if (!a.unknown) box.done(call.key!); app.ports.answer.send(a); });
+  const send = (call: CallOut) => fetchCall(endpoints, call, (alias: string, req: Outgoing) => apply(alias, req, call.config ?? undefined), call.config).then((a) => { if (!a.unknown) box.done(call.key!); app.ports.answer.send(a); });
   app.ports.request.subscribe((c: any) => { const call = { ...c, key: newKey() } as CallOut; box.put(call); send(call); });
   for (const call of box.pending()) send(call);
   stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias]));

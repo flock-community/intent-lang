@@ -1,4 +1,4 @@
-# Intent — language reference (v39)
+# Intent — language reference (v40)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -913,6 +913,27 @@ event stream when they change, so signing in is just setting `apiKey`. In tests,
 the screen only if its event stream would pass the provider's layers: a screen that is not
 signed in gets none, as in the browser.
 
+**Agreement before an external call.** `through std.actions` gates the calls a screen makes: an
+endpoint the contract marks `effect external` goes out only when a standing permission covers it
+(`agree`, a list of endpoint names in the screen's state), and none goes out while the emergency
+stop is on (`stop`). A refused call never reaches the service: the screen gets a failed answer
+with the reason (`{the error}`), so it can show it, and can add the permission and try again.
+Counting and a maximum amount per permission, and a pending/approve flow, follow
+(`docs/design/effects.md`).
+
+```
+uses pay.paymentsApi as pay {
+  tested with "apps/api/payments-api.intent"
+  through std.actions {
+    agree = allowed                 # List Text: the endpoints that may reach outside
+    stop = stopped                  # Bool: the emergency stop
+  }
+}
+```
+
+A gate refusal is an answer, not a stuck call: its `else` branch carries the reason. `apps/20-approval.intent`
+shows a payment refused without a permission, let through after `approve`, and blocked by the stop.
+
 **What every endpoint may answer.** A service behind layers answers things its endpoints do not
 (a 401 from `std.http.apiKey`). The contract says so once, and every endpoint's answers include
 it, so a screen gets the Problem's message instead of a failed call:
@@ -1203,6 +1224,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v40: agreement, first slice: `through std.actions` (`lib/std/actions.intent`) gates a screen's
+  calls. An `effect external` endpoint goes out only when a standing permission covers it
+  (`agree`, a `List Text` of endpoint names from the state), and none goes out while the emergency
+  stop is on (`stop`). A refused call is answered with the reason, never sent; `apps/20-approval.intent`
+  proves a payment refused, allowed and stopped, on both targets (25/25 sessions identical).
 
 - v39: loops as structure: `for each @x in @xs where <condition> { … }` in a handler, an endpoint
   or an `every` block, with the loop's name (and its record's fields) in scope inside. It replaces

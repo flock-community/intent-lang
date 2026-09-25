@@ -21,7 +21,7 @@ const { usesClock } = await import(R + "refs.ts");
 
 const specs: string[] = [];
 const walk = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith(".intent")) specs.push(p); } };
-walk("apps"); walk("lib/std/http"); specs.push("lib/support/ticketsApi.intent", "lib/pay/paymentsApi.intent");
+walk("apps"); walk("lib/std/http"); specs.push("lib/support/ticketsApi.intent", "lib/pay/paymentsApi.intent", "lib/std/actions.intent");
 const fake = mkdtempSync(join(tmpdir(), "snap-layer-"));
 for (const f of ["layer.ts", "spec.ts", "http.ts", "fmt.ts"]) writeFileSync(join(fake, f), "x");
 const layerDirs = new Proxy({}, { get: () => fake });

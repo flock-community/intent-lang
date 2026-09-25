@@ -227,20 +227,20 @@ let dispatch: (w: Wire) => void = () => {};
 let current: App.Model;
 // Every call and event stream goes through its api's client layer, with the config from the current state.
 const via = (alias: string, req: Outgoing) => apply(alias, req, ${configOf});
-// Calls are written to a durable outbox before they go out and cleared when answered: after a
+${hasThrough(app) ? "const configFor = (alias: string) => (App.through(current) as Record<string, Record<string, unknown>>)[alias];\n" : ""}// Calls are written to a durable outbox before they go out and cleared when answered: after a
 // reload, a call that was never answered goes out again with the same idempotency key.
 const box = outbox(${q(`intent:${app.name}:outbox`)});
-const send = (call: CallOut) => fetchCall(callEndpoints, call, via).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
+const send = (call: CallOut, config: Record<string, unknown> | undefined) => fetchCall(callEndpoints, call, via, config).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
 const perform = (calls: Call[]) => {
   // Each call gets its idempotency key now, when it is made: every attempt sends the same one.
-  for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call); }
+  for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call, ${hasThrough(app) ? 'configFor(call.endpoint.split(".")[0])' : "undefined"}); }
 };
 let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
     const r = App.init(${c ? "localClock()" : ""});
 ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
-    for (const call of box.pending()) send(call);
+    for (const call of box.pending()) send(call, ${hasThrough(app) ? 'configFor(call.endpoint.split(".")[0])' : "undefined"});
     perform(r.calls);
     return r.model;
   },
