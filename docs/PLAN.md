@@ -63,6 +63,7 @@ Elm error message for an undeclared status now matches TypeScript's.
    `llm openai`, unit-tested in `tests/providers.test.ts`; a small converge run with one of them is
    next); a probe from another vendor still open.
 6. **Smaller**: platforms for screens and Elm (with a parity test); ~~`list x of Text`~~ done
-   (v41: a list of plain values shows each value as a row; `apps/21-tags.intent`); plain-text
-   answers; per-screen element names; ~~`budget` option~~ done (`compiler { budget N }`, stops
-   calling the LLM once the run has spent it); Spectavity adopting v35–v38 features.
+   (v41: a list of plain values shows each value as a row; `apps/21-tags.intent`); ~~plain-text
+   answers~~ already work (`answer 200 with "pong"`, regression in `tests/checker/args.intent`);
+   per-screen element names; ~~`budget` option~~ done (`compiler { budget N }`, stops calling the
+   LLM once the run has spent it); Spectavity adopting v35–v38 features.

@@ -34,6 +34,11 @@ endpoint day GET "/day" {
   answer 200 with @at
 }
 
+endpoint ping GET "/ping" {
+  returns Text
+  answer 200 with "pong"
+}
+
 example "lists and records" {
   call want with needs = [{ bundle = "std.list", minimum = "1.0" }, { bundle = "support.tickets", minimum = "2.1" }]
   see want.status = 200
@@ -46,4 +51,6 @@ example "lists and records" {
   see note.body = "one\ntwo"
   call day with at = 2026-02-28
   call day with at = 2026-02-30                                      # expect: STEP
+  call ping
+  see ping.body = "pong"
 }
