@@ -1,6 +1,7 @@
 app Storefront {
   "A small online shop: browse products by category, fill a cart, apply a code and check out."
 }
+language v44
 
 design {
   look "A fresh grocery shop: warm off-white page, white product cards with a hairline border, compact spacing, dark stone text, emerald as the brand for prices and main actions."

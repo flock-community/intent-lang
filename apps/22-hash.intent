@@ -1,6 +1,7 @@
 app Hash {
   "Show the SHA-256 of what you type, computed by the installation's reviewed code."
 }
+language v44
 
 import std.crypto
 

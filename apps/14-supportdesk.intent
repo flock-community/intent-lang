@@ -1,6 +1,7 @@
 app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
 }
+language v44
 
 extends support.helpdesk
 

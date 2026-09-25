@@ -1,6 +1,7 @@
 app TicketPages {
   "Tickets on two pages: a list, and one page per ticket with its own address."
 }
+language v44
 
 choice Status: Open | Solved
 

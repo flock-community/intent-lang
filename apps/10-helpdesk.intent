@@ -1,6 +1,7 @@
 app Helpdesk {
   "A support desk for a small team: see what needs attention, triage tickets and answer customers."
 }
+language v44
 
 design {
   look "A calm, modern SaaS admin. Light neutral page background; white surfaces with a thin neutral border and a subtle shadow; comfortable spacing; dark neutral headings and muted neutral secondary text; the brand color for primary actions and the active navigation item."

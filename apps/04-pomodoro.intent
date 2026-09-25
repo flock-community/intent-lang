@@ -1,6 +1,7 @@
 app Pomodoro {
   "A focus timer: 25 minutes of work, then a 5 minute break; every fourth break is a long one of 15 minutes."
 }
+language v44
 
 choice Phase: Work | ShortBreak | LongBreak
 

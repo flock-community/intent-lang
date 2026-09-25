@@ -1,6 +1,7 @@
 app Approval {
   "A payment that goes out only after a person allows it: without a permission the call waits, a one-time permission lets one payment through, Reject drops it, and Stop blocks every external call."
 }
+language v44
 
 import pay.payments
 

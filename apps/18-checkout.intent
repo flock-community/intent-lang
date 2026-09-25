@@ -1,6 +1,7 @@
 app Checkout {
   "Buy a class pass: one payment per click, never two, even when the connection drops."
 }
+language v44
 
 import pay.payments
 

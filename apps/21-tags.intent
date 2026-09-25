@@ -1,6 +1,7 @@
 app Tags {
   "Tags, each value in its own row."
 }
+language v44
 
 state {
   tags: List Text = []

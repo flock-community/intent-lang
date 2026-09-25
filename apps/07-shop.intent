@@ -1,6 +1,7 @@
 app Shop {
   "A small shop: put products in the cart and see deals, discount and total."
 }
+language v44
 
 record Product {
   name: Text

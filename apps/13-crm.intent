@@ -1,6 +1,7 @@
 app Crm {
   "A small CRM: keep track of customers and the deals in progress."
 }
+language v44
 
 import ui.admin
 import std.list
