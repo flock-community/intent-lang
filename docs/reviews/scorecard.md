@@ -112,3 +112,4 @@ Total weight: 100.
 |---|---|---|---|---|
 | v26 | 2026-09-24 | 70.4 | independent reviewer | [scores/v26.md](scores/v26.md) |
 | v29 | 2026-09-24 | 74.0 | independent reviewer | [scores/v29.md](scores/v29.md) |
+| v36 | 2026-09-25 | 78.4 | independent reviewer | [scores/v36.md](scores/v36.md) |

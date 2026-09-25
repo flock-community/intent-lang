@@ -61,6 +61,11 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: "platform functions are for services (the api profile) so far: a screen cannot use them yet (docs/design/platform.md)" });
     return res;
   }
+  // Undo (`undo @pay.charge`) is generated for TypeScript only so far, and not yet proven end to end.
+  if (target !== "ts" && app.handlers.some((h) => h.steps.some((st) => /\bundo\s+@?[a-z]\w*\.[a-z]\w*/i.test(st)))) {
+    res.attempts.push({ stage: "compile", detail: `\`undo\` is not in the ${target} harness yet (docs/PLAN.md)` });
+    return res;
+  }
   if (app.screens?.length && !tm.prompt.screens) {
     res.attempts.push({ stage: "compile", detail: `apps with several screens are not in the ${target} harness yet (docs/design/screens.md)` });
     return res;

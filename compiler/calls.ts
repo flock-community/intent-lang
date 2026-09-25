@@ -24,6 +24,36 @@ export function clientEndpoints(app: App): ClientEndpoint[] {
 
 export const hasClients = (app: App) => clientEndpoints(app).length > 0;
 
+/**
+ * Endpoints the app can take back (\`undone by\` in the contract): the undo carries the original
+ * answer (and the original arguments when the binding uses them); the harness computes the undo
+ * endpoint's arguments from the binding, so no app reassembles a refund itself.
+ */
+export interface Undoable {
+  of: ClientEndpoint; // the endpoint taken back
+  by: Endpoint; // the endpoint that takes it back
+  tag: string; // "PayChargeUndo"
+  answer: Type; // the original success answer's type
+  usesArgs: boolean; // the binding reads the original call's params
+  args: { name: string; from: "answer" | "args"; path: string[]; type: Type }[];
+}
+
+export function undoables(app: App): Undoable[] {
+  const eps = clientEndpoints(app);
+  return eps.flatMap((c) => {
+    const u = c.ep.undoneBy;
+    const by = u && c.ep.method !== "GET" ? eps.find((x) => x.alias === c.alias && x.ep.name === u.endpoint)?.ep : undefined;
+    const answer = c.ep.answers?.find((a) => a.status < 300 && a.type)?.type;
+    if (!u || !by || !answer) return [];
+    const args = u.args.map((a) => {
+      const path = a.value.slice(1).split(".");
+      const type = by.params.find((p) => p.name === a.name)!.type;
+      return path[0] === c.ep.name && path[1] === "body" ? { name: a.name, from: "answer" as const, path: path.slice(2), type } : { name: a.name, from: "args" as const, path: [path[0]], type };
+    });
+    return [{ of: c, by, tag: c.tag + "Undo", answer, usesArgs: args.some((a) => a.from === "args"), args }];
+  });
+}
+
 export interface ClientEvent {
   alias: string;
   name: string; // "tickets.ticketCreated"

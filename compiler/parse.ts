@@ -1605,6 +1605,17 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           else if (!client.contract.endpoints?.some((e) => e.name === m[2])) err(line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${m[2]}\`${suggest(m[2], client.contract.endpoints?.map((e) => e.name) ?? [])}`);
           else if (!handled.has(`answer ${m[1]}.${m[2]}`)) warn(line, "NO_HANDLER", `\`${m[1]}.${m[2]}\` is called, but its answer is ignored: add \`on answer ${m[1]}.${m[2]}\``);
         }
+  // Undo: `undo @pay.charge …` takes back an effect through the endpoint its contract names in `undone by`.
+  if (app.clients?.length)
+    for (const h of app.handlers)
+      for (const [i, st] of h.steps.entries())
+        for (const m of st.matchAll(/\bundo\s+@?([a-z]\w*)\.([a-z]\w*)/gi)) {
+          const line = h.stepLines?.[i] ?? h.line;
+          const ep = app.clients.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2]);
+          if (!ep) err(line, "UNKNOWN_NAME", `no endpoint \`${m[1]}.${m[2]}\` to undo`);
+          else if (!ep.undoneBy) err(line, "EFFECT", `\`${m[1]}.${m[2]}\` cannot be undone: its contract names no \`undone by\``);
+          else if (!handled.has(`answer ${m[1]}.${ep.undoneBy.endpoint}`)) warn(line, "NO_HANDLER", `undoing \`${m[1]}.${m[2]}\` calls \`${m[1]}.${ep.undoneBy.endpoint}\`, but its answer is ignored: add \`on answer ${m[1]}.${ep.undoneBy.endpoint}\``);
+        }
   for (const { el } of all) if (el.kind === "button" && !handled.has(`click ${el.name}`)) warn(el.line, "NO_HANDLER", `button \`${el.name}\` has no \`on click ${el.name}\``);
 
   // Examples.

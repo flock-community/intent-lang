@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
 import { typeDesc } from "../api.ts";
-import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs } from "../calls.ts";
+import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
 import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
@@ -389,7 +389,8 @@ ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The
 export function genTsCalls(app: App): string {
   const eps = clientEndpoints(app);
   const out: string[] = [];
-  out.push(`/** A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message. */\nexport type Call =\n${eps.map((c) => `  | { call: ${q(c.name)}${c.ep.params.length ? `; args: { ${c.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`).join("\n")};\n\n`);
+  const undos = undoables(app);
+  out.push(`/** A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \\`undo\\` takes an effect back (\\`undo @pay.charge\\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \\`undone by\\`, answered as that endpoint's \\`…Answered\\`." : ""} */\nexport type Call =\n${[...eps.map((c) => `  | { call: ${q(c.name)}${c.ep.params.length ? `; args: { ${c.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`), ...undos.map((u) => `  | { undo: ${q(u.of.name)}; answer: ${tsType(u.answer)}${u.usesArgs ? `; args: { ${u.of.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`)].join("\n")};\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`);
     const unknown = c.ep.effect ? [`{ status: "unknown"; error: string }`] : [];
@@ -399,7 +400,8 @@ export function genTsCalls(app: App): string {
   out.push(`/** The contract's answers per endpoint (status → body type): an answer that does not fit arrives as status 0. */\nexport const callAnswers: Record<string, Record<number, TypeDesc | null>> = {\n${eps.map((c) => `  ${q(c.name)}: { ${(c.ep.answers ?? []).map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}\n};\n\n`);
   const th = throughs(app);
   if (th.length) out.push(`/** What the client layers need from the app's state, per api (through, under uses): through(model) in the app module computes it. */\nexport type Through = { ${th.map((t) => `${t.alias}: { ${t.state.map((x) => `${x.param}: ${tsType(x.type)} /* state ${x.field} */`).join("; ")} }`).join("; ")} };\n\n`);
-  out.push(`export function callToJson(c: Call): CallOut {\n  return { endpoint: c.call, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
+  const undoCases = undos.map((u) => `    case ${q(u.of.name)}:\n      return { endpoint: ${q(`${u.of.alias}.${u.by.name}`)}, args: { ${u.args.map((a) => `${a.name}: ${a.from === "answer" ? ["c.answer", ...a.path].join(".") : `(c as { args: Record<string, unknown> }).args.${a.path[0]}`}`).join(", ")} } };\n`);
+  out.push(`export function callToJson(c: Call): CallOut {\n${undos.length ? `  // An undo is the call the contract names in \\\`undone by\\\`, with its args from the original answer.\n  if ("undo" in c)\n    switch (c.undo) {\n${undoCases.join("")}    }\n` : ""}  return { endpoint: ${undos.length ? "(c as { call: string }).call" : "c.call"}, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
   out.push(`const ANSWERED: Record<string, string> = { ${eps.map((c) => `${q(c.name)}: ${q(c.tag + "Answered")}`).join(", ")} };\n\n`);
   const evs = clientEvents(app);
   out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
