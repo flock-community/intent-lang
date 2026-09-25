@@ -1,0 +1,84 @@
+app TicketPages {
+  "Tickets on two pages: a list, and one page per ticket with its own address."
+}
+
+choice Status: Open | Solved
+
+record Ticket {
+  id: Int
+  subject: Text
+  status: Status
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject                     | status
+    1  | "Printer on fire"           | Open
+    2  | "Invoice shows wrong VAT"   | Open
+    3  | "Dark mode"                 | Solved
+  }
+  visits: Int = 0                    # how often a ticket page was opened
+}
+
+screen list "/" {
+  text openCount = "{the number of @tickets that are @Open} open"
+  list tickets of Ticket {
+    text subject
+    text status
+    button open "Open"
+  }
+}
+
+screen ticket "/tickets/{id}" {
+  path id: Int
+  text title = "#{@id} {the @subject of the ticket whose @id is @id, or "No such ticket" when there is none}"
+  text state = "{the @status of the ticket whose @id is @id, or "" when there is none}"
+  text seen = "Ticket pages opened: {@visits}"
+  button solve "Solve" {
+    enabled when the ticket whose @id is @id is @Open
+  }
+  button back "Back"
+}
+
+on click open {
+  - go to @ticket with @id = the @id of that ticket
+}
+
+on click solve {
+  - set the @status of the ticket whose @id is @id to @Solved
+  - go back
+}
+
+on click back {
+  - go back
+}
+
+on open ticket {
+  - increase @visits by 1
+}
+
+example "from the list to a ticket and back" {
+  see openCount = "2 open"
+  click open on row 2 of tickets
+  see screen = ticket
+  see path = "/tickets/2"
+  see title = "#2 Invoice shows wrong VAT"
+  see seen = "Ticket pages opened: 1"
+  click solve
+  see screen = list
+  see openCount = "1 open"
+}
+
+example "a ticket by its address" {
+  open "/tickets/3"
+  see title = "#3 Dark mode"
+  see solve is disabled
+  go back
+  see screen = list
+}
+
+example "an address with no ticket" {
+  open "/tickets/9"
+  see title = "#9 No such ticket"
+  see solve is disabled
+}

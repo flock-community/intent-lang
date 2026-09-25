@@ -9,6 +9,7 @@ import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
 import { varyOther } from "./fuzz.ts";
+import { screenMatch } from "./parse.ts";
 import { targetModule } from "./targets/index.ts";
 import type { Session } from "./targets/target.ts";
 import type { Target } from "./gen.ts";
@@ -21,7 +22,7 @@ import type { Check, Example, Step } from "./ast.ts";
 export type Obs = any; // Ui Node as JSON
 
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back";
   target: string; // element name ("" for tick; the endpoint for another client's call)
   call?: CallOut; // on "other": another client calls the provider
   ms?: number; // on "tick" from a `wait`: how far the clock moves
@@ -37,7 +38,7 @@ export interface Action {
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
   | { kind: "trace"; actions: Action[]; always?: Step[] }
-  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; steers?: string[]; always?: Step[] };
+  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; steers?: string[]; paths?: string[]; always?: Step[] };
 
 /** The first broken `always` check in a session: after `actions`, `check` failed on `screen`. */
 export interface Violation {
@@ -91,7 +92,7 @@ function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]
  * on the observation, where the `always` handling picks it up.
  */
 async function openSession(dir: string, target: string): Promise<Session> {
-  const session = await restartable(dir, await openSessionInner(dir, target));
+  const session = await restartable(dir, await navigable(dir, await openSessionInner(dir, target)));
   if (!existsSync(join(dir, "invariants.mjs"))) return session;
   const mod = await import(pathToFileURL(join(dir, "invariants.mjs")).href + `?t=${Date.now()}`);
   const texts: { line: number; text: string }[] = JSON.parse(readFileSync(join(dir, "invariants.json"), "utf8"));
@@ -141,6 +142,56 @@ async function restartable(dir: string, session: Session): Promise<Session> {
       lost = undefined;
       return { ...obs, dataViolation: v };
     },
+  };
+}
+
+/**
+ * Several screens (`screens.json` in the build): the driver keeps the history, as a browser does.
+ * The app starts at "/"; after every event it may ask for an address (`go to`) or to go back, and
+ * the driver shows it (a `navigate` event, which is \`on open\`). `open "/…"` in an example arrives by
+ * address, `go back` is the back button. Observations say which screen is shown and its address.
+ */
+async function navigable(dir: string, session: Session): Promise<Session> {
+  if (!existsSync(join(dir, "screens.json"))) return session;
+  const screens: { name: string; path: string }[] = JSON.parse(readFileSync(join(dir, "screens.json"), "utf8"));
+  const history: string[] = [];
+  const here = () => history[history.length - 1];
+  const show = (path: string) => session.send({ on: "navigate", target: path });
+  const follow = async () => {
+    for (let n = 0; n < 10; n++) {
+      const go = await session.nav?.();
+      if (!go) return;
+      if (go === "back") {
+        if (history.length < 2) continue; // the first entry: going back does nothing
+        history.pop();
+      } else history.push(go);
+      await show(here());
+    }
+    throw new Error("the screens do not settle: 10 addresses in a row");
+  };
+  history.push("/");
+  await show("/");
+  await follow();
+  return {
+    ...session,
+    send: async (w) => {
+      const wire = w as { on?: string; target?: string };
+      if (wire.on === "open") {
+        history.push(wire.target ?? "/");
+        await show(here());
+      } else if (wire.on === "back") {
+        if (history.length > 1) {
+          history.pop();
+          await show(here());
+        }
+      } else {
+        await session.send(w);
+        // A restart starts the app again at the address it was at.
+        if (wire.on === "restart") await show(here());
+      }
+      await follow();
+    },
+    observe: async () => ({ ...(await session.observe()), screen: (screens.find((s) => screenMatch(s.path, here())) ?? screens[0]).name, path: here() }),
   };
 }
 
@@ -245,6 +296,7 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
   return {
     data: raw.data,
     clock: raw.clock,
+    nav: raw.nav,
     observe: async () => {
       const obs = { ...(await raw.observe()), calls: [...log] };
       log.length = 0;
@@ -359,6 +411,7 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   if (a.on === "tick") return a.times === 0 && a.ms ? { wires: [{ on: "wait", target: "", ms: a.ms }] } : { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
   if (a.on === "other") return { wires: [{ on: "other", call: a.call }] }; // handled by the session: another client calls the provider
   if (a.on === "restart") return { wires: [{ on: "restart", target: "" }] }; // handled by the session: saves, restarts, checks
+  if (a.on === "open" || a.on === "back") return { wires: [{ on: a.on, target: a.target }] }; // handled by the session: the history
   if (a.on === "steer") return { wires: [{ on: "steer", target: a.target, value: a.value, times: a.times }] }; // handled by the session: the next attempts to that api go wrong
   const f = locate(obs, a.target, a.list, a.row, a.rowWith);
   if ("missing" in f) return { unavailable: f.missing };
@@ -391,6 +444,8 @@ export function stepToAction(s: Step): Action | undefined {
     case "choose": return { on: "choose", target: s.target, value: s.value };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "restart": return { on: "restart", target: "" };
+    case "open": return { on: "open", target: s.path };
+    case "back": return { on: "back", target: "" };
     case "steer": return { on: "steer", target: s.api, value: s.fault, times: s.times };
     case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}) } } : undefined;
     default: return undefined;
@@ -417,6 +472,9 @@ function compareNumber(n: any, c: Extract<Check, { is: "num" }>, scope: any[], w
 
 export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | undefined {
   const c = s.check;
+  // Where an app with several screens is.
+  if ((s.target === "screen" || s.target === "path") && !s.at && obs?.[s.target] !== undefined && c.is === "eq")
+    return obs[s.target] === c.value ? undefined : `expected the ${s.target} to be ${JSON.stringify(c.value)}, but it is ${JSON.stringify(obs[s.target])}`;
   if (s.every) {
     // Check each row of the list; a missing list or a row without the element is skipped.
     const list = findIn(obs.c, s.every);
@@ -484,6 +542,10 @@ function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => 
   if (job.waits?.length) out.push({ w: 2, a: { on: "tick", target: "", times: 0, ms: job.waits[Math.floor(rnd() * job.waits.length)] } });
   if (job.restarts) out.push({ w: 1, a: { on: "restart", target: "" } });
   for (const api of job.steers ?? []) out.push({ w: 1, a: steerAction(api, rnd) });
+  if (job.paths?.length) {
+    out.push({ w: 1, a: { on: "back", target: "" } });
+    out.push({ w: 1, a: { on: "open", target: job.paths[Math.floor(rnd() * job.paths.length)] } });
+  }
   return out;
 }
 

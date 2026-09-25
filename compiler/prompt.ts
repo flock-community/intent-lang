@@ -44,7 +44,7 @@ export const PROBE_RULES = `You are the PROBE compiler of a twin build. Another 
 
 /** Apps with `stored` state: the harness keeps it (localStorage, a file on the server) and puts it back after a restart. */
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false): string {
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const t = targetModule(target);
   const lang = t.fence;
@@ -92,7 +92,7 @@ ${t.prompt.fmt}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}
+${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}
 # Generated interface (${t.specFile})
 
 \`\`\`${lang}

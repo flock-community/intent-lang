@@ -82,6 +82,8 @@ export const cellFor = (t: TableLit, row: Literal[], col: string): Literal | und
 
 /** Apps with sentences in `always`: the harness checks them on the app's data after every step. */
 export const hasInvariants = (app: App) => !!app.invariants?.length;
+/** Several screens, with addresses (`screen <name> "<path>"`). */
+export const hasScreens = (app: App) => !!app.screens?.length;
 
 /** State that survives a restart (`stored name: T = …`). */
 export const hasStored = (app: App) => app.state.some((f) => f.stored);

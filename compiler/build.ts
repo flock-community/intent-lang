@@ -57,8 +57,8 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
     return res;
   }
-  if (app.screens?.length) {
-    res.attempts.push({ stage: "compile", detail: "apps with several screens check, but are not in the harness yet (docs/design/screens.md)" });
+  if (app.screens?.length && !tm.prompt.screens) {
+    res.attempts.push({ stage: "compile", detail: `apps with several screens are not in the ${target} harness yet (docs/design/screens.md)` });
     return res;
   }
   if (hasClients(app) && opts.styled) {
@@ -71,6 +71,8 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   // Apps that read the clock: where it starts in tests, and how far one clock tick moves it.
   if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })) }));
+  // Several screens: their addresses, for the test driver (which keeps the history).
+  if (app.screens?.length) writeFileSync(join(dir, "screens.json"), JSON.stringify(app.screens.map((s) => ({ name: s.name, path: s.path }))));
   // Stored state: which fields of the data a restart keeps (the driver saves them, restarts, and checks they came back).
   if (hasStored(app) && !layer) writeFileSync(join(dir, "stored.json"), JSON.stringify(app.state.filter((f) => f.stored).map((f) => ({ field: dataField(f.name), line: f.line }))));
   mkdirSync(join(dir, "log"), { recursive: true });
@@ -84,7 +86,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       return res;
     }
   }
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app));
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length);
 
   let code = "";
   let problems = "";

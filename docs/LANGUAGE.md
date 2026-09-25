@@ -1,4 +1,4 @@
-# Intent — language reference (v35)
+# Intent — language reference (v36)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -79,6 +79,7 @@ state { … }                 # what the app remembers: `[stored] field: Type = 
 clock every 1s              # optional: the app receives a tick every interval
 derive { … }                # named values computed from state: `name = sentence`
 screen { … }                # what the user sees, top to bottom (§4)
+screen name "/path" { … }   # or several screens, each with its address (§4i)
 on <verb> <element> { … }   # what happens (§5): `- sentence` lines
 rules { … }                 # invariants in words: `- sentence` lines
 always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data)
@@ -237,6 +238,52 @@ text places = "Full" when its signups reach its capacity, otherwise "{n} places 
   as badge
 }
 ```
+
+## 4i. Several screens
+
+An app with more than one page gives each screen a name and an address; a part of the address
+can be a param, declared like an endpoint's:
+
+```
+screen list "/" {
+  list tickets of Ticket {
+    text subject
+    button open "Open"
+  }
+}
+
+screen ticket "/tickets/{id}" {
+  path id: Int
+  text title = "#{@id} {the @subject of the ticket whose @id is @id, or "No such ticket" when there is none}"
+  button back "Back"
+}
+
+on click open {
+  - go to @ticket with @id = the @id of that ticket
+}
+
+on click back {
+  - go back
+}
+
+on open ticket {
+  - increase @visits by 1
+}
+```
+
+- `path x: T` (an `Int` or a `Text`) is the value in the address, `@x` while that screen is shown.
+- `go to @screen with @x = …` shows another screen (a new entry in the history); `go back` is the
+  back button. Every path param of the screen gone to is given.
+- `on open <screen>` runs every time that screen is shown: by a link, by its address, or going
+  back. It is where a screen loads what it shows. `on start` still runs once, before the first.
+- State belongs to the app, not to a screen: every screen reads and changes the same state.
+- Element names are unique in the app, also across screens (`ticketBack`, not two `back`s).
+- The harness keeps where the app is. In the browser that is the address after `#`
+  (`index.html#/tickets/3`), with the history and the back button. An address that fits no
+  screen shows the first screen; `go back` on the first entry does nothing.
+- Examples: `open "/tickets/3"` arrives by address, `go back` presses the back button, and
+  `see screen = ticket` / `see path = "/tickets/3"` check where the app is. Every example starts
+  at `/`. Random sessions go back and open the examples' addresses too.
 
 ## 4a. Look: design, components, presentations
 
@@ -1077,6 +1124,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v36: several screens: `screen <name> "<path>"` with `path x: T`, `go to @screen with …`,
+  `go back`, `on open <screen>`; `open`, `go back`, `see screen`, `see path` in examples. The harness
+  owns the route and the history (the address after `#` in the browser).
 
 - v35: from building a registry with Intent: the project is where the command runs (never the
   installation by accident), and `std.*` comes from the installation; a service layer's param can

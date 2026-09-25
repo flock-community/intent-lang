@@ -531,6 +531,7 @@ function checkScreens(app: App, err: Err) {
     const holes = [...s.path.matchAll(/\{([a-z]\w*)\}/gi)].map((x) => x[1]);
     for (const h of holes) if (!s.params.some((p) => p.name === h)) err(s.line, "UNKNOWN_NAME", `path \`${s.path}\` has \`{${h}}\`: declare it in the screen as \`path ${h}: Type\``);
     for (const p of s.params) {
+      if (p.type.k !== "Int" && p.type.k !== "Text") err(p.line, "NOT_YET", `a path param is an Int or a Text (so far), not ${typeToString(p.type)}`);
       if (!holes.includes(p.name)) err(p.line, "UNKNOWN_NAME", `\`path ${p.name}\` is not in the path \`${s.path}\`: write \`{${p.name}}\` where it goes`);
       if (taken.has(p.name)) err(p.line, "DUPLICATE", `\`${p.name}\` is already a name in this app (state, derived value or element); give the path param another name`);
     }
@@ -1260,6 +1261,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   }
   if (t === "restart") return { step: { do: "restart", line } };
   if (t === "go back") return { step: { do: "back", line } };
+  if ((m = t.match(new RegExp(`^see\\s+screen\\s*=\\s*(${LOWER})$`)))) return { step: { do: "see", target: "screen", check: { is: "eq", value: m[1] }, line } };
   if ((m = t.match(new RegExp(`^open\\s+(${STR})$`)))) return { step: { do: "open", path: parseString(m[1])!, line } };
   if ((m = t.match(/^steer\s+([a-z]\w*)\s+(lose\s+request|lose\s+answer|duplicate|fail(?:\s+(\d+))?)$/))) {
     const fault = m[2].startsWith("fail") ? "fail" : (m[2].replace(/\s+/, " ") as "lose request");
@@ -1645,6 +1647,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         else if (!inRow.some((a) => a.el.name === s.target)) err(s.line, "UNKNOWN_NAME", `rows of \`${s.every}\` have no \`${s.target}\`${suggest(s.target, inRow.map((a) => a.el.name))}`);
         else if (s.check.is === "num" && s.check.ref && !inRow.some((a) => a.el.name === (s.check as { ref: string }).ref)) err(s.line, "UNKNOWN_NAME", `rows of \`${s.every}\` have no \`${(s.check as { ref: string }).ref}\``);
         seen.add(`${s.every}.${s.target}`);
+        continue;
+      }
+      // `see screen = ticket`, `see path = "/tickets/2"`: where an app with several screens is.
+      if (s.do === "see" && (s.target === "screen" || s.target === "path") && !findEl(s.target).length) {
+        if (!app.screens?.length) err(s.line, "STEP", `\`see ${s.target}\` is for apps with several screens`);
+        else if (s.check.is !== "eq") err(s.line, "STEP", `write \`see ${s.target} = ${s.target === "screen" ? app.screens[0].name : '"/"'}\``);
+        else if (s.target === "screen" && !app.screens.some((sc) => sc.name === (s.check as { value: string }).value)) err(s.line, "UNKNOWN_NAME", `no screen \`${(s.check as { value: string }).value}\`${suggest((s.check as { value: string }).value, app.screens.map((sc) => sc.name))}`);
         continue;
       }
       const cands = findEl(s.target).filter((c) => (at ? c.list && (!at.list || c.list.name === at.list) : !c.list));

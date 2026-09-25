@@ -65,6 +65,7 @@ export function stepText(s: Step): string {
       if (s.every) return `see every row of ${s.every}: ${s.target} ${c.is === "num" ? cmp(c) : c.is === "eq" ? `= ${q(c.value)}` : `is ${c.is}`}`;
       if (c.is === "num") return `see ${s.target}${at} ${cmp(c)}`;
       if (c.is === "rows") return `see ${s.target} has ${c.cmp === "atMost" ? "at most " : c.cmp === "atLeast" ? "at least " : ""}${c.count} rows`;
+      if (c.is === "eq" && s.target === "screen" && !at) return `see screen = ${c.value}`;
       if (c.is === "eq") return `see ${s.target}${at} = ${q(c.value)}`;
       return `see ${s.target}${at} is ${c.is}`;
     }

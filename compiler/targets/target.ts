@@ -14,6 +14,8 @@ export interface Session {
   through?(): Promise<Record<string, Record<string, unknown>>>;
   data?(): Promise<unknown>;
   clock?(): Promise<{ now: string; today: string }>;
+  /** Several screens: the address the app asked for since last asked (`go to`), "back", or null. */
+  nav?(): Promise<string | null>;
 }
 
 export interface TargetModule {
@@ -38,6 +40,7 @@ export interface TargetModule {
     clock: string; // apps that read the clock
     data: string; // apps with sentences in `always`
     stored: string; // apps with stored state
+    screens?: string; // apps with several screens (a target without it cannot build them yet)
   };
   /** A test session on a compiled build, with the clock the driver starts it at. */
   open(dir: string, clock?: { now: string; today: string }): Promise<Session>;

@@ -43,6 +43,13 @@ export function varyOther(a: Action, rnd: () => number): Action {
   return { ...a, call: { ...a.call!, args } };
 }
 
+/** The addresses random sessions open: the examples' (and "/"), with numbers in them varied too. */
+export function screenPaths(app: App): string[] {
+  const own = app.examples.flatMap((e) => e.steps).flatMap((s) => (s.do === "open" ? [s.path] : []));
+  const varied = own.flatMap((p) => (/\d/.test(p) ? [p.replace(/\d+/, "1"), p.replace(/\d+/, "99")] : []));
+  return [...new Set(["/", ...own, ...varied])];
+}
+
 /** The apis a screen calls that have a real provider to go wrong with. */
 export const steeredApis = (app: App): string[] => (app.clients ?? []).filter((c) => c.testedWith).map((c) => c.alias);
 
@@ -76,6 +83,12 @@ export function actionTemplates(app: App): { weight: number; make: (rnd: () => n
   for (const a of otherCalls(app)) out.push({ weight: 1, make: (r) => varyOther(a, r) });
   // Stored state: the app starts again now and then.
   if (app.state.some((f) => f.stored)) out.push({ weight: 1, make: () => ({ on: "restart", target: "" }) });
+  // Several screens: the back button, and the addresses the examples open.
+  if (app.screens?.length) {
+    out.push({ weight: 1, make: () => ({ on: "back", target: "" }) });
+    const paths = screenPaths(app);
+    out.push({ weight: 1, make: (r) => ({ on: "open", target: pick(r, paths) }) });
+  }
   // Faults on the way to each api with a real provider: a lost request or answer, a duplicate, 503s.
   for (const api of steeredApis(app)) out.push({ weight: 1, make: (r) => steerAction(api, r) });
   if (app.clockMs) {
@@ -105,7 +118,7 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
       const ex = examples[Math.floor(rnd() * examples.length)];
       prefix = ex.slice(0, 1 + Math.floor(rnd() * ex.length));
     }
-    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), steers: steeredApis(app), always: app.always });
+    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), steers: steeredApis(app), paths: app.screens?.length ? screenPaths(app) : undefined, always: app.always });
   }
   return jobs;
 }
@@ -136,6 +149,8 @@ export function actionText(a: Action): string {
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}` : `choose ${a.value} in ${a.target}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
     case "restart": return "restart";
+    case "open": return `open ${JSON.stringify(a.target)}`;
+    case "back": return "go back";
     case "steer": return `steer ${a.target} ${a.value}${a.value === "fail" ? ` ${a.times}` : ""}`;
     case "other": return `call ${a.call!.endpoint}${Object.keys(a.call!.args).length ? ` with ${Object.entries(a.call!.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}  # another client`;
   }
