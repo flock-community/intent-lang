@@ -2,15 +2,23 @@ app NothingChecks {
   "A value that may be absent is handled where it is used."
 }
 
+record Book {
+  id: Int
+  rating: Int or nothing
+}
+
 state {
   picked: Int or nothing = nothing
   items: List Int = []
   total: Int = 0
+  books: List Book = []
 }
 
 derive {
   shown = the item equal to @picked                    # expect: UNGUARDED
   safe = the item equal to @picked, or 0 when there is no @picked
+  rated = the @rating of the book whose @id is 1       # expect: UNGUARDED
+  ratedSafe = the @rating of the book whose @id is 1, or 0 when there is none
 }
 
 screen {

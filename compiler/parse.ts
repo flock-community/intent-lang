@@ -702,11 +702,15 @@ function checkBodies(app: App, err: Err, warn: Err) {
  * it says what happens when there is none, or sits inside an `if` that asks. Otherwise: a hint.
  */
 function checkNothing(app: App, warn: Err) {
-  const optional = new Set(app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name));
+  // A value that may be nothing: an optional state field, or an optional record field (`Book.rating`).
+  const optional = new Set([
+    ...app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name),
+    ...app.records.flatMap((r) => r.fields.filter((f) => f.type.k === "Maybe").map((f) => f.name)),
+  ]);
   if (!optional.size) return;
   const esc = (x: string) => x.replace(/\./g, "\\.");
   const handles = (text: string, x: string) =>
-    new RegExp(`there is (a |an |no )?@${esc(x)}\\b|\\bno @${esc(x)}\\b|@${esc(x)} is (not )?(nothing|set)|without (a |an )?@${esc(x)}\\b|\\b(set|clear) @${esc(x)}\\b`).test(text);
+    new RegExp(`there is (a |an |no )?@${esc(x)}\\b|\\bno @${esc(x)}\\b|@${esc(x)} is (not )?(nothing|set)|without (a |an )?@${esc(x)}\\b|\\b(set|clear) @${esc(x)}\\b|\\bwhen there is none\\b`).test(text);
   const reads = (text: string) => [...new Set(refsIn(text).map((r) => r.split(".")[0]))].filter((x) => optional.has(x) && !handles(text, x));
   const hint = (line: number, x: string, where: string) =>
     line < LINE_BASE && warn(line, "UNGUARDED", `@${x} may be nothing (${where}): say what happens then, inside \`if there is a @${x} { … }\` or in the sentence ("…, or nothing when there is no @${x}")`);
