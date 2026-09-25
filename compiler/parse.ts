@@ -120,7 +120,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, through, line: node.line });
     } else if ((m = t.match(new RegExp(`^use\\s+(${LOWER})\\s*=\\s*(${LOWER}(?:\\.${LOWER})+)$`)))) {
       // An api app runs behind a layer: \`use cors = std.http.cors\`, params bound in indented lines.
-      (app.layers ??= []).push({ alias: m[1], layer: m[2], bindings: node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b), line: node.line });
+      (app.layers ??= []).push({ alias: m[1], layer: m[2], bindings: node.children.map((c) => parseBinding(c, err, true)).filter((b): b is Binding => !!b), line: node.line });
     } else if (app.kind === "layer" && (m = t.match(new RegExp(`^param\\s+(${LOWER})\\s*:\\s*([^=]+?)\\s*(?:=\\s*(.+))?$`)))) {
       const f = parseField({ ...node, text: `${m[1]}: ${m[2]}` }, err, false);
       const def = m[3] !== undefined ? parseBinding({ ...node, text: `${m[1]} = ${m[3]}` }, err) : undefined;
@@ -558,7 +558,10 @@ function checkHints(app: App, warn: Err) {
   checkNothing(app, warn);
   // A rule that reads like an invariant is only guidance in `rules`; in `always` it is checked.
   app.rules.forEach((r, i) => {
-    if (/\b(never|always|at most|at least|no two|cannot|can't|must not|may not)\b/i.test(r) && (app.ruleLines?.[i] ?? 0) < LINE_BASE)
+    // A definition ("a @Release meets an item when it is at least …") is not a claim about the data.
+    const claim = r.match(/\b(never|always|at most|at least|no two|cannot|can't|must not|may not)\b/i);
+    const defines = claim && /\b(when|if|means|counts as|is called)\b/i.test(r.slice(0, claim.index));
+    if (claim && !defines && (app.ruleLines?.[i] ?? 0) < LINE_BASE)
       warn(app.ruleLines?.[i] ?? 1, "UNCHECKED", `this rule reads like something that must always hold, but \`rules\` is only guidance: move it to \`always { - … }\` so every session checks it`);
   });
 }
@@ -657,6 +660,7 @@ function checkRefs(app: App, err: Err, warn: Err) {
     // "its body" / "its status" of an answer or event are the language's, not a field.
     let text = /^on (answer|event)/.test(s.where) ? s.text.replace(/\bits (body|status)\b/g, " ") : s.text;
     text = text.replace(/^\([\w.]+\) /, ""); // a rule from a component instance: checked in its bundle
+    text = text.replace(/^(call|publish)\b/, " "); // the language's own step words, even when an endpoint or event has that name
     for (const w of bareWords(text)) if (hinted.has(w) && !rowItems.has(w)) (unmarked.get(s.line) ?? unmarked.set(s.line, new Set()).get(s.line)!).add(w);
   }
   for (const [line, ws] of unmarked) warn(line, "UNMARKED", `${[...ws].map((w) => `"${w}"`).join(", ")} ${ws.size > 1 ? "are declared names" : "is a declared name"}: in a sentence, write ${[...ws].map((w) => `\`@${w}\``).join(", ")} when you mean ${ws.size > 1 ? "them" : "it"}`);
@@ -776,9 +780,79 @@ function parseBullets(node: Line, err: (l: number, c: string, m: string, col?: n
 
 // ---------------------------------------------------------------- pieces
 
+/** A quoted string: `\\n` is a new line and `\\t` a tab; a backslash before anything else keeps that character. */
 export function parseString(s: string): string | undefined {
   if (!new RegExp(`^${STR}$`).test(s)) return undefined;
-  return s.slice(1, -1).replace(/\\(.)/g, "$1");
+  return s.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === "n" ? "\n" : c === "t" ? "\t" : c));
+}
+
+/** Whether a list or record value in a \`call\` fits the param's type: lists for lists, a record's fields by name. */
+function argShape(v: Literal, t: Type, app: App): string | undefined {
+  const inner = t.k === "Maybe" ? t.of : t;
+  if (v.k === "list") {
+    if (inner.k !== "List") return `a list, but the param is ${typeToString(t)}`;
+    for (const x of v.items) {
+      const w = argShape(x, inner.of, app);
+      if (w) return w;
+    }
+  }
+  if (v.k === "record") {
+    const r = inner.k === "Named" ? app.records.find((x) => x.name === inner.name) : undefined;
+    if (!r) return `a record, but the param is ${typeToString(t)}`;
+    for (const f of v.fields) {
+      const field = r.fields.find((x) => x.name === f.name);
+      if (!field) return `${r.name} has no field \`${f.name}\` (${r.fields.map((x) => x.name).join(", ")})`;
+      const w = argShape(f.value, field.type, app);
+      if (w) return w;
+    }
+    const missing = r.fields.find((x) => x.type.k !== "Maybe" && x.default === undefined && !v.fields.some((f) => f.name === x.name));
+    if (missing) return `${r.name} needs \`${missing.name}\``;
+  }
+  return undefined;
+}
+
+/** Split `a = 1, b = [x, y], c = { d = "e, f" }` at the commas that are not inside brackets, braces or strings. */
+function splitTop(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let inStr = false;
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr && ch === "\\") {
+      cur += ch + (s[++i] ?? "");
+      continue;
+    }
+    if (ch === '"') inStr = !inStr;
+    else if (!inStr && (ch === "[" || ch === "{")) depth++;
+    else if (!inStr && (ch === "]" || ch === "}")) depth--;
+    if (ch === "," && !inStr && depth === 0) {
+      out.push(cur.trim());
+      cur = "";
+    } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/** A value in a \`call\` argument: a literal, a list \`[a, b]\`, or a record \`{ name = value, … }\`. */
+function parseArgValue(s: string): Literal | undefined {
+  s = s.trim();
+  if (s.startsWith("[") && s.endsWith("]") && s !== "[]") {
+    const items = splitTop(s.slice(1, -1)).map(parseArgValue);
+    return items.every((x): x is Literal => !!x) ? { k: "list", items } : undefined;
+  }
+  if (s.startsWith("{") && s.endsWith("}") && s.includes("=")) {
+    const fields: { name: string; value: Literal }[] = [];
+    for (const part of splitTop(s.slice(1, -1))) {
+      const m = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+      const v = m && parseArgValue(m[2]);
+      if (!m || !v) return undefined;
+      fields.push({ name: m[1], value: v });
+    }
+    return { k: "record", fields };
+  }
+  return parseLiteral(s);
 }
 
 function parseDuration(s: string): number | undefined {
@@ -1068,7 +1142,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   if ((m = t.match(new RegExp(`^call\\s+(${LOWER}(?:\\.${LOWER})?)(?:\\s+with\\s+(.+))?$`)))) {
     const args: { name: string; value: Literal }[] = [];
     const headers: { name: string; value: Literal }[] = [];
-    for (const part of m[2] ? splitArgs(m[2]) : []) {
+    for (const part of m[2] ? splitTop(m[2]) : []) {
       const hm = part.match(new RegExp(`^header\\s+(${HEADER})\\s*=\\s*(.+)$`));
       if (hm) {
         const v = parseLiteral(hm[2]);
@@ -1078,8 +1152,8 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
       }
       const am = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
       // `{createTicket.body.id}`: a value from an earlier answer (kept as a text literal holding the reference).
-      const lit = am && (/^\{[a-z][\w.[\]]*\}$/i.test(am[2].trim()) ? ({ k: "text", v: am[2].trim() } as Literal) : parseLiteral(am[2]));
-      if (!am || !lit) err(line, "SYNTAX", `\`${part}\` is not \`name = value\``, col);
+      const lit = am && (/^\{[a-z][\w.[\]]*\}$/i.test(am[2].trim()) ? ({ k: "text", v: am[2].trim() } as Literal) : parseArgValue(am[2]));
+      if (!am || !lit) err(line, "SYNTAX", `\`${part}\` is not \`name = value\` (a value is a literal, a list \`[a, b]\` or a record \`{ field = value, … }\`)`, col);
       else args.push({ name: am[1], value: lit });
     }
     return { step: { do: "call", endpoint: m[1], args, ...(headers.length ? { headers } : {}), line } };
@@ -1163,7 +1237,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: m[4] as "shown" }, line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s*=\\s*(.+)$`)))) {
     const lit = parseLiteral(m[4]);
-    if (!lit || lit.k === "emptyList" || lit.k === "nothing" || lit.k === "table") {
+    if (!lit || lit.k === "emptyList" || lit.k === "nothing" || lit.k === "table" || lit.k === "list" || lit.k === "record") {
       err(line, "SYNTAX", `\`${m[4]}\` is not a value to compare with; use a "string", a number or a choice value`, col);
       return;
     }
@@ -1275,6 +1349,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   // Screen: scopes and bindings.
   const top = new Map<string, Element>(); // names visible at top level (sections are transparent)
   const lists: Element[] = [];
+  const PLAIN = ["Text", "Int", "Decimal", "Bool", "Date", "DateTime"];
   const all: { el: Element; list?: Element }[] = [];
   const walk = (els: Element[], list: Element | undefined, scope: Map<string, Element>) => {
     for (const el of els) {
@@ -1286,7 +1361,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       if (el.kind === "list") {
         lists.push(el);
-        walk(el.children, el, new Map());
+        // A list of plain values is NOT_YET (below): its rows have no fields to check.
+        if (!PLAIN.includes(el.of!)) walk(el.children, el, new Map());
       } else if (el.kind === "section") walk(el.children, list, scope);
     }
   };
@@ -1332,6 +1408,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (!el.expr && !(list ? rowField : st || derived.has(el.name))) err(el.line, "UNKNOWN_NAME", `\`progress ${el.name}\` shows nothing: declare state or derive \`${el.name}\` (0–100), or write \`progress ${el.name} = …\``);
         break;
       case "list":
+        if (PLAIN.includes(el.of!)) {
+          err(el.line, "NOT_YET", `a list shows rows of a record, not of plain ${el.of} values (yet): declare a record with one field (\`record ${el.name[0].toUpperCase() + el.name.slice(1)}Row { value: ${el.of} }\`) and list that, or show the values joined in one text`);
+          break;
+        }
         if (!records.has(el.of!)) err(el.line, "UNKNOWN_NAME", `unknown record \`${el.of}\`${suggest(el.of!, [...records.keys()])}`);
         if (!el.expr) {
           const f = st;
@@ -1641,7 +1721,14 @@ function checkApi(
           err(s.line, "UNKNOWN_NAME", `no endpoint \`${s.endpoint}\`${suggest(s.endpoint, [...eps.keys()])}`);
           continue;
         }
-        for (const a of s.args) if (!ep.params.some((p) => p.name === a.name)) err(s.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${a.name}\` (${ep.params.map((p) => p.name).join(", ") || "none"})`);
+        for (const a of s.args) {
+          const param = ep.params.find((p) => p.name === a.name);
+          if (!param) err(s.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${a.name}\` (${ep.params.map((p) => p.name).join(", ") || "none"})`);
+          else {
+            const wrong = argShape(a.value, param.type, app);
+            if (wrong) err(s.line, "STEP", `\`${a.name}\`: ${wrong}`);
+          }
+        }
       } else if (s.do === "request") {
         continue;
       } else if (s.do === "see" && s.target.startsWith("request.")) {

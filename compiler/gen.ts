@@ -15,13 +15,15 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), ".."); // the 
 
 /**
  * The user's project: the nearest folder (from where the command runs) with an intent.project or
- * intent.lock. Its lib/, intent.lock, intent.project and .intent/ belong to the project; the
- * language reference and runtimes come from the Intent installation (ROOT).
+ * intent.lock; without one, the folder the command runs in (a new project: `intent lock` starts
+ * its lock there). Never the installation by accident: its lock and cache are its own. The
+ * project's lib/, intent.lock, intent.project and .intent/ belong to the project; the language
+ * reference, runtimes and standard library come from the Intent installation (ROOT).
  */
 export const PROJECT_ROOT = (() => {
   for (let d = process.cwd(); ; d = dirname(d)) {
     if (existsSync(join(d, "intent.project")) || existsSync(join(d, "intent.lock"))) return d;
-    if (dirname(d) === d) return ROOT;
+    if (dirname(d) === d) return process.cwd();
   }
 })();
 
@@ -86,6 +88,7 @@ function elmLiteral(l: Literal, t: Type): string {
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
     case "table": return "[]";
+    case "list": case "record": throw new Error("list and record values are only call arguments in examples");
   }
 }
 
@@ -100,6 +103,7 @@ function tsLiteral(l: Literal): string {
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
     case "table": return "[]";
+    case "list": case "record": throw new Error("list and record values are only call arguments in examples");
   }
 }
 
@@ -110,7 +114,7 @@ export const hasInvariants = (app: App) => !!app.invariants?.length;
 /** State that survives a restart (`stored name: T = …`). */
 export const hasStored = (app: App) => app.state.some((f) => f.stored);
 /** The app hands over its data: for the checks in `always`, and to save its stored state. */
-export const hasData = (app: App) => hasInvariants(app) || hasStored(app);
+export const hasData = (app: App) => hasInvariants(app) || hasStored(app) || (app.layers ?? []).some((l) => l.bindings.some((b) => b.state));
 /** A state field's name in the data: `pager.page` → `pagerPage`. */
 export const dataField = (name: string) => name.replace(/\.([a-z])/g, (_, c: string) => c.toUpperCase());
 

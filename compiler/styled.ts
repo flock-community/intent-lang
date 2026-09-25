@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App } from "./ast.ts";
-import type { Target } from "./gen.ts";
+import { ROOT, type Target } from "./gen.ts";
 import { kitElm, kitTs } from "./kit.ts";
 
 const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
@@ -166,7 +166,7 @@ export function scaffoldStyled(app: App, target: Target, dir: string, useKit = f
     join(dir, "tsconfig.json"),
     JSON.stringify(
       {
-        compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, jsx: "react-jsx", jsxImportSource: "preact", lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, types: [] },
+        compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, jsx: "react-jsx", jsxImportSource: "preact", lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, types: [], paths: { "*": [join(ROOT, "node_modules/*")] } },
         include: ["*.ts", "*.tsx"],
       },
       null,

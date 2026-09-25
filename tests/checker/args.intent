@@ -1,0 +1,41 @@
+app ArgChecks {
+  "Lists and records as call arguments; new lines in strings."
+}
+
+profile api
+
+record Need {
+  bundle: Text
+  minimum: Text
+}
+
+state {
+  needs: List Need = []
+  notes: Text = ""
+}
+
+endpoint want POST "/needs" {
+  body needs: List Need
+  returns List Need
+  - add every one of the given @needs to the end of @needs
+  answer 200 with @needs
+}
+
+endpoint note POST "/notes" {
+  body text: Text
+  returns Text
+  - set @notes to the given @text
+  answer 200 with @notes
+}
+
+example "lists and records" {
+  call want with needs = [{ bundle = "std.list", minimum = "1.0" }, { bundle = "support.tickets", minimum = "2.1" }]
+  see want.status = 200
+  see want.body has 2 rows
+  see want.body[2].bundle = "support.tickets"
+  call want with needs = [{ bundle = "std.list" }]                    # expect: STEP
+  call want with needs = [{ bundel = "std.list", minimum = "1" }]     # expect: STEP
+  call want with needs = { bundle = "std.list", minimum = "1" }       # expect: STEP
+  call note with text = "one\ntwo"
+  see note.body = "one\ntwo"
+}

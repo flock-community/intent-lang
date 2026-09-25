@@ -1,4 +1,4 @@
-# Intent — language reference (v34)
+# Intent — language reference (v35)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -58,7 +58,7 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
 - `#` starts a comment (outside strings). Blank lines are ignored.
 - Names: element, field and state names are `lowerCamel`; app, record and choice names and
   choice values are `UpperCamel`.
-- Strings: `"…"` with `\"` and `\\` escapes. Inside a template string `{…}` is a hole.
+- Strings: `"…"` with `\"`, `\\`, `\n` (a new line) and `\t` (a tab) escapes. Inside a template string `{…}` is a hole.
 - Numbers: `12`, `-3`, `2.50`. Durations: `1s`, `250ms`, `2m`.
 
 ## 3. Blocks
@@ -457,6 +457,12 @@ example "paging in priority order" {
 
 ## 4d. Projects, dependencies and the registry
 
+A project is the folder with `intent.project` or `intent.lock` nearest to where a command runs,
+or that folder itself when there is none yet (`intent lock` starts its lock there). Its `lib/`,
+lock and `.intent/` cache are its own. A bundle comes from the project's `lib/`, else the version
+pinned in its lock, else, for `std.*`, the standard library of the Intent installation (shown
+as `intent:lib/std/…`).
+
 A project lists the bundles it needs in `intent.project`, at its root:
 
 ```
@@ -527,6 +533,12 @@ example "creating a ticket" {
 - `call x with a = 1, b = "…"` sends a request, and `see x.status` / `see x.body.<path>` check the
   latest answer of `x`. `has N rows`, numeric checks and `see every row of x.body: …` work on
   lists. A param left out of a `call` is not sent, which tests the harness's `is required` answer.
+  A value is a literal, a list `[a, b]`, or a record `{ bundle = "std.list", minimum = "1.0" }`
+  (`needs = [{ bundle = "std.list", minimum = "1.0" }]`); the checker matches records' fields
+  with the param's type.
+- `@newToken` is a fresh random secret for the request (32 hex characters), the same wherever
+  one endpoint uses it: an API key at sign-up, an invitation code, a reset link. In tests it is
+  `token-1`, `token-2`, … in the order requests reach endpoints, so examples can use it.
 - A build is a Node server (`node server.mjs`, `PORT`) plus the same pure handler under test.
   With `INTENT_TRACE=1`, every answer carries `x-intent-source`: the spec line that gave it (the
   step that answers that status, the endpoint, or the layer that refused). Leave it off in
@@ -754,7 +766,9 @@ endpoint solveTicket POST "/tickets/{id}/solve" {
 ```
 
 - `use <name> = <layer>` binds the layer's params in its block: a literal, literals
-  separated by commas (a list), or a `table`. Params with a default may be left out.
+  separated by commas (a list), a `table`, or a state field of the app (`keys = apiKeys`): the
+  layer then reads it on every request, so endpoints can change it (sign-up adds a key). The
+  layer's records (`ApiKey`) are the app's too. Params with a default may be left out.
 - Layers run in the order of the `use` lines: the first sees every request first and every
   answer last. A layer that answers (a refused key, a preflight) stops the request: later layers
   and the app are not reached, and the answer goes back out through the layers before it. So put
@@ -767,7 +781,8 @@ endpoint solveTicket POST "/tickets/{id}/solve" {
 Available layers: `std.http.secure` (x-content-type-options, x-frame-options, referrer-policy,
 cache-control, content-security-policy), `std.http.cors` (`origins`, `headers`, `maxAge`),
 `std.http.apiKey` (`keys`, `keyHeader`, `public`; provides `caller`; secrets compared in
-constant time).
+constant time). A `public` entry is a path (`"/health"`), every path under a prefix
+(`"/bundles/*"`), or either for one method only (`"GET /bundles/*"`, `"POST /signup"`).
 
 **Writing a layer** (`layer std.http.cors`): `param name: Type [= default]`, `provides name:
 Type`, `before every request` (steps that may `answer`, which stops the request, or pass it on) and
@@ -1053,6 +1068,7 @@ Each version below was added because a real spec needed it. Next candidates:
 - fields, selects and nested lists inside list rows (inline editing, sub-items);
 - `clock` in styled apps;
 - several screens with navigation;
+- lists of plain values on screen (`list tags of Text`, the row as `it`); now a one-field record;
 - effects the harness owns, such as HTTP and randomness with a seed;
 - invariants across rows ("no table is booked twice") and over state that is not on screen;
 - restyling a bundle component's elements from the app;
@@ -1061,6 +1077,13 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v35: from building a registry with Intent: the project is where the command runs (never the
+  installation by accident), and `std.*` comes from the installation; a service layer's param can
+  be bound to the app's state (`keys = apiKeys`), and its records are the app's; `@newToken`, a
+  fresh secret per request (`apps/api/members-api.intent`: sign-up); `public` entries by prefix
+  and method in `std.http.apiKey`; lists and records as `call` arguments; `\n` and `\t` in
+  strings; `NOT_YET` for lists of plain values; fewer false `UNMARKED` / `UNCHECKED` hints.
 
 - v34: effectively once. Services recognise a repeated request by its idempotency key (IETF
   draft, Stripe): the same answer again, 422 for another request, 400 without a key for `effect

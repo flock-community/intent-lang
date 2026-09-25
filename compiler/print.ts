@@ -17,6 +17,8 @@ function lit(l: Literal, ind: string): string {
     case "value": return l.v;
     case "date": return l.v;
     case "dateTime": return l.v.replace("T", " ");
+    case "list": return `[${l.items.map((x) => lit(x, "")).join(", ")}]`;
+    case "record": return `{ ${l.fields.map((f) => `${f.name} = ${lit(f.value, "")}`).join(", ")} }`;
     case "table": {
       const rows = [l.columns, ...l.rows.map((r) => r.map((c) => lit(c, "")))];
       const w = l.columns.map((_, i) => Math.max(...rows.map((r) => r[i].length)));

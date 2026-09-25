@@ -88,7 +88,7 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`), ~~v32 stored
    state (survives a restart)~~ done, ~~v33 effects declared on contracts~~ done, ~~v34 effectively once (keys, retries, `unknown`,
    `steer` faults)~~ done. Next, per `docs/design/effects.md` (grounded in Stripe, IETF, AWS, sagas,
-   Temporal): the durable outbox (pending calls survive a restart), then v35 undo and agreement
+   Temporal): the durable outbox (pending calls survive a restart), then undo and agreement
    (`std.actions`). Later (the language is alpha): diagnostics that
    carry their fix and `intent fix` with pinned `language vN`; identity and references for stored
    records, then unions of records and several targets per app. Also

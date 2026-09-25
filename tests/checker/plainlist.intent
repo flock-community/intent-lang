@@ -1,0 +1,13 @@
+app PlainList {
+  "A list of plain texts is not yet in the language."
+}
+
+state {
+  tags: List Text = []
+}
+
+screen {
+  list tags of Text {                     # expect: NOT_YET
+    text value
+  }
+}

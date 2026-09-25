@@ -7,8 +7,8 @@ import type { Endpoint } from "./ast.ts";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { LINE_BASE, type App, type Check, type Example, type Literal, type Step, type Type } from "./ast.ts";
-import { ROOT, hasData, tsData, tsDomain, tsStoredFields, tsType } from "./gen.ts";
-import { usesClock } from "./refs.ts";
+import { ROOT, dataField, hasData, tsData, tsDomain, tsStoredFields, tsType } from "./gen.ts";
+import { usesClock, usesToken } from "./refs.ts";
 import { toHttp } from "../runtime/ts/calls.ts";
 import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
@@ -50,6 +50,8 @@ export function genApiSpec(app: App): string {
     ...(app.layers ?? []).flatMap((l) => (l.spec?.provides ?? []).map((p) => ({ ...p, from: `layer ${l.alias}` }))),
     // The clock (@now, @today) comes with every request of an api that reads it.
     ...(usesClock(app) ? [{ name: "now", type: { k: "DateTime" } as Type, note: "the time of the request", from: "the clock", line: 0 }, { name: "today", type: { k: "Date" } as Type, note: "its day", from: "the clock", line: 0 }] : []),
+    // A fresh secret for the request (@newToken): a key, an invitation code, a reset link.
+    ...(usesToken(app) ? [{ name: "newToken", type: { k: "Text" } as Type, note: "a fresh random secret, 32 hex characters; use it as it is", from: "the harness", line: 0 }] : []),
   ];
   const jobs = app.jobs ?? [];
   const respType = (e: Endpoint) =>
@@ -82,6 +84,8 @@ ${jobs.length ? `/** Recurring work (\\\`every …\\\` in the spec): the model a
 export const jobList: { name: string; every: number }[] = ${JSON.stringify(jobs.map((j) => ({ name: j.name, every: j.every })))};
 ${tsStoredFields(app)}/** Endpoints with \\\`effect external\\\`: a request without an idempotency key is refused (400). */
 export const externalEndpoints: string[] = ${JSON.stringify((app.endpoints ?? []).filter((e) => e.effect).map((e) => e.name))};
+/** Whether endpoints get a fresh secret (\\\`@newToken\\\`). */
+export const usesToken = ${usesToken(app)};
 
 
 /** The endpoints, for the router: methods, paths and parameter types. */
@@ -127,7 +131,7 @@ const PIPELINE = `import * as App from "./app.ts";
 import { route } from "./api.ts";
 import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
 import type { Clock } from "./clock.ts";
-import { answerSources, endpoints, externalEndpoints, sources } from "./spec.ts";
+import { answerSources, endpoints, externalEndpoints, sources, usesToken } from "./spec.ts";
 import { layers } from "./layers.ts";
 import { fingerprint, keyed, KEY_HEADER, recall, remember, type Keys } from "./once.ts";
 
@@ -135,7 +139,10 @@ const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
 
 export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[]; source?: string };
 
-export function pipeline() {
+/** \`token\`: where fresh secrets (@newToken) come from; numbered in tests (token-1, token-2, …), random on the server. */
+export function pipeline(token?: () => string) {
+  let tokens = 0;
+  const newToken = token ?? (() => \`token-\${++tokens}\`);
   let model = App.init();
   /** Answers remembered by idempotency key (once.ts): kept with the stored state, and across a restart. */
   let keys: Keys = {};
@@ -155,9 +162,11 @@ export function pipeline() {
     let appAnswer: { status: number; body: unknown } | undefined;
     let events: { event: string; body: unknown }[] = [];
     let source: string | undefined; // the spec line that answered: a layer that refused, or the endpoint
+    // A layer's config: its bound literals, and the params bound to the app's state as they are now.
+    const configOf = (l: (typeof layers)[number]) => (l.state ? { ...(l.config as object), ...Object.fromEntries(Object.entries(l.state).map(([p, f]) => [p, (data() as Record<string, unknown>)[f]])) } : l.config);
     for (const l of layers) {
       passed.push(l);
-      const b = l.before(copy(req), copy(l.config));
+      const b = l.before(copy(req), copy(configOf(l)));
       if ("answer" in b) {
         res = normalize(b.answer);
         source = \`\${l.source} (layer \${l.name})\`;
@@ -189,7 +198,7 @@ export function pipeline() {
       } else {
         endpoint = r.request.endpoint as string;
         source = \`\${sources[endpoint]} (endpoint \${endpoint})\`;
-        const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided, ...(clock ? { now: clock.now, today: clock.today } : {}) }, model);
+        const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided, ...(clock ? { now: clock.now, today: clock.today } : {}), ...(usesToken ? { newToken: newToken() } : {}) }, model);
         model = out.model;
         appAnswer = copy({ status: out.response.status, body: out.response.body });
         events = copy(out.publish ?? []);
@@ -200,7 +209,7 @@ export function pipeline() {
         if (step) source = \`\${step} (endpoint \${endpoint})\`;
       }
     }
-    for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(l.config)));
+    for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(configOf(l))));
     return { ...normalize(res), endpoint, appAnswer, events, source };
   };
   /** The app's data, for the checks in \`always\` and to keep what is stored. */
@@ -217,12 +226,14 @@ export function pipeline() {
 
 const SERVER = `import { createServer } from "node:http";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { pipeline } from "./pipeline.ts";
 import { jobList, storedFields } from "./spec.ts";
 import { fits } from "./api.ts";
 import { localClock } from "./clock.ts";
 
-const handle = pipeline();
+// Fresh secrets (@newToken) on the server: 16 random bytes from the operating system, as hex.
+const handle = pipeline(() => randomBytes(16).toString("hex"));
 // Stored state (\`stored\` in the spec) lives in a JSON file (INTENT_DATA, default data.json): read at the
 // start, written after every request and every run of recurring work.
 const DATA_FILE = process.env.INTENT_DATA ?? "data.json";
@@ -353,10 +364,10 @@ export function scaffoldApi(app: App, dir: string, layerDirs: Record<string, str
 import type { HttpRequest, HttpResponse } from "./http.ts";
 ${(app.layers ?? []).map((l) => `import * as ${l.alias} from "./layers/${l.alias}/layer.ts";`).join("\n")}
 
-export type Layer = { name: string; source: string; before: (req: HttpRequest, config: any) => { pass: Record<string, unknown> } | { answer: HttpResponse }; after: (req: HttpRequest, res: HttpResponse, config: any) => HttpResponse; config: unknown };
+export type Layer = { name: string; source: string; before: (req: HttpRequest, config: any) => { pass: Record<string, unknown> } | { answer: HttpResponse }; after: (req: HttpRequest, res: HttpResponse, config: any) => HttpResponse; config: unknown; state?: Record<string, string> };
 
 export const layers: Layer[] = [
-${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(app, l.line))}, before: ${l.alias}.before as Layer["before"], after: ${l.alias}.after as Layer["after"], config: ${JSON.stringify(layerConfig(l.spec!, l.bindings))} },`).join("\n")}
+${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(app, l.line))}, before: ${l.alias}.before as Layer["before"], after: ${l.alias}.after as Layer["after"], config: ${JSON.stringify(layerConfig(l.spec!, l.bindings.filter((b) => !b.state)))}${l.bindings.some((b) => b.state) ? `, state: ${JSON.stringify(Object.fromEntries(l.bindings.filter((b) => b.state).map((b) => [b.name, dataField(b.state!)])))}` : ""} },`).join("\n")}
 ];
 `,
   );
@@ -368,7 +379,7 @@ ${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(a
   writeFileSync(join(dir, "test-entry.ts"), TEST_ENTRY);
   writeFileSync(
     join(dir, "tsconfig.json"),
-    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022"], types: ["node"], skipLibCheck: true }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
+    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022"], types: ["node"], typeRoots: [join(ROOT, "node_modules/@types")], skipLibCheck: true }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
   );
   writeFileSync(join(dir, "README.md"), `# ${app.name}\n\nRun: \`node server.mjs\` (PORT, default 3000).\n\n${(app.endpoints ?? []).map((e) => `- ${e.method} ${e.path}`).join("\n")}\n`);
   return { appFile: join(dir, "app.ts"), specSource: spec };
@@ -411,6 +422,8 @@ export function literalJson(l: Literal): unknown {
     case "value": return l.v;
     case "date": return l.v;
     case "dateTime": return l.v;
+    case "list": return l.items.map(literalJson);
+    case "record": return Object.fromEntries(l.fields.map((f) => [f.name, literalJson(f.value)]));
     default: return null;
   }
 }

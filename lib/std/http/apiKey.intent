@@ -9,7 +9,7 @@ record ApiKey {
 
 param keys: List ApiKey                            # the keys that may call, and who each belongs to
 param keyHeader: Text = "x-api-key"                # the header that carries the key
-param public: List Text = []                       # paths anyone may call without a key, matched exactly ("/health")
+param public: List Text = []                       # what anyone may call without a key: "/health" (that path), "/bundles/*" (every path under /bundles/), "GET /bundles/*" (only with that method)
 
 provides caller: Text                              # the owner of the key; "" on a public path and for OPTIONS
 
@@ -17,7 +17,9 @@ before every request {
   - secrets are compared in constant time, so the time an answer takes does not reveal how much of a key was right
   if the request's method is OPTIONS {
     - it passes with @caller "": browsers send preflights without an API key
-  } else if the request's path is in @public {
+  } else if the request matches an entry of @public {
+    - an entry matches when its path part matches the request's path, and, if it starts with a method and a space, that method is the request's method
+    - a path part ending in "/*" matches every path that starts with the part before the "*" (so "/bundles/*" matches "/bundles/std.list" and "/bundles/a/b", not "/bundles" or "/bundlesx"); any other path part matches only exactly that path
     - it passes with @caller ""
   } else if the request has no @keyHeader header, or its value is blank {
     answer 401 "Missing API key" with header www-authenticate = "ApiKey"
@@ -34,7 +36,7 @@ examples with {
     "k-ann-7f3a"   | "Ann"
     "k-sam-91bc"   | "Sam"
   }
-  public = "/health"
+  public = "/health", "/docs/*", "GET /bundles/*"
 }
 
 example "a known key: the app knows who calls" {
@@ -75,4 +77,23 @@ example "public paths and preflights need no key" {
   request OPTIONS "/tickets" with header origin = "https://desk.example", header access-control-request-method = "POST"
   see body.reached = true
   see body.caller = ""
+}
+
+example "public by prefix, and by method" {
+  request GET "/docs/start/intro"
+  see status = 200
+  see body.caller = ""
+  request GET "/docs"
+  see status = 401
+  request GET "/docsx"
+  see status = 401
+  request GET "/bundles/std.list"
+  see status = 200
+  see body.caller = ""
+  request POST "/bundles/std.list"
+  see status = 401
+  see body.error = "Missing API key"
+  request POST "/bundles/std.list" with header x-api-key = "k-ann-7f3a"
+  see status = 200
+  see body.caller = "Ann"
 }

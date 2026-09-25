@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v34** (see the changelog at the end of
+Language version this skill matches: **v35** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -243,6 +243,26 @@ items, their history, an API's records), and leave what belongs to one visit (a 
 filter, an open drawer) unmarked. Prove it with an example that changes both kinds, says
 `restart`, and sees the stored part kept and the rest back at its default. For an API, also
 check that new ids continue after a restart.
+
+## 5j. Sign-up, keys and secrets
+
+Keys that users create live in the app's stored state and the key layer reads them from there
+(`apps/api/members-api.intent`):
+
+```
+use auth = std.http.apiKey {
+  keys = apiKeys
+  public = "POST /signup"
+}
+
+state {
+  stored apiKeys: List ApiKey = []
+}
+```
+
+ A new secret is `@newToken` (never invent one from a name or a
+counter); in examples it is `token-1`, `token-2`, …. Open only what must be open, and by method:
+`"GET /bundles/*"`, not `"/bundles/*"`, when writes must stay behind a key.
 
 ## 5i. Effects: money, mail, other companies
 

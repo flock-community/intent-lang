@@ -20,7 +20,10 @@ export type Literal =
   | { k: "value"; v: string } // a choice value
   | { k: "date"; v: string } // 2026-09-24
   | { k: "dateTime"; v: string } // 2026-09-24 09:00, kept as "2026-09-24T09:00"
-  | { k: "table"; columns: string[]; rows: Literal[][] }; // seed data for List Record
+  | { k: "table"; columns: string[]; rows: Literal[][] } // seed data for List Record
+  // Only as \`call\` arguments in examples: \`needs = [{ bundle = "std.list", minimum = "1.0" }]\`.
+  | { k: "list"; items: Literal[] }
+  | { k: "record"; fields: { name: string; value: Literal }[] };
 
 export interface Field {
   name: string;

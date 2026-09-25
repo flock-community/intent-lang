@@ -1,0 +1,74 @@
+app MembersApi {
+  "Anyone can sign up and gets an API key; with it they can see who they are."
+  "Keys belong to the members who signed up, and survive a restart."
+}
+
+profile api
+
+use auth = std.http.apiKey {
+  keys = apiKeys
+  public = "POST /signup"
+}
+
+record Member {
+  name: Text
+  apiKey: Text
+}
+
+state {
+  stored apiKeys: List ApiKey = table {
+    secret         | owner
+    "k-admin-0001" | "Admin"
+  }
+}
+
+endpoint signup POST "/signup" {
+  body name: Text
+  returns Member
+  if @name, trimmed, is blank {
+    answer 400 "Name is required"
+  }
+  if some @ApiKey in @apiKeys has @name trimmed as its @owner {
+    answer 409 "That name is taken"
+  }
+  - add an @ApiKey to the end of @apiKeys with @secret = @newToken and @owner = @name trimmed
+  answer 201 with a @Member with @name = @name trimmed and @apiKey = @newToken
+}
+
+endpoint me GET "/me" {
+  returns Text
+  answer 200 with @caller
+}
+
+example "signing up gives a key that works at once" {
+  call signup with name = " Ann "
+  see signup.status = 201
+  see signup.body.name = "Ann"
+  see signup.body.apiKey = "token-1"
+  call me with header x-api-key = "token-1"
+  see me.status = 200
+  see me.body = "Ann"
+}
+
+example "a name is taken once" {
+  call signup with name = "Ann"
+  call signup with name = "Ann"
+  see signup.status = 409
+  see signup.body.error = "That name is taken"
+  call signup with name = "  "
+  see signup.status = 400
+}
+
+example "only signing up is open" {
+  call me
+  see me.status = 401
+  call me with header x-api-key = "k-admin-0001"
+  see me.body = "Admin"
+}
+
+example "keys survive a restart" {
+  call signup with name = "Sam"
+  restart
+  call me with header x-api-key = "token-1"
+  see me.body = "Sam"
+}

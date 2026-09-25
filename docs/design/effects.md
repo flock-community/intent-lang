@@ -158,7 +158,7 @@ steer booking expire keys        # a late retry after the keys expired
 2. **v34: once.** `std.http.once` with its examples; keys, the durable outbox and retries in the
    runtime; the `Unknown` answer; `steer` faults in examples and random sessions. Rebuild the
    ticket and desk APIs and screens with it.
-3. **v35: undo and agreement.** `undo @x`; `std.actions` (pending, approve / edit / reject,
+3. **Next: undo and agreement.** `undo @x`; `std.actions` (pending, approve / edit / reject,
    standing permissions with count, period and amount, emergency stop, four eyes).
 4. **Then:** openouros's six action scenarios (UC4) as specs against these, as the held-out test.
 

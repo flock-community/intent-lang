@@ -76,6 +76,11 @@ export function sentences(app: App): { text: string; line: number; where: string
 
 /** The clock every sentence may read: `@now` (a DateTime) and `@today` (a Date). */
 export const CLOCK_NAMES = ["now", "today"];
+/** A fresh secret per request (\`@newToken\`): random on the server, numbered in tests. */
+export const TOKEN_NAME = "newToken";
+
+/** Does this api use \`@newToken\`? Then every endpoint gets one. */
+export const usesToken = (app: App): boolean => sentences(app).some((s) => refsIn(s.text).some((r) => r.split(".")[0] === TOKEN_NAME));
 
 /** Does this app read the clock (`@now`, `@today`), or run recurring work? Then its logic gets the clock. */
 export function usesClock(app: App): boolean {
@@ -85,7 +90,7 @@ export function usesClock(app: App): boolean {
 
 /** Every name a sentence of this app may refer to. */
 export function declaredNames(app: App): Set<string> {
-  const names = new Set<string>(CLOCK_NAMES);
+  const names = new Set<string>([...CLOCK_NAMES, ...(app.profile === "api" ? [TOKEN_NAME] : [])]);
   for (const f of app.state) names.add(f.name);
   for (const d of app.derive) names.add(d.name);
   const walk = (els: Element[]) => {

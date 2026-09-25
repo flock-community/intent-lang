@@ -25,14 +25,23 @@ export interface Loaded {
 }
 
 /**
- * Where a bundle's source is: the local lib/ first (so bundles can be developed in place), else
- * the version pinned in intent.lock and downloaded by `intent install` into .intent/deps/.
+ * Where a bundle's source is: the project's lib/ first (so bundles can be developed in place), else
+ * the version pinned in intent.lock and downloaded by `intent install` into .intent/deps/, else,
+ * for the standard library (`std.*`), the one that comes with the Intent installation.
  */
 export const bundlePath = (name: string): string => {
   const local = join(LIB, ...name.split(".")) + ".intent";
   if (existsSync(local)) return local;
   const version = readLockVersions().get(name);
-  return version ? join(PROJECT_ROOT, ".intent/deps", `${name}@${version}.intent`) : local;
+  if (version) return join(PROJECT_ROOT, ".intent/deps", `${name}@${version}.intent`);
+  const std = join(ROOT, "lib", ...name.split(".")) + ".intent";
+  return name.startsWith("std.") && existsSync(std) ? std : local;
+};
+/** A file as the project shows it: relative to the project, or `intent:lib/std/…` for one from the Intent installation. */
+export const shown = (file: string): string => {
+  const inProject = relative(PROJECT_ROOT, file);
+  const inIntent = relative(ROOT, file);
+  return inProject.startsWith("..") && !inIntent.startsWith("..") ? `intent:${inIntent}` : inProject;
 };
 export const sha = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
@@ -83,7 +92,7 @@ function offsetLines(v: any, base: number) {
 }
 
 export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded {
-  const sources = [{ file: relative(PROJECT_ROOT, file), text: readFileSync(file, "utf8") }];
+  const sources = [{ file: shown(file), text: readFileSync(file, "utf8") }];
   const diagnostics: Diagnostic[] = [];
   const at = (line: number): { file: string; line: number } => ({ file: sources[Math.floor(line / LINE_BASE)]?.file ?? sources[0].file, line: line % LINE_BASE });
   const push = (level: "error" | "warning") => (line: number, code: string, message: string, col = 1) => diagnostics.push({ level, code, line, col, message });
@@ -113,17 +122,17 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   if (app.extends) {
     const base = app.extends;
     const path = bundlePath(base.name);
-    if (!existsSync(path)) err(base.line, "UNKNOWN_NAME", `no published app \`${base.name}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+    if (!existsSync(path)) err(base.line, "UNKNOWN_NAME", `no published app \`${base.name}\` (looked for ${shown(path)})`);
     else {
       const text = readFileSync(path, "utf8");
-      const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
+      const idx = sources.push({ file: shown(path), text }) - 1;
       const parsed = parseSyntax(text);
       offsetLines(parsed.app, idx * LINE_BASE);
       diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-      if (parsed.app.kind !== "app") err(base.line, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is a bundle; \`extends\` takes a published app`);
+      if (parsed.app.kind !== "app") err(base.line, "BAD_BINDING", `${shown(path)} is a bundle; \`extends\` takes a published app`);
       if (parsed.app.extends) err(base.line, "NOT_YET", "the base extends another spec itself; refinement is one level deep (compose components beyond that)");
       const digest = sha(text);
-      bundles.push({ name: base.name, file: relative(PROJECT_ROOT, path), sha: digest });
+      bundles.push({ name: base.name, file: shown(path), sha: digest });
       if (!opts.ignoreLock) {
         const locked = lock.get(base.name);
         if (!locked) err(base.line, "LOCK", `the base \`${base.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -145,16 +154,16 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   if (app.implements) {
     const c = app.implements;
     const path = bundlePath(c.name);
-    if (!existsSync(path)) err(c.line, "UNKNOWN_NAME", `no contract \`${c.name}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+    if (!existsSync(path)) err(c.line, "UNKNOWN_NAME", `no contract \`${c.name}\` (looked for ${shown(path)})`);
     else {
       const text = readFileSync(path, "utf8");
-      const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
+      const idx = sources.push({ file: shown(path), text }) - 1;
       const parsed = parseSyntax(text);
       offsetLines(parsed.app, idx * LINE_BASE);
       diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-      if (parsed.app.kind !== "contract") err(c.line, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is not a contract`);
+      if (parsed.app.kind !== "contract") err(c.line, "BAD_BINDING", `${shown(path)} is not a contract`);
       const digest = sha(text);
-      bundles.push({ name: c.name, file: relative(PROJECT_ROOT, path), sha: digest });
+      bundles.push({ name: c.name, file: shown(path), sha: digest });
       if (!opts.ignoreLock) {
         const locked = lock.get(c.name);
         if (!locked) err(c.line, "LOCK", `the contract \`${c.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -170,12 +179,12 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     if (app.profile !== "api") err(l.line, "BAD_BINDING", "layers wrap an api: add `profile api`");
     const path = bundlePath(l.layer);
     if (!existsSync(path)) {
-      err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+      err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${shown(path)})`);
       continue;
     }
     const loaded = load(path, opts);
     if (!loaded.app) {
-      err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${relative(PROJECT_ROOT, path)}\``);
+      err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${shown(path)}\``);
       continue;
     }
     if (loaded.app.kind !== "layer") {
@@ -183,7 +192,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
       continue;
     }
     const text = readFileSync(path, "utf8");
-    bundles.push({ name: l.layer, file: relative(PROJECT_ROOT, path), sha: sha(text) });
+    bundles.push({ name: l.layer, file: shown(path), sha: sha(text) });
     if (!opts.ignoreLock) {
       const locked = lock.get(l.layer);
       if (!locked) err(l.line, "LOCK", `the layer \`${l.layer}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -192,8 +201,14 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     l.spec = loaded.app;
     l.digest = sha(printApp(loaded.app)).slice(0, 12);
     const params = new Map((loaded.app.params ?? []).map((p) => [p.name, p]));
+    // The layer's records are the app's too (a state field bound to \`keys: List ApiKey\` holds ApiKeys).
+    app.records.push(...(loaded.app.records ?? []).filter((r) => !app.records.some((x) => x.name === r.name)));
     for (const b of l.bindings) {
       const p = params.get(b.name);
+      // A param bound to the app's state (\`keys = apiKeys\`): the layer reads it on every request, so it can change (sign-up).
+      const st = b.state ? app.state.find((f) => f.name === b.state) : undefined;
+      if (p && b.state && !st) err(b.line, "UNKNOWN_NAME", `no state \`${b.state}\` to bind \`${b.name}\` to`);
+      else if (p && st && JSON.stringify(st.type) !== JSON.stringify(p.type)) err(b.line, "BAD_BINDING", `\`${b.name}\` is ${typeToString(p.type)}, but state \`${b.state}\` is ${typeToString(st.type)}`);
       if (!p) err(b.line, "UNKNOWN_NAME", `layer ${l.layer} has no param \`${b.name}\` (${[...params.keys()].join(", ") || "none"})`);
       else if (Array.isArray(b.value) && p.type.k !== "List") err(b.line, "BAD_BINDING", `\`${b.name}\` is one ${p.type.k === "Named" ? p.type.name : p.type.k}, not a list`);
       else if (!Array.isArray(b.value) && b.value.k === "table" && p.type.k !== "List") err(b.line, "BAD_BINDING", `\`${b.name}\` is not a list; a table does not fit`);
@@ -207,17 +222,17 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   for (const u of app.uses ?? []) {
     const path = bundlePath(u.contract);
     if (!existsSync(path)) {
-      err(u.line, "UNKNOWN_NAME", `no contract \`${u.contract}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+      err(u.line, "UNKNOWN_NAME", `no contract \`${u.contract}\` (looked for ${shown(path)})`);
       continue;
     }
     const text = readFileSync(path, "utf8");
-    const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
+    const idx = sources.push({ file: shown(path), text }) - 1;
     const parsed = parseSyntax(text);
     offsetLines(parsed.app, idx * LINE_BASE);
     diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-    if (parsed.app.kind !== "contract") err(u.line, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is not a contract`);
+    if (parsed.app.kind !== "contract") err(u.line, "BAD_BINDING", `${shown(path)} is not a contract`);
     const digest = sha(text);
-    bundles.push({ name: u.contract, file: relative(PROJECT_ROOT, path), sha: digest });
+    bundles.push({ name: u.contract, file: shown(path), sha: digest });
     if (!opts.ignoreLock) {
       const locked = lock.get(u.contract);
       if (!locked) err(u.line, "LOCK", `the contract \`${u.contract}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -241,12 +256,12 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
       const l = u.through;
       const lpath = bundlePath(l.layer);
       const loaded = existsSync(lpath) ? load(lpath, opts) : undefined;
-      if (!loaded) err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${relative(PROJECT_ROOT, lpath)})`);
-      else if (!loaded.app) err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${relative(PROJECT_ROOT, lpath)}\``);
+      if (!loaded) err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${shown(lpath)})`);
+      else if (!loaded.app) err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${shown(lpath)}\``);
       else if (!loaded.app.beforeCall) err(l.line, "BAD_BINDING", `${l.layer} is not a client's layer (it has no \`before every call\`)`);
       else {
         const text = readFileSync(lpath, "utf8");
-        bundles.push({ name: l.layer, file: relative(PROJECT_ROOT, lpath), sha: sha(text) });
+        bundles.push({ name: l.layer, file: shown(lpath), sha: sha(text) });
         if (!opts.ignoreLock) {
           const locked = lock.get(l.layer);
           if (!locked) err(l.line, "LOCK", `the layer \`${l.layer}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -274,18 +289,18 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     if (loaded.has(name)) return loaded.get(name);
     const path = bundlePath(name);
     if (!existsSync(path)) {
-      err(fromLine, "UNKNOWN_NAME", `no bundle \`${name}\` (looked for ${relative(PROJECT_ROOT, path)})`);
+      err(fromLine, "UNKNOWN_NAME", `no bundle \`${name}\` (looked for ${shown(path)})`);
       return;
     }
     const text = readFileSync(path, "utf8");
-    const idx = sources.push({ file: relative(PROJECT_ROOT, path), text }) - 1;
+    const idx = sources.push({ file: shown(path), text }) - 1;
     const parsed = parseSyntax(text);
     offsetLines(parsed.app, idx * LINE_BASE);
     diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-    if (parsed.app.kind !== "bundle") err(fromLine, "BAD_BINDING", `${relative(PROJECT_ROOT, path)} is not a bundle (it starts with \`${parsed.app.kind ?? "?"}\`)`);
+    if (parsed.app.kind !== "bundle") err(fromLine, "BAD_BINDING", `${shown(path)} is not a bundle (it starts with \`${parsed.app.kind ?? "?"}\`)`);
     else if (parsed.app.name !== name) err(idx * LINE_BASE + 1, "BAD_BINDING", `this file must declare \`bundle ${name}\` (it declares \`bundle ${parsed.app.name}\`)`);
     const digest = sha(text);
-    bundles.push({ name, file: relative(PROJECT_ROOT, path), sha: digest });
+    bundles.push({ name, file: shown(path), sha: digest });
     if (!opts.ignoreLock) {
       const locked = lock.get(name);
       if (!locked) err(fromLine, "LOCK", `bundle \`${name}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -479,15 +494,15 @@ export function writeLock(files: string[], installed: { name: string; version: s
   const versions = readLockVersions();
   const overrides: string[] = [];
   if (existsSync(LOCK))
-    for (const line of readFileSync(LOCK, "utf8").split("\n")) if (line.startsWith("@override") && !files.some((f) => line.split(/\s+/)[1] === relative(PROJECT_ROOT, f))) overrides.push(line);
-  for (const [name, digest] of readLock()) all.set(name, { name, sha: digest, file: relative(PROJECT_ROOT, bundlePath(name)), version: versions.get(name) });
+    for (const line of readFileSync(LOCK, "utf8").split("\n")) if (line.startsWith("@override") && !files.some((f) => line.split(/\s+/)[1] === shown(f))) overrides.push(line);
+  for (const [name, digest] of readLock()) all.set(name, { name, sha: digest, file: shown(bundlePath(name)), version: versions.get(name) });
   for (const d of installed) all.set(d.name, d);
   for (const f of files) {
     const loaded = load(f, { ignoreLock: true });
     for (const b of loaded.bundles) all.set(b.name, { ...b, version: b.file.includes(".intent/deps/") ? all.get(b.name)?.version : undefined });
     const child = parseSyntax(readFileSync(f, "utf8")).app;
     if (loaded.base)
-      for (const r of child.refinements ?? []) overrides.push(`@override ${relative(PROJECT_ROOT, f)} sha256:${sha(JSON.stringify(baseTarget(loaded.base, { ...r } as never) ?? null))} ${targetOf(r)}`);
+      for (const r of child.refinements ?? []) overrides.push(`@override ${shown(f)} sha256:${sha(JSON.stringify(baseTarget(loaded.base, { ...r } as never) ?? null))} ${targetOf(r)}`);
   }
   const rows = [...all.values()].sort((a, b) => a.name.localeCompare(b.name));
   const width = Math.max(10, ...rows.map((r) => r.name.length)) + 2;
