@@ -574,6 +574,8 @@ function checkScreens(app: App, err: Err) {
     if (h.line >= LINE_BASE) continue;
     for (const [i, st] of h.steps.entries()) {
       const line = h.stepLines?.[i] ?? h.line;
+      // `go back` returns to the previous address: `go back to @screen` would read the target as prose and ignore it.
+      if (/\bgo\s+back\s+to\s+@[a-z]/i.test(st)) err(line, "STEP", "`go back` takes no target: `go back` returns to the previous address; to name one, use `go to @screen …`");
       for (const m of st.matchAll(/\bgo\s+to\s+@?([a-z]\w*)(?:\s+with\s+([^.;]+))?/gi)) {
         const target = byName.get(m[1]);
         if (!target) {

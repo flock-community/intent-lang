@@ -40,6 +40,7 @@ on click open {
 on click back {
   - go to @ticket                                # expect: STEP
   - go to @nowhere                               # expect: UNKNOWN_NAME
+  - go back to @list                             # expect: STEP
 }
 
 on open lost {                                   # expect: UNKNOWN_NAME
