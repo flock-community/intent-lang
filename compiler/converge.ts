@@ -6,6 +6,8 @@ import type { App } from "./ast.ts";
 import { buildOnce, type BuildResult } from "./build.ts";
 import { buildDeps } from "./twin.ts";
 import { runJobsIsolated, type Action, type ExploreResult, type TraceResult, type Violation } from "./exec.ts";
+import { apiTraces, callText } from "./api.ts";
+import { layerTraces, readLayerConfig, requestText } from "./layer.ts";
 import { actionText, compare, exploreJobs, makeTraces, type Divergence } from "./fuzz.ts";
 import { ROOT, type Target } from "./gen.ts";
 import { runStyledTraces } from "./look.ts";
@@ -127,18 +129,24 @@ function writeReports(reports: AppReport[], o: ConvergeOptions, name = "report")
 
 async function analyse(file: string, name: string, app: App, results: (BuildResult & { id: string })[], o: ConvergeOptions): Promise<AppReport> {
   const ok = results.filter((r) => r.ok);
-  // Half blind random sessions (generated from the spec alone), half guided exploration on a reference build.
-  let traces: Action[][] = makeTraces(app, Math.ceil(o.traces / 2), o.length, 7);
+  const layer = app.kind === "layer";
+  const api = app.profile === "api" && !layer;
+  // Screens: half blind sessions (from the spec), half guided on a reference build. APIs and layers:
+  // their calls/requests, generated from the spec.
+  let traces: Action[][] = api || layer ? [] : makeTraces(app, Math.ceil(o.traces / 2), o.length, 7);
+  const calls = api ? apiTraces(app, o.traces, o.length, 7) : [];
+  const requests = layer ? layerTraces(app, o.traces, o.length, 7) : [];
   const ref = ok.find((r) => r.target === "ts") ?? ok[0];
-  if (ref) {
+  if (ref && !api && !layer) {
     const ex = await runJobsIsolated(ref.dir, ref.target, exploreJobs(app, Math.floor(o.traces / 2), o.length), 600_000);
     if (!("error" in ex)) traces = traces.concat((ex as ExploreResult[]).map((e) => e.actions));
   }
+  const n = api ? calls.length : layer ? requests.length : traces.length;
   const perBuild = new Map<string, (string[] | null)[]>();
   const violations: Record<string, { sessions: number; first: Violation }> = {};
   const fidelity: Record<string, { sessions: number; first: string }> = {};
   let visual: VisualReport | undefined;
-  if (o.styled) {
+  if (o.styled && !api && !layer) {
     // Styled builds: sessions go through the real page; the screen is what the DOM shows.
     await Promise.all(
       ok.map(async (r) => {
@@ -154,8 +162,13 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
     for (const st of visual.states) contactSheet(builds, st, join(o.out, name, "sheets", `${st}.png`));
   } else await Promise.all(
     ok.map(async (r) => {
-      const res = await runJobsIsolated(r.dir, r.target, traces.map((actions) => ({ kind: "trace" as const, actions, always: app.always })), 600_000);
-      perBuild.set(r.id, "error" in res ? traces.map(() => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
+      const jobs = layer
+        ? requests.map((rs) => ({ kind: "layer-trace" as const, requests: rs, config: readLayerConfig(r.dir) }))
+        : api
+          ? calls.map((c) => ({ kind: "api-trace" as const, calls: c, always: app.always }))
+          : traces.map((actions) => ({ kind: "trace" as const, actions, always: app.always }));
+      const res = await runJobsIsolated(r.dir, r.target, jobs, 600_000);
+      perBuild.set(r.id, "error" in res ? Array.from({ length: n }, () => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
       if (!("error" in res)) {
         const vs = (res as TraceResult[]).filter((t) => t.violation);
         if (vs.length) violations[r.id] = { sessions: vs.length, first: vs[0].violation! };
@@ -164,9 +177,10 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
   );
   const ordered = new Map([...perBuild.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })));
   const sub = (pred: (id: string) => boolean) => new Map([...ordered].filter(([id]) => pred(id)));
-  const rate = (m: Map<string, (string[] | null)[]>) => (m.size >= 2 ? compare(traces, m).agree / traces.length : undefined);
+  const cmp = (m: Map<string, (string[] | null)[]>) => (api ? compare(calls, m, callText, false) : layer ? compare(requests, m, requestText, false) : compare(traces, m));
+  const rate = (m: Map<string, (string[] | null)[]>) => (m.size >= 2 ? cmp(m).agree / n : undefined);
   // (with fewer than two builds there is nothing to compare)
-  const all = ordered.size ? compare(traces, ordered) : { agree: 0, total: traces.length, divergences: [], matchMajority: new Map<string, number>() };
+  const all = ordered.size ? cmp(ordered) : { agree: 0, total: n, divergences: [], matchMajority: new Map<string, number>() };
 
   // Cross-target: does the majority behaviour of Elm equal that of TS?
   let crossTarget: number | undefined;
@@ -174,7 +188,7 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
   const tsIds = [...ordered.keys()].filter((k) => k.startsWith("ts"));
   if (elmIds.length && tsIds.length) {
     let same = 0;
-    traces.forEach((_, ti) => {
+    for (let ti = 0; ti < n; ti++) {
       const major = (ids: string[]) => {
         const counts = new Map<string, number>();
         for (const id of ids) {
@@ -184,13 +198,13 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
         return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
       };
       if (major(elmIds) === major(tsIds)) same++;
-    });
-    crossTarget = same / traces.length;
+    }
+    crossTarget = same / n;
   }
 
   const codeSimilarity: Partial<Record<Target, number>> = {};
   for (const t of o.targets) {
-    const codes = ok.filter((r) => r.target === t).map((r) => readFileSync(join(r.dir, t === "elm" ? "src/App.elm" : "app.ts"), "utf8"));
+    const codes = ok.filter((r) => r.target === t).map((r) => readFileSync(join(r.dir, layer ? "layer.ts" : t === "elm" ? "src/App.elm" : "app.ts"), "utf8"));
     const sims: number[] = [];
     for (let i = 0; i < codes.length; i++) for (let j = i + 1; j < codes.length; j++) sims.push(similarity(codes[i], codes[j]));
     if (sims.length) codeSimilarity[t] = sims.reduce((a, b) => a + b, 0) / sims.length;
@@ -208,14 +222,14 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
       seconds: Math.round(r.ms / 1000),
       firstFailure: r.attempts.find((a) => !String(a.stage).endsWith("ok"))?.detail.slice(0, 300),
     })),
-    agreement: { all: ordered.size >= 2 ? all.agree / traces.length : undefined, elm: rate(sub((id) => id.startsWith("elm"))), ts: rate(sub((id) => id.startsWith("ts"))), crossTarget },
-    matchMajority: Object.fromEntries([...all.matchMajority].map(([k, v]) => [k, v / traces.length])),
+    agreement: { all: ordered.size >= 2 ? all.agree / n : undefined, elm: rate(sub((id) => id.startsWith("elm"))), ts: rate(sub((id) => id.startsWith("ts"))), crossTarget },
+    matchMajority: Object.fromEntries([...all.matchMajority].map(([k, v]) => [k, v / n])),
     codeSimilarity,
     divergences: all.divergences,
     violations,
     fidelity,
     visual,
-    traces: traces.length,
+    traces: n,
   };
 }
 

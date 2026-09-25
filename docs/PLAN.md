@@ -47,8 +47,9 @@ Elm error message for an undeclared status now matches TypeScript's.
      ("the @xs where …") still open;
    - ~~twin-compile the `always` checks~~ done (`invariants-probe.mjs`: a second, independent
      reading, compared on the app's data; a disagreement stops the build and names the sentence);
-   - ~~put APIs and screens-with-calls in `converge`~~ done (v38: `buildDeps` resolves providers
-     and layers for `converge` too; checkout 4/4, 100%);
+   - ~~put APIs, layers and screens-with-calls in `converge`~~ done (`buildDeps` resolves
+     providers and layers; `analyse` uses `apiTraces`/`layerTraces` for those profiles.
+     payments-api 2/2, std.actions 2/2, 20-approval 4/4 — all 100% same app, Elm≡TS 100%);
    - ~~run doc snippets through `check` in `npm test`, and fix the stale doc lines~~ done
      (`tests/docs/snippets.ts`, ```` ```intent ```` blocks; durations, names, events, publish,
      randomness, `T or nothing`, README counts).

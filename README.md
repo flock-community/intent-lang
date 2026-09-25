@@ -168,7 +168,9 @@ the rest.
 ## How "the same app" is measured
 
 `converge` builds every spec N times per target, independently, then replays user
-sessions on every build and compares the screens after every action:
+sessions on every build and compares the screens after every action. Screens, screens that call an
+API, APIs (`profile api`) and layers all converge: an API's sessions are random calls from its
+contract, a layer's random requests, and all of them compare the answers they get.
 
 - **Blind sessions** are generated from the spec alone, before any build exists.
 - **Guided sessions** are explored on a reference build: they only take actions the screen
