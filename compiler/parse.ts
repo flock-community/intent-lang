@@ -332,7 +332,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if ((m = t.match(/^clock\s+every\s+(\S+)$/))) {
     onlyTop("clock");
     const ms = parseDuration(m[1]);
-    if (ms === undefined || ms <= 0) err(node.line, "SYNTAX", "expected a duration such as `1s`, `250ms` or `2m`");
+    if (ms === undefined || ms <= 0) err(node.line, "SYNTAX", "expected a duration such as `250ms`, `1s`, `2m`, `1h` or `1d`");
     else app.clockMs = ms;
     ctx.clockLine = node.line;
   } else if (t === "derive") {
@@ -1011,7 +1011,7 @@ function parseField(c: Line, err: (l: number, c: string, m: string, col?: number
   }
   const type = parseType(m[2]);
   if (!type) {
-    err(c.line, "SYNTAX", `\`${m[2]}\` is not a type (Text, Int, Decimal, Bool, List T, Maybe T, or a record/choice name)`, c.indent + 1);
+    err(c.line, "SYNTAX", `\`${m[2]}\` is not a type (Text, Int, Decimal, Bool, List T, T or nothing, or a record/choice name)`, c.indent + 1);
     return;
   }
   let def: Literal | undefined;
@@ -1437,7 +1437,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     checkReserved(f.name, f.line);
     checkType(f.type, f.line);
     checkDefault(f);
-    if (f.type.k === "Named" && records.has(f.type.name)) err(f.line, "BAD_BINDING", `state of record type needs a literal default; use \`Maybe ${f.type.name} = nothing\``);
+    if (f.type.k === "Named" && records.has(f.type.name)) err(f.line, "BAD_BINDING", `state of record type needs a literal default; use \`${f.type.name} or nothing = nothing\``);
   }
   const derived = new Set<string>();
   for (const d of app.derive) {

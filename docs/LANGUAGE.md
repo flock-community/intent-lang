@@ -59,7 +59,7 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
 - Names: element, field and state names are `lowerCamel`; app, record and choice names and
   choice values are `UpperCamel`.
 - Strings: `"…"` with `\"`, `\\`, `\n` (a new line) and `\t` (a tab) escapes. Inside a template string `{…}` is a hole.
-- Numbers: `12`, `-3`, `2.50`. Durations: `1s`, `250ms`, `2m`.
+- Numbers: `12`, `-3`, `2.50`. Durations: `250ms`, `1s`, `2m`, `1h`, `1d`.
 
 ## 3. Blocks
 
@@ -217,8 +217,8 @@ Binding (checked by the compiler):
 - `checkbox x` edits state `x` (a `Bool`), or inside a list the row item's `Bool` field
   `x`. Toggling flips it.
 - `list x` without `=` shows state or derived value `x`, which must be a list.
-- Names are unique on the screen, except inside a list, where row elements have their own
-  scope. Sections do not create a scope.
+- Element names are unique in the app, also across screens (`ticketBack`, §4i), except inside a
+  list, where row elements have their own scope. Sections do not create a scope.
 - A section title and a field label are fixed text. To show a changing title, use
   `text x = … as title` as the section's first element.
 - `select x from items.name` with `x` = `""`, or a text that is not among the options,
@@ -482,7 +482,7 @@ expanded, and each line marked with where it came from.
 A published app (an `app` file in `lib/`, e.g. `lib/support/helpdesk.intent`) can be the base
 of another spec. The new spec starts as a copy of the base and names every change:
 
-```
+```intent
 app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
 }
@@ -672,7 +672,7 @@ Contracts cannot fail silently:
   `intent client support/ticketsApi.intent`.
 - **Events** are part of the contract: `event ticketCreated: Ticket` says the service announces
   that something happened, with a payload. An endpoint's step says when:
-  `- publish ticketCreated with the new ticket`. The implementation may publish only declared
+  `- publish @ticketCreated with the new ticket`. The implementation may publish only declared
   events, and every payload is checked against its type in every test. In examples,
   `see ticketCreated.body.subject = "…"` checks what the latest call published, and
   `see ticketCreated is absent` checks that it published nothing of that kind. The server sends
@@ -926,7 +926,9 @@ on type draft           # field (in addition to the built-in assignment)
 on choose filter        # select (in addition to the built-in assignment)
 on tick                 # requires `clock`
 on start                # once, when the app starts
+on open tickets         # a screen is shown: what it loads and sets (§4i)
 on answer tickets.listTickets   # the answer to a call (§4g)
+on event tickets.ticketCreated  # an event of a call's api, whoever caused it (§4g)
 ```
 
 Each `- sentence` in the block is one step, applied in order. Refer to declared names exactly.
@@ -1148,7 +1150,7 @@ something when it wants different behaviour.
 7. **Fields.** Typing only changes the field's state unless an `on type` handler says more.
    Nothing is cleared unless a sentence says "clear".
 8. **Time.** In tests only `clock` ticks and `wait` move time, from `examples start at` (§3b).
-   There is no randomness.
+   Time has no randomness; the server's `@newToken` is the one random value (§4e).
 9. **Durations** shown as time use `Fmt.clock` (`m:ss`, or `h:mm:ss` from one hour up).
    **Rounding words** map to fixed helpers: "rounded" is `Fmt.roundTo` (half away from
    zero), "rounded up" is `Fmt.roundUpTo`, and "rounded down" is `Fmt.roundDownTo`. Money in

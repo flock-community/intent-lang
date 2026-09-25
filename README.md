@@ -69,7 +69,7 @@ What the language covers today:
 | Screens + APIs | `uses <contract>`, calls and answers, events from other clients, client layers (`through std.http.sendKey`) |
 
 - Language reference: [`docs/LANGUAGE.md`](docs/LANGUAGE.md) (also the compiler's prompt: one source of truth).
-- Example specs of increasing difficulty: [`apps/`](apps) (16 screens) and [`apps/api/`](apps/api) (2 APIs).
+- Example specs of increasing difficulty: [`apps/`](apps) (19 screens) and [`apps/api/`](apps/api) (6 APIs).
 - `language.md` is the earlier, broader v0.1 design (in Dutch). This project is its app profile.
 
 ## For LLMs: the spec-writing skill

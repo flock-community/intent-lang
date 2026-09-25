@@ -34,7 +34,7 @@ So the same spec gives the same app, and a vague spec is caught instead of guess
 
 `apps/01-counter.intent`, complete:
 
-```
+```intent
 app Counter {
   "Count things up and down, never below zero."
 }
@@ -106,7 +106,7 @@ in the app leads back to its line in the spec.
 
 `apps/02-todo.intent`:
 
-```
+```intent
 app Todo {
   "A short list of things to do today."
 }
@@ -229,7 +229,7 @@ like they should be in `always`.
 Specs reuse specs. A **bundle** is a library under `lib/`. `lib/std/list.intent` offers a
 pager as a **behaviour component**: it has params, its own state, a screen and handlers.
 
-```
+```intent
 bundle std.list {
   "Showing long lists in pieces."
 }
@@ -308,7 +308,7 @@ type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/
 `extends` takes a whole published app and changes named parts of it. Nothing is copied.
 `apps/14-supportdesk.intent` tunes the standard helpdesk:
 
-```
+```intent
 app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
 }
@@ -415,7 +415,7 @@ example "creating a ticket" {
 The endpoint above has no method or path: they come from a **contract**, a file that says what
 the service accepts and answers, and nothing about how (`lib/support/ticketsApi.intent`):
 
-```
+```intent
 contract support.ticketsApi {
   "The support desk's tickets and comments over HTTP: what clients send, and what they get back."
 }
@@ -488,7 +488,7 @@ say "the caller". Examples send headers: `call solveTicket with header x-api-key
 
 A layer is a small spec too. The whole of `lib/std/http/secure.intent`:
 
-```
+```intent
 layer std.http.secure {
   "Safe headers for a JSON API: answers are not sniffed, framed, cached, or leak where a request came from."
 }
