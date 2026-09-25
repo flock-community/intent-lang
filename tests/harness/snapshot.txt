@@ -255,7 +255,7 @@ apps/15-tickets-ui.intent elm calls.ts 036d8338dda2
 apps/15-tickets-ui.intent elm clock.ts 9e5727f3ae65
 apps/15-tickets-ui.intent elm elm.json 31d97d30272b
 apps/15-tickets-ui.intent elm fmt.ts fafbad5d8176
-apps/15-tickets-ui.intent elm glue.ts 25b990aaa682
+apps/15-tickets-ui.intent elm glue.ts f8649585e63b
 apps/15-tickets-ui.intent elm index.html 688e9e4258c0
 apps/15-tickets-ui.intent elm outbox.ts dccec2b19b1c
 apps/15-tickets-ui.intent elm src/Fmt.elm fa5242ef18aa
@@ -285,7 +285,7 @@ apps/16-desk-ui.intent elm calls.ts 036d8338dda2
 apps/16-desk-ui.intent elm clock.ts 9e5727f3ae65
 apps/16-desk-ui.intent elm elm.json 31d97d30272b
 apps/16-desk-ui.intent elm fmt.ts fafbad5d8176
-apps/16-desk-ui.intent elm glue.ts 950576f82b0c
+apps/16-desk-ui.intent elm glue.ts 854b66993eee
 apps/16-desk-ui.intent elm index.html cf9ebebff84f
 apps/16-desk-ui.intent elm layers/desk/fmt.ts 2d711642b726
 apps/16-desk-ui.intent elm layers/desk/http.ts 2d711642b726
@@ -309,7 +309,7 @@ apps/16-desk-ui.intent ts layers/desk/fmt.ts 2d711642b726
 apps/16-desk-ui.intent ts layers/desk/http.ts 2d711642b726
 apps/16-desk-ui.intent ts layers/desk/layer.ts 2d711642b726
 apps/16-desk-ui.intent ts layers/desk/spec.ts 2d711642b726
-apps/16-desk-ui.intent ts main.ts 81afd68c0052
+apps/16-desk-ui.intent ts main.ts aeb6616469d0
 apps/16-desk-ui.intent ts outbox.ts dccec2b19b1c
 apps/16-desk-ui.intent ts spec.ts e60a9ae52214
 apps/16-desk-ui.intent ts test-entry.ts 9af924dc5051
@@ -323,7 +323,7 @@ apps/17-habits.intent elm calls.ts 036d8338dda2
 apps/17-habits.intent elm clock.ts 9e5727f3ae65
 apps/17-habits.intent elm elm.json 31d97d30272b
 apps/17-habits.intent elm fmt.ts fafbad5d8176
-apps/17-habits.intent elm glue.ts 662cfd2a59ac
+apps/17-habits.intent elm glue.ts 7e2e298af63d
 apps/17-habits.intent elm index.html 5d3bd56a54e6
 apps/17-habits.intent elm outbox.ts dccec2b19b1c
 apps/17-habits.intent elm src/Fmt.elm fa5242ef18aa
@@ -352,7 +352,7 @@ apps/18-checkout.intent elm calls.ts 036d8338dda2
 apps/18-checkout.intent elm clock.ts 9e5727f3ae65
 apps/18-checkout.intent elm elm.json 31d97d30272b
 apps/18-checkout.intent elm fmt.ts fafbad5d8176
-apps/18-checkout.intent elm glue.ts 716f800a7bbd
+apps/18-checkout.intent elm glue.ts 5adfcb17a342
 apps/18-checkout.intent elm index.html fa99f56a9857
 apps/18-checkout.intent elm outbox.ts dccec2b19b1c
 apps/18-checkout.intent elm src/Fmt.elm fa5242ef18aa
@@ -382,7 +382,7 @@ apps/19-ticket-pages.intent elm calls.ts 036d8338dda2
 apps/19-ticket-pages.intent elm clock.ts 9e5727f3ae65
 apps/19-ticket-pages.intent elm elm.json 31d97d30272b
 apps/19-ticket-pages.intent elm fmt.ts fafbad5d8176
-apps/19-ticket-pages.intent elm glue.ts bf43ff048a4d
+apps/19-ticket-pages.intent elm glue.ts 0ed8ff289497
 apps/19-ticket-pages.intent elm index.html 53f01eb033d1
 apps/19-ticket-pages.intent elm outbox.ts dccec2b19b1c
 apps/19-ticket-pages.intent elm src/AppNav.elm fec71a30ccdb
@@ -410,7 +410,7 @@ apps/20-approval.intent elm calls.ts 036d8338dda2
 apps/20-approval.intent elm clock.ts 9e5727f3ae65
 apps/20-approval.intent elm elm.json 31d97d30272b
 apps/20-approval.intent elm fmt.ts fafbad5d8176
-apps/20-approval.intent elm glue.ts 6b890b45b63b
+apps/20-approval.intent elm glue.ts 8699b565db64
 apps/20-approval.intent elm index.html 24d9a9c854d9
 apps/20-approval.intent elm layers/pay/fmt.ts 2d711642b726
 apps/20-approval.intent elm layers/pay/http.ts 2d711642b726
@@ -418,14 +418,14 @@ apps/20-approval.intent elm layers/pay/layer.ts 2d711642b726
 apps/20-approval.intent elm layers/pay/spec.ts 2d711642b726
 apps/20-approval.intent elm outbox.ts dccec2b19b1c
 apps/20-approval.intent elm src/Fmt.elm fa5242ef18aa
-apps/20-approval.intent elm src/Main.elm 4ce7aadffa76
-apps/20-approval.intent elm src/Spec.elm 4286f7b932fb
+apps/20-approval.intent elm src/Main.elm a68df8f1661a
+apps/20-approval.intent elm src/Spec.elm df2e2fe339f6
 apps/20-approval.intent elm src/Ui.elm b4c4e378ed6a
-apps/20-approval.intent elm src/Worker.elm f293f9ec8a4e
+apps/20-approval.intent elm src/Worker.elm 1ca715a77eae
 apps/20-approval.intent elm store.ts f6246daaff84
 apps/20-approval.intent elm through.ts be3206c29a84
-apps/20-approval.intent elm prompt 950557b34f3b repair 0dd3ebd2f328
-apps/20-approval.intent elm prompt-probe 52e2a1f5c746 repair 5d24d40f9b3f
+apps/20-approval.intent elm prompt b0da4fd44f1c repair e6926b33f4fe
+apps/20-approval.intent elm prompt-probe ed1085986692 repair 4e2d8568f1f9
 apps/20-approval.intent ts api.ts 7994f3faa0c1
 apps/20-approval.intent ts calls.ts 036d8338dda2
 apps/20-approval.intent ts fmt.ts fafbad5d8176
@@ -434,15 +434,16 @@ apps/20-approval.intent ts layers/pay/fmt.ts 2d711642b726
 apps/20-approval.intent ts layers/pay/http.ts 2d711642b726
 apps/20-approval.intent ts layers/pay/layer.ts 2d711642b726
 apps/20-approval.intent ts layers/pay/spec.ts 2d711642b726
-apps/20-approval.intent ts main.ts f57e9848a86b
+apps/20-approval.intent ts main.ts 2f5939ab89e5
 apps/20-approval.intent ts outbox.ts dccec2b19b1c
-apps/20-approval.intent ts spec.ts 0e2de040cae9
-apps/20-approval.intent ts test-entry.ts 9af924dc5051
+apps/20-approval.intent ts spec.ts 3dd7ef702a84
+apps/20-approval.intent ts store.ts f6246daaff84
+apps/20-approval.intent ts test-entry.ts 2d426f1ada91
 apps/20-approval.intent ts through.ts be3206c29a84
 apps/20-approval.intent ts tsconfig.json 422c41f4ed20
 apps/20-approval.intent ts ui.ts 559c5e945c8a
-apps/20-approval.intent ts prompt 883a01533830 repair 175f2b858cdf
-apps/20-approval.intent ts prompt-probe 414a59e97ade repair 403eb21ce052
+apps/20-approval.intent ts prompt 931594b2329b repair 0ad50c3f2ab4
+apps/20-approval.intent ts prompt-probe fba6ccc3e131 repair 832822fbcfec
 apps/21-tags.intent elm elm.json 31d97d30272b
 apps/21-tags.intent elm index.html ed8f1719934c
 apps/21-tags.intent elm src/Fmt.elm fa5242ef18aa
@@ -568,7 +569,7 @@ apps/held-out-2/library.intent elm calls.ts 036d8338dda2
 apps/held-out-2/library.intent elm clock.ts 9e5727f3ae65
 apps/held-out-2/library.intent elm elm.json 31d97d30272b
 apps/held-out-2/library.intent elm fmt.ts fafbad5d8176
-apps/held-out-2/library.intent elm glue.ts 16f570cb0265
+apps/held-out-2/library.intent elm glue.ts 474abb950726
 apps/held-out-2/library.intent elm index.html 8f67933df1d1
 apps/held-out-2/library.intent elm outbox.ts dccec2b19b1c
 apps/held-out-2/library.intent elm src/Fmt.elm fa5242ef18aa

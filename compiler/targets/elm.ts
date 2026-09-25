@@ -904,16 +904,18 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
   // The agreement gate (\`through std.actions\`): a call with no permission waits for approval; a
   // rejected one is dropped. The permissions arrive on the \`through\` port after every update.
   const held: CallOut[] = [];
+  // A held call is written to its own durable box too, so a reload keeps waiting for approval.
+  const heldBox = outbox(${q(`intent:${app.name}:held`)});
   const used: Record<string, Usage[]> = {};
   const decide = (call: CallOut) => gate(latest[call.endpoint.split(".")[0]], call.endpoint, endpoints.find((e) => e.name === call.endpoint)?.external, call.args, used, Date.now());
-  const letGo = (call: CallOut) => { (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call); send(call); };
+  const letGo = (call: CallOut) => { heldBox.done(call.key!); (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call); send(call); };
   const release = () => {
     for (let i = held.length - 1; i >= 0; i--) {
       const call = held[i];
       const how = decide(call);
       if (how === "hold" || how === "stop") continue;
       held.splice(i, 1);
-      if (how === "reject") continue;
+      if (how === "reject") { heldBox.done(call.key!); continue; }
       letGo(call);
     }
   };
@@ -924,11 +926,12 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
       stream?.refresh();
       release();
     });
+  held.push(...heldBox.pending());
   app.ports.request.subscribe((c: any) => {
     const call = { ...c, key: newKey() } as CallOut;
     const how = decide(call);
-    if (how === "hold") { held.push(call); return; }
-    if (how === "reject") return;
+    if (how === "hold") { held.push(call); heldBox.put(call); return; }
+    if (how === "reject") { heldBox.done(call.key!); return; }
     letGo(call);
   });
   for (const call of box.pending()) send(call);

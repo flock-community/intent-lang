@@ -512,7 +512,8 @@ amount to (`upTo`). With no covering permission the call is **held for approval*
 never sees it yet, and the screen can show it is waiting; Approve adds a permission and the harness
 sends the held call with its original key, Reject drops it, and none goes out while `stopped` is on.
 `apps/20-approval.intent` proves held → approved (a one-time permission), held → rejected and
-stopped, on both targets (25/25 sessions identical).
+stopped, on both targets (25/25 sessions identical). A held call and its key are kept in a durable
+box, so a page reload (or a restart in an example) still waits for approval rather than losing it.
 
 **Undo** (v38). A screen takes an effect back with `undo @pay.charge`: it keeps the original
 answer in state (`charge: Charge or nothing`), and the harness calls the contract's `undone by`

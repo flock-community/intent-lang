@@ -14,11 +14,11 @@ uses pay.paymentsApi as pay {
 }
 
 state {
-  permissions: List Permission = []
-  rejected: List Text = []
-  stopped: Bool = false
-  waiting: Bool = false
-  message: Text = ""
+  stored permissions: List Permission = []
+  stored rejected: List Text = []
+  stored stopped: Bool = false
+  stored waiting: Bool = false
+  stored message: Text = ""
 }
 
 screen {
@@ -97,6 +97,16 @@ example "held, then rejected" {
   see message = "Payment rejected"
   see buy is enabled
   see reject is disabled
+}
+
+example "a held call waits across a restart" {
+  click buy
+  see message = "Waiting for approval"
+  restart
+  see message = "Waiting for approval"
+  see buy is disabled
+  click allow
+  see message = "Paid: charge 1"
 }
 
 example "the emergency stop" {

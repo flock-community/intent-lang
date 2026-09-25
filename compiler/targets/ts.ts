@@ -232,15 +232,18 @@ ${hasThrough(app) ? "const configFor = (alias: string) => (App.through(current) 
 const box = outbox(${q(`intent:${app.name}:outbox`)});
 const send = (call: CallOut, config: Record<string, unknown> | undefined) => fetchCall(callEndpoints, call, via, config).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
 ${hasThrough(app) ? `const held: CallOut[] = [];
+// A held call is written to its own durable box too, so a reload keeps waiting for approval.
+const heldBox = outbox(${q(`intent:${app.name}:held`)});
 const used: Record<string, Usage[]> = {};
 const decide = (call: CallOut) => gate(configFor(call.endpoint.split(".")[0]), call.endpoint, callEndpoints.find((e) => e.name === call.endpoint)?.external, call.args, used, Date.now());
-const letGo = (call: CallOut) => { (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call as CallOut & { key: string }); send(call, configFor(call.endpoint.split(".")[0])); };
+const letGo = (call: CallOut) => { heldBox.done(call.key!); (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call as CallOut & { key: string }); send(call, configFor(call.endpoint.split(".")[0])); };
+const hold = (call: CallOut) => { held.push(call); heldBox.put(call as CallOut & { key: string }); };
 const perform = (calls: Call[]) => {
   for (const c of calls) {
     const call = { ...callToJson(c), key: newKey() };
     const how = decide(call);
-    if (how === "hold") { held.push(call); continue; }
-    if (how === "reject") continue;
+    if (how === "hold") { hold(call); continue; }
+    if (how === "reject") { heldBox.done(call.key!); continue; }
     letGo(call);
   }
 };
@@ -250,7 +253,7 @@ const release = () => {
     const how = decide(call);
     if (how === "hold" || how === "stop") continue;
     held.splice(i, 1);
-    if (how === "reject") continue;
+    if (how === "reject") { heldBox.done(call.key!); continue; }
     letGo(call);
   }
 };` : `const perform = (calls: Call[]) => {
@@ -263,7 +266,7 @@ dispatch = mount(document.getElementById("app")!, {
     const r = App.init(${c ? "localClock()" : ""});
 ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
     for (const call of box.pending()) send(call, ${hasThrough(app) ? 'configFor(call.endpoint.split(".")[0])' : "undefined"});
-    perform(r.calls);
+    ${hasThrough(app) ? "held.push(...heldBox.pending());\n    " : ""}perform(r.calls);
     release();
     return r.model;
   },
