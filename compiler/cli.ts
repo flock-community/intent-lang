@@ -11,6 +11,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
 import { fixFile } from "./fix.ts";
+import { checkProfile } from "./profile.ts";
 import { compileApp } from "./twin.ts";
 import type { Target } from "./gen.ts";
 import { converge, reanalyse } from "./converge.ts";
@@ -47,14 +48,31 @@ function load(file: string) {
 
 switch (cmd) {
   case "check": {
+    // A profile spec (`profile ui { element … }`) is a checked kind of file too.
+    const isProfile = (text: string) => /^\s*profile\s+[a-z][\w.]*\s*\{/m.test(text);
+    const checkProfileFile = (f: string): number => {
+      const text = readFileSync(resolve(f), "utf8");
+      const diags = checkProfile(text, f);
+      console.log(formatDiagnostics(f, text, diags));
+      const errors = diags.filter((d) => d.level === "error").length;
+      console.log(`${f}: ${errors ? "FAIL" : "ok"} — ${errors} error(s), ${diags.length - errors} warning(s)`);
+      return errors;
+    };
     if (flags.json) {
       // Machine-readable diagnostics, for editors and CI.
-      const out = args.map((file) => ({ file, diagnostics: loadSpec(resolve(file)).diagnostics }));
+      const out = args.map((file) => {
+        const text = readFileSync(resolve(file), "utf8");
+        return { file, diagnostics: isProfile(text) ? checkProfile(text, file) : loadSpec(resolve(file)).diagnostics };
+      });
       console.log(JSON.stringify(out, null, 2));
       process.exit(out.some((f) => f.diagnostics.some((d) => d.level === "error")) ? 1 : 0);
     }
     let ok = true;
-    for (const f of args) if (!load(f).app) ok = false;
+    for (const f of args) {
+      if (isProfile(readFileSync(resolve(f), "utf8"))) {
+        if (checkProfileFile(f)) ok = false;
+      } else if (!load(f).app) ok = false;
+    }
     process.exit(ok ? 0 : 1);
   }
   case "install": {

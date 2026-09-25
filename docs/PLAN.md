@@ -55,6 +55,10 @@ Elm error message for an undeclared status now matches TypeScript's.
    - ~~`intent fix`~~ done (criterion 11): applies `Maybe T` → `T or nothing`, an unmarked name
      (`@name`), a missing `import`, and the `language vN` line, only when it adds no error
      (`compiler/fix.ts`, `tests/fix.test.ts`).
+   - ~~profiles as checked files~~ done (criterion 4, step 1): `intent check lib/profile/*.intent`
+     now checks a profile with `checkProfile` (duplicate kinds/presentations, the name, bad lines);
+     `tests/profile.test.ts`; the profile already drives the vocabulary. The rest of
+     `docs/design/profiles.md` (generic element lines, a profile-driven harness) remains.
 4. **Incremental builds** (`docs/design/incremental.md`): units, dependencies, `@spec` regions,
    resume a stopped twin build; measure on recorded edits before making it the default.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done (`bin` in package.json, a

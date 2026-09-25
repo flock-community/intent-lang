@@ -1,6 +1,10 @@
 # Design: profiles are specs
 
-Status: step 1 in progress (the UI profile as a spec, read by the checker).
+Status: step 1 done. `lib/profile/ui.intent` and `lib/profile/api.intent` describe the element kinds,
+verbs, presentations and meanings; `uiProfile()` reads them (no hard-coded table), a test keeps
+LANGUAGE.md's presentation table in line, and `intent check` now checks a profile file like any
+other spec (`compiler/profile.ts` `checkProfile`). Steps 2–5 (generic element lines, an API harness,
+a profile-driven UI harness, Kotlin) remain.
 
 ## Why
 
