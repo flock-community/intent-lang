@@ -19,6 +19,8 @@ derive {
   safe = the item equal to @picked, or 0 when there is no @picked
   rated = the @rating of the book whose @id is 1       # expect: UNGUARDED
   ratedSafe = the @rating of the book whose @id is 1, or 0 when there is none
+  lookedUp = the @rating of the book whose @id is 2    # expect: UNGUARDED
+  lookedUpSafe = the @rating of the book whose @id is 2, or 0 when there is none
 }
 
 screen {

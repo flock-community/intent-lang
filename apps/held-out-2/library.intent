@@ -169,7 +169,7 @@ screen {
     list overdueList of Loan = @overdueLoans as table {
       look "Every row has a light danger background."
       text overdueBook = its book
-      text overdueWho = the @name of the member whose @number is its member
+      text overdueWho = the @name of the member whose @number is its member, or "?" when there is none
       text overdueDue = "Overdue, was due day {its @due}" as DueBadge
     }
   }
@@ -218,7 +218,7 @@ on click lend {
 
 on click takeBack {
   - remove that loan from @loans
-  - set @toast.message to "{that loan's book} returned by {the @name of the member whose @number is that loan's member}"
+  - set @toast.message to "{that loan's book} returned by {the @name of the member whose @number is that loan's member, or "someone" when there is none}"
 }
 
 rules {

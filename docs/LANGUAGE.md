@@ -1132,7 +1132,7 @@ out in the canonical form.
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
 | `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone |
 | `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
-| `UNGUARDED` | warning | a sentence uses a `T or nothing` value without saying what happens when there is none |
+| `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …`), without saying what happens when there is none |
 | `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNUSED` | warning | a declared component is never used |

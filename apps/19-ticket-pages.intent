@@ -35,7 +35,7 @@ screen ticket "/tickets/{id}" {
   text state = "{the @status of the ticket whose @id is @id, or "" when there is none}"
   text seen = "Ticket pages opened: {@visits}"
   button solve "Solve" {
-    enabled when the ticket whose @id is @id is @Open
+    enabled when there is a ticket whose @id is @id and that ticket is @Open
   }
   button back "Back"
 }
@@ -45,7 +45,7 @@ on click open {
 }
 
 on click solve {
-  - set the @status of the ticket whose @id is @id to @Solved
+  - set the @status of the ticket whose @id is @id to @Solved, when there is one
   - go back
 }
 

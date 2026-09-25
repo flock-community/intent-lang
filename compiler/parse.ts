@@ -702,23 +702,34 @@ function checkBodies(app: App, err: Err, warn: Err) {
  * it says what happens when there is none, or sits inside an `if` that asks. Otherwise: a hint.
  */
 function checkNothing(app: App, warn: Err) {
-  // A value that may be nothing: an optional state field, or an optional record field (`Book.rating`).
+  // A value that may be nothing: an optional state field, an optional record field (`Book.rating`),
+  // or a lookup (`the ticket whose @id is @id`) that can find no row.
   const optional = new Set([
     ...app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name),
     ...app.records.flatMap((r) => r.fields.filter((f) => f.type.k === "Maybe").map((f) => f.name)),
   ]);
-  if (!optional.size) return;
   const esc = (x: string) => x.replace(/\./g, "\\.");
   const handles = (text: string, x: string) =>
     new RegExp(`there is (a |an |no )?@${esc(x)}\\b|\\bno @${esc(x)}\\b|@${esc(x)} is (not )?(nothing|set)|without (a |an )?@${esc(x)}\\b|\\b(set|clear) @${esc(x)}\\b|\\bwhen there is none\\b`).test(text);
   const reads = (text: string) => [...new Set(refsIn(text).map((r) => r.split(".")[0]))].filter((x) => optional.has(x) && !handles(text, x));
   const hint = (line: number, x: string, where: string) =>
     line < LINE_BASE && warn(line, "UNGUARDED", `@${x} may be nothing (${where}): say what happens then, inside \`if there is a @${x} { … }\` or in the sentence ("…, or nothing when there is no @${x}")`);
+  // A lookup reads one row of a list ("the ticket whose @id is @id"): it can find nothing. A list
+  // filter ("the @tickets whose …") returns a list and needs no guard.
+  const singular = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
+  const lists = new Set([...app.state.filter((f) => f.type.k === "List").map((f) => f.name), ...app.derive.map((d) => d.name)]);
+  const saysNone = (text: string) => /\bwhen there is (none|no|one|a)\b|\bor nothing\b|\bwhen none\b|\bif there is no\b|\bwithout\b/.test(text);
+  const lookup = (text: string) => [...text.matchAll(/\bthe\s+@?([a-z]\w*)\s+whose\b/g)].some((m) => singular.has(m[1]) && !lists.has(m[1]));
+  const lookupHint = (line: number, text: string, where: string) => line < LINE_BASE && lookup(text) && !saysNone(text) && warn(line, "UNGUARDED", `a lookup ("the … whose …", ${where}) can find nothing: say what happens then ("… when there is none")`);
   const walk = (b: Stmt[], guarded: Set<string>, where: string) => {
     for (const s of b) {
-      if (s.k === "step" || s.k === "answer") for (const x of reads(s.text)) if (!guarded.has(x)) hint(s.line, x, where);
+      if (s.k === "step" || s.k === "answer") {
+        for (const x of reads(s.text)) if (!guarded.has(x)) hint(s.line, x, where);
+        lookupHint(s.line, s.text, where);
+      }
       if (s.k === "if") {
         for (const br of s.branches) {
+          if (br.cond) lookupHint(br.line, br.cond, where);
           const inner = new Set(guarded);
           for (const x of optional) if (br.cond !== undefined && handles(br.cond, x)) inner.add(x);
           walk(br.body, inner, where);
@@ -730,16 +741,25 @@ function checkNothing(app: App, warn: Err) {
           for (const x of optional) if (handles(only.cond, x)) guarded = new Set([...guarded, x]);
       }
       if (s.k === "for") {
-        if (s.where) for (const x of reads(s.where)) if (!guarded.has(x)) hint(s.line, x, where);
+        if (s.where) {
+          for (const x of reads(s.where)) if (!guarded.has(x)) hint(s.line, x, where);
+          lookupHint(s.line, s.where, where);
+        }
         walk(s.body, guarded, where);
       }
     }
   };
   for (const h of app.handlers) if (h.body) walk(h.body, new Set(), `on ${h.verb}${h.target ? " " + h.target : ""}`);
   for (const ep of app.endpoints ?? []) if (ep.body) walk(ep.body, new Set(), `endpoint ${ep.name}`);
-  for (const d of app.derive) for (const x of reads(d.sentence)) hint(d.line, x, `derive ${d.name}`);
+  for (const d of app.derive) {
+    for (const x of reads(d.sentence)) hint(d.line, x, `derive ${d.name}`);
+    lookupHint(d.line, d.sentence, `derive ${d.name}`);
+  }
   const els = (list: Element[]) => list.forEach((el) => {
-    for (const t of [el.expr, el.visibleWhen, el.enabledWhen]) if (t) for (const x of reads(t)) hint(el.line, x, `${el.kind} ${el.name}`);
+    for (const t of [el.expr, el.visibleWhen, el.enabledWhen]) if (t) {
+      for (const x of reads(t)) hint(el.line, x, `${el.kind} ${el.name}`);
+      lookupHint(el.line, t, `${el.kind} ${el.name}`);
+    }
     els(el.children);
   });
   els(app.screen);

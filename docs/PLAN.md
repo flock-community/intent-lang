@@ -41,7 +41,9 @@ Elm error message for an undeclared status now matches TypeScript's.
      default; both browsers and the api server use it, tested in `tests/migrate.test.ts`);
      identity/references between records (replacing `the ticket whose @id is @id`) still open;
    - ~~loops as a parser form~~ done (v39: `for each @x in @xs where … { … }`; the notices API
-     uses it); lookups ("the @xs where …, ordered by …", with a checked none case) still open;
+     uses it); ~~a lookup that can find nothing is now guarded~~ (`UNGUARDED` covers
+     `the ticket whose …` and optional record fields); a lookup *form* and declared references
+     ("the @xs where …") still open;
    - ~~twin-compile the `always` checks~~ done (`invariants-probe.mjs`: a second, independent
      reading, compared on the app's data; a disagreement stops the build and names the sentence);
    - ~~put APIs and screens-with-calls in `converge`~~ done (v38: `buildDeps` resolves providers
