@@ -31,8 +31,10 @@ Elm error message for an undeclared status now matches TypeScript's.
 2. **Durable outbox**: a pending call and its key survive a restart of the screen; faults `slow`,
    `restart after effect`, `expire keys`.
 3. **From the v36 score** (`docs/reviews/scores/v36.md`):
-   - stored-data migration (a record change must not silently reset data) and identity/references
-     between records (replacing `the ticket whose @id is @id`);
+   - ~~stored-data migration~~ done (`migrate` in `runtime/ts/api.ts`: a removed field is dropped,
+     a new `T or nothing` or list field is filled, an unmigratable stored field keeps only its
+     default; both browsers and the api server use it, tested in `tests/migrate.test.ts`);
+     identity/references between records (replacing `the ticket whose @id is @id`) still open;
    - ~~loops as a parser form~~ done (v39: `for each @x in @xs where … { … }`; the notices API
      uses it); lookups ("the @xs where …, ordered by …", with a checked none case) still open;
    - ~~twin-compile the `always` checks~~ done (`invariants-probe.mjs`: a second, independent

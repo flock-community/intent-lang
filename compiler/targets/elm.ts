@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -880,9 +880,10 @@ const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
 // Stored state lives in this browser (localStorage), under the app's name.
 const KEY = ${q(`intent:${app.name}`)};
 const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };
+const storedDefaults: Record<string, unknown> = { ${storedDefaults(app)} };
 
 // The flags: the local clock, and what this browser kept of the stored state.
-(globalThis as any).intentClock = () => ({ ...localClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields) ?? null } : {}) });
+(globalThis as any).intentClock = () => ({ ...localClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields, storedDefaults) ?? null } : {}) });
 (globalThis as any).intentConnect = (app: any) => {
   if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(localClock()), 15000);
   if (app.ports.save) app.ports.save.subscribe((data: Record<string, unknown>) => save(KEY, data, storedFields));

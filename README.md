@@ -464,8 +464,11 @@ Habits and the tickets API built on the first attempt with it, twin-verified. A 
 drops a row was caught by the examples and by random sessions. In Chromium the habits survived a
 reload in both targets, the Elm build read what the TypeScript build had saved, and unreadable
 saved data fell back to the spec's defaults (in the first TypeScript run it did not; the saved
-data is now checked against the spec's types). The tickets server kept a new ticket across a
-restart, and the next id continued.
+data is now checked against the spec's types). Saved data from an older version of a spec is
+migrated rather than reset: a removed field is dropped, a new `T or nothing` field becomes
+nothing, a new list an empty list, and only a stored field that cannot be migrated keeps the
+spec's default (`runtime/ts/api.ts migrate`, `tests/migrate.test.ts`). The tickets server kept a
+new ticket across a restart, and the next id continued.
 
 **Effects** (v33). A contract says which endpoints reach outside the system and what takes them
 back: `effect external` and `undone by refund with id = @charge.body.id`. The design for the

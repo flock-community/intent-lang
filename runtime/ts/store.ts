@@ -1,20 +1,22 @@
 // Stored state (`stored` in the spec) outside tests: kept in the browser's localStorage, per app.
-// Only the stored fields are kept. Nothing saved, or saved data that does not fit the spec's types
-// (an older version of the app, a hand edit): the app starts from its defaults. In tests the driver
-// restarts the app instead (`restart` in an example).
-import { fits, type TypeDesc } from "./api.ts";
+// Only the stored fields are kept. Saved data from an older version of the app is migrated to the
+// current types (a removed field is dropped, a new `T or nothing` field becomes nothing, a new list
+// an empty list); a field that cannot be migrated keeps the app's default, and the rest of the data
+// is still read. In tests the driver restarts the app instead (`restart` in an example).
+import { migrate, type TypeDesc } from "./api.ts";
 
 /** The stored fields out of the app's data. */
 export const pick = (data: Record<string, unknown>, types: Record<string, TypeDesc>): Record<string, unknown> => Object.fromEntries(Object.keys(types).map((f) => [f, data[f]]));
 
-/** Kept data that fits every stored field's type, or nothing. */
-export const readable = (saved: unknown, types: Record<string, TypeDesc>): Record<string, unknown> | undefined =>
-  saved && typeof saved === "object" && Object.entries(types).every(([f, t]) => fits((saved as Record<string, unknown>)[f], t)) ? (saved as Record<string, unknown>) : undefined;
-
-export function load(key: string, types: Record<string, TypeDesc>): Record<string, unknown> | undefined {
+/** Kept data, migrated to the current types, with `defaults` (the spec's stored defaults) filling
+ *  any field that could not be read. Nothing saved: nothing. */
+export function load(key: string, types: Record<string, TypeDesc>, defaults?: Record<string, unknown>): Record<string, unknown> | undefined {
   try {
     const raw = globalThis.localStorage?.getItem(key);
-    return raw ? readable(JSON.parse(raw), types) : undefined;
+    if (!raw) return undefined;
+    const { data, dropped } = migrate(JSON.parse(raw), types);
+    if (dropped.length) console.warn(`intent: ${key}: cannot read ${dropped.join(", ")} (from an older version); using the spec's default there`);
+    return defaults ? { ...pick(defaults, types), ...data } : data;
   } catch {
     return undefined;
   }

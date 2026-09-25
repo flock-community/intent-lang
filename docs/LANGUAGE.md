@@ -110,11 +110,13 @@ state {
 ```
 
 The harness keeps stored fields: a screen in the browser's local storage, an api in a data file
-on the server (`INTENT_DATA`, default `data.json`). The spec's default is used the first time,
-and whenever the kept data cannot be read. In examples, `restart` starts the app again (§6), and
-random sessions restart now and then; after every restart the harness checks that the stored
-fields came back exactly as they were. Stored fields live in the app's own state, not in a
-component's.
+on the server (`INTENT_DATA`, default `data.json`). The spec's default is used the first time.
+When the app's records change, the kept data is **migrated** to the new types rather than reset: a
+removed field is dropped, a new `T or nothing` field becomes nothing, a new list an empty list;
+only a stored field that cannot be migrated at all keeps its default, and the rest is still read.
+In examples, `restart` starts the app again (§6), and random sessions restart now and then; after
+every restart the harness checks that the stored fields came back exactly as they were. Stored
+fields live in the app's own state, not in a component's.
 
 Seed data for a `List <Record>` is written as a table. Columns are record fields; omitted
 fields take the record's defaults:

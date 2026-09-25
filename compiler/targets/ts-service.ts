@@ -230,8 +230,8 @@ const SERVER = `import { createServer } from "node:http";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { pipeline } from "./pipeline.ts";
-import { jobList, storedFields } from "./spec.ts";
-import { fits } from "./api.ts";
+import { jobList, storedFields, storedDefaults } from "./spec.ts";
+import { migrate } from "./api.ts";
 import { localClock } from "./clock.ts";
 
 // Fresh secrets (@newToken) on the server: 16 random bytes from the operating system, as hex.
@@ -248,10 +248,10 @@ if (stored.length && existsSync(DATA_FILE)) {
   } catch (e) {
     console.error(\`\${DATA_FILE} cannot be read (\${(e as Error).message}); starting from the spec's defaults\`);
   }
-  const wrong = saved === undefined ? undefined : stored.find((f) => !fits(saved?.[f], storedFields[f]));
-  if (wrong) console.error(\`\${DATA_FILE}: \${wrong} does not fit the spec's type; starting from the spec's defaults\`);
-  else if (saved !== undefined) {
-    handle.restore(saved);
+  const kept = saved === undefined ? undefined : migrate(saved, storedFields);
+  if (kept?.dropped.length) console.error(\`\${DATA_FILE}: cannot read \${kept.dropped.join(", ")} (from an older version); the spec's default is used there\`);
+  if (kept) {
+    handle.restore({ ...storedDefaults, ...kept.data });
     handle.remembered.set(saved.idempotencyKeys);
   }
 }

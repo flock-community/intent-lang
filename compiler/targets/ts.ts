@@ -7,7 +7,7 @@ import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -39,7 +39,7 @@ export function tsData(app: App): string {
 }
 
 /** Which fields of the data a restart keeps (for the harness: localStorage, a data file). */
-export const tsStoredFields = (app: App) => `/** The stored fields and their types: kept data that does not fit is not restored. */\nexport const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };\n\n`;
+export const tsStoredFields = (app: App) => `/** The stored fields and their types: saved data is migrated to these, and what cannot be migrated keeps the default below. */\nexport const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };\n/** The spec's defaults for the stored fields: what a field that cannot be migrated keeps. */\nexport const storedDefaults: Record<string, unknown> = { ${storedDefaults(app)} };\n\n`;
 
 export function tsType(t: Type): string {
   switch (t.k) {
@@ -214,7 +214,7 @@ function genTsEntriesCalls(app: App): { main: string; test: string } {
   const st = hasStored(app);
   const configOf = th ? `(App.through(current) as Record<string, Record<string, unknown>>)[alias]` : "undefined";
   const main = `import * as App from "./app.ts";
-import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, type Stored" : ""} } from "./spec.ts";
+import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
 import { fetchCall, listen, newKey, type Outgoing } from "./calls.ts";
 import { apply } from "./through.ts";
@@ -234,7 +234,7 @@ let stream: { refresh: () => void } | undefined;
 dispatch = mount(document.getElementById("app")!, {
   init: () => {
     const r = App.init(${c ? "localClock()" : ""});
-${st ? "    const saved = load(KEY, storedFields);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
+${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
     perform(r.calls);
     return r.model;
   },
@@ -336,7 +336,7 @@ function genTsEntriesFor(app: App): { main: string; test: string } {
   const c = usesClock(app);
   const st = hasStored(app);
   const main = `import * as App from "./app.ts";
-import { fromWire, toNode${st ? ", storedFields, type Stored" : ""} } from "./spec.ts";
+import { fromWire, toNode${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE } from "./ui.ts";
 ${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
@@ -345,7 +345,7 @@ document.head.append(style);
 ${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
   init: () => ${st ? `{
     const m = App.init(${c ? "localClock()" : ""});
-    const saved = load(KEY, storedFields);
+    const saved = load(KEY, storedFields, storedDefaults);
     return saved ? App.restore(saved as Stored, m) : m;
   }` : `App.init(${c ? "localClock()" : ""})`},
   step: (w, m) => {

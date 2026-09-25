@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { App, Element, Literal } from "../ast.ts";
 import { STYLE } from "../../runtime/ts/ui.ts";
-import { typeDesc } from "../api.ts";
+import { literalJson, typeDesc } from "../api.ts";
 import { throughs } from "../calls.ts";
 
 export type Target = "elm" | "ts";
@@ -95,6 +95,9 @@ export const hasData = (app: App) => hasInvariants(app) || hasStored(app) || (ap
 export const dataField = (name: string) => name.replace(/\.([a-z])/g, (_, c: string) => c.toUpperCase());
 
 export const storedTypes = (app: App) => app.state.filter((f) => f.stored).map((f) => `${dataField(f.name)}: ${typeDesc(app, f.type)}`).join(", ");
+
+/** The spec's defaults for the stored fields, as JSON: what a field that cannot be migrated keeps. */
+export const storedDefaults = (app: App) => app.state.filter((f) => f.stored).map((f) => `${dataField(f.name)}: ${JSON.stringify(f.default?.k === "table" ? [] : literalJson(f.default ?? { k: "nothing" }))}`).join(", ");
 
 /** The client layers of an app's apis (\`through\` under \`uses\`), with their fixed params: used in the browser and in tests. */
 export function genThrough(app: App): string {
