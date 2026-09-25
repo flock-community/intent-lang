@@ -44,6 +44,9 @@ Elm error message for an undeclared status now matches TypeScript's.
    - ~~run doc snippets through `check` in `npm test`, and fix the stale doc lines~~ done
      (`tests/docs/snippets.ts`, ```` ```intent ```` blocks; durations, names, events, publish,
      randomness, `T or nothing`, README counts).
+   - ~~`intent fix`~~ done (criterion 11): applies `Maybe T` → `T or nothing`, an unmarked name
+     (`@name`), a missing `import`, and the `language vN` line, only when it adds no error
+     (`compiler/fix.ts`, `tests/fix.test.ts`).
 4. **Incremental builds** (`docs/design/incremental.md`): units, dependencies, `@spec` regions,
    resume a stopped twin build; measure on recorded edits before making it the default.
 5. **Distribution**: an `intent` bin and npm package; `intent doctor`; a second provider

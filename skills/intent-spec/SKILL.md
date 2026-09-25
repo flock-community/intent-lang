@@ -56,7 +56,9 @@ Order: `app` → `import` → `design` / `component` → `choice` → `record` �
 `derive` → `screen` → `on …` → `rules` → `always` → `example`s.
 
 Write every block with braces (`screen {` … `}`), indented 2 spaces inside, and run
-`intent fmt <file>` when unsure: it lays the file out the canonical way.
+`intent fmt <file>` when unsure: it lays the file out the canonical way. `intent fix <file>`
+applies the mechanical fixes the checker names (an old `Maybe T`, an unmarked name, a missing
+`import`), only when it adds no error.
 
 In every sentence, mark what you refer to with `@`: `- set @count to 0`,
 `enabled when @draft is not blank`, `add an @Item with @title = @draft`. Words without `@` are

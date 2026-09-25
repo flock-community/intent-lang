@@ -8,6 +8,7 @@ import { stepText } from "./print.ts";
 import { existsSync, writeFileSync } from "node:fs";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
+import { fixFile } from "./fix.ts";
 import { compileApp } from "./twin.ts";
 import type { Target } from "./gen.ts";
 import { converge, reanalyse } from "./converge.ts";
@@ -112,6 +113,25 @@ switch (cmd) {
     }
     process.exit(flags.check && changed ? 1 : 0);
   }
+  case "fix": {
+    // Apply the mechanical fixes the checker names: `Maybe T` → `T or nothing`, `UNMARKED`
+    // (`@name`), a missing `import`, and the `language vN` line. `--check` only reports.
+    let changed = 0;
+    for (const f of args) {
+      const { out, fixes, left } = fixFile(resolve(f));
+      if (!fixes.length) {
+        console.log(`${f}: nothing to fix`);
+        continue;
+      }
+      changed++;
+      for (const x of fixes) console.log(`${f}:${x.line}: ${x.what}`);
+      if (flags.check) continue;
+      writeFileSync(f, out);
+      const errors = left.filter((d) => d.level === "error").length;
+      if (errors) console.log(`${f}: ${errors} error(s) still need your attention`);
+    }
+    process.exit(flags.check && changed ? 1 : 0);
+  }
   case "lock": {
     const rows = writeLock(args.map((f) => resolve(f)));
     for (const r of rows) console.log(`locked ${r.name} sha256:${r.sha}  ${r.file}`);
@@ -200,6 +220,8 @@ switch (cmd) {
   intent install [<file.intent>...]        download intent.project's requirements (minimal version selection)
   intent publish <lib/x/y.intent> [--registry dir]   publish with a computed version (needs its demo app)
   intent client <contract.intent> [--out file.ts]    a typed client for a contract
+  intent fmt <file.intent>... [--check]    rewrite specs in the canonical layout (braces)
+  intent fix <file.intent>... [--check]    apply the mechanical fixes the checker names
   intent expand <file.intent>              print the canonical, expanded spec the compiler reads
   intent review <file.intent>              list what the spec leaves to defaults (one LLM call)
   intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off]

@@ -85,6 +85,7 @@ reference on purpose: whoever changes the language updates the skill in the same
 ```sh
 npm install
 node compiler/cli.ts check apps/*.intent            # syntax + consistency checker (add --json for editors)
+node compiler/cli.ts fix apps/03-tipsplit.intent     # the checker's mechanical fixes (adds `language v39`)
 node compiler/cli.ts review apps/09-board.intent    # what does the spec leave to defaults? (1 LLM call)
 node compiler/cli.ts expand apps/14-supportdesk.intent   # the spec exactly as the compiler reads it
 node compiler/cli.ts build apps/02-todo.intent      # → runs/single/02-todo/{elm,ts}/index.html

@@ -1,0 +1,21 @@
+app FixMe {
+  "A spec with mechanical problems: an old Maybe type and an unmarked name."
+}
+
+record Item {
+  id: Int
+}
+
+state {
+  count: Int = 0
+  maybe: Maybe Item = nothing
+}
+
+screen {
+  text count
+  button up "+"
+}
+
+on click up {
+  - increase count by 1
+}

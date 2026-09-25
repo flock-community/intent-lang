@@ -1079,6 +1079,12 @@ exists in more than one list.
 The checker runs before any compile. Errors stop the build; warnings are the backlog of
 places where the spec is not yet precise.
 
+`intent fix <file>` applies the fixes that need no judgement: an old `Maybe T` type becomes
+`T or nothing`, an unmarked declared name gets its `@` (`UNMARKED`), a missing `import` is added
+(`IMPORT`), and a `language vN` line is written. It checks the result and only writes when it
+has not added an error; everything else is left for the author. `intent fmt <file>` lays the file
+out in the canonical form.
+
 | Code | Level | When |
 |---|---|---|
 | `SYNTAX` | error | a line does not match any form |
