@@ -478,6 +478,7 @@ compiler/
   gen.ts              deterministic codegen: the door to the targets
   targets/            one module per target language, behind one interface (target.ts):
     elm.ts, ts.ts       generated interface, entries, prompt rules, toolchain, test session
+    ts-service.ts       TypeScript services: the api profile and layers (router, server, client)
     shared.ts           what every target shares (folders, naming, events, data, layers)
     index.ts            the targets there are
   prompt.ts           the compiler prompt (language-neutral; each target adds its own part)
@@ -497,9 +498,9 @@ compiler/
   expand.ts           instantiating behaviour components (`use x = Component`)
   print.ts            canonical printer (`intent expand`): what the LLM reads
   twin.ts             `intent build`: twin compilation, the build cache, providers first
-  api.ts              api profile harness: typed handlers, router, test client, `intent client`
+  api.ts              api profile: the test driver (examples, random requests, restarts)
   calls.ts            screens that call APIs: endpoints, events, client layers (targets write the types)
-  layer.ts            layers: generated interface, stub app, driver, random requests
+  layer.ts            layers: binding params, the driver around a stub app, random requests
   registry.ts         `intent install` / `intent publish`
 lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets
 runtime/{elm,ts}      Ui (renderer, node model) and Fmt, identical per target

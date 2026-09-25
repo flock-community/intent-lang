@@ -1,6 +1,7 @@
 // Layers (kind "layer"): reusable request/answer wrappers for api apps, such as CORS or API keys.
-// The harness generates the interface (Config, Provided, Before); the LLM writes `before` and
-// `after`. A layer's examples run it around a stub app that answers 200 { reached: true, …provided }.
+// Here: binding a layer's params, and the driver that runs a layer's examples and random requests
+// around a stub app (200 { reached: true, …provided }). What a build is made of comes from its
+// target (targets/ts-service.ts).
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +11,7 @@ import { checkSeeApi, literalJson, type Responses } from "./api.ts";
 import type { HttpRequest } from "../runtime/ts/http.ts";
 
 const q = (s: string) => JSON.stringify(s);
+export { genLayerSpec, scaffoldLayer, LAYER_FILES, LAYER_RULES, LAYER_SKELETON, CLIENT_LAYER_RULES, CLIENT_LAYER_SKELETON } from "./targets/ts-service.ts";
 
 // ---------------------------------------------------------------- config
 
@@ -32,118 +34,6 @@ export function layerConfig(layer: App, bindings: Binding[]): Record<string, unk
   }
   return out;
 }
-
-// ---------------------------------------------------------------- generated interface
-
-export function genLayerSpec(app: App): string {
-  const params = app.params ?? [];
-  const provides = app.provides ?? [];
-  if (app.beforeCall)
-    return `// Generated from layer ${app.name} — do not edit. The interface the layer module must satisfy.
-import type { HttpRequest } from "./http.ts";
-export type { HttpRequest } from "./http.ts";
-
-${tsDomain(app)}/** The params, as a screen binds them (to its state, or literals; defaults filled in). */
-export type Config = { ${params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };
-`;
-  return `// Generated from layer ${app.name} — do not edit. The interface the layer module must satisfy.
-import type { HttpRequest, HttpResponse } from "./http.ts";
-export type { HttpRequest, HttpResponse } from "./http.ts";
-
-${tsDomain(app)}/** The params, as an app binds them (defaults filled in). */
-export type Config = { ${params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };
-
-/** What this layer hands to the app's endpoints when a request passes. */
-export type Provided = { ${provides.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };
-
-/** \`before\` either answers (the app is not reached, and no later layer runs) or passes the request on. */
-export type Before = { pass: Provided } | { answer: HttpResponse };
-`;
-}
-
-export const LAYER_SKELETON = `import type { Before, Config, HttpRequest, HttpResponse } from "./spec.ts";
-import { … } from "./http.ts"; // what you use of: header, refuse, respond, sameSecret, withHeaders
-
-/** Runs first, for every request. */
-export function before(req: HttpRequest, config: Config): Before { /* … */ }
-
-/** Runs last, for every answer: the app's, the harness's (404, 400, 405) and any layer's. */
-export function after(req: HttpRequest, res: HttpResponse, config: Config): HttpResponse { /* … */ }
-`;
-
-/** A client's layer: one function over every call as it leaves the screen (and the event stream's request). */
-export const CLIENT_LAYER_SKELETON = `import type { Config, HttpRequest } from "./spec.ts";
-import { … } from "./http.ts"; // what you use of: header, lower
-
-/** Runs for every call a screen makes through this layer, and for its event stream: returns the call as it leaves. */
-export function before(req: HttpRequest, config: Config): HttpRequest { /* … */ }
-`;
-
-export const CLIENT_LAYER_RULES = `Target: TypeScript (strict mode), a layer around a client's calls. You write \`layer.ts\`.
-- Export exactly \`before(req, config)\`, which returns the call as it leaves: the same method, path, query and body unless the spec says otherwise, with the headers the spec says. Header names are lower case.
-- It runs in the browser and in tests, for every call and for the event stream (\`GET /events\`). Config values come from the screen's state and change over time: never cache them.
-- Available: the standard library, "./spec.ts", "./http.ts" and "./fmt.ts". No I/O, no timers, no randomness, no Date. Import with explicit extensions.
-- Pure function: never mutate the request you receive; return a new object.
-- Every example must pass. Walk through each one step by step before you answer. Write plain code, no comments.`;
-
-export const LAYER_RULES = `Target: TypeScript (strict mode), a layer around an HTTP API. You write \`layer.ts\`.
-- Export exactly \`before\` and \`after\` with the signatures below. Without \`before every request\`, \`before\` passes every request on: \`{ pass: {} }\` (plus what the layer provides). Without \`after every answer\`, \`after\` returns the answer unchanged.
-- Requests and answers are plain data. Header names are lower case; read request headers with \`header(req, name)\`. Build answers with \`respond(status, body, headers)\` (body \`null\` for none) or \`refuse(status, message, headers)\` (a Problem), and add headers with \`withHeaders(res, {…})\`. Never drop headers or change the status or body of an answer unless the spec says so.
-- Secrets (keys, tokens, passwords) are compared only with \`sameSecret(a, b)\`, never with ===.
-- Available: the standard library, "./spec.ts", "./http.ts" and "./fmt.ts". No I/O, no timers, no randomness, no Date. Import with explicit extensions.
-- Pure functions: never mutate the request or the answer you receive; return new objects.
-- Every example must pass. Walk through each one step by step before you answer. Write plain code, no comments.`;
-
-const TEST_ENTRY = `import * as L from "./layer.ts";
-import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
-
-const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
-
-/** The layer around a stub app that answers 200 { reached: true, …what the layer provided }. */
-export function start(config: any) {
-  return {
-    send(req: HttpRequest): HttpResponse {
-      const b = L.before(copy(req), copy(config));
-      const res: HttpResponse = "answer" in b ? normalize(b.answer) : { status: 200, headers: {}, body: { reached: true, ...copy(b.pass) } };
-      return normalize(L.after(copy(req), copy(res), copy(config)));
-    },
-  };
-}
-`;
-
-/** A client's layer in its examples: \`request …\` is a call the screen makes; what is seen is the call as it leaves. */
-const CLIENT_TEST_ENTRY = `import * as L from "./layer.ts";
-import { lower, type HttpRequest, type HttpResponse } from "./http.ts";
-
-const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
-
-export function start(config: any) {
-  return {
-    send(req: HttpRequest): HttpResponse {
-      const out = L.before(copy(req), copy(config));
-      return { status: 200, headers: lower(out.headers ?? {}), body: copy({ method: out.method, path: out.path, query: out.query ?? {}, body: out.body ?? null }) };
-    },
-  };
-}
-`;
-
-export function scaffoldLayer(app: App, dir: string): { appFile: string; specSource: string } {
-  mkdirSync(dir, { recursive: true });
-  copyFileSync(join(ROOT, "runtime/ts/http.ts"), join(dir, "http.ts"));
-  copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
-  const spec = genLayerSpec(app);
-  writeFileSync(join(dir, "spec.ts"), spec);
-  writeFileSync(join(dir, "test-entry.ts"), app.beforeCall ? CLIENT_TEST_ENTRY : TEST_ENTRY);
-  writeFileSync(join(dir, "config.json"), JSON.stringify(layerConfig(app, app.exampleConfig ?? []), null, 2));
-  writeFileSync(
-    join(dir, "tsconfig.json"),
-    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022", "dom"], skipLibCheck: true }, include: ["*.ts"] }, null, 2),
-  );
-  return { appFile: join(dir, "layer.ts"), specSource: spec };
-}
-
-/** The files an app build needs from a verified layer build. */
-export const LAYER_FILES = ["layer.ts", "spec.ts", "http.ts", "fmt.ts"];
 
 // ---------------------------------------------------------------- driving a layer build
 

@@ -7,8 +7,8 @@ import { actionText, exploreJobs } from "./fuzz.ts";
 import { scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
 import { buildPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
-import { compile, compileApi, compileLayer } from "./toolchain.ts";
-import { apiTraces, callText, scaffoldApi, type Call } from "./api.ts";
+import { targetModule } from "./targets/index.ts";
+import { apiTraces, callText, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
@@ -16,7 +16,7 @@ import { callDescs, hasClients, hasThrough } from "./calls.ts";
 import { usesClock } from "./refs.ts";
 import { prepareInvariants } from "./invariants.ts";
 import { dataField, hasData, hasInvariants, hasStored } from "./gen.ts";
-import { readLayerConfig, scaffoldLayer } from "./layer.ts";
+import { readLayerConfig } from "./layer.ts";
 
 export interface BuildResult {
   target: Target;
@@ -51,7 +51,9 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   const layer = app.kind === "layer";
   const api = app.profile === "api" && !layer;
   const res: BuildResult = { target, dir, ok: false, attempts: [], examples: { passed: 0, total: app.examples.length }, compiler: compilerPins(), costUsd: 0, ms: 0 };
-  if ((api || layer) && target !== "ts") {
+  const tm = targetModule(target);
+  const svc = tm.service;
+  if ((api || layer) && !svc) {
     res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
     return res;
   }
@@ -59,7 +61,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: "styled builds of apps that make calls are not in the harness yet" });
     return res;
   }
-  const { appFile, specSource } = layer ? scaffoldLayer(app, dir) : api ? scaffoldApi(app, dir, opts.layers) : scaffold(app, target, dir, opts.layers);
+  const { appFile, specSource } = layer ? svc!.scaffoldLayer(app, dir) : api ? svc!.scaffoldApi(app, dir, opts.layers) : tm.scaffold(app, dir, opts.layers);
   if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
   if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })), ...(e.effect ? { external: true } : {}) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
@@ -103,7 +105,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     code = extractCode(r.text);
     writeFileSync(appFile, code);
 
-    const errors = layer ? await compileLayer(dir) : api ? await compileApi(dir) : await compile(target, dir);
+    const errors = layer ? await svc!.compileLayer(dir) : api ? await svc!.compileApi(dir) : await tm.compile(dir);
     if (errors) {
       problems = `The module does not compile:\n\n\`\`\`\n${errors}\n\`\`\``;
       res.attempts.push({ stage: "compile", detail: errors.slice(0, 1500) });

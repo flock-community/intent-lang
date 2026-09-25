@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, type Target } from "./gen.ts";
 import { TARGETS, targetModule } from "./targets/index.ts";
-import { API_APP_SKELETON, API_TARGET_RULES } from "./api.ts";
-import { CLIENT_LAYER_RULES, CLIENT_LAYER_SKELETON, LAYER_RULES, LAYER_SKELETON } from "./layer.ts";
 
 export const SYSTEM = `You are the code-generation stage of the Intent compiler. You translate an Intent spec into exactly one source module.
 Behave like a compiler: literal, deterministic, no creativity, no extra features, no commentary.
@@ -37,18 +35,8 @@ export const PROBE_RULES = `You are the PROBE compiler of a twin build. Another 
 - Wherever the spec and the defaults together still leave a real choice (what counts as a word, how ties are ordered, what happens in an unmentioned edge case, what an unclear sentence means), deliberately take a DIFFERENT reasonable reading than the most obvious one.
 - Stay reasonable: a person reading the spec should agree your reading is allowed by the text.`;
 
-const API_CODING_RULES = `Rules that keep every build identical:
-1. Model mirrors the spec's \`state\`: same names, same meaning. Add only what you truly need.
-2. Each endpoint: implement its steps in order, literally. "answer 404 \\"…\\" and stop" returns \`fail(404, "…")\` at once, leaving the model unchanged. "answer 201 with X" returns \`answer(201, X)\`.
-3. Bodies are exactly the declared \`returns\` type: records with their declared fields, lists in the order the steps say.
-4. Where the spec is silent, apply the defaults in §9 of the language reference. Never add behaviour the spec does not ask for.
-5. Every example in the spec must pass. Walk through each one step by step before you answer.
-6. All rounding goes through Fmt. For every refined type the interface has a check (\`isEmail\`); "is a valid Email" means that check. Write plain, straightforward code. No comments needed.`;
 
 
-/** Apis that read the clock or run recurring work. */
-const API_CLOCK_RULE = `This api reads the clock: every request carries \`now\` (@now, a DateTime) and \`today\` (@today, a Date); never read the time any other way.
-Each \`every <interval> { … }\` block is recurring work: export \`jobs\` typed \`Jobs<Model>\` from spec.ts, one function per block (\`every15m\` for \`every 15m\`), taking the model and the clock at its time and returning \`{ model, publish }\`. The module then exports Model, init, handlers and jobs.`;
 
 /** Apps that read the clock: the harness hands it in; the logic never asks for the time itself. */
 
@@ -60,22 +48,23 @@ export function buildPrompt(target: Target, specFile: string, specText: string, 
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const t = targetModule(target);
   const lang = t.fence;
+  const svc = TARGETS.ts.service!; // services are built by the TypeScript target (so far)
   if (api)
     return `# Language reference
 
 ${language}
 
-# ${API_TARGET_RULES}
+# ${svc.prompt.rules}
 
 \`\`\`ts
-${API_APP_SKELETON}\`\`\`
+${svc.prompt.skeleton}\`\`\`
 
 Standard helpers (use these for all number formatting, parsing and rounding):
 \`\`\`
 ${TARGETS.ts.prompt.fmt}
 \`\`\`
 
-${API_CODING_RULES}
+${svc.prompt.coding}
 
 # Generated interface (spec.ts)
 
@@ -87,7 +76,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${clock ? `# Clock\n\n${API_CLOCK_RULE}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
+${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
   return `# Language reference
 
 ${language}
@@ -136,14 +125,15 @@ Fix these problems. Reply with the complete corrected module.`;
 /** A layer (std.http.cors, …): one module with \`before\` and \`after\`, checked by the layer's own examples. */
 export function layerPrompt(specFile: string, specText: string, specModule: string, probe = false, client = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
+  const lp = TARGETS.ts.service!.layerPrompt;
   return `# Language reference
 
 ${language}
 
-# ${client ? CLIENT_LAYER_RULES : LAYER_RULES}
+# ${client ? lp.clientRules : lp.rules}
 
 \`\`\`ts
-${client ? CLIENT_LAYER_SKELETON : LAYER_SKELETON}\`\`\`
+${client ? lp.clientSkeleton : lp.skeleton}\`\`\`
 
 ${client ? "In the layer's examples, `request …` is a call the screen makes, and what is seen is the call as it leaves: `see header x = …` its headers, `see body.path`, `body.method`, `body.query…`, `body.body…`. The params are those under `examples with` (defaults otherwise), changed by `given`." : "In the layer's examples, the layer runs around a stub app that answers 200 with the body \`{ \"reached\": true, …what before passed on }\`, and the params are those under \`examples with\` (defaults otherwise), changed by \`given\`."} The same module then runs in real apps with their own params: never hard-code an example's values.
 

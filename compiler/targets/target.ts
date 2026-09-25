@@ -41,4 +41,18 @@ export interface TargetModule {
   };
   /** A test session on a compiled build, with the clock the driver starts it at. */
   open(dir: string, clock?: { now: string; today: string }): Promise<Session>;
+  /** Services (the api profile, layers), for a target that can build them. */
+  service?: ServiceModule;
+}
+
+/** A target's services: an api (typed handlers behind a fixed router and server) and layers. */
+export interface ServiceModule {
+  scaffoldApi(app: App, dir: string, layerDirs?: Record<string, string>): { appFile: string; specSource: string };
+  compileApi(dir: string): Promise<string>;
+  scaffoldLayer(app: App, dir: string): { appFile: string; specSource: string };
+  compileLayer(dir: string): Promise<string>;
+  /** The files an api build copies from a verified layer build. */
+  layerFiles: string[];
+  prompt: { rules: string; skeleton: string; coding: string; clock: string };
+  layerPrompt: { rules: string; skeleton: string; clientRules: string; clientSkeleton: string };
 }

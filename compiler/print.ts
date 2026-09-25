@@ -118,6 +118,8 @@ function body(b: { body?: Stmt[]; steps: string[] }, ind: string): string[] {
 }
 
 function binding(b: Binding, ind: string): string[] {
+  // Bound to the app's state: the layer reads that field on every request.
+  if (b.state) return [`${ind}${b.name} = ${b.state}  # from state`];
   if (Array.isArray(b.value)) return [`${ind}${b.name} = ${b.value.map((v) => lit(v, "")).join(", ")}`];
   const text = lit(b.value, ind);
   return (`${ind}${b.name} = ${text}`).split("\n");
@@ -146,7 +148,7 @@ export function printApp(app: App): string {
         ? [
             `  through ${c.through.layer}${c.through.digest ? `  # layer ${c.through.digest}` : ""}`,
             ...(c.through.spec?.purpose ?? []).map((p) => `    # ${p}`),
-            ...c.through.bindings.flatMap((b) => (b.state ? [`    ${b.name} = ${b.state}  # from state`] : binding(b, "    "))),
+            ...c.through.bindings.flatMap((b) => binding(b, "    ")),
           ]
         : []),
       ...(c.contract.endpoints ?? []).flatMap((ep) => [
