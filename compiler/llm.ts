@@ -3,6 +3,7 @@
 // correct (the examples, `always` rules and twin builds decide that). Which provider and model:
 // `llm` and `model` in the compiler's options (config.ts).
 import { claudeCli } from "./providers/claude-cli.ts";
+import { anthropic } from "./providers/anthropic.ts";
 import { config } from "./config.ts";
 
 export interface LlmResult {
@@ -21,6 +22,7 @@ export interface Provider {
 /** The providers there are, by name. A new one is a module in providers/ and a line here. */
 const PROVIDERS: Record<string, (model: string) => Provider> = {
   "claude-cli": claudeCli,
+  anthropic,
 };
 
 /** The model this run compiles with (pinned in intent.lock). */

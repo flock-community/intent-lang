@@ -153,8 +153,9 @@ switch (cmd) {
     line("model", !lock.model || pins.model === lock.model, lock.model && pins.model !== lock.model ? `${pins.model} (intent.lock pins ${lock.model})` : pins.model);
     for (const t of ["elm", "esbuild"]) line(t, existsSync(bin(t)), existsSync(bin(t)) ? bin(t) : "not installed (npm install)");
     const c = config();
-    const found = c.llm === "claude-cli" ? spawnSync("which", ["claude"], { encoding: "utf8" }).status === 0 : true;
-    line("llm", found, `${c.llm}${c.llm === "claude-cli" ? (found ? " (claude in PATH)" : " (claude not in PATH: run `claude login`, or set ANTHROPIC_API_KEY)") : ""}`);
+    const found = c.llm === "claude-cli" ? spawnSync("which", ["claude"], { encoding: "utf8" }).status === 0 : c.llm === "anthropic" ? !!process.env.ANTHROPIC_API_KEY : true;
+    const why = c.llm === "claude-cli" ? (found ? " (claude in PATH)" : " (claude not in PATH: run `claude login`, or set ANTHROPIC_API_KEY)") : c.llm === "anthropic" ? (found ? " (ANTHROPIC_API_KEY set)" : " (set ANTHROPIC_API_KEY)") : "";
+    line("llm", found, `${c.llm}${why}`);
     console.log(ok.every(Boolean) ? "\nintent looks ready." : "\nsomething above needs attention.");
     process.exit(ok.every(Boolean) ? 0 : 1);
   }
