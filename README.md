@@ -450,7 +450,8 @@ same in Elm and TypeScript in 60 of 60 random sessions with 286 waits.
 installation, never the compiler: `std.crypto.sha256` (checked against the standard's vectors and
 against Node on 501 inputs) and `intent.tools.check`. `apps/api/specs-api.intent` stores specs
 that pass the checker with the digest it computed itself; it built first try, twin-verified,
-and its server runs on its own, with the checker bundled in.
+and its server runs on its own, with the checker bundled in. Since v44 a **screen** can use a pure
+platform too, in TypeScript so far: `apps/22-hash.intent` shows the `@sha256` of what the user types.
 
 **Several screens** (v36). `screen ticket "/tickets/{id}" { path id: Int … }`, `go to @ticket with
 @id = …`, `go back` and `on open ticket`. The harness owns where the app is: a generated `Route`, the

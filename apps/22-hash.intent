@@ -1,0 +1,20 @@
+app Hash {
+  "Show the SHA-256 of what you type, computed by the installation's reviewed code."
+}
+
+import std.crypto
+
+state {
+  draft: Text = ""
+}
+
+screen {
+  text heading = "SHA-256"
+  field draft
+  text digest = the @sha256 of @draft
+}
+
+example "the standard's vector" {
+  type "abc" into draft
+  see digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+}

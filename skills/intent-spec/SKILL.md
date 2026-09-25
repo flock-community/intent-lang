@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v43** (see the changelog at the end of
+Language version this skill matches: **v44** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -258,7 +258,9 @@ check that new ids continue after a restart.
 Never describe a hash, a checksum or a checker in sentences. Import the platform that has it
 (`import std.crypto` for `@sha256`, `import intent.tools` for `@check`) and name the function in a
 sentence. If a service must not trust what a client sends (a version, a digest), compute it with
-a platform function (`apps/api/specs-api.intent`).
+a platform function (`apps/api/specs-api.intent`). A screen can use a pure platform too, in
+TypeScript so far (`apps/22-hash.intent` shows `@sha256`); `intent.tools` runs in the harness, so it
+is for services.
 
 ## 5k. Several screens
 

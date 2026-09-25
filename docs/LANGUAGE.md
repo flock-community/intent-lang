@@ -1,4 +1,4 @@
-# Intent — language reference (v43)
+# Intent — language reference (v44)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -311,7 +311,9 @@ An app imports a platform like a bundle and names its functions in sentences:
 against its implementation in the installation's tests. Platforms so far: `std.crypto`
 (`sha256`) and `intent.tools` (`check`: a spec's checker result, public names, example
 fingerprints and digest, as `intent publish` computes them; a spec with imports is not checked
-alone). They are for services (the api profile) so far.
+alone). A **screen** can use a platform too, in TypeScript so far: `apps/22-hash.intent` shows the
+`@sha256` of what the user types (an Elm screen with a platform is `NOT_YET`). A platform whose code
+runs in the harness (like `intent.tools`) is for services only.
 
 ## 4a. Look: design, components, presentations
 
@@ -1231,6 +1233,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v44: a screen can use platform functions, in TypeScript so far: spec.ts re-exports them from the
+  installation's code, and the app calls them in a sentence (`apps/22-hash.intent` shows `@sha256`).
+  An Elm screen with a platform is `NOT_YET`, and a platform that runs in the harness
+  (`intent.tools`) stays for services.
 
 - v43: agreement, permissions with bounds: `std.actions`'s `agree` is a list of `Permission`
   records (`endpoint`, `count`, `per`, `upTo`), so a standing permission says how many calls a

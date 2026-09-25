@@ -92,7 +92,7 @@ ${t.prompt.fmt}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}
+${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}${platforms && t.prompt.platform ? `\n${t.prompt.platform}\n` : ""}
 # Generated interface (${t.specFile})
 
 \`\`\`${lang}

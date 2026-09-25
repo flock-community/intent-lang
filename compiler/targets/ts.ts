@@ -86,6 +86,7 @@ export function genTsSpec(app: App): string {
 import type { Node, Wire } from "./ui.ts";
 ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : hasStored(app) ? `import type { TypeDesc } from "./api.ts";\n` : ""}
 `);
+  if (app.platforms?.length) out.push(`${app.platforms.map((p) => `/** Platform ${p.name}: the installation's reviewed code, never a home-made version. */\nexport { ${p.functions.map((f) => f.name).join(", ")} } from "./platform/${p.name}.ts";\n`).join("")}\n`);
   out.push(tsDomain(app));
   if (hasData(app)) out.push(tsData(app));
   if (hasStored(app)) out.push(tsStoredFields(app));
@@ -502,6 +503,11 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
     copyFileSync(join(ROOT, "runtime/ts/outbox.ts"), join(dir, "outbox.ts"));
     writeThrough(app, dir, layerDirs);
   }
+  // Platform functions: the installation's reviewed code, copied in and re-exported by spec.ts.
+  if (app.platforms?.length) {
+    mkdirSync(join(dir, "platform"), { recursive: true });
+    for (const p of app.platforms) copyFileSync(join(ROOT, "runtime/ts/platform", `${p.name}.ts`), join(dir, "platform", `${p.name}.ts`));
+  }
   const spec = genTsSpec(app);
   writeFileSync(join(dir, "spec.ts"), spec);
   if (hasScreens(app)) writeFileSync(join(dir, "app-nav.ts"), genTsNav(app));
@@ -595,6 +601,7 @@ Fmt.parseDateTime(text): DateTime | null      // "YYYY-MM-DD HH:MM" or "YYYY-MM-
     data: "Data (this spec has sentences in `always`): also export `data(model: Model): Data` (the `Data` type in spec.ts: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
     screens: "Screens (this spec has several): `update(msg, model, route)` and `view(model, route)` get where the app is (`Route` in spec.ts: `route.screen` names the screen, its path params are fields, so `@id` is `route.id`); `view` returns that screen's variant of `Screen` (`{ screen: \"ticket\", … }`). `update` returns `{ model, go }` (with calls: `{ model, calls, go }`): `go` is the route of a `go to` step (`{ screen: \"ticket\", id: … }`), `\"back\"` for `go back`, or left out. When a screen is shown (a link, an address, going back), the harness sends `{ tag: \"ScreenOpened\", route }`: do what `on open <that screen>` says, and nothing for a screen without one. The route is the harness's: never keep a copy in the model. With a clock, it comes last: `view(model, route, clock)`, `update(msg, model, route, clock)`.",
     stored: "Stored state (this spec has `stored` fields): also export `data(model: Model): Data` and `restore(saved: Stored, model: Model): Model`. `restore(saved, model)` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
+    platform: "Platform functions (this spec imports one): a sentence that names a function (`the @sha256 of the given @text`) calls exactly that function, imported from `./spec.ts`. They are the installation's reviewed code: never write your own version of what they do.",
   },
   open: openTs,
 };

@@ -40,6 +40,7 @@ export interface TargetModule {
     clock: string; // apps that read the clock
     data: string; // apps with sentences in `always`
     stored: string; // apps with stored state
+    platform?: string; // apps that use platform functions (a target without it cannot build them)
     screens?: string; // apps with several screens (a target without it cannot build them yet)
   };
   /** A test session on a compiled build, with the clock the driver starts it at. */

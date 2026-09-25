@@ -1,10 +1,10 @@
 // One build: spec → scaffold → LLM → compile → examples, with a bounded repair loop.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App } from "./ast.ts";
 import { runJobsIsolated, type ExampleResult, type ExploreResult } from "./exec.ts";
 import { actionText, exploreJobs } from "./fuzz.ts";
-import { scaffold, type Target } from "./gen.ts";
+import { ROOT, scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
 import { buildPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
 import { targetModule } from "./targets/index.ts";
@@ -58,8 +58,19 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     return res;
   }
   if (app.platforms?.length && !api && !layer) {
-    res.attempts.push({ stage: "compile", detail: "platform functions are for services (the api profile) so far: a screen cannot use them yet (docs/design/platform.md)" });
-    return res;
+    if (target !== "ts") {
+      res.attempts.push({ stage: "compile", detail: "platform functions in screens are TypeScript-only so far (docs/design/platform.md)" });
+      return res;
+    }
+    // A platform that reads the compiler (intent.tools checks a spec) cannot run in a screen.
+    const serviceOnly = app.platforms.find((p) => {
+      const file = join(ROOT, "runtime/ts/platform", `${p.name}.ts`);
+      return existsSync(file) && readFileSync(file, "utf8").includes("compiler/");
+    });
+    if (serviceOnly) {
+      res.attempts.push({ stage: "compile", detail: `platform \`${serviceOnly.name}\` runs in the harness, so a screen cannot use it (docs/design/platform.md)` });
+      return res;
+    }
   }
   if (app.screens?.length && !tm.prompt.screens) {
     res.attempts.push({ stage: "compile", detail: `apps with several screens are not in the ${target} harness yet (docs/design/screens.md)` });
