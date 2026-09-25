@@ -6,7 +6,7 @@ import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import { fromBraces } from "./braces.ts";
 import { bareWords, CLOCK_NAMES, declaredNames, refsIn, resolves, sentences, usesClock } from "./refs.ts";
-import type { Stmt, App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
+import type { ScreenDecl, Stmt, App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
   text: string;
@@ -313,7 +313,30 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       else app.derive.push({ name: dm[1], sentence: dm[2] + flattenChildren(c), line: c.line, note: c.note });
     }
   } else if (t === "screen") {
+    if (app.screens?.length) err(node.line, "SYNTAX", "this app has named screens: give this one a name and a path too (`screen <name> \"/path\"`)");
     app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
+  } else if ((m = t.match(new RegExp(`^screen\\s+(${LOWER})\\s+(${STR})$`)))) {
+    // One of several screens, with its address; `path x: T` lines are its params.
+    const path = parseString(m[2])!;
+    if (!path.startsWith("/")) err(node.line, "SYNTAX", "a screen's path starts with `/`");
+    if (app.screen.length && !app.screens?.length) err(node.line, "SYNTAX", "this app has an unnamed `screen`: with several screens, each has a name and a path");
+    if (app.screens?.some((s) => s.name === m![1])) err(node.line, "DUPLICATE", `screen \`${m[1]}\` is declared twice`);
+    const decl: ScreenDecl = { name: m[1], path, params: [], line: node.line, note: node.note };
+    for (const c of node.children) {
+      const pm = c.text.match(new RegExp(`^path\\s+(${LOWER})\\s*:\\s*(.+)$`));
+      if (pm) {
+        const type = parseType(pm[2]);
+        if (!type) err(c.line, "SYNTAX", `\`${pm[2]}\` is not a type`, c.indent + 1);
+        else decl.params.push({ name: pm[1], type, line: c.line });
+        continue;
+      }
+      const el = parseElement(c, err, false);
+      if (el) app.screen.push({ ...el, screen: m[1] });
+    }
+    (app.screens ??= []).push(decl);
+  } else if ((m = t.match(new RegExp(`^on\\s+open\\s+(${LOWER})$`)))) {
+    // Runs every time that screen is shown: from a link, an address, or going back.
+    app.handlers.push({ verb: "open", target: m[1], ...parseBody(node, err), line: node.line, note: node.note });
   } else if ((m = t.match(new RegExp(`^on\\s+(${VERBS}|answer|event)\\s+(${QN})$`))) || (m = t.match(new RegExp(`^on\\s+(${CLOCK_VERBS}|start)$`)))) {
     const h: Handler = { verb: m[1] as Verb, target: m[2] ?? "", ...parseBody(node, err), line: node.line, note: node.note };
     app.handlers.push(h);
@@ -472,6 +495,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     checkRefs(app, err, warn);
     checkBodies(app, err, warn);
     checkEffects(app, err, warn);
+    checkScreens(app, err);
     checkHints(app, warn);
   }
   diagnostics.sort((a, b) => a.line - b.line || a.col - b.col);
@@ -487,8 +511,49 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   checkRefs(app, err, warn);
   checkBodies(app, err, warn);
   checkEffects(app, err, warn);
+  checkScreens(app, err);
   checkHints(app, warn);
   return diags;
+}
+
+/**
+ * Several screens (docs/design/screens.md): every `{x}` in a path is a declared `path x: T` and
+ * back; no two screens answer the same address; a path param does not shadow other names;
+ * `go to @screen` names a screen and binds every one of its path params.
+ */
+function checkScreens(app: App, err: Err) {
+  const screens = app.screens ?? [];
+  const byName = new Map(screens.map((s) => [s.name, s]));
+  const shapes = new Map<string, string>();
+  const taken = new Set([...app.state.map((f) => f.name), ...app.derive.map((d) => d.name), ...app.screen.map((e) => e.name)]);
+  for (const s of screens) {
+    if (s.line >= LINE_BASE) continue;
+    const holes = [...s.path.matchAll(/\{([a-z]\w*)\}/gi)].map((x) => x[1]);
+    for (const h of holes) if (!s.params.some((p) => p.name === h)) err(s.line, "UNKNOWN_NAME", `path \`${s.path}\` has \`{${h}}\`: declare it in the screen as \`path ${h}: Type\``);
+    for (const p of s.params) {
+      if (!holes.includes(p.name)) err(p.line, "UNKNOWN_NAME", `\`path ${p.name}\` is not in the path \`${s.path}\`: write \`{${p.name}}\` where it goes`);
+      if (taken.has(p.name)) err(p.line, "DUPLICATE", `\`${p.name}\` is already a name in this app (state, derived value or element); give the path param another name`);
+    }
+    // Two paths are the same address when they differ only in their params' names.
+    const shape = s.path.replace(/\{[a-z]\w*\}/gi, "{}");
+    if (shapes.has(shape)) err(s.line, "DUPLICATE", `screens \`${shapes.get(shape)}\` and \`${s.name}\` have the same address (\`${s.path}\`)`);
+    shapes.set(shape, s.name);
+  }
+  for (const h of app.handlers) {
+    if (h.line >= LINE_BASE) continue;
+    for (const [i, st] of h.steps.entries()) {
+      const line = h.stepLines?.[i] ?? h.line;
+      for (const m of st.matchAll(/\bgo\s+to\s+@?([a-z]\w*)(?:\s+with\s+([^.;]+))?/gi)) {
+        const target = byName.get(m[1]);
+        if (!target) {
+          err(line, "UNKNOWN_NAME", `\`go to\` names a screen; there is no screen \`${m[1]}\`${screens.length ? suggest(m[1], screens.map((s) => s.name)) : " (this app has one screen)"}`);
+          continue;
+        }
+        const bound = new Set([...(m[2] ?? "").matchAll(/@?([a-z]\w*)\s*=/gi)].map((x) => x[1]));
+        for (const p of target.params) if (!bound.has(p.name)) err(line, "STEP", `\`go to @${target.name}\` needs its path param: \`go to @${target.name} with @${p.name} = …\``);
+      }
+    }
+  }
 }
 
 /**
@@ -785,6 +850,12 @@ export function parseString(s: string): string | undefined {
   if (!new RegExp(`^${STR}$`).test(s)) return undefined;
   return s.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === "n" ? "\n" : c === "t" ? "\t" : c));
 }
+
+/** Does an address fit a screen's path (`/tickets/3` fits `/tickets/{id}`)? */
+export const screenMatch = (pattern: string, path: string): boolean => {
+  const re = pattern.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{[a-z]\w*\}/gi, "[^/]+");
+  return new RegExp(`^${re}$`).test(path.split("?")[0]);
+};
 
 /** Whether a list or record value in a \`call\` fits the param's type: lists for lists, a record's fields by name. */
 function argShape(v: Literal, t: Type, app: App): string | undefined {
@@ -1188,6 +1259,8 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target, check: m[3] !== undefined ? { is: "eq", value: parseString(m[3])! } : { is: "hidden" }, line } };
   }
   if (t === "restart") return { step: { do: "restart", line } };
+  if (t === "go back") return { step: { do: "back", line } };
+  if ((m = t.match(new RegExp(`^open\\s+(${STR})$`)))) return { step: { do: "open", path: parseString(m[1])!, line } };
   if ((m = t.match(/^steer\s+([a-z]\w*)\s+(lose\s+request|lose\s+answer|duplicate|fail(?:\s+(\d+))?)$/))) {
     const fault = m[2].startsWith("fail") ? "fail" : (m[2].replace(/\s+/, " ") as "lose request");
     return { step: { do: "steer", api: m[1], fault, times: fault === "fail" ? Number(m[3] ?? 1) : 1, line } };
@@ -1245,7 +1318,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: "eq", value }, line } };
   }
   const word = t.split(/\s+/)[0];
-  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart", "steer"])}`, col);
+  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart", "steer", "open", "go back"])}`, col);
 }
 
 // ---------------------------------------------------------------- semantic checks
@@ -1451,6 +1524,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       continue;
     }
     if (h.verb === "start") continue;
+    if (h.verb === "open") {
+      const key = `open ${h.target}`;
+      if (!app.screens?.some((s) => s.name === h.target)) err(h.line, "UNKNOWN_NAME", `no screen \`${h.target}\`${app.screens?.length ? suggest(h.target, app.screens.map((s) => s.name)) : " (this app has one screen: use `on start`)"}`);
+      if (handled.has(key)) err(h.line, "DUPLICATE", `there is already an \`on ${key}\``);
+      handled.add(key);
+      continue;
+    }
     if (h.verb === "event") {
       // `on event tickets.ticketCreated`: a client alias and an event of its contract.
       const [alias, ev] = h.target.split(".");
@@ -1530,6 +1610,12 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       if (s.do === "call" || s.do === "request") {
         err(s.line, "STEP", `\`${s.do}\` belongs to the api profile (add \`profile api\`); a screen is driven with click, type, toggle and choose`);
+        continue;
+      }
+      if (s.do === "open" || s.do === "back") {
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
+        else if (!app.screens?.length) err(s.line, "STEP", `\`${s.do === "open" ? "open" : "go back"}\` moves between screens; this app has one screen`);
+        else if (s.do === "open" && !app.screens.some((sc) => screenMatch(sc.path, s.path))) err(s.line, "STEP", `\`${s.path}\` is no screen's address (${app.screens.map((sc) => sc.path).join(", ")}); an unknown address shows the first screen, which is rarely what an example means`);
         continue;
       }
       if (s.do === "steer") {
@@ -1634,9 +1720,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     ...state.keys(), ...derived, ...all.map((a) => a.el.name), ...records.keys(), ...choices.keys(), ...valueOwner.keys(),
     ...app.records.flatMap((r) => r.fields.map((f) => f.name)),
     ...(app.clients ?? []).flatMap((c) => [c.alias, ...(c.contract.endpoints ?? []).map((e) => e.name)]),
+    ...(app.screens ?? []).flatMap((sc) => [sc.name, ...sc.params.map((p) => p.name)]),
   ]);
   const anchored = (s: string) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).some((w) => names.has(w));
-  for (const h of app.handlers) h.steps.forEach((s, i) => !anchored(s) && !/nothing|initial state/i.test(s) && !/^(if|answer)\s/.test(s) && warn(h.stepLines?.[i] ?? h.line, "UNANCHORED", `"${s}" mentions no declared name`));
+  for (const h of app.handlers) h.steps.forEach((s, i) => !anchored(s) && !/nothing|initial state/i.test(s) && !/^(if|answer)\s/.test(s) && s !== "go back" && warn(h.stepLines?.[i] ?? h.line, "UNANCHORED", `"${s}" mentions no declared name`));
   app.rules.forEach((r, i) => !anchored(r) && warn(app.ruleLines?.[i] ?? 1, "UNANCHORED", `rule "${r}" mentions no declared name`));
 }
 

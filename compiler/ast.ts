@@ -75,9 +75,19 @@ export interface Element {
   children: Element[];
   line: number;
   note?: string;
+  screen?: string; // the screen this element is on, when an app has several
 }
 
-export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer" | "event";
+export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer" | "event" | "open";
+
+/** `screen ticket "/tickets/{id}" { path id: Int … }`: one of an app's screens, with its address. */
+export interface ScreenDecl {
+  name: string;
+  path: string;
+  params: { name: string; type: Type; line: number }[];
+  line: number;
+  note?: string;
+}
 
 /**
  * The body of a handler, an endpoint, recurring work or a layer: steps (prose), and the structure
@@ -113,6 +123,8 @@ export type Step =
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
   | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail"; times: number; line: number } // a fault on the way to an api (a screen's provider)
+  | { do: "open"; path: string; line: number } // arrive at an address (a screen of an app with several)
+  | { do: "back"; line: number } // the browser's back button
   | { do: "restart"; line: number } // the app starts again: stored state keeps its values, the rest starts from its default
   | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
   // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.
@@ -219,7 +231,8 @@ export interface App {
   state: Field[];
   clockMs?: number;
   derive: { name: string; sentence: string; line: number; note?: string }[];
-  screen: Element[];
+  screen: Element[]; // every element, of every screen (each tagged with its screen when there are several)
+  screens?: ScreenDecl[]; // several screens (`screen <name> "<path>" { … }`); one unnamed screen when absent
   handlers: Handler[];
   rules: string[];
   ruleLines?: number[]; // the line of each rule

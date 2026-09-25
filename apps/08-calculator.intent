@@ -60,6 +60,7 @@ on click clear {
 rules {
   - Computing a result: dividing by 0 sets @failed and shows "Error"; so does a result whose size is 1000000000000 or more. Otherwise @acc becomes the result and @display shows it with Fmt.decimal 8.
   - When @typing, @display shows exactly the typed characters.
+  - The number on @display is what it shows, with a "." at the end ignored: "870." is 870.
 }
 
 example "no precedence" {
@@ -157,4 +158,13 @@ example "twelve digits at most" {
   click press on row with "1"
   click press on row with "="
   see display = "Error"
+}
+
+example "a point at the end counts as nothing" {
+  click press on row with "8"
+  click press on row with "."
+  click press on row with "−"
+  click press on row with "3"
+  click press on row with "="
+  see display = "5"
 }

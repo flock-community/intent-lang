@@ -109,6 +109,11 @@ export function declaredNames(app: App): Set<string> {
     for (const v of c.values) names.add(v);
   }
   for (const r of app.refined ?? []) names.add(r.name);
+  // Screens (`go to @ticket`) and their path params (`@id` while that screen is shown).
+  for (const s of app.screens ?? []) {
+    names.add(s.name);
+    for (const p of s.params) names.add(p.name);
+  }
   for (const e of app.events ?? []) names.add(e.name);
   for (const ep of app.endpoints ?? []) {
     names.add(ep.name);

@@ -49,6 +49,8 @@ export function stepText(s: Step): string {
     case "tick": return s.ms ? `wait ${duration(s.ms)}` : `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
     case "restart": return "restart";
+    case "open": return `open ${q(s.path)}`;
+    case "back": return "go back";
     case "steer": return `steer ${s.api} ${s.fault}${s.fault === "fail" ? ` ${s.times}` : ""}`;
     case "call": {
       const args = [...(s.headers ?? []).map((h) => `header ${h.name} = ${lit(h.value, "")}`), ...s.args.map((a) => `${a.name} = ${lit(a.value, "")}`)];
@@ -179,7 +181,10 @@ export function printApp(app: App): string {
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.stored ? "stored " : ""}${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
   block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
-  if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
+  if (app.screens?.length)
+    for (const sc of app.screens)
+      block([`screen ${sc.name} ${q(sc.path)}${origin(app, sc.line, sc.note)}`, ...sc.params.map((p) => `  path ${p.name}: ${typeToString(p.type)}`), ...app.screen.filter((e) => e.screen === sc.name).flatMap((e) => element(app, e, "  "))]);
+  else if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
   block((app.everyAnswer ?? []).map((a) => `every endpoint answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`));
   block((app.events ?? []).map((e) => `event ${e.name}: ${typeToString(e.type)}${origin(app, e.line, e.note)}`));
   for (const ep of app.endpoints ?? [])

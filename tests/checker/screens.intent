@@ -1,0 +1,55 @@
+app ScreenChecks {
+  "Several screens: addresses, going to one, and examples that move between them."
+}
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject
+    1  | "Printer on fire"
+  }
+}
+
+screen list "/" {
+  list tickets of Ticket {
+    text subject
+    button open "Open"
+  }
+}
+
+screen ticket "/tickets/{id}" {
+  path id: Int
+  text title = the @subject of the ticket whose @id is @id
+  button back "Back"
+}
+
+screen other "/tickets/{ref}" {                  # expect: DUPLICATE
+  path ref: Int
+  path extra: Text                               # expect: UNKNOWN_NAME
+  text nothingHere = "x"
+}
+
+on click open {
+  - go to @ticket with @id = the @id of that ticket
+}
+
+on click back {
+  - go to @ticket                                # expect: STEP
+  - go to @nowhere                               # expect: UNKNOWN_NAME
+}
+
+on open lost {                                   # expect: UNKNOWN_NAME
+  stop
+}
+
+example "to a ticket and back" {
+  click open on row 1 of tickets
+  see title = "Printer on fire"
+  go back
+  open "/tickets/1"
+  open "/nowhere"                                # expect: STEP
+}

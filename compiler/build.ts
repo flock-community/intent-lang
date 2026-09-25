@@ -57,6 +57,10 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.attempts.push({ stage: "compile", detail: `the api profile has a TypeScript harness only (so far); ${target} is not in the harness yet` });
     return res;
   }
+  if (app.screens?.length) {
+    res.attempts.push({ stage: "compile", detail: "apps with several screens check, but are not in the harness yet (docs/design/screens.md)" });
+    return res;
+  }
   if (hasClients(app) && opts.styled) {
     res.attempts.push({ stage: "compile", detail: "styled builds of apps that make calls are not in the harness yet" });
     return res;
