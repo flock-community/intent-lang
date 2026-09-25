@@ -152,7 +152,7 @@ switch (cmd) {
     const targets = service ? (wanted.filter((t) => TARGETS[t].service).length ? wanted.filter((t) => TARGETS[t].service) : (["ts"] as Target[])) : wanted;
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
     const results = await Promise.all(
-      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, sessions: c.sessions, length: c.length, attempts: c.attempts, log: (m) => console.log(`[${t}] ${m}`) })),
+      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => console.log(`[${t}] ${m}`) })),
     );
     await closeBrowser();
     for (const r of results) {
@@ -211,7 +211,7 @@ switch (cmd) {
 
 Options (a flag wins over the environment, which wins over \`compiler { … }\` in intent.project):
   --llm <provider>   --model <name>   --target elm,ts   --twin auto|always|off
-  --sessions <n>     --length <n>     --attempts <n>
+  --sessions <n>     --length <n>     --repairs <n> (0: fail at the first problem)
 Keys stay in the environment (the provider reads them), never in a file.`);
     process.exit(2);
 }

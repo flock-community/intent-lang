@@ -63,8 +63,8 @@ export function readProject(path = PROJECT): Project | undefined {
     else if (line === "requires") (inRequires = true), (inCompiler = false);
     else if (line === "compiler") (inCompiler = true), (inRequires = false), (p.compiler ??= {});
     else if (inRequires && (m = line.match(/^\s+([a-z][\w.]*)\s+(\d+(?:\.\d+){0,2})$/))) p.requires.push({ name: m[1], version: m[2], line: i + 1 });
-    else if (inCompiler && (m = line.match(/^\s+(llm|model|targets|twin|sessions|length|attempts)\s+(.+)$/))) p.compiler![m[1]] = m[2].trim();
-    else if (inCompiler) throw new Error(`intent.project:${i + 1}: in \`compiler\`: \`llm\`, \`model\`, \`targets\`, \`twin\`, \`sessions\`, \`length\` or \`attempts\`, then its value (keys stay in the environment)`);
+    else if (inCompiler && (m = line.match(/^\s+(llm|model|targets|twin|sessions|length|repairs)\s+(.+)$/))) p.compiler![m[1]] = m[2].trim();
+    else if (inCompiler) throw new Error(`intent.project:${i + 1}: in \`compiler\`: \`llm\`, \`model\`, \`targets\`, \`twin\`, \`sessions\`, \`length\` or \`repairs\`, then its value (keys stay in the environment)`);
     else throw new Error(`intent.project:${i + 1}: expected \`project <name>\`, \`registry <folder or url>\`, \`requires\` with \`<bundle> <version>\` lines, or \`compiler\` with options, in its block`);
   });
   return p;

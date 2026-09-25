@@ -112,7 +112,7 @@ compiler {
   twin auto                  # auto | always | off
   sessions 24                # random sessions comparing a twin build
   length 20                  # steps per session
-  attempts 4                 # compile attempts (the first, then repairs)
+  repairs 3                  # a build that fails its checks goes back with the problems (0: stop)
 }
 ```
 
@@ -134,7 +134,7 @@ the rest.
                                           │
               compile (elm make / tsc) ──► run every example ──► hunt for `always` violations
                      ▲                                               │
-                     └──────── repair loop: exact errors fed back ───┘  (max 4 attempts)
+                     └──────── repair loop: exact errors fed back ───┘  (max 3 repairs)
                      or the LLM answers "SPEC CONFLICT: <lines>" and the build stops
 ```
 
