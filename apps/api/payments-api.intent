@@ -34,7 +34,7 @@ endpoint refund {
 }
 
 endpoint getCharge {
-  if no charge has that @id {
+  if no charge has @path.id {
     answer 404 "No such charge"
   }
   answer 200 with that charge

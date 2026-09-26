@@ -1,4 +1,4 @@
-# Intent — language reference (v45)
+# Intent — language reference (v46)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -606,6 +606,9 @@ example "creating a ticket" {
 - `path x: T` (appears in the path as `{x}`), `query x: T` and `body x: T` are the input;
   `returns T` is the answer's body. Steps are sentences, as in handlers: "answer 200 with …",
   `answer 404 "…"` (which ends the endpoint), inside `if <condition> { … }` where it applies.
+  In a step, `@x` is the param, and `@path.x` / `@query.x` / `@body.x` say which part it is —
+  useful when a field has the same name (`the ticket whose @id is @path.id`); the checker refuses
+  the wrong part.
 - The harness routes requests and checks their input before the service sees them. It answers
   these itself, with fixed messages: `404 {"error":"Not found"}`, `405 {"error":"Method not
   allowed"}`, `400 {"error":"<name> is required"}` and `400 {"error":"<name> must be <type>"}`.
@@ -1237,6 +1240,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v46: `@path.x` / `@query.x` / `@body.x` in an endpoint's step name a request param and say which
+  part it is, so a param is told apart from a field with the same name (`the ticket whose @id is
+  @path.id`); the checker refuses the wrong part or a step outside an endpoint. Used in
+  `apps/api/payments-api.intent`.
 
 - v45: agreement, four eyes: `std.actions` gained `fourEyes` and `requester` params, and
   `Permission` gained `approver`. With `fourEyes` on, a permission the requester granted themselves

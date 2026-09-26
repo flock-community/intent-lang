@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v45** (see the changelog at the end of
+Language version this skill matches: **v46** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -209,7 +209,9 @@ need: minimal version selection never upgrades behind your back.
 
 Write `profile api` and `endpoint` blocks (§4e of the reference). Reuse the same domain bundle
 as the screen. Every endpoint needs examples: the happy path, each refusal (`if … { answer 404 "…" }`), and a missing or invalid input (the harness answers those itself). Check list order
-explicitly (`see listTickets.body[1].id = 9`).
+explicitly (`see listTickets.body[1].id = 9`). When a field has the same name as a request param,
+write `@path.id` / `@body.room` in the step to say which you mean (`the ticket whose @id is
+@path.id`).
 
 ## 5e. Contracts between services
 

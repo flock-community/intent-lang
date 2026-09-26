@@ -784,7 +784,18 @@ function checkRefs(app: App, err: Err, warn: Err) {
   const rowItems = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
   for (const s of sentences(app)) {
     if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
-    for (const r of refsIn(s.text)) if (!resolves(r, names)) err(s.line, "UNKNOWN_NAME", `\`@${r}\` (${s.where}) is not declared${suggest(r, [...names])}`);
+    // `@path.id` / `@query.q` / `@body.room`: a request param, told apart from a field with the same
+    // name. Only inside an endpoint's own steps.
+    const ep = s.where.startsWith("endpoint ") ? app.endpoints?.find((e) => e.name === s.where.slice("endpoint ".length)) : undefined;
+    for (const r of refsIn(s.text)) {
+      const q = r.match(/^(path|query|body)\.([a-z]\w*)$/);
+      if (q) {
+        const p = ep?.params.find((x) => x.name === q[2]);
+        if (!ep) err(s.line, "UNKNOWN_NAME", `\`@${r}\` names a request param, which only an endpoint's steps can write`);
+        else if (!p) err(s.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${q[2]}\` (${ep.params.map((x) => x.name).join(", ") || "none"})`);
+        else if (p.in !== q[1]) err(s.line, "UNKNOWN_NAME", `\`${q[2]}\` is a ${p.in} param, not ${q[1]}: write \`@${p.in}.${q[2]}\``);
+      } else if (!resolves(r, names)) err(s.line, "UNKNOWN_NAME", `\`@${r}\` (${s.where}) is not declared${suggest(r, [...names])}`);
+    }
     // "its body" / "its status" of an answer or event are the language's, not a field.
     let text = /^on (answer|event)/.test(s.where) ? s.text.replace(/\bits (body|status)\b/g, " ") : s.text;
     text = text.replace(/^\([\w.]+\) /, ""); // a rule from a component instance: checked in its bundle

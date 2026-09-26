@@ -40,6 +40,15 @@ endpoint silent PUT "/silent" {
   answer 200 with @count
 }
 
+endpoint item GET "/items/{id}" {
+  path id: Int
+  returns Int
+  if @path.id is above 0 {
+    answer 200 with @path.id
+  }
+  answer 200 with @path.nope               # expect: UNKNOWN_NAME
+}
+
 example "bump" {
   call bump
   call read

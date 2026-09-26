@@ -39,6 +39,8 @@ Elm error message for an undeclared status now matches TypeScript's.
      a new `T or nothing` or list field is filled, an unmigratable stored field keeps only its
      default; both browsers and the api server use it, tested in `tests/migrate.test.ts`);
      identity/references between records (replacing `the ticket whose @id is @id`) still open;
+     ~~told a param from a field with the same name~~ done (v46: `@path.x` / `@query.x` /
+     `@body.x`; `apps/api/payments-api.intent` uses it);
    - ~~loops as a parser form~~ done (v39: `for each @x in @xs where … { … }`; the notices API
      uses it); ~~a lookup that can find nothing is now guarded~~ (`UNGUARDED` covers
      `the ticket whose …` and optional record fields); a lookup *form* and declared references
