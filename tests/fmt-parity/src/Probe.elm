@@ -1,10 +1,16 @@
 port module Probe exposing (main)
 
+import Crypto
 import Fmt
 import Json.Encode as J
 
 
 port out : J.Value -> Cmd msg
+
+
+shaTexts : List String
+shaTexts =
+    [ "", "abc", "a", "Café", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "The quick brown fox jumps over the lazy dog" ]
 
 
 floats : List Float
@@ -67,6 +73,7 @@ main =
                         , ( "dateOf", J.list J.string (List.map (\t -> Fmt.dateOf t ++ " " ++ Fmt.timeOf t) moments) )
                         , ( "parseDate", J.list maybeString (List.map Fmt.parseDate dateTexts) )
                         , ( "parseDateTime", J.list maybeString (List.map Fmt.parseDateTime dateTexts) )
+                        , ( "sha256", J.list J.string (List.map Crypto.sha256 shaTexts) )
                         ]
                     )
                 )

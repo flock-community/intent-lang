@@ -58,11 +58,15 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     return res;
   }
   if (app.platforms?.length && !api && !layer) {
-    if (target !== "ts") {
-      res.attempts.push({ stage: "compile", detail: "platform functions in screens are TypeScript-only so far (docs/design/platform.md)" });
-      return res;
+    // The Elm side exists for the pure platform whose code was ported (std.crypto); anything else
+    // is TypeScript-only, and a platform that reads the compiler cannot run in a screen at all.
+    if (target === "elm") {
+      const unported = app.platforms.find((p) => p.name !== "std.crypto");
+      if (unported) {
+        res.attempts.push({ stage: "compile", detail: `platform \`${unported.name}\` is not ported to Elm (so far; docs/design/platform.md)` });
+        return res;
+      }
     }
-    // A platform that reads the compiler (intent.tools checks a spec) cannot run in a screen.
     const serviceOnly = app.platforms.find((p) => {
       const file = join(ROOT, "runtime/ts/platform", `${p.name}.ts`);
       return existsSync(file) && readFileSync(file, "utf8").includes("compiler/");

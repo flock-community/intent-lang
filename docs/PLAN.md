@@ -68,7 +68,8 @@ Elm error message for an undeclared status now matches TypeScript's.
    (`compiler/providers/anthropic.ts`, `compiler/providers/openai.ts`, `llm anthropic` /
    `llm openai`, unit-tested in `tests/providers.test.ts`; a small converge run with one of them is
    next); a probe from another vendor still open.
-6. **Smaller**: ~~platforms for TypeScript screens~~ done (v44: a screen re-exports a pure platform
-   and calls it; `apps/22-hash.intent`; the Elm screen + parity test still open); ~~`list x of
-   Text`~~ done (v41); ~~plain-text answers~~ already work; per-screen element names; ~~`budget`~~
-   done; Spectavity adopting v35–v38 features.
+6. **Smaller**: ~~platforms for screens, both targets~~ done (v44: a screen re-exports a pure
+   platform and calls it; `apps/22-hash.intent`; Elm has its own `Crypto.elm`, kept in step with
+   TypeScript by the parity test in `tests/fmt-parity`); ~~`list x of Text`~~ done (v41);
+   ~~plain-text answers~~ already work; per-screen element names; ~~`budget`~~ done; Spectavity
+   adopting v35–v38 features.

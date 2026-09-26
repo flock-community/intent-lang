@@ -258,9 +258,9 @@ check that new ids continue after a restart.
 Never describe a hash, a checksum or a checker in sentences. Import the platform that has it
 (`import std.crypto` for `@sha256`, `import intent.tools` for `@check`) and name the function in a
 sentence. If a service must not trust what a client sends (a version, a digest), compute it with
-a platform function (`apps/api/specs-api.intent`). A screen can use a pure platform too, in
-TypeScript so far (`apps/22-hash.intent` shows `@sha256`); `intent.tools` runs in the harness, so it
-is for services.
+a platform function (`apps/api/specs-api.intent`). A screen can use a pure platform too, in both
+targets (`apps/22-hash.intent` shows `@sha256`); `intent.tools` runs in the harness, so it is for
+services.
 
 ## 5k. Several screens
 

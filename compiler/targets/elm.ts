@@ -90,9 +90,10 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
+${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}${app.platforms?.some((p) => p.name === "std.crypto") ? "import Crypto\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
+  if (app.platforms?.some((p) => p.name === "std.crypto")) out.push(`{-| Platform std.crypto: SHA-256, from the installation's reviewed code (never a home-made version). -}\nsha256 : String -> String\nsha256 =\n    Crypto.sha256\n\n\n`);
   out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec. -}\ntype alias Clock =\n    { now : DateTime, today : Date }\n\n\n`);
   for (const r of app.refined ?? []) {
     // A refined type is its base type plus a generated check: `isEmail : String -> Bool`.
@@ -851,6 +852,8 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
   copyFileSync(join(ROOT, "runtime/elm/elm.json"), join(dir, "elm.json"));
   copyFileSync(join(ROOT, "runtime/elm/Ui.elm"), join(dir, "src/Ui.elm"));
   copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
+  // Platform functions: the installation's reviewed Elm code, imported by the generated Spec.
+  if (app.platforms?.some((p) => p.name === "std.crypto")) copyFileSync(join(ROOT, "runtime/elm/Crypto.elm"), join(dir, "src/Crypto.elm"));
   const spec = genElmSpec(app);
   writeFileSync(join(dir, "src/Spec.elm"), spec);
   if (!hasClients(app) && !usesClock(app) && !hasStored(app) && !hasScreens(app) && hasInvariants(app)) {
@@ -1081,6 +1084,7 @@ Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-
     data: "Data (this spec has sentences in `always`): also expose `data : Model -> Data` (the `Data` record in Spec: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
     screens: "Screens (this spec has several): `update` and `view` also get where the app is, a `Route` (in Spec: `TicketRoute { id }` for `screen ticket`; `@id` is that field), right before the message or model: `update : Route -> Msg -> Model -> ( Model, Go )` (with calls: `( Model, List Call, Go )`), `view : Route -> Model -> Screen`, which returns the current screen's variant (`TicketScreen { … }`). `Go` is `GoTo (TicketRoute { id = … })` for a `go to` step, `GoBack` for `go back`, or `Stay`. When a screen is shown (a link, an address, going back), the harness sends `ScreenOpened route`: do what `on open <that screen>` says, and nothing for a screen without one. The route is the harness's: never keep a copy in the model. With a clock, it comes first: `update : Clock -> Route -> Msg -> Model -> …`, `view : Clock -> Route -> Model -> Screen`.",
     stored: "Stored state (this spec has `stored` fields): also expose `data : Model -> Data` and `restore : Stored -> Model -> Model`. `restore saved model` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
+    platform: "Platform functions (this spec imports one): a sentence that names a function (`the @sha256 of the given @text`) calls exactly that function, from `Spec` (`sha256 : String -> String`). It is the installation's reviewed code: never write your own version of what it does.",
   },
   open: openElm,
 };

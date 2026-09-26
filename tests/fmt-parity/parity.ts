@@ -1,11 +1,13 @@
 // Fmt must behave identically in Elm and TypeScript; otherwise cross-target comparison is meaningless.
 import { createRequire } from "node:module";
 import * as Fmt from "../../runtime/ts/fmt.ts";
+import { sha256 } from "../../runtime/ts/platform/std.crypto.ts";
 const floats = [0, 1.005, 2.675, -1.005, 1.875, 0.125, -0.001, 36.666666, 1e9 + 0.5, 14.38, 115, 0.1 + 0.2, -2.5, 2.5, 1234567.891];
 const texts = ["", " ", "12", " 12,50 ", "12.5", "-3", "-", ".5", "5.", "1,2,3", "1.2.3", "abc", "0012", "-0", "1e5", "+4", "3,75", "  -12.25 "];
 const dates = ["2026-09-24", "2024-02-28", "2024-02-29", "2023-02-28", "2000-02-29", "2100-02-28", "1970-01-01", "1969-12-31", "1900-03-01", "2026-12-31", "0001-01-01"];
 const moments = ["2026-09-24T09:00", "2026-09-24T23:50", "2024-02-28T23:59", "1970-01-01T00:00", "1969-12-31T23:30"];
 const dateTexts = ["2026-09-24", " 2026-09-24 ", "2026-02-30", "2024-02-29", "2023-02-29", "2026-13-01", "26-09-24", "2026-9-24", "", "2026-09-24T09:00", "2026-09-24 09:00", "2026-09-24 24:00", "2026-09-24T09:60", "2026-09-24T9:00"];
+const shaTexts = ["", "abc", "a", "Café", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "The quick brown fox jumps over the lazy dog"];
 const ts = {
   fixed2: floats.map((x) => Fmt.fixed(2, x)),
   fixed0: floats.map((x) => Fmt.fixed(0, x)),
@@ -29,6 +31,7 @@ const ts = {
   dateOf: moments.map((t) => Fmt.dateOf(t) + " " + Fmt.timeOf(t)),
   parseDate: dateTexts.map(Fmt.parseDate),
   parseDateTime: dateTexts.map(Fmt.parseDateTime),
+  sha256: shaTexts.map(sha256),
 };
 const { Elm } = createRequire(import.meta.url)("./probe.cjs");
 const app = Elm.Probe.init();

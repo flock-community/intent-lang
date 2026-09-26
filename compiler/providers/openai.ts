@@ -22,7 +22,7 @@ export function openai(model: string): Provider {
         const res = await fetch(`${base()}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-          body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+          body: JSON.stringify({ model, max_tokens: 8192, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
         });
         const j = (await res.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { message?: string } };
         if (!res.ok || j.error) throw new Error(j.error?.message ?? `HTTP ${res.status}`);
