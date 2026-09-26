@@ -1,0 +1,31 @@
+app RelationChecks {
+  "Relations between records are declared and checked: a relation is not a comment."
+}
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+record Comment {
+  ticket: Int
+  text: Text
+}
+
+state {
+  comments: List Comment = []
+}
+
+screen {
+  list comments of Comment {
+    text text
+  }
+}
+
+relations {
+  - a @Comment's @ticket is a @Ticket's @id
+  - a @Comment's @ticket is a @Ticket's @subject       # expect: BAD_BINDING
+  - a @Comment's @nope is a @Ticket's @id              # expect: UNKNOWN_NAME
+  - a @Comment's @ticket is a @Nope's @id              # expect: UNKNOWN_NAME
+  - nonsense                                            # expect: SYNTAX
+}

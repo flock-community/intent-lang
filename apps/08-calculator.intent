@@ -1,8 +1,7 @@
 app Calculator {
   "A pocket calculator that works like the cheap ones: operations happen in the order they are typed, without precedence."
 }
-language v44
-
+language v47
 record Key {
   label: Text
 }

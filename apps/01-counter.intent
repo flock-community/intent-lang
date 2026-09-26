@@ -1,8 +1,7 @@
 app Counter {
   "Count things up and down, never below zero."
 }
-language v44
-
+language v47
 state {
   count: Int = 0
 }

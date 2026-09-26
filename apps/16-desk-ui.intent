@@ -2,8 +2,7 @@ app DeskUi {
   "An agent's own tickets, after signing in with their API key."
   "The list follows changes made elsewhere: a ticket taken in another tab shows up here."
 }
-language v44
-
+language v47
 import support.tickets
 
 uses support.deskApi as desk {

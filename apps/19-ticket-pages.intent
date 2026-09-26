@@ -1,8 +1,7 @@
 app TicketPages {
   "Tickets on two pages: a list, and one page per ticket with its own address."
 }
-language v44
-
+language v47
 choice Status: Open | Solved
 
 record Ticket {

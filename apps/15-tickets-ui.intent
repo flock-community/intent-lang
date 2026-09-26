@@ -2,8 +2,7 @@ app TicketsUi {
   "A small front end for the tickets API: list, add and solve tickets."
   "The list stays up to date when other agents add or solve tickets."
 }
-language v44
-
+language v47
 import support.tickets
 
 uses support.ticketsApi as tickets {

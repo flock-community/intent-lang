@@ -1,4 +1,4 @@
-# Intent — language reference (v46)
+# Intent — language reference (v47)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -82,6 +82,7 @@ screen { … }                # what the user sees, top to bottom (§4)
 screen name "/path" { … }   # or several screens, each with its address (§4i)
 on <verb> <element> { … }   # what happens (§5): `- sentence` lines
 rules { … }                 # invariants in words: `- sentence` lines
+relations { … }             # declared relations between records: `- a @Comment's @ticket is a @Ticket's @id`
 always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data)
 example "name" { … }        # proof (§6): steps
 ```
@@ -95,6 +96,20 @@ when there is none, in the sentence ("…, or nothing when there is no @selected
 (`if there is a @selected { … }`, or an early `if there is no @selected { stop }`). The checker
 warns (`UNGUARDED`) when it does not. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time).
+
+**Relations between records are declared, not left in a comment.** A record field holds another
+record's key, and a `relations` sentence names both sides:
+
+```
+relations {
+  - a @Comment's @ticket is a @Ticket's @id
+}
+```
+
+The checker requires both records, both fields, and equal key types, so the two sides cannot drift
+apart. The field stays a plain key; a sentence that reads one looks the row up (`the ticket whose
+@id is @ticket`) and says what happens when it finds none (else `UNGUARDED`). A reference field
+whose own type is the record (the app never sees the key) is a `NOT_YET` candidate.
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -1240,6 +1255,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v47: `relations { - a @Comment's @ticket is a @Ticket's @id }`: relations between records are
+  declared and checked (both records, both fields, equal key types) instead of left in a comment;
+  the field stays a plain key and reading it is a lookup with a none case. `apps/10-helpdesk.intent`
+  declares one; regression in `tests/checker/relations.intent`.
 
 - v46: `@path.x` / `@query.x` / `@body.x` in an endpoint's step name a request param and say which
   part it is, so a param is told apart from a field with the same name (`the ticket whose @id is

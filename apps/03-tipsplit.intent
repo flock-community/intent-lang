@@ -1,8 +1,7 @@
 app TipSplit {
   "Split a restaurant bill, tip included, between friends."
 }
-language v44
-
+language v47
 choice Tip: NoTip | Ten | Fifteen | Twenty
 
 state {

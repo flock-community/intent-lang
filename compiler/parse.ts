@@ -210,7 +210,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "relations", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -389,6 +389,10 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     const lines: number[] = [];
     app.rules.push(...parseBullets(node, err, lines));
     (app.ruleLines ??= []).push(...lines);
+  } else if (t === "relations") {
+    const lines: number[] = [];
+    const texts = parseBullets(node, err, lines);
+    app.relations = [...(app.relations ?? []), ...texts.map((text, i) => ({ text, line: lines[i] }))];
   } else if ((m = t.match(new RegExp(`^example\\s+(${STR})$`)))) {
     if (where === "component") err(node.line, "NOT_YET", "examples inside a component are not in the language yet; prove a component with examples in its bundle's demo app");
     const ex: Example = { name: parseString(m[1])!, steps: [], line: node.line };
@@ -522,6 +526,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     const used = expandUses(app, err, warn);
     check(app, err, warn, clockLine, used);
     checkRefs(app, err, warn);
+    checkRelations(app, err);
     checkBodies(app, err, warn);
     checkEffects(app, err, warn);
     checkScreens(app, err);
@@ -539,6 +544,7 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
   check(app, err, warn, clockLine, used);
   checkRefs(app, err, warn);
+  checkRelations(app, err);
   checkBodies(app, err, warn);
   checkEffects(app, err, warn);
   checkScreens(app, err);
@@ -648,6 +654,32 @@ function checkEffects(app: App, err: Err, warn: Err) {
         if (!target.undoneBy) pivot ??= { name: `${m[1]}.${m[2]}`, line };
         else if (pivot) warn(line, "PIVOT", `\`${m[1]}.${m[2]}\` can be undone, but it comes after \`${pivot.name}\` (line ${pivot.line}), which cannot: put the step that cannot be undone last, after everything that can still fail`);
       }
+  }
+}
+
+/**
+ * Declared relations between records (`relations { - a @Comment's @ticket is a @Ticket's @id }`):
+ * checked, so a relation is not a comment. The field holds the other record's key.
+ */
+function checkRelations(app: App, err: Err) {
+  const byName = new Map(app.records.map((r) => [r.name, r]));
+  for (const { text, line } of app.relations ?? []) {
+    if (line >= LINE_BASE) continue;
+    const m = text.match(new RegExp(`^a @(\\w+)['\u2019]s @(\\w+) is (?:the |a )?@(\\w+)['\u2019]s @(\\w+)$`));
+    if (!m) {
+      err(line, "SYNTAX", "a relation looks like `a @Comment's @ticket is a @Ticket's @id`");
+      continue;
+    }
+    const [, a, af, b, bf] = m;
+    const ra = byName.get(a);
+    const rb = byName.get(b);
+    const fa = ra?.fields.find((f) => f.name === af);
+    const fb = rb?.fields.find((f) => f.name === bf);
+    if (!ra) err(line, "UNKNOWN_NAME", `no record \`${a}\`${suggest(a, [...byName.keys()])}`);
+    else if (!fa) err(line, "UNKNOWN_NAME", `${a} has no field \`${af}\` (${ra.fields.map((f) => f.name).join(", ")})`);
+    if (!rb) err(line, "UNKNOWN_NAME", `no record \`${b}\`${suggest(b, [...byName.keys()])}`);
+    else if (!fb) err(line, "UNKNOWN_NAME", `${b} has no field \`${bf}\` (${rb.fields.map((f) => f.name).join(", ")})`);
+    if (fa && fb && JSON.stringify(fa.type) !== JSON.stringify(fb.type)) err(line, "BAD_BINDING", `${a}.${af} is ${typeToString(fa.type)}, but ${b}.${bf} is ${typeToString(fb.type)}: a relation joins equal keys`);
   }
 }
 

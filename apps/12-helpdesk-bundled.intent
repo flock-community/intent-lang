@@ -1,8 +1,7 @@
 app Helpdesk {
   "A support desk for a small team: see what needs attention, triage tickets and answer customers."
 }
-language v44
-
+language v47
 import ui.admin
 import std.list
 import std.feedback

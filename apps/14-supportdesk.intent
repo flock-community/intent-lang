@@ -1,8 +1,7 @@
 app SupportDesk {
   "Our support desk: the standard helpdesk, tuned to how we triage."
 }
-language v44
-
+language v47
 extends support.helpdesk
 
 override text pageTitle = the text users see for @page: "Queue", "Reports" or "Settings" as title

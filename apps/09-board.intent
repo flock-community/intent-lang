@@ -1,8 +1,7 @@
 app Board {
   "A tiny kanban board with three columns and at most three cards in progress."
 }
-language v44
-
+language v47
 choice Column: Todo | Doing | Done
 
 record Card {

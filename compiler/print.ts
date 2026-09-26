@@ -202,6 +202,7 @@ export function printApp(app: App): string {
   for (const j of app.jobs ?? []) block([`every ${j.name.slice(5)}`, ...body(j, "  ")]);
   for (const h of app.handlers) block([`on ${h.verb}${h.target ? ` ${h.target}` : ""}${origin(app, h.line, h.note)}`, ...body(h, "  ")]);
   block(app.rules.length ? ["rules", ...app.rules.map((r) => `  - ${r}`)] : []);
+  block(app.relations?.length ? ["relations", ...app.relations.map((r) => `  - ${r.text}${origin(app, r.line)}`)] : []);
   block(app.always.length || app.invariants?.length ? ["always", ...app.always.map((s) => `  ${stepText(s)}${origin(app, s.line)}`), ...(app.invariants ?? []).map((i) => `  - ${i.text}${origin(app, i.line)}`)] : []);
   for (const ex of app.examples) block([`example ${q(ex.name)}`, ...ex.steps.map((s) => `  ${stepText(s)}`)]);
   // The canonical form has braces for blocks: what the compiler reads, and what `intent expand` shows.

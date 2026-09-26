@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v46** (see the changelog at the end of
+Language version this skill matches: **v47** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -104,6 +104,10 @@ Habits that make builds identical *and* correct:
   never a stand-in like `0` or `""` with a comment explaining it. Where you use it, say what
   happens when there is none: `if there is a @selected { … }`, an early
   `if there is no @selected { stop }`, or "…, or nothing when there is no @selected" (else `UNGUARDED`).
+- **Relations are declared, not a comment:** a field holds another record's key and a
+  `relations { - a @Comment's @ticket is a @Ticket's @id }` block names both sides; the checker
+  requires both records, both fields and equal key types. Reading the key is a lookup — say what
+  happens when it finds none.
 - **Name intermediate values** in `derive` (`quantity = amount read as a whole number`)
   and use the name in templates and sentences, instead of repeating phrases.
 - **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `

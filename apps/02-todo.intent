@@ -1,8 +1,7 @@
 app Todo {
   "A short list of things to do today."
 }
-language v44
-
+language v47
 record Item {
   title: Text
   done: Bool = false

@@ -1,8 +1,7 @@
 app Expenses {
   "Share costs within a group and see who should pay whom."
 }
-language v44
-
+language v47
 record Person {
   name: Text
 }

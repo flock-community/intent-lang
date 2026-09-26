@@ -62,7 +62,7 @@ What the language covers today:
 
 | | |
 |---|---|
-| Screens | state, derived values, lists of records and of plain values, sections, templates, handlers, examples, `always` rules, a clock |
+| Screens | state, derived values, lists of records and of plain values, records with declared `relations`, sections, templates, handlers, examples, `always` rules, a clock |
 | Looks | a `design`, presentations (`as table`, `as sidebar`), `look "…"` in words, styled builds checked in a browser |
 | Reuse | bundles, behaviour components (`use pager = Pager`), refinement (`extends`, `override`), a registry with versions |
 | APIs | `profile api`, endpoints, `@path.x`/`@body.x` to tell a param from a field, contracts with every answer and event, layers (`std.http.cors`, `std.http.apiKey`, `std.http.secure`) |

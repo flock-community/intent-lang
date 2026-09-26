@@ -38,7 +38,9 @@ Elm error message for an undeclared status now matches TypeScript's.
    - ~~stored-data migration~~ done (`migrate` in `runtime/ts/api.ts`: a removed field is dropped,
      a new `T or nothing` or list field is filled, an unmigratable stored field keeps only its
      default; both browsers and the api server use it, tested in `tests/migrate.test.ts`);
-     identity/references between records (replacing `the ticket whose @id is @id`) still open;
+     ~~relations between records are declared and checked~~ done (v47: a `relations` block names
+     both sides and the checker requires both records, both fields and equal key types; a reference
+     field whose own type is the record remains a `NOT_YET` candidate);
      ~~told a param from a field with the same name~~ done (v46: `@path.x` / `@query.x` /
      `@body.x`; `apps/api/payments-api.intent` uses it);
    - ~~loops as a parser form~~ done (v39: `for each @x in @xs where … { … }`; the notices API

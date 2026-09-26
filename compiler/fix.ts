@@ -84,7 +84,13 @@ export function fixSource(src: string, language: string): { out: string; fixes: 
       return result + line.slice(last);
     })
     .join("\n");
-  if (/^language\s+v\d+\s*$/m.test(out) || !language) return { out, fixes };
+  if (!language) return { out, fixes };
+  const declared = out.match(/^language\s+(v\d+)\s*$/m);
+  if (declared) {
+    if (declared[1] === language) return { out, fixes };
+    fixes.push({ line: out.slice(0, declared.index).split("\n").length, code: "LANGUAGE", what: `language ${declared[1]} → ${language}` });
+    return { out: out.replace(/^language\s+v\d+\s*$/m, `language ${language}`), fixes };
+  }
   const at = afterHeader(out);
   return { out: out.slice(0, at) + `language ${language}\n` + out.slice(at), fixes: [...fixes, { line: out.slice(0, at).split("\n").length, code: "LANGUAGE", what: `added \`language ${language}\`` }] };
 }

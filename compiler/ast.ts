@@ -253,6 +253,7 @@ export interface App {
   examples: Example[];
   always: Step[]; // invariants: `see` steps that must hold after every action
   invariants?: { text: string; line: number }[]; // `- sentence` in `always`: over the app's data, checked after every step
+  relations?: { text: string; line: number }[]; // `- sentence` in `relations`: how records refer to each other, checked
 }
 
 export interface EventDecl {
