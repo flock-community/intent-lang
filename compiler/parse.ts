@@ -1661,6 +1661,19 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     if (exNames.has(ex.name)) err(ex.line, "DUPLICATE", `example "${ex.name}" declared twice`);
     exNames.add(ex.name);
     if (!ex.steps.length) err(ex.line, "SYNTAX", "an example needs steps");
+    // Screen flow: which screen the example is on, so a `see` checks the right one. Each example
+    // starts at the first screen (the address `/`); `open`, `go back` and a button's `go to` move it.
+    let current = app.screens?.[0]?.name;
+    const stack: string[] = [];
+    const goTo = (name: string | undefined) => { if (name) (stack.push(current!), (current = name)); };
+    const goBack = () => { if (stack.length) current = stack.pop()!; };
+    const navOf = (button: string): string | "back" | undefined => {
+      const steps = app.handlers.find((h) => h.verb === "click" && h.target === button)?.steps ?? [];
+      const to = steps.map((st) => st.match(/\bgo\s+to\s+@?([a-z]\w*)/i)?.[1]).find(Boolean);
+      if (to) return to;
+      return steps.some((st) => /\bgo\s+back\b/.test(st)) ? "back" : undefined;
+    };
+    const onScreen = (el: Element) => !app.screens?.length || !el.screen || el.screen === current;
     for (const s of ex.steps) {
       if (s.do === "tick") {
         // `tick` needs a clock tick; `wait` needs one, or an app that reads the clock (@now, @today).
@@ -1693,6 +1706,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
         else if (!app.screens?.length) err(s.line, "STEP", `\`${s.do === "open" ? "open" : "go back"}\` moves between screens; this app has one screen`);
         else if (s.do === "open" && !app.screens.some((sc) => screenMatch(sc.path, s.path))) err(s.line, "STEP", `\`${s.path}\` is no screen's address (${app.screens.map((sc) => sc.path).join(", ")}); an unknown address shows the first screen, which is rarely what an example means`);
+        else if (s.do === "open") goTo(app.screens.find((sc) => screenMatch(sc.path, s.path))?.name);
+        else goBack();
         continue;
       }
       if (s.do === "steer") {
@@ -1716,7 +1731,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       const at = "at" in s ? s.at : undefined;
       if (s.do === "see" && s.every) {
         // `see every row of L: x …`: x is an element of L's rows.
-        const list = all.find((a) => a.el.name === s.every && a.el.kind === "list");
+        const list = all.find((a) => a.el.name === s.every && a.el.kind === "list" && onScreen(a.el));
         const inRow = all.filter((a) => a.list?.name === s.every);
         if (!list) err(s.line, "UNKNOWN_NAME", `no list \`${s.every}\`${suggest(s.every, lists.map((l) => l.name))}`);
         else if (!inRow.some((a) => a.el.name === s.target)) err(s.line, "UNKNOWN_NAME", `rows of \`${s.every}\` have no \`${s.target}\`${suggest(s.target, inRow.map((a) => a.el.name))}`);
@@ -1746,10 +1761,12 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         }
         continue;
       }
-      const cands = findEl(s.target).filter((c) => (at ? c.list && (!at.list || c.list.name === at.list) : !c.list));
+      const cands = findEl(s.target).filter((c) => onScreen(c.el) && (at ? c.list && (!at.list || c.list.name === at.list) : !c.list));
       if (!cands.length) {
         const any = findEl(s.target);
-        if (any.length && at && any.every((a) => !a.list)) err(s.line, "STEP", `\`${s.target}\` is not inside a list; drop \`on row …\``);
+        const elsewhere = app.screens?.length && any.find((a) => !onScreen(a.el));
+        if (elsewhere) err(s.line, "STEP", `\`${s.target}\` is on screen \`${elsewhere.el.screen}\`, not \`${current}\`; \`open\` or \`go to\` it first`);
+        else if (any.length && at && any.every((a) => !a.list)) err(s.line, "STEP", `\`${s.target}\` is not inside a list; drop \`on row …\``);
         else if (any.length && !at) err(s.line, "STEP", `\`${s.target}\` is inside list ${any[0].list!.name}; say which row: \`… on row 1\``);
         else err(s.line, "UNKNOWN_NAME", `no element \`${s.target}\`${at?.list ? ` in list ${at.list}` : ""}${suggest(s.target, all.map((a) => a.el.name))}`);
         continue;
@@ -1766,7 +1783,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       };
       switch (s.do) {
         case "type": need(["field"], "type into"); break;
-        case "click": need(["button"], "click"); break;
+        case "click": {
+          need(["button"], "click");
+          const dest = navOf(el.name);
+          if (dest === "back") goBack();
+          else if (dest) goTo(dest);
+          break;
+        }
         case "toggle": need(["checkbox"], "toggle"); break;
         case "choose": {
           need(["select"], "choose in");

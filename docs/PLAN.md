@@ -1,14 +1,15 @@
 # Working plan
 
-Where the work stands (2026-09-25, language v38) and what comes next, in order. Each step: build,
+Where the work stands (2026-09-26, language v45) and what comes next, in order. Each step: build,
 verify (examples, twin build, harness snapshot, `npm test`, a planted bug where it applies), update
 `docs/LANGUAGE.md` + changelog, `skills/intent-spec/SKILL.md`, README, then commit and push.
 
 ## State
 
-- Language v38; last converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`), calculator
-  ambiguity fixed. Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`). Undo proven
-  (below) but not yet in `converge` (it does not build providers for screens-with-calls).
+- Language v45. Last Claude converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`).
+  Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`). The language also converged under
+  DeepSeek through the OpenAI-compatible provider (v45): every build that succeeded was 100% the
+  same app and Elm≡TS 100% (`runs/2026-09-26-11-0*-deepseek*/`).
 - `npm test` includes the harness snapshot (`tests/harness/`): refactors must leave it unchanged;
   deliberate changes `--update` and review the diff.
 - Targets and providers are modules (`compiler/targets/`, `compiler/providers/`); options in
@@ -42,6 +43,9 @@ Elm error message for an undeclared status now matches TypeScript's.
      uses it); ~~a lookup that can find nothing is now guarded~~ (`UNGUARDED` covers
      `the ticket whose …` and optional record fields); a lookup *form* and declared references
      ("the @xs where …") still open;
+   - ~~`see` on the wrong screen~~ done: the checker follows an example's `open`, `go back` and a
+     clicked button's `go to`, so `see` of an element on another screen is an error
+     (`tests/checker/screens.intent`);
    - ~~twin-compile the `always` checks~~ done (`invariants-probe.mjs`: a second, independent
      reading, compared on the app's data; a disagreement stops the build and names the sentence);
    - ~~put APIs, layers and screens-with-calls in `converge`~~ done (`buildDeps` resolves

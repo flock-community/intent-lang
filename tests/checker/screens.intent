@@ -55,5 +55,7 @@ example "to a ticket and back" {
   see path = "/tickets/1"
   see path = "/tickets/x"                          # expect: STEP
   see path = "/nowhere"                            # expect: STEP
+  go back
+  see title = "Printer on fire"                    # expect: STEP
   open "/nowhere"                                # expect: STEP
 }

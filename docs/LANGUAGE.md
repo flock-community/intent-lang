@@ -288,7 +288,9 @@ on open ticket {
   screen shows the first screen; `go back` on the first entry does nothing.
 - Examples: `open "/tickets/3"` arrives by address, `go back` presses the back button, and
   `see screen = ticket` / `see path = "/tickets/3"` check where the app is. Every example starts
-  at `/`. Random sessions go back and open the examples' addresses too.
+  at `/`. Random sessions go back and open the examples' addresses too. The checker follows an
+  example's `open`, `go back` and a clicked button's `go to`, so a `see` of an element that is on
+  another screen is an error (the checker names the screen it is on).
 
 ## 4j. Platform functions
 
