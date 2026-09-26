@@ -475,7 +475,9 @@ same @habit and the same @day`) is compiled once per spec by a separate stage an
 the app's data after every step; a planted bug (a habit done tomorrow) was caught at its line.
 Since v38 the stage also compiles a second, independent reading (a probe), and the driver compares
 the two on the app's data: a disagreement stops the build and names the sentence, instead of
-trusting one reading. A
+trusting one reading. The stage is keyed by what the checks depend on (the sentences, the derived
+values, the data shape and the platforms), so changing an example, screen or handler reuses it and
+skips its LLM calls — the first step of `docs/design/incremental.md`. A
 state field marked `stored` survives a restart: in the browser's local storage, or in a data file
 on the server. `restart` in an example starts the app again, random sessions restart now and
 then, and after every restart the harness checks that the stored fields came back unchanged.

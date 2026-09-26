@@ -1,10 +1,16 @@
 # Design: spec units, code regions, and incremental builds
 
-Status: design. Today every change to a spec compiles the app again from nothing, twice, and a
-twin build that stops on an ambiguity starts over after the fix. That is safe but slow and
-costly. Building on the previous code is only safe when we know, for every part of the spec,
-which part of the code it produced, and what else depends on it. Otherwise an edit can leave
-stale code behind, and nobody notices.
+Status: design, with one safe increment built. Today every change to a spec compiles the app again
+from nothing, twice, and a twin build that stops on an ambiguity starts over after the fix. That is
+safe but slow and costly. Building on the previous code is only safe when we know, for every part of
+the spec, which part of the code it produced, and what else depends on it. Otherwise an edit can
+leave stale code behind, and nobody notices.
+
+Built (small): the `always` checks are keyed by what they depend on (the `- sentence` lines, the
+derived values, the data shape and the platforms) rather than the whole spec, so changing an
+example, screen or handler reuses the checks and skips their LLM calls (measured: a second build of
+the habits app with a new example logs no `checks for always`). The regions and the resumable build
+below are the rest.
 
 ## Units
 

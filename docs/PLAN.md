@@ -1,12 +1,12 @@
 # Working plan
 
-Where the work stands (2026-09-26, language v45) and what comes next, in order. Each step: build,
+Where the work stands (2026-09-26, language v47) and what comes next, in order. Each step: build,
 verify (examples, twin build, harness snapshot, `npm test`, a planted bug where it applies), update
 `docs/LANGUAGE.md` + changelog, `skills/intent-spec/SKILL.md`, README, then commit and push.
 
 ## State
 
-- Language v45. Last Claude converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`).
+- Language v47. Last Claude converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`).
   Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`). The language also converged under
   DeepSeek through the OpenAI-compatible provider (v45): every build that succeeded was 100% the
   same app and Elm≡TS 100% (`runs/2026-09-26-11-0*-deepseek*/`).
@@ -65,8 +65,9 @@ Elm error message for an undeclared status now matches TypeScript's.
      now checks a profile with `checkProfile` (duplicate kinds/presentations, the name, bad lines);
      `tests/profile.test.ts`; the profile already drives the vocabulary. The rest of
      `docs/design/profiles.md` (generic element lines, a profile-driven harness) remains.
-4. **Incremental builds** (`docs/design/incremental.md`): units, dependencies, `@spec` regions,
-   resume a stopped twin build; measure on recorded edits before making it the default.
+4. **Incremental builds** (`docs/design/incremental.md`): ~~the `always` checks are keyed by what
+   they depend on~~ done (an example/screen/handler change reuses them; measured on the habits app);
+   units, dependencies, `@spec` regions and resume a stopped twin build still open.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
    and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,

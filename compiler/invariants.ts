@@ -63,7 +63,20 @@ const pending = new Map<string, Promise<{ costUsd: number; error?: string }>>();
  * when it compiles) and `invariants.json` into `into`.
  */
 export async function prepareInvariants(app: App, specText: string, into: string, log: (m: string) => void): Promise<{ costUsd: number; error?: string }> {
-  const key = sha(JSON.stringify({ specText, compiler: compilerPins(), stage: "invariants" }));
+  // The checks depend only on the sentences, the derived values they may use, the data shape and
+  // the platforms they name — not on examples, screens or handlers. Keying on those reuses them
+  // when only an unrelated part of the spec changed (a small, safe increment).
+  const key = sha(
+    JSON.stringify({
+      invariants: (app.invariants ?? []).map((i) => `${i.line}:${i.text}`),
+      derive: app.derive.map((d) => d.sentence),
+      domain: tsDomain(app),
+      data: tsData(app),
+      platforms: (app.platforms ?? []).map((p) => p.name),
+      compiler: compilerPins(),
+      stage: "invariants",
+    }),
+  );
   if (!pending.has(key)) pending.set(key, compileInvariants(app, specText, key, log));
   const r = await pending.get(key)!;
   if (r.error) return r;
