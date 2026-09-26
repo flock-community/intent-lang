@@ -127,7 +127,9 @@ Keys never go in a file. The `claude-cli` provider runs the Claude Code CLI with
 (`llm anthropic`) calls the Anthropic Messages API directly with `ANTHROPIC_API_KEY`, and `openai`
 (`llm openai`) speaks to any OpenAI-compatible `/chat/completions` API (`OPENAI_API_KEY`,
 `OPENAI_BASE_URL`). A new provider is a module in `compiler/providers/` and a line in the registry
-(`compiler/llm.ts`).
+(`compiler/llm.ts`). The compiler was measured with a second one: DeepSeek through `llm openai`
+converged 20-approval, 21-tags and 22-hash 12/12 builds, 100% same app and Elm≡TS 100%
+(`runs/2026-09-26-11-02-deepseek/`).
 
 ## How the harness makes the LLM stable
 

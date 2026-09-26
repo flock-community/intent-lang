@@ -59,12 +59,10 @@ Elm error message for an undeclared status now matches TypeScript's.
      `docs/design/profiles.md` (generic element lines, a profile-driven harness) remains.
 4. **Incremental builds** (`docs/design/incremental.md`): units, dependencies, `@spec` regions,
    resume a stopped twin build; measure on recorded edits before making it the default.
-5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done (`bin` in package.json, a
-   readiness check over node, the project, the lock, the toolchain and the provider); the
-   **Anthropic API provider** and an **OpenAI-compatible provider** done
-   (`compiler/providers/anthropic.ts`, `compiler/providers/openai.ts`, `llm anthropic` /
-   `llm openai`, unit-tested in `tests/providers.test.ts`; a small converge run with one of them is
-   next); a probe from another vendor still open.
+5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
+   and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
+   (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash — 12/12 builds, 100% same app,
+   Elm≡TS 100%; `runs/2026-09-26-11-02-deepseek/`); a probe from another vendor still open.
 6. **Smaller**: ~~platforms for screens, both targets~~ done (v44: a screen re-exports a pure
    platform and calls it; `apps/22-hash.intent`; Elm has its own `Crypto.elm`, kept in step with
    TypeScript by the parity test in `tests/fmt-parity`); ~~`list x of Text`~~ done (v41);

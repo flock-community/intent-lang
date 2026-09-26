@@ -7,6 +7,7 @@ import type { LlmResult, Provider } from "../llm.ts";
 const PRICES: Record<string, { in: number; out: number }> = {
   "gpt-4o": { in: 2.5, out: 10 },
   "gpt-4o-mini": { in: 0.15, out: 0.6 },
+  "deepseek-chat": { in: 0.27, out: 1.1 },
 };
 
 export function openai(model: string): Provider {
