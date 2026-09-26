@@ -128,8 +128,11 @@ Keys never go in a file. The `claude-cli` provider runs the Claude Code CLI with
 (`llm openai`) speaks to any OpenAI-compatible `/chat/completions` API (`OPENAI_API_KEY`,
 `OPENAI_BASE_URL`). A new provider is a module in `compiler/providers/` and a line in the registry
 (`compiler/llm.ts`). The compiler was measured with a second one: DeepSeek through `llm openai`
-converged 20-approval, 21-tags and 22-hash 12/12 builds, 100% same app and Elm≡TS 100%
-(`runs/2026-09-26-11-02-deepseek/`).
+converged 20-approval, 21-tags and 22-hash 12/12 builds, and counter, board, helpdesk, ticket-pages
+and the calculator 19/20 builds — every build that succeeded was 100% the same app and Elm≡TS 100%
+(`runs/2026-09-26-11-02-deepseek/`, `runs/2026-09-26-11-03-deepseek-screens/`). The one failure
+(the calculator's second Elm build) is DeepSeek not getting that app right after repairs, not a
+compiler divergence: the builds that did compile agreed on every screen.
 
 ## How the harness makes the LLM stable
 
