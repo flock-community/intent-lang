@@ -1531,7 +1531,6 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   if (app.endpoints?.length) err(app.endpoints[0].line, "SYNTAX", "endpoints belong to the api profile: add `profile api`");
 
   // Screen: scopes and bindings.
-  const top = new Map<string, Element>(); // names visible at top level (sections are transparent)
   const lists: Element[] = [];
   const PLAIN = ["Text", "Int", "Decimal", "Bool", "Date", "DateTime"];
   const all: { el: Element; list?: Element }[] = [];
@@ -1552,7 +1551,14 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       } else if (el.kind === "section") walk(el.children, list, scope);
     }
   };
-  walk(app.screen, undefined, top);
+  // A name is unique within a screen (and within a list), but two screens may reuse one: the
+  // handler (`on click back`) belongs to the name, so both screens share its behaviour.
+  const byScreen = new Map<string, Element[]>();
+  for (const el of app.screen) {
+    const k = el.screen ?? "";
+    (byScreen.get(k) ?? byScreen.set(k, []).get(k)!).push(el);
+  }
+  for (const els of byScreen.values()) walk(els, undefined, new Map());
   if (!app.screen.length) err(1, "SYNTAX", "the app has no `screen`");
 
   for (const { el, list } of all) {

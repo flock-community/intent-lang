@@ -1,12 +1,12 @@
 # Working plan
 
-Where the work stands (2026-09-26, language v47) and what comes next, in order. Each step: build,
+Where the work stands (2026-09-26, language v48) and what comes next, in order. Each step: build,
 verify (examples, twin build, harness snapshot, `npm test`, a planted bug where it applies), update
 `docs/LANGUAGE.md` + changelog, `skills/intent-spec/SKILL.md`, README, then commit and push.
 
 ## State
 
-- Language v47. Last Claude converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`).
+- Language v48. Last Claude converge: v35, 12 apps, 72/72 first try (`runs/r35-converge/`).
   Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`). The language also converged under
   DeepSeek through the OpenAI-compatible provider (v45): every build that succeeded was 100% the
   same app and Elm≡TS 100% (`runs/2026-09-26-11-0*-deepseek*/`).
@@ -77,5 +77,6 @@ Elm error message for an undeclared status now matches TypeScript's.
 6. **Smaller**: ~~platforms for screens, both targets~~ done (v44: a screen re-exports a pure
    platform and calls it; `apps/22-hash.intent`; Elm has its own `Crypto.elm`, kept in step with
    TypeScript by the parity test in `tests/fmt-parity`); ~~`list x of Text`~~ done (v41);
-   ~~plain-text answers~~ already work; per-screen element names; ~~`budget`~~ done; Spectavity
-   adopting v35–v38 features.
+   ~~plain-text answers~~ already work; ~~per-screen element names~~ done (v48: a name is unique
+   within a screen, two screens may reuse one, and the one handler serves both;
+   `apps/23-tabs.intent`); ~~`budget`~~ done; Spectavity adopting v35–v38 features.

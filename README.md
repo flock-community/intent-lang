@@ -459,10 +459,12 @@ and its server runs on its own, with the checker bundled in. Since v44 a **scree
 platform too, in both targets: `apps/22-hash.intent` shows the `@sha256` of what the user types, and
 the Elm implementation is checked against the TypeScript one by a parity test.
 
-**Several screens** (v36). `screen ticket "/tickets/{id}" { path id: Int … }`, `go to @ticket with
+**Several screens** (v36, v48). `screen ticket "/tickets/{id}" { path id: Int … }`, `go to @ticket with
 @id = …`, `go back` and `on open ticket`. The harness owns where the app is: a generated `Route`, the
 address after `#` in the browser (with the back button), and a history the test driver keeps for
-every target. `apps/19-ticket-pages.intent` built on the first attempt in Elm and TypeScript,
+every target. Since v48 a name is unique within a screen and two screens may reuse one (`back` on
+both), with the one handler serving both (`apps/23-tabs.intent`). `apps/19-ticket-pages.intent`
+built on the first attempt in Elm and TypeScript,
 twin-verified, and converge found Elm and TypeScript the same app in every session. The first
 TypeScript build showed a gap in the interface (`update` did not get the route; the repaired code
 copied it into the model): fixed in the harness, and it builds first time since. A handwritten

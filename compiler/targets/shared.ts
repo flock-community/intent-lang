@@ -68,7 +68,10 @@ export function events(app: App): EventDef[] {
   };
   walk(app.screen);
   if (app.clockMs) out.push({ tag: "Tick", on: "tick", target: "" });
-  return out;
+  // Two screens may reuse an element name (`back` on both): the handler belongs to the name, so one
+  // event covers both.
+  const seen = new Set<string>();
+  return out.filter((e) => !seen.has(e.tag) && (seen.add(e.tag), true));
 }
 
 export function selectChoice(app: App, el: Element): string {

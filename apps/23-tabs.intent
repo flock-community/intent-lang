@@ -1,0 +1,36 @@
+app Tabs {
+  "Two screens that share an element name: each has a Back button, and one handler belongs to the name."
+}
+
+state {
+  visits: Int = 0
+}
+
+screen home "/" {
+  text title = "Home"
+  text seen = "Visits: {@visits}"
+  button back "Back"
+}
+
+screen about "/about" {
+  text title = "About"
+  button back "Back"
+}
+
+on click back {
+  - go back
+}
+
+on open about {
+  - increase @visits by 1
+}
+
+example "each screen has its own title, and Back goes back" {
+  see title = "Home"
+  open "/about"
+  see title = "About"
+  click back
+  see screen = home
+  see title = "Home"
+  see seen = "Visits: 1"
+}

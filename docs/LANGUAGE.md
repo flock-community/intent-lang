@@ -1,4 +1,4 @@
-# Intent — language reference (v47)
+# Intent — language reference (v48)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -237,8 +237,9 @@ Binding (checked by the compiler):
 - `list x of Record { … }` shows the rows of that record (the row's elements are declared inside
   the block). `list x of Text` (or Int, Decimal, Bool, Date, DateTime) shows each value as a row:
   it has no row elements, so `see x has N rows` is how an example checks it.
-- Element names are unique in the app, also across screens (`ticketBack`, §4i), except inside a
-  list, where row elements have their own scope. Sections do not create a scope.
+- Element names are unique within a screen, and two screens may reuse one (`back` on both, §4i):
+  the handler (`on click back`) belongs to the name, so both screens share its behaviour. Inside a
+  list, row elements have their own scope. Sections do not create a scope.
 - A section title and a field label are fixed text. To show a changing title, use
   `text x = … as title` as the section's first element.
 - `select x from items.name` with `x` = `""`, or a text that is not among the options,
@@ -297,7 +298,9 @@ on open ticket {
 - `on open <screen>` runs every time that screen is shown: by a link, by its address, or going
   back. It is where a screen loads what it shows. `on start` still runs once, before the first.
 - State belongs to the app, not to a screen: every screen reads and changes the same state.
-- Element names are unique in the app, also across screens (`ticketBack`, not two `back`s).
+- Element names are unique within a screen; two screens may reuse one (`back` on both), and the
+  one `on click back` handler serves both. In an example, `see`/`click` name the element on the
+  screen the example is on (the checker follows `open`, `go back` and a button's `go to`).
 - The harness keeps where the app is. In the browser that is the address after `#`
   (`index.html#/tickets/3`), with the history and the back button. An address that fits no
   screen shows the first screen; `go back` on the first entry does nothing.
@@ -1255,6 +1258,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v48: per-screen element names: a name is unique within a screen, and two screens may reuse one
+  (`back` on both); the one `on click back` handler serves both, because a handler belongs to the
+  name. `see`/`click` resolve to the screen the example is on. `apps/23-tabs.intent` proves it on
+  both targets (25/25 sessions identical).
 
 - v47: `relations { - a @Comment's @ticket is a @Ticket's @id }`: relations between records are
   declared and checked (both records, both fields, equal key types) instead of left in a comment;

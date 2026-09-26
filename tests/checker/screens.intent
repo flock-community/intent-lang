@@ -19,17 +19,21 @@ screen list "/" {
     text subject
     button open "Open"
   }
+  text label = "List"
 }
 
 screen ticket "/tickets/{id}" {
   path id: Int
   text title = the @subject of the ticket whose @id is @id
+  text label = "Ticket"
   button back "Back"
 }
 
 screen other "/tickets/{ref}" {                  # expect: DUPLICATE
   path ref: Int
   path extra: Text                               # expect: UNKNOWN_NAME
+  text label = "1"
+  text label = "2"                               # expect: DUPLICATE
   text nothingHere = "x"
 }
 
