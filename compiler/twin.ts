@@ -150,6 +150,26 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
   }
   const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs, maxAttempts: o.repairs === undefined ? undefined : o.repairs + 1 };
+  // Incremental: the generated app code depends on everything but the examples. A second cache key
+  // (the spec without its examples) lets a later example-only edit reuse the code.
+  const codeKey = o.twin !== "off" && app.kind !== "layer" && app.profile !== "api" ? cacheKey(printApp({ ...app, examples: [] }), target, o) : undefined;
+  if (codeKey) {
+    const codeCached = join(CACHE, codeKey);
+    const codeMeta = existsSync(join(codeCached, "intent-build.json")) ? JSON.parse(readFileSync(join(codeCached, "intent-build.json"), "utf8")) : undefined;
+    if (codeMeta && codeMeta.verified === "twin") {
+      rmSync(out, { recursive: true, force: true });
+      cpSync(codeCached, out, { recursive: true });
+      if (providers) writeProviders(app, out, providers);
+      const results = await runJobsIsolated(out, target, app.examples.map((example) => ({ kind: "example" as const, example, always: app.always })));
+      const failed = Array.isArray(results) ? (results as { pass?: boolean }[]).filter((r) => !r.pass) : [results];
+      if (!failed.length) {
+        store(out, cached, "twin", key);
+        o.log(`the app code is unchanged; reused it (${app.examples.length}/${app.examples.length} examples pass)`);
+        return { target, ok: true, dir: out, cached: false, verified: "twin", builds: [], costUsd: 0 };
+      }
+      o.log("the reused app code failed the new examples; compiling again");
+    }
+  }
   if (o.twin === "off") {
     const r = await buildOnce(app, specFile, specText, target, out, { ...opts, log: o.log });
     if (r.ok) store(out, cached, "single", key);
@@ -176,6 +196,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     // The probe could not find a different reading that passes every example: nothing to compare.
     o.log("the probe found no different reading that passes the examples");
     store(out, cached, "twin", key);
+    if (codeKey) store(out, join(CACHE, codeKey), "twin", codeKey);
     return { ...base, ok: true, verified: "twin" };
   }
 
@@ -209,6 +230,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   const cmp = layer ? compare(requests, perBuild, requestText, false) : api ? compare(calls, perBuild, callText, false) : compare(traces, perBuild);
   if (cmp.agree === cmp.total) {
     store(out, cached, "twin", key);
+    if (codeKey) store(out, join(CACHE, codeKey), "twin", codeKey);
     rmSync(twinDir, { recursive: true, force: true });
     o.log(`the probe's reading behaves the same (${cmp.total} sessions): the spec is unambiguous here`);
     return { ...base, ok: true, verified: "twin" };

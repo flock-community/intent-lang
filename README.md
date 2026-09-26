@@ -479,7 +479,9 @@ Since v38 the stage also compiles a second, independent reading (a probe), and t
 the two on the app's data: a disagreement stops the build and names the sentence, instead of
 trusting one reading. The stage is keyed by what the checks depend on (the sentences, the derived
 values, the data shape and the platforms), so changing an example, screen or handler reuses it and
-skips its LLM calls — the first step of `docs/design/incremental.md`. A
+skips its LLM calls — the first step of `docs/design/incremental.md`. The generated app code is
+cached separately, without its examples, so a build whose only change is an example copies the
+previous code and runs the new examples with **no LLM calls at all**. A
 state field marked `stored` survives a restart: in the browser's local storage, or in a data file
 on the server. `restart` in an example starts the app again, random sessions restart now and
 then, and after every restart the harness checks that the stored fields came back unchanged.

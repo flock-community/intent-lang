@@ -9,8 +9,11 @@ leave stale code behind, and nobody notices.
 Built (small): the `always` checks are keyed by what they depend on (the `- sentence` lines, the
 derived values, the data shape and the platforms) rather than the whole spec, so changing an
 example, screen or handler reuses the checks and skips their LLM calls (measured: a second build of
-the habits app with a new example logs no `checks for always`). The regions and the resumable build
-below are the rest.
+the habits app with a new example logs no `checks for always`). Built too: a second cache key, the
+spec **without its examples**, so a build whose only change is an example copies the previous app
+code and just runs the new examples — no LLM calls at all (measured: a second build of a small app
+with a new example logs `the app code is unchanged; reused it` and costs $0.00). Changing a handler,
+screen or data still recompiles. The regions and the resumable build below are the rest.
 
 ## Units
 
