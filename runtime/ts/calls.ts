@@ -144,6 +144,7 @@ export interface Permission {
   count: number; // calls allowed per period (a one-time grant: 1)
   per: number; // the period in minutes (0: the count applies forever)
   upTo: number; // the most each call may amount to (0: no limit)
+  approver: string; // who granted it ("" when nobody is named); with four eyes it is not the requester
 }
 /** A call already let through, for enforcing a permission's count and period. */
 export interface Usage {
@@ -167,7 +168,10 @@ export function gate(config: Record<string, unknown> | undefined, name: string, 
   if (!match.length) return "hold"; // no standing permission: wait for approval
   const amount = Number(args.amount ?? 0);
   const used = usage[name] ?? usage[short] ?? [];
+  const fourEyes = config.fourEyes === true;
+  const requester = typeof config.requester === "string" ? config.requester : "";
   const ok = match.some((p) => {
+    if (fourEyes && requester !== "" && p.approver === requester) return false; // four eyes
     if (p.upTo > 0 && amount > p.upTo) return false;
     const recent = p.per > 0 ? used.filter((x) => now - x.at < p.per * 60_000) : used;
     return recent.length < p.count;

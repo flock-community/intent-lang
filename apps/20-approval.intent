@@ -47,7 +47,7 @@ on click buy {
 
 on click allow {
   - set @waiting to false
-  - add a @Permission to the end of @permissions with @endpoint = "pay.charge", @count = 1, @per = 0 and @upTo = 12500
+  - add a @Permission to the end of @permissions with @endpoint = "pay.charge", @count = 1, @per = 0, @upTo = 12500 and @approver = "Sam"
 }
 
 on click reject {
@@ -98,6 +98,14 @@ example "held, then rejected" {
   see message = "Payment rejected"
   see buy is enabled
   see reject is disabled
+}
+
+example "a lost answer on the approved call" {
+  click buy
+  see message = "Waiting for approval"
+  steer pay lose answer
+  click allow
+  see message = "Paid: charge 1"
 }
 
 example "a held call waits across a restart" {

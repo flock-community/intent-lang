@@ -509,15 +509,16 @@ it when the answer arrives (in both targets' browser entries, `runtime/ts/outbox
 reload sends an unanswered call again with the same key instead of losing it or making a new one.
 `tests/outbox.test.ts` covers the store, and the generated entries are compiled for both targets.
 
-**Agreement** (v40–v43). `through std.actions { agree = permissions  rejected = rejected  stop = stopped }`
+**Agreement** (v40–v45). `through std.actions { agree = permissions  rejected = rejected  stop = stopped }`
 gates a screen's calls: an `effect external` endpoint goes out only when a `Permission` in
-`permissions` covers it — the endpoint, `count` calls per `per` minutes, and the most each may
-amount to (`upTo`). With no covering permission the call is **held for approval** — the service
-never sees it yet, and the screen can show it is waiting; Approve adds a permission and the harness
-sends the held call with its original key, Reject drops it, and none goes out while `stopped` is on.
-`apps/20-approval.intent` proves held → approved (a one-time permission), held → rejected and
-stopped, on both targets (25/25 sessions identical). A held call and its key are kept in a durable
-box, so a page reload (or a restart in an example) still waits for approval rather than losing it.
+`permissions` covers it — the endpoint, `count` calls per `per` minutes, the most each may amount to
+(`upTo`), and `approver`. With no covering permission the call is **held for approval** — the
+service never sees it yet, and the screen can show it is waiting; Approve adds a permission and the
+harness sends the held call with its original key, Reject drops it, and none goes out while
+`stopped` is on. With `fourEyes` on, a permission the `requester` granted themselves does not count.
+`apps/20-approval.intent` proves held → approved (a one-time permission), held → rejected, the stop,
+a lost answer on the approved call, and a restart, on both targets (6/6 examples, 25/25 sessions
+identical); `tests/gate.test.ts` covers the gate's decisions and bounds.
 
 **Undo** (v38). A screen takes an effect back with `undo @pay.charge`: it keeps the original
 answer in state (`charge: Charge or nothing`), and the harness calls the contract's `undone by`

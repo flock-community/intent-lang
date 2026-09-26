@@ -1,4 +1,4 @@
-# Intent — language reference (v44)
+# Intent — language reference (v45)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -923,9 +923,10 @@ signed in gets none, as in the browser.
 endpoint the contract marks `effect external` goes out only when a standing permission covers it
 (`agree`, a list of `Permission` records in the screen's state), and none goes out while the
 emergency stop is on (`stop`). A `Permission` says the endpoint, `count` calls per `per` minutes
-(0: forever) and the most each call may amount to (`upTo`, 0: no amount limit); a call that breaks
-one of them is not covered. A call with no permission is **held for approval**: it does not reach
-the service yet, and the screen can show that it is waiting. Approving adds a permission (the
+(0: forever), the most each call may amount to (`upTo`, 0: no amount limit) and who granted it
+(`approver`); a call that breaks one of them is not covered. With `fourEyes` on, a permission the
+requester (`requester`) granted themselves does not count. A call with no permission is **held for
+approval**: it does not reach the service yet, and the screen can show that it is waiting. Approving adds a permission (the
 harness then sends the held call, with its original key); rejecting adds the endpoint to `rejected`
 (the held call is dropped). A call while stopped is answered at once with the reason (`{the error}`),
 so the screen can show it.
@@ -1234,6 +1235,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v45: agreement, four eyes: `std.actions` gained `fourEyes` and `requester` params, and
+  `Permission` gained `approver`. With `fourEyes` on, a permission the requester granted themselves
+  does not cover the call (it is held), so a second person must approve. Unit-tested in
+  `tests/gate.test.ts`; `apps/20-approval.intent` also pins what happens when a held call's answer
+  is lost (`steer pay lose answer` then approve → one charge).
 
 - v44: a screen can use platform functions, in both targets: spec.ts (or Spec.elm) re-exports them
   from the installation's code and the app calls them in a sentence (`apps/22-hash.intent` shows

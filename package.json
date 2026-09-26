@@ -8,7 +8,7 @@
   "scripts": {
     "intent": "node compiler/cli.ts",
     "check": "node compiler/cli.ts check apps/*.intent",
-    "test": "node tests/checker/run.ts && node tests/docs/snippets.ts && node tests/api/runtime.ts && node tests/once.test.ts && node tests/migrate.test.ts && node tests/outbox.test.ts && node tests/fix.test.ts && node tests/platforms.test.ts && node tests/providers.test.ts && node tests/profile.test.ts && node tests/sha256.test.ts && node tests/harness/snapshot.ts && npm run test:fmt",
+    "test": "node tests/checker/run.ts && node tests/docs/snippets.ts && node tests/api/runtime.ts && node tests/once.test.ts && node tests/migrate.test.ts && node tests/outbox.test.ts && node tests/gate.test.ts && node tests/fix.test.ts && node tests/platforms.test.ts && node tests/providers.test.ts && node tests/profile.test.ts && node tests/sha256.test.ts && node tests/harness/snapshot.ts && npm run test:fmt",
     "test:fmt": "cd tests/fmt-parity && ../../node_modules/.bin/elm make src/Probe.elm --optimize --output=probe.js > /dev/null && cp probe.js probe.cjs && node parity.ts",
     "typecheck": "tsc --noEmit -p ."
   },

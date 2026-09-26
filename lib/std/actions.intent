@@ -8,11 +8,14 @@ record Permission {
   count: Int                         # how many calls the period allows (a one-time grant: 1)
   per: Int                           # the period in minutes (0: the count applies forever)
   upTo: Int                          # the most each call may amount to (0: no amount limit)
+  approver: Text                     # who granted it ("" when nobody is named)
 }
 
 param agree: List Permission = []    # the standing permissions
 param rejected: List Text = []       # the endpoints a person rejected: a held call is dropped
 param stop: Bool = false             # the emergency stop: nothing external goes out while it is on
+param fourEyes: Bool = false         # a permission the requester granted themselves does not count
+param requester: Text = ""           # who is asking (for four eyes)
 
 before every call {
   - the request goes as it is: the harness decides whether the call goes out at all, holds it for approval, or drops it
@@ -20,11 +23,13 @@ before every call {
 
 examples with {
   agree = table {
-    endpoint     | count | per | upTo
-    "pay.charge" | 1     | 60  | 0
+    endpoint     | count | per | upTo | approver
+    "pay.charge" | 1     | 60  | 0    | "Sam"
   }
   rejected = []
   stop = false
+  fourEyes = false
+  requester = ""
 }
 
 example "the call itself is unchanged" {
