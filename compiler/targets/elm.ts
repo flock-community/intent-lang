@@ -127,7 +127,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   // Events
   const evs = events(app);
   const msgMembers = [...evs
-    .map((e) => e.tag + (e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
+    .map((e) => e.tag + (e.payload === "key-text" ? " String String" : e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
   // A screen with nothing to click, type or choose: Elm has no empty type, so one no-op variant.
   out.push(`{-| Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. -}\ntype Msg\n    = ${msgMembers.length ? msgMembers.join("\n    | ") : "NoOp"}\n\n`);
   out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. -}\n\n`);
@@ -225,7 +225,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   const cases = evs.map((e) => {
     const pat = e.on === "tick" ? `( "tick", _ )` : `( ${q(e.on)}, ${q(e.target)} )`;
     const body =
-      e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
+      e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "key-text" ? `Just (${e.tag} w.key w.text)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
     return `        ${pat} ->\n            ${body}\n`;
   });
   const nav = hasScreens(app) ? `        ( "navigate", path ) ->\n            Just (ScreenOpened (routeFromPath path))\n\n` : "";

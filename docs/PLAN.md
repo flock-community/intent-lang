@@ -107,5 +107,7 @@ Elm error message for an undeclared status now matches TypeScript's.
    within a screen, two screens may reuse one, and the one handler serves both;
    `apps/23-tabs.intent`); ~~`budget`~~ done; ~~named imports for records, choices and refined
    types (v51: `import support.tickets.Ticket as Issue`, references renamed with it; a screen with
-   no interactive element now generates a valid interface)~~; Spectavity adopting v35–v38 features
-   (Spectavity is the registry and package manager, so its work is not done here).
+   no interactive element now generates a valid interface)~~; ~~a field inside a list row (v54: it
+   edits that row's item; `apps/25-row-edit.intent`, twin-verified; a `select` inside a row stays
+   `NOT_YET`)~~; Spectavity adopting v35–v38 features (Spectavity is the registry and package
+   manager, so its work is not done here).

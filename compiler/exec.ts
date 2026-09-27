@@ -519,7 +519,7 @@ export function steerAction(api: string, rnd: () => number): Action {
 
 export function stepToAction(s: Step): Action | undefined {
   switch (s.do) {
-    case "type": return { on: "input", target: s.target, text: s.text };
+    case "type": return { on: "input", target: s.target, text: s.text, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "click": return { on: "click", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "choose": return { on: "choose", target: s.target, value: s.value };

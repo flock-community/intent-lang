@@ -1,4 +1,4 @@
-# Intent — language reference (v53)
+# Intent — language reference (v54)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -1053,6 +1053,7 @@ An example starts from the initial state and runs steps in order. Steps (closed 
 
 ```
 type "Milk" into draft
+type "Bread" into title on row 1   # a field inside a list row: it edits that row's item (§9.7)
 click add
 click remove on row 2 [of visible]
 toggle done on row 1 [of visible]
@@ -1242,8 +1243,9 @@ something when it wants different behaviour.
    a `footer` section is pinned to the bottom.
 6. **Buttons.** Without `enabled when`, a button is always enabled. Clicking a disabled
    button does nothing.
-7. **Fields.** Typing only changes the field's state unless an `on type` handler says more.
-   Nothing is cleared unless a sentence says "clear".
+7. **Fields.** Typing only changes the field's value unless an `on type` handler says more: the
+   state field of a top-level field, or — for a field inside a list row — that item's field (the
+   row's key names the item). Nothing is cleared unless a sentence says "clear".
 8. **Time.** In tests only `clock` ticks and `wait` move time, from `examples start at` (§3b).
    Time has no randomness; the server's `@newToken` is the one random value (§4e).
 9. **Durations** shown as time use `Fmt.clock` (`m:ss`, or `h:mm:ss` from one hour up).
@@ -1271,6 +1273,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v54: a field inside a list row (`list items of Item { field title }`) edits that row's item: §9.7
+  says the row's key names the item, and typing sets its field. The example step is
+  `type "Bread" into title on row 1`; both targets carry the row's key with the typed text. A
+  `select` inside a list row and a list inside a list row stay `NOT_YET`.
+  `apps/25-row-edit.intent` proves it (2/2 examples, twin-verified).
 
 - v53: a lookup may say `where` as well as `whose` (`the ticket where @id is @ticket`); the
   checker's `UNGUARDED` hint knows both. Regression in `tests/checker/nothing.intent`.

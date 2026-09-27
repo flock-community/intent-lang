@@ -42,7 +42,7 @@ export interface EventDef {
   tag: string;
   on: "click" | "toggle" | "input" | "choose" | "tick";
   target: string; // wire target, "list.name" inside rows
-  payload?: "key" | "text" | "value" | "pick";
+  payload?: "key" | "text" | "value" | "pick" | "key-text";
   choice?: string;
 }
 
@@ -56,7 +56,7 @@ export function events(app: App): EventDef[] {
       const target = list ? `${list.name}.${el.name}` : el.name;
       if (el.kind === "button") out.push({ tag: prefix + "Clicked", on: "click", target, payload: list ? "key" : undefined });
       if (el.kind === "checkbox") out.push({ tag: prefix + "Toggled", on: "toggle", target, payload: list ? "key" : undefined });
-      if (el.kind === "field") out.push({ tag: prefix + "Typed", on: "input", target, payload: "text" });
+      if (el.kind === "field") out.push({ tag: prefix + "Typed", on: "input", target, payload: list ? "key-text" : "text" });
       if (el.kind === "select" && el.from) out.push({ tag: prefix + "Chosen", on: "choose", target, payload: "pick" });
       else if (el.kind === "select") {
         const t = stateType(el.name);

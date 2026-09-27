@@ -92,7 +92,7 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
   if (hasData(app)) out.push(tsData(app));
   if (hasStored(app)) out.push(tsStoredFields(app));
   const evs = events(app);
-  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)];
+  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "key-text" ? "; key: string; text: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)];
   if (hasScreens(app)) msgMembers.push(`{ tag: "ScreenOpened"; route: Route }`);
   // A screen with nothing to click, type or choose: no message at all.
   out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =${msgMembers.length ? `\n  | ${msgMembers.join("\n  | ")}` : " never"};\n\n`);
@@ -169,7 +169,7 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
   const cases = evs.map((e) => {
     if (e.on === "tick") return "";
     const body =
-      e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
+      e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "key-text" ? `{ tag: ${q(e.tag)}, key: w.key ?? "", text: w.text ?? "" }` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
     return `    case ${q(`${e.on} ${e.target}`)}:\n      return ${body};\n`;
   });
   out.push(`export function fromWire(w: Wire): Msg | null {\n${hasScreens(app) ? `  // The harness shows a screen (an address, a link, going back): \\\`on open\\\`.\n  if (w.on === "navigate") return { tag: "ScreenOpened", route: routeFromPath(w.target) };\n` : ""}  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}${hasClients(app) ? `  if (w.on === "answer" && w.answer) return fromAnswer(w.answer as Answer);\n  if (w.on === "event" && w.event) return fromEvent(w.event as { event: string; body: unknown });\n` : ""}  return null;\n}\n`);

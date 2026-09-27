@@ -1,0 +1,55 @@
+app InlineEdit {
+  "Edit a row's title in place: a field inside a list row changes that row's item."
+}
+language v53
+design {
+  look "A calm, modern list. White surfaces on a light neutral background, one brand color, muted secondary text."
+  brand: indigo
+  neutral: slate
+  font: sans
+  radius: large
+}
+
+record Item {
+  id: Int
+  title: Text
+}
+
+state {
+  items: List Item = table {
+    id | title
+    1  | "Milk"
+    2  | "Bread"
+  }
+}
+
+screen {
+  heading "Shopping"
+  list items of Item as table {
+    text id = "#{id}"
+    field title
+    button remove "Delete"
+  }
+  text empty = "Nothing here." {
+    visible when @items is empty
+  }
+}
+
+on click remove {
+  - remove that item from @items
+}
+
+example "editing a row" {
+  see title on row 1 = "Milk"
+  type "Oat milk" into title on row 1
+  see title on row 1 = "Oat milk"
+  see title on row 2 = "Bread"
+}
+
+example "removing a row" {
+  click remove on row 1
+  see items has 1 row
+  see title on row 1 = "Bread"
+  click remove on row 1
+  see empty is shown
+}

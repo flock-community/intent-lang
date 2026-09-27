@@ -14,7 +14,7 @@ Exception: if the spec contradicts itself (for example an example expects someth
 const CODING_RULES = `Rules that keep every build identical:
 1. Model mirrors the spec's \`state\`: same names, same meaning. Add only what you truly need (for example a counter that hands out row keys).
 2. Each \`on\` handler: implement its sentences in order, literally. Where the spec is silent, apply the defaults in §9 of the language reference. Never add behaviour the spec does not ask for.
-3. Built-in behaviour from §4 always applies: typing into a field sets that state field to the typed text; choosing sets the select's state; toggling a checkbox flips its Bool. Handlers add to this; they do not replace it.
+3. Built-in behaviour from §4 always applies: typing into a field sets that state field to the typed text (for a field inside a list row: that row's item's field, the item found by the row's key); choosing sets the select's state; toggling a checkbox flips its Bool. Handlers add to this; they do not replace it.
 4. \`view\` computes every Screen field from the Model; derived values are computed, not stored.
 5. Template strings "…{…}…" are exact: reproduce every character outside the braces literally.
 6. Row keys: a stable id per item, assigned when the item is created.

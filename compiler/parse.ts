@@ -1303,7 +1303,6 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     }
   }
   if (kind === "list" && !["Text", "Int", "Decimal", "Bool", "Date", "DateTime"].includes(el.of ?? "") && !el.children.some((e) => e.kind !== "heading")) err(c.line, "SYNTAX", "a list needs row elements, indented under it", col);
-  if (kind === "field" && inList) err(c.line, "NOT_YET", "a field inside a list row is not in the language yet", col);
   if (kind === "select" && inList) err(c.line, "NOT_YET", "a select inside a list row is not in the language yet", col);
   return el;
 }
@@ -1317,7 +1316,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   const at = (n?: string, list?: string): RowRef | undefined =>
     !n ? undefined : n.startsWith("with") ? { row: 0, with: parseString(n.replace(/^with\s+/, "")), list } : { row: Number(n), list };
   let m: RegExpMatchArray | null;
-  if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${QN})$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], line } };
+  if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${QN})${ROW}$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], at: at(m[3], m[4]), line } };
   if ((m = t.match(new RegExp(`^(click|toggle)\\s+(${QN})${ROW}$`)))) return { step: { do: m[1] as "click", target: m[2], at: at(m[3], m[4]), line } };
   if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: m[1], target: m[2], line } };
   if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], line, quoted: true } };
@@ -1593,10 +1592,12 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (!el.expr && !(list ? rowField : st || derived.has(el.name)))
           err(el.line, "UNKNOWN_NAME", `\`text ${el.name}\` shows nothing: declare ${list ? `field \`${el.name}\` in ${list.of}` : `state or derive \`${el.name}\``}, or write \`text ${el.name} = …\``);
         break;
-      case "field":
-        if (!st) err(el.line, "BAD_BINDING", `\`field ${el.name}\` edits state \`${el.name}\`, which is not declared (add \`${el.name}: Text = ""\` to state)`);
-        else if (st.type.k !== "Text") err(el.line, "BAD_BINDING", `\`field ${el.name}\` edits state \`${el.name}\`, which must be Text (is ${typeToString(st.type)})`);
+      case "field": {
+        const f = list ? rowField : st;
+        if (!f) err(el.line, "BAD_BINDING", `\`field ${el.name}\` edits \`${el.name}\` in ${where}, which is not declared${list ? ` (add \`${el.name}: Text\` to ${list.of})` : " (add `" + el.name + `: Text = ""\` to state)`}`);
+        else if (f.type.k !== "Text") err(el.line, "BAD_BINDING", `\`field ${el.name}\` needs \`${el.name}\` to be Text (is ${typeToString(f.type)})`);
         break;
+      }
       case "select":
         if (el.from) {
           if (!st || st.type.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits state \`${el.name}\`, which must be Text`);

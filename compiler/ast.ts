@@ -120,7 +120,7 @@ export interface RowRef {
 }
 
 export type Step =
-  | { do: "type"; text: string; target: string; line: number }
+  | { do: "type"; text: string; target: string; at?: RowRef; line: number }
   | { do: "click"; target: string; at?: RowRef; line: number }
   | { do: "toggle"; target: string; at?: RowRef; line: number }
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
