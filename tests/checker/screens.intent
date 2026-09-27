@@ -37,6 +37,17 @@ screen other "/tickets/{ref}" {                  # expect: DUPLICATE
   text nothingHere = "x"
 }
 
+screen day "/day/{day}" {
+  path day: Date
+  text dayLabel = @day
+  text label = "Day"
+}
+
+screen flag "/flag/{flag}" {
+  path flag: Bool                                # expect: NOT_YET
+  text label = "Flag"
+}
+
 on click open {
   - go to @ticket with @id = the @id of that ticket
 }

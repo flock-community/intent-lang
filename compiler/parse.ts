@@ -567,7 +567,7 @@ function checkScreens(app: App, err: Err) {
     const holes = [...s.path.matchAll(/\{([a-z]\w*)\}/gi)].map((x) => x[1]);
     for (const h of holes) if (!s.params.some((p) => p.name === h)) err(s.line, "UNKNOWN_NAME", `path \`${s.path}\` has \`{${h}}\`: declare it in the screen as \`path ${h}: Type\``);
     for (const p of s.params) {
-      if (p.type.k !== "Int" && p.type.k !== "Text") err(p.line, "NOT_YET", `a path param is an Int or a Text (so far), not ${typeToString(p.type)}`);
+      if (!["Int", "Text", "Date", "DateTime"].includes(p.type.k)) err(p.line, "NOT_YET", `a path param is an Int, a Text, a Date or a DateTime (so far), not ${typeToString(p.type)}`);
       if (!holes.includes(p.name)) err(p.line, "UNKNOWN_NAME", `\`path ${p.name}\` is not in the path \`${s.path}\`: write \`{${p.name}}\` where it goes`);
       if (taken.has(p.name)) err(p.line, "DUPLICATE", `\`${p.name}\` is already a name in this app (state, derived value or element); give the path param another name`);
     }

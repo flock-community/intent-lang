@@ -1,4 +1,4 @@
-# Intent — language reference (v51)
+# Intent — language reference (v52)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -295,7 +295,8 @@ on open ticket {
 }
 ```
 
-- `path x: T` (an `Int` or a `Text`) is the value in the address, `@x` while that screen is shown.
+- `path x: T` is the value in the address, `@x` while that screen is shown: an `Int`, a `Text`, a
+  `Date` or a `DateTime` (`screen day "/day/{day}" { path day: Date }`).
 - `go to @screen with @x = …` shows another screen (a new entry in the history); `go back` is the
   back button. Every path param of the screen gone to is given.
 - `on open <screen>` runs every time that screen is shown: by a link, by its address, or going
@@ -1270,6 +1271,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v52: a path param may be a `Date` or a `DateTime`, not only an `Int` or a `Text`
+  (`screen day "/day/{day}" { path day: Date }`); the address reads it as text, as it did for `Text`,
+  on both targets. (A `Bool`, list or record path param stays `NOT_YET`.)
 
 - v51: `import bundle.Name as Alias` now renames records, choices and refined types too, not only
   components; the references to a renamed name inside that bundle are renamed with it, so two
