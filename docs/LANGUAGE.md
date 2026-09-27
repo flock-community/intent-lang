@@ -1,4 +1,4 @@
-# Intent — language reference (v52)
+# Intent — language reference (v53)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -111,8 +111,8 @@ relations {
 ```
 
 The checker requires both records, both fields, and equal key types. The field is the key: a
-sentence that reads the row looks it up (`the ticket whose @id is @ticket`) and says what happens
-when it finds none (else `UNGUARDED`).
+sentence that reads the row looks it up (`the ticket whose @id is @ticket`, or the same with
+`where`) and says what happens when it finds none (else `UNGUARDED`).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -1176,7 +1176,7 @@ out in the canonical form.
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
 | `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone |
 | `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
-| `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …`), without saying what happens when there is none |
+| `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …` / `the ticket where …`), without saying what happens when there is none |
 | `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNUSED` | warning | a declared component is never used |
@@ -1271,6 +1271,9 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v53: a lookup may say `where` as well as `whose` (`the ticket where @id is @ticket`); the
+  checker's `UNGUARDED` hint knows both. Regression in `tests/checker/nothing.intent`.
 
 - v52: a path param may be a `Date` or a `DateTime`, not only an `Int` or a `Text`
   (`screen day "/day/{day}" { path day: Date }`); the address reads it as text, as it did for `Text`,

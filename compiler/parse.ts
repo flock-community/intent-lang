@@ -752,8 +752,8 @@ function checkNothing(app: App, warn: Err) {
   const singular = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
   const lists = new Set([...app.state.filter((f) => f.type.k === "List").map((f) => f.name), ...app.derive.map((d) => d.name)]);
   const saysNone = (text: string) => /\bwhen there is (none|no|one|a)\b|\bor nothing\b|\bwhen none\b|\bif there is no\b|\bwithout\b/.test(text);
-  const lookup = (text: string) => [...text.matchAll(/\bthe\s+@?([a-z]\w*)\s+whose\b/g)].some((m) => singular.has(m[1]) && !lists.has(m[1]));
-  const lookupHint = (line: number, text: string, where: string) => line < LINE_BASE && lookup(text) && !saysNone(text) && warn(line, "UNGUARDED", `a lookup ("the … whose …", ${where}) can find nothing: say what happens then ("… when there is none")`);
+  const lookup = (text: string) => [...text.matchAll(/\bthe\s+@?([a-z]\w*)\s+(?:whose|where)\b/g)].some((m) => singular.has(m[1]) && !lists.has(m[1]));
+  const lookupHint = (line: number, text: string, where: string) => line < LINE_BASE && lookup(text) && !saysNone(text) && warn(line, "UNGUARDED", `a lookup ("the … whose …" / "the … where …", ${where}) can find nothing: say what happens then ("… when there is none")`);
   const walk = (b: Stmt[], guarded: Set<string>, where: string) => {
     for (const s of b) {
       if (s.k === "step" || s.k === "answer") {
