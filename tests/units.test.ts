@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { parse } from "../compiler/parse.ts";
 import { units, diffUnits } from "../compiler/units.ts";
 import { orderByDirty } from "../compiler/fuzz.ts";
+import { planIncremental } from "../compiler/incremental.ts";
 
 const app = (src: string) => {
   const { app, diagnostics } = parse(src);
@@ -84,5 +85,12 @@ const ordered = orderByDirty([trace("a"), trace("b"), trace("c")], ["element c"]
 assert.equal(ordered[0][0].target, "c", "a session touching a dirty element runs first");
 assert.deepEqual(ordered.slice(1).map((t) => t[0].target), ["a", "b"], "the rest keep their order");
 assert.equal(orderByDirty([trace("a"), trace("up")], ["on click up"])[0][0].target, "up", "a handler's target element counts as dirty");
+
+// An incremental rewrite is only for region units: an element or other behaviour unit without a
+// region (a label change) needs a full build, so nothing changes silently.
+const elementEdit = app(spec("Text").replace('button up "+"', 'button up "++"'));
+assert.equal(planIncremental(elementEdit, { code: "", units: a }), undefined, "an element change needs a full build");
+const handlerEdit = app(spec("Text").replace("- increase @count by 1", "- increase @count by 2"));
+assert.ok(planIncremental(handlerEdit, { code: "", units: a }), "a handler change can be rewritten in place");
 
 console.log("ok units: canonical digests, dependencies, the dirty set, and the session order");

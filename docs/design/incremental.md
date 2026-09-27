@@ -111,8 +111,15 @@ run first.
 ## How it is measured before it becomes the default
 
 - `converge` on all apps, from scratch, as the baseline (first-try rate, same-app rate, cost).
-- A set of recorded edits per app (a new rule, a renamed element, a changed type, a new example)
+- ~~A set of recorded edits per app (a new rule, a renamed element, a changed type, a new example)
   applied incrementally: cost and time per edit, and the share of incremental builds that the
-  clean check confirms. Target: all of them; any that are not is a finding about the spec.
-- Planted problems: a compiler that edits a clean region, and one that leaves a removed unit's
-  code behind. Both must be refused.
+  clean check confirms. Target: all of them; any that are not is a finding about the spec.~~ Built
+  (`tests/incremental/edits.ts`, run with an LLM; it clears the build cache, seeds the app, applies
+  the edits one after another and reports cost, what was reused and the twin+clean verdict). Run on
+  the counter (`runs/incremental-edits.md`): a new example reused the app code ($0.00), a changed
+  handler rewrote one region (2 kept, 1 rewritten, confirmed), and a changed element label correctly
+  fell back to a full build. It found a flaw on the way — an element change was once accepted without
+  being applied — now refused (`planIncremental` requires every dirty unit to have a region). Run it
+  across more apps before `incremental` defaults to `auto`.
+- ~~Planted problems: a compiler that edits a clean region, and one that leaves a removed unit's
+  code behind. Both must be refused.~~ Done (`tests/regions.test.ts`).

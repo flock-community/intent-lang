@@ -47,5 +47,9 @@ export function planIncremental(app: App, prev: { code: string; units: Unit[] })
   const diff = diffUnits(prev.units, units(app));
   // Only new units (or everything dirty): a full build is as cheap and simpler.
   if (!diff.clean.length) return undefined;
+  // A dirty or removed behaviour unit with no region (an element, an endpoint in a screen, a job)
+  // cannot be rewritten in place: a full build is needed, so nothing changes silently.
+  const inPlace = (k: string) => regions.includes(k);
+  if (diff.dirty.some((k) => !inPlace(k)) || diff.removed.some((k) => !inPlace(k))) return undefined;
   return { diff, regions };
 }

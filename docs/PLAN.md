@@ -83,8 +83,13 @@ Elm error message for an undeclared status now matches TypeScript's.
    and A′ clean agreed over 24 sessions); ~~resuming a stopped twin build~~ done (A and B each keep
    their own previous code, so after a fix both resume from their own clean regions; measured: both
    logged `reusing the previous build's clean regions (2 kept, 1 rewritten)` and the twin still
-   verified); ~~the twin's sessions ordered by dirty unit~~ done (`orderByDirty`); left: the
-   recorded-edit measurement suite before `incremental` can default to `auto`.
+   verified); ~~the twin's sessions ordered by dirty unit~~ done (`orderByDirty`); ~~the
+   recorded-edit measurement suite~~ done (`tests/incremental/edits.ts`: seeds an app, applies
+   recorded edits, and reports cost, what was reused and whether the twin+clean check confirmed;
+   measured on the counter: an example edit reused the app code ($0.00), a handler edit rewrote one
+   region (`2 kept, 1 rewritten`, twin + clean check), an element-label edit correctly fell back to
+   a full build; `runs/incremental-edits.md`). Left: run it across more apps before `incremental`
+   defaults to `auto`.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
    and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,
