@@ -1,4 +1,4 @@
-# Intent — language reference (v56)
+# Intent — language reference (v57)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -112,7 +112,8 @@ relations {
 
 The checker requires both records, both fields, and equal key types. The field is the key: a
 sentence that reads the row looks it up (`the ticket whose @id is @ticket`, or the same with
-`where`) and says what happens when it finds none (else `UNGUARDED`).
+`where`) and says what happens when it finds none (else `UNGUARDED`). A lookup's `@` names the list
+or derived value it looks in, and the checker requires it (a typo is `UNKNOWN_NAME`).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -1276,6 +1277,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v57: a lookup is a checked form: `the @tickets whose @status is @Open` (or `where …`) must name a
+  state list or a derived value after the `@`, so a typo is `UNKNOWN_NAME` instead of a sentence the
+  compiler reads as something else. Regression in `tests/checker/nothing.intent`.
 
 - v56: a `select … from …` inside a list row (options from a list of records; choosing sets that
   row's item's Text field to the chosen option). `apps/27-row-assign.intent` proves it (1/1 example,

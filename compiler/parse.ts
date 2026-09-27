@@ -527,6 +527,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     check(app, err, warn, clockLine, used);
     checkRefs(app, err, warn);
     checkRelations(app, err);
+    checkLookups(app, err);
     checkBodies(app, err, warn);
     checkEffects(app, err, warn);
     checkScreens(app, err);
@@ -545,6 +546,7 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   check(app, err, warn, clockLine, used);
   checkRefs(app, err, warn);
   checkRelations(app, err);
+  checkLookups(app, err);
   checkBodies(app, err, warn);
   checkEffects(app, err, warn);
   checkScreens(app, err);
@@ -681,6 +683,23 @@ function checkRelations(app: App, err: Err) {
     else if (!fb) err(line, "UNKNOWN_NAME", `${b} has no field \`${bf}\` (${rb.fields.map((f) => f.name).join(", ")})`);
     if (fa && fb && JSON.stringify(fa.type) !== JSON.stringify(fb.type)) err(line, "BAD_BINDING", `${a}.${af} is ${typeToString(fa.type)}, but ${b}.${bf} is ${typeToString(fb.type)}: a relation joins equal keys`);
   }
+}
+
+/**
+ * A lookup is a form: `the @tickets whose @status is @Open` or `the @tickets where …` looks in a
+ * list or a derived value, named after the `@`. The checker names it, so a typo is an error, not a
+ * sentence the compiler silently reads as something else.
+ */
+function checkLookups(app: App, err: Err) {
+  const lists = new Set([...app.state.filter((f) => f.type.k === "List").map((f) => f.name), ...app.derive.map((d) => d.name)]);
+  const look = (text: string, line: number) => {
+    if (line >= LINE_BASE) return;
+    for (const m of text.matchAll(/\bthe\s+@([a-z]\w*)\s+(?:whose|where)\b/g))
+      if (!lists.has(m[1])) err(line, "UNKNOWN_NAME", `\`@${m[1]}\` is not a state list or a derived value to look in`);
+  };
+  for (const d of app.derive) look(d.sentence, d.line);
+  for (const a of app.invariants ?? []) look(a.text, a.line);
+  app.rules.forEach((r, i) => look(r, app.ruleLines?.[i] ?? 0));
 }
 
 /** Hints: unguarded absent values, and rules that read like invariants. */

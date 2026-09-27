@@ -22,6 +22,7 @@ derive {
   lookedUp = the @rating of the book whose @id is 2    # expect: UNGUARDED
   lookedUpSafe = the @rating of the book whose @id is 2, or 0 when there is none
   lookedUpWhere = the @rating of the book where @id is 3  # expect: UNGUARDED
+  bogus = the @thing whose @id is 1            # expect: UNKNOWN_NAME
 }
 
 screen {
