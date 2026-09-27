@@ -15,8 +15,15 @@ their LLM calls (measured: a second build of the habits app with a new example l
 always`). Built too: a second cache key, the spec **without its examples**, so a build whose only
 change is an example copies the previous app code and just runs the new examples — no LLM calls at
 all (measured: a second build of a small app with a new example logs `the app code is unchanged;
-reused it` and costs $0.00). Changing a handler, screen or data still recompiles. The regions and
-the resumable build below are the rest.
+reused it` and costs $0.00). Built too (v49, `incremental auto`, off by default): **regions and an
+incremental rewrite**. The compiler marks each derived value and handler (`// @spec on click up` …
+`// @end`, `--` in Elm) and the harness checks the marks like it checks examples
+(`compiler/regions.ts`, `tests/regions.test.ts`). On an edit the compiler gets the last verified
+build and the dirty units, rewrites only their regions, and the harness refuses the answer unless
+the code outside the regions and every clean region are byte-identical — otherwise it compiles from
+scratch. Measured: a tiny app whose `on click up` handler changed rebuilt with `reusing the previous
+build's clean regions (2 kept, 1 rewritten)` and passed its examples. The twin comparison, the
+from-scratch clean check (step 5) and resuming a stopped twin build are the rest.
 
 ## Units
 

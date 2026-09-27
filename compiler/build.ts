@@ -6,13 +6,15 @@ import { runJobsIsolated, type ExampleResult, type ExploreResult } from "./exec.
 import { actionText, exploreJobs } from "./fuzz.ts";
 import { ROOT, scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
-import { buildPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
+import { buildPrompt, incrementalPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
 import { targetModule } from "./targets/index.ts";
 import { apiTraces, callText, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
 import { units } from "./units.ts";
+import { checkIncremental, checkRegions, regionUnits } from "./regions.ts";
+import { loadIncremental, planIncremental, saveIncremental } from "./incremental.ts";
 import { callDescs, hasClients, hasThrough } from "./calls.ts";
 import { usesClock } from "./refs.ts";
 import { prepareInvariants } from "./invariants.ts";
@@ -38,6 +40,7 @@ export interface BuildOptions {
   kit?: boolean; // give the Look stage the generated design-system Kit
   providers?: Record<string, string>; // apps that make calls: per alias, the provider build that answers them in tests
   layers?: Record<string, string>; // api apps behind layers: per alias, the verified layer build to reuse
+  incremental?: boolean; // reuse the previous verified build's clean regions (docs/design/incremental.md)
 }
 
 /** Apps that make calls: which provider build answers which alias, for the test driver. */
@@ -107,31 +110,67 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       return res;
     }
   }
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length);
+  const regions = opts.incremental && !layer && !api && !opts.styled ? regionUnits(app) : [];
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length, regions);
 
   let code = "";
   let problems = "";
+  // An incremental build: ask for the dirty regions only, keep the previous clean ones, and accept
+  // the answer only if nothing else moved. Any problem falls back to a full build below.
+  if (regions.length) {
+    const prev = loadIncremental(app, target, tm.appFile);
+    const plan = prev && planIncremental(app, prev);
+    if (prev && plan) {
+      const r = await complete(SYSTEM, incrementalPrompt(base, target, prev.code, plan.diff.dirty, plan.diff.removed), !!opts.probe);
+      res.costUsd += r.costUsd;
+      if (!r.error) {
+        const candidate = extractCode(r.text);
+        const why = checkIncremental(prev.code, candidate, target, plan.diff.dirty, plan.regions);
+        if (!why.length) {
+          code = candidate;
+          const kept = plan.regions.filter((r) => plan.diff.clean.includes(r)).length;
+          log(`reusing the previous build's clean regions (${kept} kept, ${plan.regions.length - kept} rewritten)`);
+        } else log(`the incremental edit is not safe (${why[0]}); compiling from scratch`);
+      }
+    }
+  }
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const prompt = problems ? repairPrompt(base, target, code, problems) : base;
-    writeFileSync(join(dir, `log/prompt-${attempt}.md`), prompt);
-    const r = await complete(SYSTEM, prompt, !!opts.probe);
-    res.costUsd += r.costUsd;
-    if (r.error) {
-      res.attempts.push({ stage: "llm", detail: r.error });
-      log(`attempt ${attempt}: llm error ${r.error}`);
-      if (r.error.startsWith("over budget")) break; // no point in trying again
-      continue;
+    // The incremental candidate is attempt 1's code; from attempt 2 on (or a problem), the compiler runs.
+    if (attempt === 1 && code) {
+      writeFileSync(appFile, code);
+    } else {
+      const prompt = problems ? repairPrompt(base, target, code, problems) : base;
+      writeFileSync(join(dir, `log/prompt-${attempt}.md`), prompt);
+      const r = await complete(SYSTEM, prompt, !!opts.probe);
+      res.costUsd += r.costUsd;
+      if (r.error) {
+        res.attempts.push({ stage: "llm", detail: r.error });
+        log(`attempt ${attempt}: llm error ${r.error}`);
+        if (r.error.startsWith("over budget")) break; // no point in trying again
+        continue;
+      }
+      writeFileSync(join(dir, `log/response-${attempt}.md`), r.text);
+      const conflict = r.text.match(/SPEC CONFLICT:.*/);
+      if (conflict && !r.text.includes("```")) {
+        // The compiler reports an error in the source instead of guessing.
+        res.attempts.push({ stage: "spec", detail: conflict[0] });
+        log(`attempt ${attempt}: ${conflict[0]}`);
+        break;
+      }
+      code = extractCode(r.text);
+      writeFileSync(appFile, code);
+      // The marks for an incremental build: every behaviour unit exactly once (docs/design/incremental.md).
+      if (regions.length) {
+        const rp = checkRegions(code, target, regions);
+        if (rp.length) {
+          problems = `The region marks are wrong:\n\n${rp.map((x) => `- ${x}`).join("\n")}`;
+          res.attempts.push({ stage: "compile", detail: problems });
+          log(`attempt ${attempt}: bad region marks`);
+          code = "";
+          continue;
+        }
+      }
     }
-    writeFileSync(join(dir, `log/response-${attempt}.md`), r.text);
-    const conflict = r.text.match(/SPEC CONFLICT:.*/);
-    if (conflict && !r.text.includes("```")) {
-      // The compiler reports an error in the source instead of guessing.
-      res.attempts.push({ stage: "spec", detail: conflict[0] });
-      log(`attempt ${attempt}: ${conflict[0]}`);
-      break;
-    }
-    code = extractCode(r.text);
-    writeFileSync(appFile, code);
 
     const errors = layer ? await svc!.compileLayer(dir) : api ? await svc!.compileApi(dir) : await tm.compile(dir);
     if (errors) {
@@ -190,6 +229,8 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.ok = look.ok;
     res.attempts.push(...look.attempts.map((a) => ({ stage: `look-${a.stage}` as any, detail: a.detail })));
   }
+  // Remember this build so the next one can reuse the units the spec did not change (A only, not the probe).
+  if (res.ok && regions.length && !opts.probe) saveIncremental(app, target, tm.appFile, readFileSync(appFile, "utf8"));
   res.ms = Date.now() - t0;
   writeFileSync(join(dir, "build.json"), JSON.stringify(res, null, 2));
   return res;

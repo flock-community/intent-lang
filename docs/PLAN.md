@@ -71,7 +71,13 @@ Elm error message for an undeclared status now matches TypeScript's.
    copies the previous code and runs the new examples, no LLM calls; measured, $0.00);
    ~~units and dependencies~~ done (`compiler/units.ts` writes `units.json` beside `sourcemap.json`;
    `diffUnits` reports the dirty, removed and clean behaviour units, following dependencies
-   transitively; `tests/units.test.ts`); `@spec` regions and resume a stopped twin build still open.
+   transitively; `tests/units.test.ts`); ~~`@spec` regions and an incremental rewrite~~ done
+   (`incremental auto`, off by default: the compiler marks each derived value and handler, the
+   harness checks the marks and refuses any edit that moves a clean region or the code outside them;
+   `compiler/regions.ts`, `compiler/incremental.ts`, `tests/regions.test.ts`; measured on a small
+   app: `reusing the previous build's clean regions (2 kept, 1 rewritten)`); the twin comparison
+   with dirty sessions first, the from-scratch clean check, and resuming a stopped twin build still
+   open.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
    and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,

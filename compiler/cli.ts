@@ -218,7 +218,7 @@ switch (cmd) {
     const targets = service ? (wanted.filter((t) => TARGETS[t].service).length ? wanted.filter((t) => TARGETS[t].service) : (["ts"] as Target[])) : wanted;
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
     const results = await Promise.all(
-      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => console.log(`[${t}] ${m}`) })),
+      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, incremental: c.incremental === "auto", sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => console.log(`[${t}] ${m}`) })),
     );
     await closeBrowser();
     for (const r of results) {

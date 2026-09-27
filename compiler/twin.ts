@@ -26,6 +26,7 @@ export interface TwinOptions {
   styled?: boolean;
   kit?: boolean;
   twin: "auto" | "always" | "off"; // auto: twin unless a verified build is cached
+  incremental?: boolean; // reuse the previous verified build's clean regions (docs/design/incremental.md)
   sessions?: number;
   length?: number;
   repairs?: number; // how often a failing build goes back to the compiler with its problems
@@ -149,7 +150,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     o.log(`cache hit (${meta.verified}-verified build of this exact spec and compiler)`);
     return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
   }
-  const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs, maxAttempts: o.repairs === undefined ? undefined : o.repairs + 1 };
+  const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs, incremental: o.incremental, maxAttempts: o.repairs === undefined ? undefined : o.repairs + 1 };
   // Incremental: the generated app code depends on everything but the examples. A second cache key
   // (the spec without its examples) lets a later example-only edit reuse the code.
   const codeKey = o.twin !== "off" && app.kind !== "layer" && app.profile !== "api" ? cacheKey(printApp({ ...app, examples: [] }), target, o) : undefined;
@@ -181,7 +182,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   const [a, b] = await Promise.all([
     buildOnce(app, specFile, specText, target, out, { ...opts, log: (m) => o.log(`A: ${m}`) }),
     // B probes: same spec, same defaults, but a different reading wherever the spec leaves a choice.
-    buildOnce(app, specFile, specText, target, twinDir, { ...opts, probe: true, log: (m) => o.log(`B (probe): ${m}`) }),
+    buildOnce(app, specFile, specText, target, twinDir, { ...opts, probe: true, incremental: false, log: (m) => o.log(`B (probe): ${m}`) }),
   ]);
   const cost = a.costUsd + b.costUsd;
   const base = { target, dir: out, cached: false, builds: [a, b], costUsd: cost };

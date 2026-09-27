@@ -113,8 +113,11 @@ project our-desk
 compiler {
   llm claude-cli             # the provider (compiler/providers/); INTENT_LLM, --llm
   model claude-opus-5-5      # pinned in intent.lock; INTENT_MODEL, --model
+  probeLlm ""                # the twin's probe provider (empty: the same as `llm`); INTENT_PROBE_LLM
+  probeModel ""              # the twin's probe model (empty: the same as `model`); INTENT_PROBE_MODEL
   targets elm, ts            # what `build` makes; services use the targets that can build them
   twin auto                  # auto | always | off
+  incremental off            # auto: reuse the previous verified build's clean regions; INTENT_INCREMENTAL
   sessions 24                # random sessions comparing a twin build
   length 20                  # steps per session
   repairs 3                  # a build that fails its checks goes back with the problems (0: stop)
@@ -401,6 +404,14 @@ spots. A twin-verified build is cached by the canonical
 spec plus the pinned compiler (language reference, model, and a digest of the harness: generators,
 prompts, drivers and runtime files), so building an unchanged spec again is instant and free,
 and a harness change builds anew.
+
+**Incremental builds** (`incremental auto`, off by default). Every build writes the spec's units
+(records, state, derived values, elements, handlers, …) and their dependencies to `units.json`. With
+`incremental auto` the compiler also marks the code each derived value and handler produced (`//
+@spec on click up` … `// @end`), checks the marks like it checks examples, and on an edit rewrites
+only the units the spec changed — keeping every other region, and everything outside the regions,
+byte-identical or else compiling from scratch. Measured on a small app: changing one handler rebuilt
+with `reusing the previous build's clean regions (2 kept, 1 rewritten)`. `docs/design/incremental.md`.
 
 **Dependencies:** `intent.project` lists a registry and requirements. `intent install` resolves
 them with minimal version selection, downloads into `.intent/deps/` and pins versions and

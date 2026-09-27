@@ -44,7 +44,18 @@ export const PROBE_RULES = `You are the PROBE compiler of a twin build. Another 
 
 /** Apps with `stored` state: the harness keeps it (localStorage, a file on the server) and puts it back after a restart. */
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false): string {
+/** The rule that makes the marks an incremental build needs (docs/design/incremental.md). */
+const regionRules = (regions: string[], comment: string) =>
+  regions.length
+    ? `\n# Regions
+
+Wrap the code you write for each of these units in its own region: a line \`${comment} @spec <unit>\` before it and a line \`${comment} @end\` after it, exactly once per unit and nothing else outside.
+
+${regions.map((r) => `- ${r}`).join("\n")}
+`
+    : "";
+
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false, regions: string[] = []): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const t = targetModule(target);
   const lang = t.fence;
@@ -76,7 +87,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${platforms ? `# Platform functions\n\n${svc.prompt.platform}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write app.ts now.`;
+${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${platforms ? `# Platform functions\n\n${svc.prompt.platform}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}${regionRules(regions, "//")}Write app.ts now.`;
   return `# Language reference
 
 ${language}
@@ -103,7 +114,23 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}Write ${t.appFile} now.`;
+${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}${regionRules(regions, target === "elm" ? "--" : "//")}Write ${t.appFile} now.`;
+}
+
+/** An incremental build: keep the previous build's clean regions, rewrite only the dirty ones. */
+export function incrementalPrompt(base: string, target: Target, prev: string, dirty: string[], removed: string[]): string {
+  const lang = targetModule(target).fence;
+  return `${base}
+
+# The last verified build of this spec
+
+\`\`\`${lang}
+${prev}\`\`\`
+
+# What changed
+
+This spec changed these units: ${dirty.join(", ") || "(none)"}.${removed.length ? ` These units are gone: ${removed.join(", ")}.` : ""}
+Rewrite only the marked regions of the changed units so the app matches the new spec above, and remove the regions of the gone units. Keep every other region, and everything outside the regions, exactly as it is. Reply with the complete module.`;
 }
 
 export function repairPrompt(base: string, target: Target, code: string, problems: string): string {
