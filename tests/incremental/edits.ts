@@ -30,6 +30,14 @@ const CASES: { app: string; edits: Edit[] }[] = [
       { what: "a changed element label", apply: (s) => s.replace('button up "+"', 'button up "++"') },
     ],
   },
+  {
+    app: "apps/02-todo.intent",
+    edits: [
+      { what: "a new example (no code change)", apply: (s) => `${s}\nexample "two items" {\n  type "Milk" into draft\n  click add\n  type "Bread" into draft\n  click add\n  see remaining = "2 left"\n}\n` },
+      { what: "a changed handler", apply: (s) => s.replace("- remove that item from @items", "- remove that item from @items, and clear @draft") },
+      { what: "a changed element label", apply: (s) => s.replace('button remove "Delete"', 'button remove "Remove"') },
+    ],
+  },
 ];
 
 const dir = mkdtempSync(join(tmpdir(), "intent-edits-"));
@@ -84,7 +92,7 @@ for (const c of CASES) {
   }
 }
 rmSync(dir, { recursive: true, force: true });
-const report = `# Incremental builds: recorded edits\n\nThe compiler is the one in this run; each row is an edit of ${CASES[0].app} applied after the previous one.\n\n${rows.join("\n")}\n\n${pass}/${total} edits kept a verified build.\n`;
+const report = `# Incremental builds: recorded edits\n\nThe compiler is the one in this run; each row is an edit applied after the previous one.\nApps: ${CASES.map((c) => c.app).join(", ")}.\n\n${rows.join("\n")}\n\n${pass}/${total} edits kept a verified build.\n`;
 writeFileSync("runs/incremental-edits.md", report);
 process.stdout.write(`${report}\n`);
 if (pass !== total) process.exit(1);
