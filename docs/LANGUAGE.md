@@ -1,4 +1,4 @@
-# Intent — language reference (v50)
+# Intent — language reference (v51)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -413,10 +413,12 @@ behaviour live inside its components. A bundle is proven by its demo app (for ex
 ```
 import std.list                      # everything std.list declares
 import std.list.Pager                # one name
-import std.list.Pager as TicketPager # one component, renamed
+import std.list.Pager as TicketPager # one name, renamed (a component, a record, a choice or a refined type)
 ```
 
-All imported names share one namespace; a name declared twice is an error.
+All imported names share one namespace; a name declared twice is an error. Renaming a record or
+choice also renames the references to it inside that bundle, so two bundles that both declare a
+`Ticket` can be used side by side (`import support.tickets.Ticket as Issue`).
 
 **Import what you use.** A name used in a file (in a sentence, `@Solved`, or as a type,
 `mine: List Ticket`) must be declared in that file or in a spec the file names itself: `import`,
@@ -1268,6 +1270,13 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v51: `import bundle.Name as Alias` now renames records, choices and refined types too, not only
+  components; the references to a renamed name inside that bundle are renamed with it, so two
+  bundles that declare the same name can be used side by side
+  (`import support.tickets.Ticket as Issue`; regression `tests/checker/load/aliases.intent`). A
+  screen with nothing to click, type or choose now generates a valid interface (`Msg = never` in
+  TypeScript; one `NoOp` variant in Elm) instead of an empty union.
 
 - v50: three more `steer` faults for the effectively-once path (docs/design/effects.md): `slow` (a
   retry arrives while the first attempt still runs — the service answers 409 `in progress`, and the

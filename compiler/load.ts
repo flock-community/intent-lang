@@ -5,7 +5,7 @@ import { bareWords, refsIn, sentences } from "./refs.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { LINE_BASE, type App, type Component, type Diagnostic, type Design, type Element, type Type } from "./ast.ts";
+import { LINE_BASE, type App, type ChoiceDecl, type Component, type Diagnostic, type Design, type Element, type RecordDecl, type RefinedDecl, type Type } from "./ast.ts";
 import { expandUses } from "./expand.ts";
 import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, parseSyntax, typeToString } from "./parse.ts";
@@ -337,22 +337,39 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   for (const imp of app.imports ?? []) {
     if (!imp.name) continue;
     const b = loaded.get(imp.bundle);
-    if (b && ![...b.records, ...b.choices, ...b.components].some((d) => d.name === imp.name))
+    if (b && ![...b.records, ...b.choices, ...(b.refined ?? []), ...b.components].some((d) => d.name === imp.name))
       err(imp.line, "UNKNOWN_NAME", `bundle ${imp.bundle} has no \`${imp.name}\``);
     if (imp.alias) {
-      const isComponent = b?.components.some((c) => c.name === imp.name);
-      if (b && !isComponent) err(imp.line, "NOT_YET", "renaming a record or choice on import is not in the language yet; only components can be renamed");
       if (!aliases.has(imp.bundle)) aliases.set(imp.bundle, new Map());
       aliases.get(imp.bundle)!.set(imp.name, imp.alias);
     }
   }
+  // Rename the types a field or answer uses: an aliased record or choice, everywhere in the bundle.
+  const renameType = (t: Type, m: Map<string, string>): Type => {
+    if (t.k === "Named" || t.k === "Ref") return m.has(t.name) ? { ...t, name: m.get(t.name)! } : t;
+    if (t.k === "List" || t.k === "Maybe") return { ...t, of: renameType(t.of, m) };
+    return t;
+  };
   const designs: Design[] = [];
   for (const [name, b] of loaded) {
-    for (const r of b.records) (claim(r.name, name, r.line), app.records.push(r));
-    for (const c of b.choices) (claim(c.name, name, c.line), app.choices.push(c));
-    for (const r of b.refined ?? []) (claim(r.name, name, r.line), (app.refined ??= []).push(r));
+    const m = aliases.get(name);
+    for (const r of b.records) {
+      const rec: RecordDecl = m ? { ...r, name: m.get(r.name) ?? r.name, fields: r.fields.map((f) => ({ ...f, type: renameType(f.type, m) })) } : r;
+      claim(rec.name, name, r.line);
+      app.records.push(rec);
+    }
+    for (const c of b.choices) {
+      const ch: ChoiceDecl = m ? { ...c, name: m.get(c.name) ?? c.name } : c;
+      claim(ch.name, name, c.line);
+      app.choices.push(ch);
+    }
+    for (const r of b.refined ?? []) {
+      const rf: RefinedDecl = m ? { ...r, name: m.get(r.name) ?? r.name } : r;
+      claim(rf.name, name, r.line);
+      (app.refined ??= []).push(rf);
+    }
     for (const c of b.components) {
-      const alias = aliases.get(name)?.get(c.name);
+      const alias = m?.get(c.name);
       const comp: Component = { ...c, name: alias ?? c.name, from: name };
       claim(comp.name, name, c.line);
       app.components.push(comp);

@@ -105,4 +105,7 @@ Elm error message for an undeclared status now matches TypeScript's.
    TypeScript by the parity test in `tests/fmt-parity`); ~~`list x of Text`~~ done (v41);
    ~~plain-text answers~~ already work; ~~per-screen element names~~ done (v48: a name is unique
    within a screen, two screens may reuse one, and the one handler serves both;
-   `apps/23-tabs.intent`); ~~`budget`~~ done; Spectavity adopting v35–v38 features.
+   `apps/23-tabs.intent`); ~~`budget`~~ done; ~~named imports for records, choices and refined
+   types (v51: `import support.tickets.Ticket as Issue`, references renamed with it; a screen with
+   no interactive element now generates a valid interface)~~; Spectavity adopting v35–v38 features
+   (Spectavity is the registry and package manager, so its work is not done here).

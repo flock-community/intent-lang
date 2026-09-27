@@ -1,0 +1,15 @@
+app AliasChecks
+
+import support.tickets.Ticket as Issue
+
+state {
+  issues: List Issue = []
+  rows: List Ticket = []          # expect: UNKNOWN_NAME
+}
+
+screen {
+  heading "Issues"
+  list issues of Issue {
+    text subject
+  }
+}

@@ -92,9 +92,10 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
   if (hasData(app)) out.push(tsData(app));
   if (hasStored(app)) out.push(tsStoredFields(app));
   const evs = events(app);
-  out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =\n  | ${[...evs
-    .map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)]
-    .join("\n  | ")}${hasScreens(app) ? `\n  | { tag: "ScreenOpened"; route: Route }` : ""};\n\n`);
+  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)];
+  if (hasScreens(app)) msgMembers.push(`{ tag: "ScreenOpened"; route: Route }`);
+  // A screen with nothing to click, type or choose: no message at all.
+  out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =${msgMembers.length ? `\n  | ${msgMembers.join("\n  | ")}` : " never"};\n\n`);
   out.push(`export type Button = { enabled: boolean };\nexport type LabeledButton = { label: string; enabled: boolean };\n/** A select whose options come from the model: the option texts in order, and the selected one ("" for none). */\nexport type Pick = { options: string[]; selected: string };\n\n`);
   const aliases: string[] = [];
   const fieldType = (el: Element): string => {
