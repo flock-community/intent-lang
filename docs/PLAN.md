@@ -86,10 +86,12 @@ Elm error message for an undeclared status now matches TypeScript's.
    verified); ~~the twin's sessions ordered by dirty unit~~ done (`orderByDirty`); ~~the
    recorded-edit measurement suite~~ done (`tests/incremental/edits.ts`: seeds an app, applies
    recorded edits, and reports cost, what was reused and whether the twin+clean check confirmed;
-   measured on the counter and todo (6/6 edits kept a verified build: an example edit reused the app
-   code for $0.00, a handler edit rewrote one region with the twin + clean check, an element-label
-   edit correctly fell back to a full build); `runs/incremental-edits.md`). Left: run it across
-   more apps before `incremental` defaults to `auto`.
+   measured on the counter, todo, board and tags — 10/10 edits kept a verified build: an example edit
+   reused the app code for $0.00, a handler edit rewrote one region with the twin + clean check, an
+   element-label (and a derive an element reads) edit correctly fell back to a full build;
+   `runs/incremental-edits.md`). Finding: on a larger app the model did not mark every handler, so it
+   fell back to a full build — safe, but it means `incremental` stays off by default until the
+   marking is reliable across apps (the bad-marks path is best-effort now, never fatal).
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
    and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,

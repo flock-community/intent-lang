@@ -165,16 +165,12 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       }
       code = extractCode(r.text);
       writeFileSync(appFile, code);
-      // The marks for an incremental build: every behaviour unit exactly once (docs/design/incremental.md).
+      // The marks for an incremental build: every behaviour unit exactly once. Best-effort: marks
+      // that are missing or wrong only mean this build cannot be reused region by region, so it is
+      // still built and shipped (the next build falls back to a full one).
       if (regions.length) {
         const rp = checkRegions(code, target, regions);
-        if (rp.length) {
-          problems = `The region marks are wrong:\n\n${rp.map((x) => `- ${x}`).join("\n")}`;
-          res.attempts.push({ stage: "compile", detail: problems });
-          log(`attempt ${attempt}: bad region marks`);
-          code = "";
-          continue;
-        }
+        if (rp.length) log(`attempt ${attempt}: the region marks are wrong (${rp[0]}); building without incremental reuse`);
       }
     }
 
@@ -235,8 +231,10 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.ok = look.ok;
     res.attempts.push(...look.attempts.map((a) => ({ stage: `look-${a.stage}` as any, detail: a.detail })));
   }
-  // Remember this build so the next one can reuse the units the spec did not change (A and B separately).
-  if (res.ok && regions.length) saveIncremental(app, target, which, tm.appFile, readFileSync(appFile, "utf8"));
+  // Remember this build so the next one can reuse the units the spec did not change, but only when
+  // its marks are valid (a build without marks is still shipped, just not reusable).
+  if (res.ok && regions.length && !opts.probe && checkRegions(readFileSync(appFile, "utf8"), target, regions).length === 0)
+    saveIncremental(app, target, which, tm.appFile, readFileSync(appFile, "utf8"));
   if (usedIncremental) res.incremental = true;
   res.ms = Date.now() - t0;
   writeFileSync(join(dir, "build.json"), JSON.stringify(res, null, 2));

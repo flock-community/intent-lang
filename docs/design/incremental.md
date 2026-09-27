@@ -116,10 +116,13 @@ run first.
   clean check confirms. Target: all of them; any that are not is a finding about the spec.~~ Built
   (`tests/incremental/edits.ts`, run with an LLM; it clears the build cache, seeds the app, applies
   the edits one after another and reports cost, what was reused and the twin+clean verdict). Run on
-  the counter and todo (`runs/incremental-edits.md`, 6/6 edits): a new example reused the app code
-  ($0.00), a changed handler rewrote one region (2 kept, 1 rewritten, confirmed), and a changed
-  element label correctly fell back to a full build. It found a flaw on the way — an element change
-  was once accepted without being applied — now refused (`planIncremental` requires every dirty unit
-  to have a region). Run it across more apps before `incremental` defaults to `auto`.
+  the counter, todo, board and tags (`runs/incremental-edits.md`, 10/10 edits): a new example reused
+  the app code ($0.00), a changed handler rewrote one region (confirmed), a changed element label (and
+  a derived value an element reads) correctly fell back to a full build. It found a flaw on the way —
+  an element change was once accepted without being applied — now refused (`planIncremental` requires
+  every dirty unit to have a region). **Finding:** on a larger app (helpdesk) the model does not mark
+  every handler (`on type search`), so that build falls back to a full one; the fallback is safe (the
+  build still ships), which is why `incremental` stays off by default until the marking is reliable
+  across apps.
 - ~~Planted problems: a compiler that edits a clean region, and one that leaves a removed unit's
   code behind. Both must be refused.~~ Done (`tests/regions.test.ts`).

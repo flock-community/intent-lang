@@ -38,6 +38,20 @@ const CASES: { app: string; edits: Edit[] }[] = [
       { what: "a changed element label", apply: (s) => s.replace('button remove "Delete"', 'button remove "Remove"') },
     ],
   },
+  {
+    app: "apps/09-board.intent",
+    edits: [
+      { what: "a changed derived value", apply: (s) => s.replace("full = there are 3 @cards in @Doing", "full = exactly 3 @cards are in @Doing") },
+      { what: "a changed element label", apply: (s) => s.replace('button start "Start"', 'button start "Begin"') },
+    ],
+  },
+  {
+    app: "apps/21-tags.intent",
+    edits: [
+      { what: "a new example (no code change)", apply: (s) => `${s}\nexample "a third tag" {\n  type "flow" into draft\n  click add\n  see tags has 1 row\n}\n` },
+      { what: "a changed handler", apply: (s) => s.replace('- set @draft to ""', "- clear @draft") },
+    ],
+  },
 ];
 
 const dir = mkdtempSync(join(tmpdir(), "intent-edits-"));
