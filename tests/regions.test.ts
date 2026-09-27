@@ -47,6 +47,12 @@ assert.match(checkIncremental(ts, handlerEdit, "ts", [], ["on click add", "deriv
 const outsideEdit = ts.replace("export type Model = { n: number };", "export type Model = { n: number; extra: boolean };");
 assert.match(checkIncremental(ts, outsideEdit, "ts", ["on click add"], ["on click add", "derive total"])[0], /outside the regions changed/, "the outside may not change");
 
+// Planted problems, both refused: a compiler that edits a clean region, and one that leaves a
+// removed unit's region behind (the unit is gone from the spec, so it must not be marked).
+const leftover = ts.replace("// @spec derive total", "// @spec derive gone");
+assert.ok(checkIncremental(ts, leftover, "ts", ["on click add"], ["on click add"]).some((p) => /not a unit to mark/.test(p)), "a removed unit's code left behind is refused");
+assert.ok(checkIncremental(ts, ts.replace("model.n + 1", "model.n + 5"), "ts", [], ["on click add", "derive total"]).some((p) => /not dirty, but its region changed/.test(p)), "a compiler that edits a clean region is refused");
+
 // Elm uses `--` markers.
 const elm = `module App exposing (..)
 -- @spec derive total
