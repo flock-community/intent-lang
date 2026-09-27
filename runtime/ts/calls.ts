@@ -12,7 +12,7 @@ export interface CallDesc {
 /** A call as data. `key`: its idempotency key, made when the call was made; every attempt sends the same one. */
 export type CallOut = { endpoint: string; args: Record<string, unknown>; headers?: Record<string, string>; config?: Record<string, unknown>; key?: string };
 /** An answer. `unknown`: no answer after the last attempt, for a call that may have had its effect. */
-export type Answer = { endpoint: string; status: number; body?: unknown; error?: string; unknown?: boolean };
+export type Answer = { endpoint: string; status: number; body?: unknown; error?: string; unknown?: boolean; inProgress?: boolean };
 
 // ---------------------------------------------------------------- effectively once (docs/design/effects.md)
 
@@ -33,7 +33,8 @@ export const newKey = (): string => (globalThis.crypto?.randomUUID ? globalThis.
  */
 export async function persist(desc: CallDesc | undefined, attempt: (n: number) => Promise<Answer>, pause: (n: number) => Promise<void> = async () => {}): Promise<Answer> {
   let a = await attempt(1);
-  for (let n = 2; n <= MAX_ATTEMPTS && retryable(a.status); n++) {
+  // 409 `idempotent-in-progress` (the service is still doing the first attempt): wait and send the same key again.
+  for (let n = 2; n <= MAX_ATTEMPTS && (retryable(a.status) || a.inProgress); n++) {
     await pause(n - 1);
     a = await attempt(n);
   }
@@ -201,7 +202,9 @@ async function fetchOnce(eps: CallDesc[], c: CallOut, via?: Via): Promise<Answer
     const qs = new URLSearchParams(h.query).toString();
     const res = await fetch(apiBase(c.endpoint.split(".")[0]) + h.path + (qs ? "?" + qs : ""), { method: h.method, headers: { "content-type": "application/json", ...h.headers }, body: h.body === undefined ? undefined : JSON.stringify(h.body) });
     const text = await res.text();
-    return { endpoint: c.endpoint, status: res.status, body: text ? JSON.parse(text) : null };
+    // 409 with this header: the service is still doing the first attempt; send the same key again.
+    const inProgress = res.headers.get("idempotent-in-progress") === "true";
+    return { endpoint: c.endpoint, status: res.status, body: text ? JSON.parse(text) : null, ...(inProgress ? { inProgress: true } : {}) };
   } catch (e) {
     return { endpoint: c.endpoint, status: 0, error: `no answer: ${(e as Error).message}` };
   }

@@ -326,6 +326,8 @@ export function start() {
     data() {
       return handle.data();
     },
+    /** The answers remembered by idempotency key (once.ts): cleared to simulate the keys expiring. */
+    remembered: handle.remembered,
     /** Stored state: the api starts again with these stored fields (a \`restart\` in an example). */
     restart(saved: unknown) {
       handle.restore(saved);

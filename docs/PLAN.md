@@ -33,7 +33,9 @@ Elm error message for an undeclared status now matches TypeScript's.
 2. **Durable outbox**: ~~a pending call and its key survive a restart~~ done (`runtime/ts/outbox.ts`:
    a call is written with its key before it goes out, cleared on the answer, and re-sent after a
    reload with the same key; wired into both targets' browser entries, tested in
-   `tests/outbox.test.ts`); the faults `slow`, `restart after effect`, `expire keys` still open.
+   `tests/outbox.test.ts`); ~~the faults `slow`, `restart after effect`, `expire keys`~~ done (v50:
+   the client sends the same key again on a 409 `idempotent-in-progress`, and the three faults join
+   `steer`; `apps/18-checkout.intent`, 9/9 examples, twin-verified).
 3. **From the v36 score** (`docs/reviews/scores/v36.md`):
    - ~~stored-data migration~~ done (`migrate` in `runtime/ts/api.ts`: a removed field is dropped,
      a new `T or nothing` or list field is filled, an unmigratable stored field keeps only its

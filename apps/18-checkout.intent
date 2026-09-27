@@ -1,7 +1,7 @@
 app Checkout {
   "Buy a class pass: one payment per click, never two, even when the connection drops."
 }
-language v47
+language v50
 import pay.payments
 
 uses pay.paymentsApi as pay {
@@ -73,6 +73,24 @@ example "a lost answer does not charge twice" {
   steer pay lose answer
   click buy
   see message = "Paid: charge 1"
+  click buy
+  see message = "Paid: charge 2"
+}
+
+example "a slow answer charges once" {
+  steer pay slow
+  click buy
+  see message = "Paid: charge 1"
+}
+
+example "the service restarts after the effect" {
+  steer pay restart after effect
+  click buy
+  see message = "Paid: charge 1"
+}
+
+example "an expired key charges again" {
+  steer pay expire keys
   click buy
   see message = "Paid: charge 2"
 }

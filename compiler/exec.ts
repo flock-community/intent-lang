@@ -264,9 +264,22 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
       if (f && --f.left <= 0) queue!.shift();
       if (f?.kind === "lose request") return notes.push("request lost"), { endpoint: c.endpoint, status: 0, error: "no answer (request lost)" };
       if (f?.kind === "fail") return notes.push("503"), { endpoint: c.endpoint, status: 503, body: { error: "Service unavailable" } };
+      // `slow`: the first attempt runs and holds the key, but is still busy when the client retries:
+      // the client sends the same key again and gets the replayed answer (docs/design/effects.md).
+      if (f?.kind === "slow") {
+        const r = deliver();
+        return notes.push(`${r.status}, still running`), { endpoint: c.endpoint, status: 409, error: "another attempt is in progress", inProgress: true };
+      }
       let res = deliver();
       if (f?.kind === "duplicate") (res = deliver()), notes.push("delivered twice");
       if (f?.kind === "lose answer") return notes.push(`${res.status}, answer lost`), { endpoint: c.endpoint, status: 0, error: "no answer (answer lost)" };
+      // `restart after effect`: the effect stands and the service restarts with its keys kept, so the
+      // retry replays the answer; `expire keys`: the keys are gone, so the retry runs the endpoint again.
+      if (f?.kind === "restart after effect") return notes.push(`${res.status}, service restarted`), { endpoint: c.endpoint, status: 0, error: "no answer (service restarted)" };
+      if (f?.kind === "expire keys") {
+        (client as { remembered?: { set: (k: unknown) => void } }).remembered?.set({});
+        return notes.push(`${res.status}, keys expired`), { endpoint: c.endpoint, status: 0, error: "no answer (keys expired)" };
+      }
       if (res.headers?.["idempotent-replayed"] === "true") notes.push("replayed");
       return { endpoint: c.endpoint, status: res.status, body: res.body };
     };
@@ -499,7 +512,7 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
 
 /** A random fault on the way to an api: what random sessions steer. */
 export function steerAction(api: string, rnd: () => number): Action {
-  const kinds = ["lose request", "lose answer", "duplicate", "fail"];
+  const kinds = ["lose request", "lose answer", "duplicate", "fail", "slow", "restart after effect", "expire keys"];
   const kind = kinds[Math.floor(rnd() * kinds.length)];
   return { on: "steer", target: api, value: kind, times: kind === "fail" ? 1 + Math.floor(rnd() * 3) : 1 };
 }

@@ -10,3 +10,5 @@ runs/*/*
 runs/r11-components/*/*
 !runs/r11-components/*/sheets/
 .intent/
+# A stray provider token: never commit it.
+.deepseek-token

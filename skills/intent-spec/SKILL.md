@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v49** (see the changelog at the end of
+Language version this skill matches: **v50** (see the changelog at the end of
 `docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
@@ -312,7 +312,10 @@ The harness makes calls effectively once (keys, sending again, recognising repea
 write any of that. What you do write: what the screen shows when the outcome of an external
 call is **unknown** (`else if its status is unknown { … }`: "don't pay again, we'll let you
 know"), and examples that make the way go wrong: `steer pay lose answer` then two clicks prove
-nothing was charged twice; `steer pay fail 3` proves the unknown message (`apps/18-checkout.intent`).
+nothing was charged twice; `steer pay fail 3` proves the unknown message; `steer pay slow` (a retry
+while the first still runs), `steer pay restart after effect` (the service restarts with its keys
+kept) and `steer pay expire keys` (a late retry after the keys expired runs again) prove the rest
+(`apps/18-checkout.intent`).
 
 To take an effect back, keep the original call's answer in state (`charge: Charge or nothing`) and
 write `undo @pay.charge` in the handler; the harness calls the `undone by` endpoint with the bound

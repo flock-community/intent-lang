@@ -126,7 +126,7 @@ export type Step =
   | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
-  | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail"; times: number; line: number } // a fault on the way to an api (a screen's provider)
+  | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail" | "slow" | "restart after effect" | "expire keys"; times: number; line: number } // a fault on the way to an api (a screen's provider)
   | { do: "open"; path: string; line: number } // arrive at an address (a screen of an app with several)
   | { do: "back"; line: number } // the browser's back button
   | { do: "restart"; line: number } // the app starts again: stored state keeps its values, the rest starts from its default

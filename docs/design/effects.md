@@ -6,10 +6,11 @@ answers, and the faults `lose request`, `lose answer`, `duplicate` and `fail n`.
 Now built: the durable outbox (`runtime/ts/outbox.ts`): a call is written down with its key before
 it goes out and cleared when answered, and a reload sends an unanswered call again with that key.
 v40–v45 built agreement: the gate, pending / approve / reject, permissions with bounds, a durable
-held box, and four eyes. Not built yet: the faults `slow`, `restart after effect` and `expire keys`,
-and retries over 409-while-running (a service here answers one request at a time, so it never
-happens). This design follows the practice of people and systems that handle effects for a living
-(sources at the end); where it departs from them, it says why.
+held box, and four eyes. v50 built the last three faults (`slow`, `restart after effect`,
+`expire keys`) and retry over 409-while-running: the client sends the same key again when the
+answer carries `idempotent-in-progress`, so a single-threaded test service can still show the
+"retry while the first still runs" path. This design follows the practice of people and systems
+that handle effects for a living (sources at the end); where it departs from them, it says why.
 
 Most of what an app does can be taken back: a changed field, a new row. Some actions reach
 outside and cannot be taken back by changing state: charging a card, sending an email, booking

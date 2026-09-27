@@ -1376,12 +1376,12 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   if (t === "go back") return { step: { do: "back", line } };
   if ((m = t.match(new RegExp(`^see\\s+screen\\s*=\\s*(${LOWER})$`)))) return { step: { do: "see", target: "screen", check: { is: "eq", value: m[1] }, line } };
   if ((m = t.match(new RegExp(`^open\\s+(${STR})$`)))) return { step: { do: "open", path: parseString(m[1])!, line } };
-  if ((m = t.match(/^steer\s+([a-z]\w*)\s+(lose\s+request|lose\s+answer|duplicate|fail(?:\s+(\d+))?)$/))) {
+  if ((m = t.match(/^steer\s+([a-z]\w*)\s+(lose\s+request|lose\s+answer|duplicate|slow|restart\s+after\s+effect|expire\s+keys|fail(?:\s+(\d+))?)$/))) {
     const fault = m[2].startsWith("fail") ? "fail" : (m[2].replace(/\s+/, " ") as "lose request");
     return { step: { do: "steer", api: m[1], fault, times: fault === "fail" ? Number(m[3] ?? 1) : 1, line } };
   }
   if (/^steer\b/.test(t)) {
-    err(line, "SYNTAX", "expected `steer <api> lose request`, `lose answer`, `duplicate` or `fail <n>`", col);
+    err(line, "SYNTAX", "expected `steer <api> lose request`, `lose answer`, `duplicate`, `slow`, `restart after effect`, `expire keys` or `fail <n>`", col);
     return;
   }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };

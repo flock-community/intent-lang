@@ -527,8 +527,10 @@ the same key with another request, 400 without a key on an `effect external` end
 24 hours with the stored state). Screens send a key with every call and send it again when the
 answer is lost, on a 5xx or a 429, up to three attempts; an external call that still has no
 answer is `unknown`, not failed. `steer pay lose answer` in an example makes the way to the api
-go wrong, and random sessions do it too. `apps/18-checkout.intent` proves that a lost answer
-does not charge twice. It and its payments API built on the first attempt, twin-verified. With
+go wrong, and random sessions do it too; since v50 the same `steer` also injects `slow` (a retry
+while the first still runs), `restart after effect` (the service restarts with its keys kept) and
+`expire keys` (a late retry after the keys expired). `apps/18-checkout.intent` proves that a lost
+answer does not charge twice. It and its payments API built on the first attempt, twin-verified. With
 the provider's replay switched off, that example failed at its line (charge 2 instead of 1).
 The tickets and desk screens and the notices and desk APIs rebuilt twin-verified with faults and
 duplicate requests in their random sessions.

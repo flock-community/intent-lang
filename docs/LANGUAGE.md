@@ -1,4 +1,4 @@
-# Intent — language reference (v49)
+# Intent — language reference (v50)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -1065,13 +1065,19 @@ see add is disabled         # also: enabled, hidden, shown, checked, unchecked
 snapshot "dialog open"      # a visual checkpoint: every build must look the same here
 restart                     # the app starts again: `stored` fields keep their values, the rest starts from its default (§3)
 steer pay lose answer       # the next call to the api `pay` is done, but its answer is lost (a screen's provider)
+steer pay slow              # a retry arrives while the first attempt still runs: the same key, sent again
+steer pay restart after effect  # the service restarts after the effect, its keys kept
+steer pay expire keys       # a late retry after the keys expired: the same key is treated as new
 ```
 
-`steer <api> lose request | lose answer | duplicate | fail <n>` makes the way to an api go wrong
-for its next attempts: the request never arrives; it is done but the answer is lost; it arrives
-twice; or the next `n` attempts answer 503. The screen's calls are sent again as in the browser,
-so an example can prove what the screen shows after a lost answer, and that nothing happened
-twice. Random sessions steer too.
+`steer <api> lose request | lose answer | duplicate | slow | restart after effect | expire keys | fail <n>`
+makes the way to an api go wrong for its next attempts: the request never arrives; it is done but
+the answer is lost; it arrives twice; a retry arrives while the first still runs (the service
+answers 409 in progress, and the client sends the same key again); the service restarts after the
+effect but keeps its keys, so the retry replays; the keys have expired, so a late retry is treated
+as new and runs again; or the next `n` attempts answer 503. The screen's calls are sent again as in
+the browser, so an example can prove what the screen shows after a lost answer, and that nothing
+happened twice. Random sessions steer too.
 
 `always` holds `see` checks that must be true after every action, in every session, not
 only in the examples. A check on an element that is not on the screen is skipped. For
@@ -1262,6 +1268,13 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v50: three more `steer` faults for the effectively-once path (docs/design/effects.md): `slow` (a
+  retry arrives while the first attempt still runs — the service answers 409 `in progress`, and the
+  client sends the same idempotency key again), `restart after effect` (the service restarts after
+  the effect with its keys kept, so the retry replays) and `expire keys` (a late retry after the
+  keys expired is treated as new and runs again). `apps/18-checkout.intent` proves all three (9/9
+  examples, twin-verified).
 
 - v49: `ticket: ref Ticket`: a record field whose type is another record's key. The key is the
   referenced record's first `Int` or `Text` field, resolved by the checker and used as the field's
