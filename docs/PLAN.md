@@ -78,8 +78,10 @@ Elm error message for an undeclared status now matches TypeScript's.
    app: `reusing the previous build's clean regions (2 kept, 1 rewritten)`); ~~the from-scratch
    clean check~~ done (`cleanCheck always`, off by default: after an incremental build the spec is
    also built from scratch and compared on the twin's sessions; measured: A incremental, B probe
-   and A′ clean agreed over 24 sessions); ordering the twin's sessions by dirty unit and resuming a
-   stopped twin build still open.
+   and A′ clean agreed over 24 sessions); ~~resuming a stopped twin build~~ done (A and B each keep
+   their own previous code, so after a fix both resume from their own clean regions; measured: both
+   logged `reusing the previous build's clean regions (2 kept, 1 rewritten)` and the twin still
+   verified); ordering the twin's sessions by dirty unit still open.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
    and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,

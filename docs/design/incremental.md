@@ -26,8 +26,12 @@ build's clean regions (2 kept, 1 rewritten)` and passed its examples. Built too 
 off by default): **the from-scratch clean check** (step 5) — after an incremental build the same spec
 is also built from scratch and the two are compared on the twin's sessions, so a build the code's
 history decided is caught; measured on the same app: A (incremental), B (probe) and A′ (from scratch)
-agreed over 24 sessions. What is left is ordering the twin's sessions by dirty unit and resuming a
-stopped twin build.
+agreed over 24 sessions. Built too (`incremental auto`): **resuming a stopped twin build** — A and B
+each keep their own previous code (`.intent/incremental/<app>/<target>/main` and `/probe`), so after
+a spec fix both resume from their own clean regions and only the dirty ones are rewritten; measured
+on the same app: changing one handler, both A and B logged `reusing the previous build's clean
+regions (2 kept, 1 rewritten)` and the twin still verified. What is left is ordering the twin's
+sessions by dirty unit.
 
 ## Units
 

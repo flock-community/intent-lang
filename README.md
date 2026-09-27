@@ -414,7 +414,9 @@ only the units the spec changed — keeping every other region, and everything o
 byte-identical or else compiling from scratch. Measured on a small app: changing one handler rebuilt
 with `reusing the previous build's clean regions (2 kept, 1 rewritten)`. With `cleanCheck always` the
 same spec is also built from scratch after an incremental build and the two are compared on the
-twin's sessions, so a build the code's history decided cannot slip through. `docs/design/incremental.md`.
+twin's sessions, so a build the code's history decided cannot slip through. A and B each keep their
+own previous code, so after a spec fix both resume from their own clean regions instead of building
+again. `docs/design/incremental.md`.
 
 **Dependencies:** `intent.project` lists a registry and requirements. `intent install` resolves
 them with minimal version selection, downloads into `.intent/deps/` and pins versions and

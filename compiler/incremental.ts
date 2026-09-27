@@ -9,20 +9,23 @@ import { regionUnits } from "./regions.ts";
 import { diffUnits, units, type Diff, type Unit } from "./units.ts";
 
 const STORE = join(ROOT, ".intent/incremental");
-const dirFor = (app: App, target: Target) => join(STORE, app.name, target);
+const dirFor = (app: App, target: Target, which: Which) => join(STORE, app.name, target, which);
+
+/** Which compiler of a twin build: A (main) or B (the probe); each keeps its own previous code. */
+export type Which = "main" | "probe";
 
 /** Remember a verified build's code and units, for the next incremental build. */
-export function saveIncremental(app: App, target: Target, appFile: string, code: string) {
-  const dir = dirFor(app, target);
+export function saveIncremental(app: App, target: Target, which: Which, appFile: string, code: string) {
+  const dir = dirFor(app, target, which);
   mkdirSync(join(dir, dirname(appFile)), { recursive: true });
   writeFileSync(join(dir, appFile), code);
   writeFileSync(join(dir, "units.json"), JSON.stringify(units(app), null, 2));
 }
 
 /** The last verified build's code and units, if there is one. */
-export function loadIncremental(app: App, target: Target, appFile: string): { code: string; units: Unit[] } | undefined {
-  const file = join(dirFor(app, target), appFile);
-  const unitsFile = join(dirFor(app, target), "units.json");
+export function loadIncremental(app: App, target: Target, which: Which, appFile: string): { code: string; units: Unit[] } | undefined {
+  const file = join(dirFor(app, target, which), appFile);
+  const unitsFile = join(dirFor(app, target, which), "units.json");
   if (!existsSync(file) || !existsSync(unitsFile)) return undefined;
   try {
     return { code: readFileSync(file, "utf8"), units: JSON.parse(readFileSync(unitsFile, "utf8")) as Unit[] };
@@ -32,8 +35,8 @@ export function loadIncremental(app: App, target: Target, appFile: string): { co
 }
 
 /** Forget the remembered build (its code no longer matches the spec). */
-export function forgetIncremental(app: App, target: Target) {
-  rmSync(dirFor(app, target), { recursive: true, force: true });
+export function forgetIncremental(app: App, target: Target, which: Which) {
+  rmSync(dirFor(app, target, which), { recursive: true, force: true });
 }
 
 /** What an incremental build would rewrite, or undefined when there is nothing to reuse. */

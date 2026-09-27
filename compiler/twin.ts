@@ -183,7 +183,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   const [a, b] = await Promise.all([
     buildOnce(app, specFile, specText, target, out, { ...opts, log: (m) => o.log(`A: ${m}`) }),
     // B probes: same spec, same defaults, but a different reading wherever the spec leaves a choice.
-    buildOnce(app, specFile, specText, target, twinDir, { ...opts, probe: true, incremental: false, log: (m) => o.log(`B (probe): ${m}`) }),
+    buildOnce(app, specFile, specText, target, twinDir, { ...opts, probe: true, log: (m) => o.log(`B (probe): ${m}`) }),
   ]);
   const cost = a.costUsd + b.costUsd;
   const base = { target, dir: out, cached: false, builds: [a, b], costUsd: cost };

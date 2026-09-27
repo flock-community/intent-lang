@@ -52,6 +52,7 @@ export function writeProviders(app: App, dir: string, providers: Record<string, 
 export async function buildOnce(app: App, specFile: string, specText: string, target: Target, dir: string, opts: BuildOptions = {}): Promise<BuildResult> {
   const maxAttempts = opts.maxAttempts ?? 4;
   const log = opts.log ?? (() => {});
+  const which = opts.probe ? "probe" : "main"; // each compiler of a twin keeps its own previous code
   const t0 = Date.now();
   const layer = app.kind === "layer";
   const api = app.profile === "api" && !layer;
@@ -120,7 +121,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   // An incremental build: ask for the dirty regions only, keep the previous clean ones, and accept
   // the answer only if nothing else moved. Any problem falls back to a full build below.
   if (regions.length) {
-    const prev = loadIncremental(app, target, tm.appFile);
+    const prev = loadIncremental(app, target, which, tm.appFile);
     const plan = prev && planIncremental(app, prev);
     if (prev && plan) {
       const r = await complete(SYSTEM, incrementalPrompt(base, target, prev.code, plan.diff.dirty, plan.diff.removed), !!opts.probe);
@@ -232,8 +233,8 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     res.ok = look.ok;
     res.attempts.push(...look.attempts.map((a) => ({ stage: `look-${a.stage}` as any, detail: a.detail })));
   }
-  // Remember this build so the next one can reuse the units the spec did not change (A only, not the probe).
-  if (res.ok && regions.length && !opts.probe) saveIncremental(app, target, tm.appFile, readFileSync(appFile, "utf8"));
+  // Remember this build so the next one can reuse the units the spec did not change (A and B separately).
+  if (res.ok && regions.length) saveIncremental(app, target, which, tm.appFile, readFileSync(appFile, "utf8"));
   if (usedIncremental) res.incremental = true;
   res.ms = Date.now() - t0;
   writeFileSync(join(dir, "build.json"), JSON.stringify(res, null, 2));
