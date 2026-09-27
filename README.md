@@ -118,6 +118,7 @@ compiler {
   targets elm, ts            # what `build` makes; services use the targets that can build them
   twin auto                  # auto | always | off
   incremental off            # auto: reuse the previous verified build's clean regions; INTENT_INCREMENTAL
+  cleanCheck off             # always: after an incremental build, also build from scratch and compare; INTENT_CLEAN_CHECK
   sessions 24                # random sessions comparing a twin build
   length 20                  # steps per session
   repairs 3                  # a build that fails its checks goes back with the problems (0: stop)
@@ -411,7 +412,9 @@ and a harness change builds anew.
 @spec on click up` … `// @end`), checks the marks like it checks examples, and on an edit rewrites
 only the units the spec changed — keeping every other region, and everything outside the regions,
 byte-identical or else compiling from scratch. Measured on a small app: changing one handler rebuilt
-with `reusing the previous build's clean regions (2 kept, 1 rewritten)`. `docs/design/incremental.md`.
+with `reusing the previous build's clean regions (2 kept, 1 rewritten)`. With `cleanCheck always` the
+same spec is also built from scratch after an incremental build and the two are compared on the
+twin's sessions, so a build the code's history decided cannot slip through. `docs/design/incremental.md`.
 
 **Dependencies:** `intent.project` lists a registry and requirements. `intent install` resolves
 them with minimal version selection, downloads into `.intent/deps/` and pins versions and

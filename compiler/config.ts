@@ -14,13 +14,14 @@ export interface CompilerConfig {
   targets?: string[]; // the targets `build` makes; unset: elm,ts for screens, ts for services
   twin: Twin; // auto: twin unless a verified build is cached; always; off
   incremental: "auto" | "off"; // auto: reuse the previous build's clean regions when the spec changed
+  cleanCheck: "always" | "off"; // always: after an incremental build, also build from scratch and compare (docs/design/incremental.md)
   sessions: number; // random sessions that compare a twin build
   length: number; // steps per session
   repairs: number; // how often a build that fails its checks goes back to the compiler with the problems
   budget: number; // stop spending on the LLM after this many US dollars in this run (0: no limit)
 }
 
-export const DEFAULTS: CompilerConfig = { llm: "claude-cli", model: "claude-opus-5-5", probeLlm: "", probeModel: "", twin: "auto", incremental: "off", sessions: 24, length: 20, repairs: 3, budget: 0 };
+export const DEFAULTS: CompilerConfig = { llm: "claude-cli", model: "claude-opus-5-5", probeLlm: "", probeModel: "", twin: "auto", incremental: "off", cleanCheck: "off", sessions: 24, length: 20, repairs: 3, budget: 0 };
 
 /** The option names, what each takes, and its environment variable. */
 export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string }> = {
@@ -31,6 +32,7 @@ export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string
   targets: { takes: "targets separated by commas (elm, ts)", env: "INTENT_TARGETS" },
   twin: { takes: "auto, always or off", env: "INTENT_TWIN" },
   incremental: { takes: "auto or off", env: "INTENT_INCREMENTAL" },
+  cleanCheck: { takes: "always or off", env: "INTENT_CLEAN_CHECK" },
   sessions: { takes: "a whole number, at least 1", env: "INTENT_SESSIONS" },
   length: { takes: "a whole number, at least 1", env: "INTENT_LENGTH" },
   repairs: { takes: "a whole number, 0 or more", env: "INTENT_REPAIRS" },
@@ -38,7 +40,7 @@ export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string
 };
 
 /** The command-line flag for an option: the key in kebab-case, except where an older name is kept. */
-const FLAG: Partial<Record<keyof CompilerConfig, string>> = { targets: "target", probeLlm: "probe-llm", probeModel: "probe-model" };
+const FLAG: Partial<Record<keyof CompilerConfig, string>> = { targets: "target", probeLlm: "probe-llm", probeModel: "probe-model", cleanCheck: "clean-check" };
 
 export type Source = "flag" | "environment" | "intent.project" | "default";
 
@@ -60,6 +62,9 @@ function parse(key: keyof CompilerConfig, raw: string, where: string): CompilerC
     case "incremental":
       if (!["auto", "off"].includes(raw)) throw bad();
       return raw as "auto" | "off";
+    case "cleanCheck":
+      if (!["always", "off"].includes(raw)) throw bad();
+      return raw as "always" | "off";
     case "sessions":
     case "length": {
       const n = Number(raw);

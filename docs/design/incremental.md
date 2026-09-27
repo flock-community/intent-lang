@@ -22,8 +22,12 @@ incremental rewrite**. The compiler marks each derived value and handler (`// @s
 build and the dirty units, rewrites only their regions, and the harness refuses the answer unless
 the code outside the regions and every clean region are byte-identical — otherwise it compiles from
 scratch. Measured: a tiny app whose `on click up` handler changed rebuilt with `reusing the previous
-build's clean regions (2 kept, 1 rewritten)` and passed its examples. The twin comparison, the
-from-scratch clean check (step 5) and resuming a stopped twin build are the rest.
+build's clean regions (2 kept, 1 rewritten)` and passed its examples. Built too (`cleanCheck always`,
+off by default): **the from-scratch clean check** (step 5) — after an incremental build the same spec
+is also built from scratch and the two are compared on the twin's sessions, so a build the code's
+history decided is caught; measured on the same app: A (incremental), B (probe) and A′ (from scratch)
+agreed over 24 sessions. What is left is ordering the twin's sessions by dirty unit and resuming a
+stopped twin build.
 
 ## Units
 

@@ -27,6 +27,7 @@ export interface TwinOptions {
   kit?: boolean;
   twin: "auto" | "always" | "off"; // auto: twin unless a verified build is cached
   incremental?: boolean; // reuse the previous verified build's clean regions (docs/design/incremental.md)
+  cleanCheck?: boolean; // after an incremental build, also build from scratch and compare
   sessions?: number;
   length?: number;
   repairs?: number; // how often a failing build goes back to the compiler with its problems
@@ -196,9 +197,22 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   if (!b.ok) {
     // The probe could not find a different reading that passes every example: nothing to compare.
     o.log("the probe found no different reading that passes the examples");
+    if (a.incremental && o.cleanCheck) o.log("the clean check is skipped: there is no session comparison to make");
     store(out, cached, "twin", key);
     if (codeKey) store(out, join(CACHE, codeKey), "twin", codeKey);
     return { ...base, ok: true, verified: "twin" };
+  }
+
+  // History must not leak in: after an incremental build, also build the spec from scratch and
+  // compare (docs/design/incremental.md). A difference is a spec that the code's history decided.
+  const aClean = o.cleanCheck && a.incremental && !o.styled && app.kind !== "layer" && app.profile !== "api"
+    ? await buildOnce(app, specFile, specText, target, `${out}.clean`, { ...opts, incremental: false, log: (m) => o.log(`clean: ${m}`) })
+    : undefined;
+  if (aClean) {
+    base.builds.push(aClean);
+    base.costUsd += aClean.costUsd;
+    if (aClean.ok) o.log("also built this spec from scratch, to compare");
+    else o.log("the clean build did not finish; the incremental build stands");
   }
 
   // Do they build the same app? Random sessions from the spec plus guided exploration.
@@ -214,7 +228,8 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     if (!("error" in ex)) traces = traces.concat((ex as ExploreResult[]).map((e) => e.actions));
   }
   const perBuild = new Map<string, (string[] | null)[]>();
-  for (const [id, r] of [["A", a], ["B", b]] as const) {
+  const builds: [string, BuildResult][] = [["A", a], ["B", b], ...(aClean?.ok ? [["A'", aClean] as [string, BuildResult]] : [])];
+  for (const [id, r] of builds) {
     if (layer) {
       const config = readLayerConfig(r.dir);
       const res = await runJobsIsolated(r.dir, target, requests.map((rs) => ({ kind: "layer-trace" as const, requests: rs, config })), 600_000);

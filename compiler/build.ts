@@ -28,6 +28,7 @@ export interface BuildResult {
   attempts: { stage: "llm" | "compile" | "examples" | "always" | "spec" | "ok"; detail: string }[];
   examples: { passed: number; total: number };
   compiler?: { language: string; languageVersion: string; model: string }; // what this build was compiled with
+  incremental?: boolean; // this build reused the previous build's clean regions
   costUsd: number;
   ms: number;
 }
@@ -115,6 +116,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
 
   let code = "";
   let problems = "";
+  let usedIncremental = false;
   // An incremental build: ask for the dirty regions only, keep the previous clean ones, and accept
   // the answer only if nothing else moved. Any problem falls back to a full build below.
   if (regions.length) {
@@ -128,6 +130,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
         const why = checkIncremental(prev.code, candidate, target, plan.diff.dirty, plan.regions);
         if (!why.length) {
           code = candidate;
+          usedIncremental = true;
           const kept = plan.regions.filter((r) => plan.diff.clean.includes(r)).length;
           log(`reusing the previous build's clean regions (${kept} kept, ${plan.regions.length - kept} rewritten)`);
         } else log(`the incremental edit is not safe (${why[0]}); compiling from scratch`);
@@ -231,6 +234,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   }
   // Remember this build so the next one can reuse the units the spec did not change (A only, not the probe).
   if (res.ok && regions.length && !opts.probe) saveIncremental(app, target, tm.appFile, readFileSync(appFile, "utf8"));
+  if (usedIncremental) res.incremental = true;
   res.ms = Date.now() - t0;
   writeFileSync(join(dir, "build.json"), JSON.stringify(res, null, 2));
   return res;
