@@ -1,4 +1,4 @@
-# Intent — language reference (v57)
+# Intent — language reference (v58)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -1064,6 +1064,7 @@ choose "Ann" in payer       # select … from: options are texts
 wait 3s                     # = 3 ticks with `clock every 1s`; without a tick: the clock moves on (§3b)
 tick 5 times
 see count = "2"             # text/field value; numbers and choice values are allowed: see count = 2
+see go.enabled is disabled  # a property by name, from what the kind shows: .value, .label, .enabled, .checked, .rows
 see title on row 1 [of visible] = "Milk"
 click remove on row with "Milk"   # the first row showing that exact text
 see visible has 2 rows
@@ -1277,6 +1278,11 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v58: an element's properties can be checked by name, from what its kind shows: `see x.value = "…"`,
+  `see x.label = "…"`, `see x.enabled is disabled`, `see x.checked is checked`, `see x.rows = 3`
+  (docs/design/profiles.md, step 2). The existing sugar (`see x = "…"`, `see x is disabled`,
+  `see x has N rows`) stays. `tests/see.test.ts`.
 
 - v57: a lookup is a checked form: `the @tickets whose @status is @Open` (or `where …`) must name a
   state list or a derived value after the `@`, so a typo is `UNKNOWN_NAME` instead of a sentence the

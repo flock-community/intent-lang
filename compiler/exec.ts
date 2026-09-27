@@ -556,6 +556,24 @@ export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | un
   // Where an app with several screens is.
   if ((s.target === "screen" || s.target === "path") && !s.at && obs?.[s.target] !== undefined && c.is === "eq")
     return obs[s.target] === c.value ? undefined : `expected the ${s.target} to be ${JSON.stringify(c.value)}, but it is ${JSON.stringify(obs[s.target])}`;
+  // A property of an element (the profile's `shows`): `see x.value = "…"`, `see x.enabled is disabled`,
+  // `see x.checked is checked`, `see x.label = "…"`, `see x.rows = 3`.
+  if (!s.every && s.target.includes(".")) {
+    const root = s.target.slice(0, s.target.indexOf(".")), prop = s.target.slice(s.target.indexOf(".") + 1);
+    const lf = locate(obs, root, s.at?.list, s.at?.row, s.at?.with);
+    if (!("missing" in lf)) {
+      const n = lf.node;
+      const at = `\`${s.target}\``;
+      if (prop === "value" || prop === "label") {
+        const actual = String(prop === "label" ? n.label : n.k === "button" ? n.label : n.v);
+        return c.is === "eq" ? (actual === c.value ? undefined : `expected ${at} = ${JSON.stringify(c.value)}, got ${JSON.stringify(actual)}`) : `\`${prop}\` is checked with \`= "…"\``;
+      }
+      if (prop === "enabled") return n.enabled === (c.is === "enabled") ? undefined : `expected ${at} to be ${c.is}, but it is ${n.enabled ? "enabled" : "disabled"}`;
+      if (prop === "checked") return n.checked === (c.is === "checked") ? undefined : `expected ${at} to be ${c.is}`;
+      if (prop === "rows") return c.is === "eq" ? (String(n.rows.length) === c.value ? undefined : `expected ${at} = ${c.value} rows, got ${n.rows.length}`) : `\`rows\` is checked with \`= N\``;
+      return `\`${prop}\` is not a property to check (value, label, enabled, checked, rows)`;
+    }
+  }
   if (s.every) {
     // Check each row of the list; a missing list or a row without the element is skipped.
     const list = findIn(obs.c, s.every);
