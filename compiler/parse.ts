@@ -1599,11 +1599,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       case "select":
         if (el.from) {
-          if (list) {
-            err(el.line, "NOT_YET", "a `select … from …` inside a list row is not in the language yet");
-            break;
-          }
-          if (!st || st.type.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits state \`${el.name}\`, which must be Text`);
+          const f = list ? rowField : st;
+          if (!f || f.type.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits \`${el.name}\` in ${where}, which must be Text${list ? ` (add \`${el.name}: Text\` to ${list.of})` : ""}`);
           const src = state.get(el.from.list);
           const srcRec = src && src.type.k === "List" && src.type.of.k === "Named" ? records.get(src.type.of.name) : undefined;
           if (!src && !derived.has(el.from.list)) err(el.line, "UNKNOWN_NAME", `no state or derive \`${el.from.list}\``);

@@ -1,0 +1,50 @@
+app RowAssign {
+  "Assign a task to a person: a select whose options come from a list, inside the row."
+}
+language v55
+design {
+  look "A calm, modern list. White surfaces on a light neutral background, one brand color, muted secondary text."
+  brand: indigo
+  neutral: slate
+  font: sans
+  radius: large
+}
+
+record Person {
+  id: Int
+  name: Text
+}
+
+record Task {
+  id: Int
+  title: Text
+  assignee: Text
+}
+
+state {
+  people: List Person = table {
+    id | name
+    1  | "Sam"
+    2  | "Alex"
+  }
+  tasks: List Task = table {
+    id | title   | assignee
+    1  | "Write" | "Sam"
+    2  | "Read"  | "Sam"
+  }
+}
+
+screen {
+  heading "Tasks"
+  list tasks of Task as table {
+    text title
+    select assignee from people.name
+  }
+}
+
+example "assigning a task" {
+  see assignee on row 1 = "Sam"
+  choose "Alex" in assignee on row 1
+  see assignee on row 1 = "Alex"
+  see assignee on row 2 = "Sam"
+}

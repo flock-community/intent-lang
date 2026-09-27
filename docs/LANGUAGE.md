@@ -1,4 +1,4 @@
-# Intent — language reference (v55)
+# Intent — language reference (v56)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -1247,8 +1247,8 @@ something when it wants different behaviour.
 7. **Fields and selections.** Typing only changes the field's value unless an `on type` handler
    says more: the state field of a top-level field, or — for a field inside a list row — that
    item's field (the row's key names the item). Choosing a value in a select likewise changes the
-   select's value: the state field of a top-level select, or that item's choice field for a select
-   inside a list row. Nothing is cleared unless a sentence says "clear".
+   select's value: the state field of a top-level select, or that item's field for a select inside
+   a list row. Nothing is cleared unless a sentence says "clear".
 8. **Time.** In tests only `clock` ticks and `wait` move time, from `examples start at` (§3b).
    Time has no randomness; the server's `@newToken` is the one random value (§4e).
 9. **Durations** shown as time use `Fmt.clock` (`m:ss`, or `h:mm:ss` from one hour up).
@@ -1276,6 +1276,10 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v56: a `select … from …` inside a list row (options from a list of records; choosing sets that
+  row's item's Text field to the chosen option). `apps/27-row-assign.intent` proves it (1/1 example,
+  twin-verified on both targets). A `select … from …` outside a row already worked.
 
 - v55: a `select` inside a list row: choosing a value sets that row's item's choice field (the row's
   key names the item, §9.7); the example step is `choose Done in status on row 1`. The event
