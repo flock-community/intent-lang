@@ -9,7 +9,7 @@ import { hasClients } from "./calls.ts";
 import { load } from "./load.ts";
 import { printApp } from "./print.ts";
 import { runJobsIsolated, type Action, type ExploreResult, type TraceResult } from "./exec.ts";
-import { compare, exploreJobs, makeTraces, type Divergence } from "./fuzz.ts";
+import { compare, exploreJobs, makeTraces, orderByDirty, type Divergence } from "./fuzz.ts";
 import { PROJECT_ROOT, ROOT, type Target } from "./gen.ts";
 import { complete } from "./llm.ts";
 import { compilerPins, sha } from "./load.ts";
@@ -226,6 +226,8 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   if (!api && !layer) {
     const ex = await runJobsIsolated(a.dir, target, exploreJobs(app, Math.floor(n / 2), length), 600_000);
     if (!("error" in ex)) traces = traces.concat((ex as ExploreResult[]).map((e) => e.actions));
+    // An incremental build: run the sessions that touch a rewritten unit first (docs/design/incremental.md).
+    traces = orderByDirty(traces, a.dirtyUnits ?? []);
   }
   const perBuild = new Map<string, (string[] | null)[]>();
   const builds: [string, BuildResult][] = [["A", a], ["B", b], ...(aClean?.ok ? [["A'", aClean] as [string, BuildResult]] : [])];

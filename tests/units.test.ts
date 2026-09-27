@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { parse } from "../compiler/parse.ts";
 import { units, diffUnits } from "../compiler/units.ts";
+import { orderByDirty } from "../compiler/fuzz.ts";
 
 const app = (src: string) => {
   const { app, diagnostics } = parse(src);
@@ -77,4 +78,11 @@ const removed = diffUnits(a, units(app(spec("Text").replace("  total = the numbe
 assert.ok(removed.removed.includes("derive total"), "the gone derive is reported removed");
 assert.ok(removed.dirty.includes("element total"), "the element that read it is dirty");
 
-console.log("ok units: canonical digests, dependencies, and the dirty set");
+// The twin's sessions are ordered so the ones touching a dirty unit run first.
+const trace = (target: string) => [{ on: "click" as const, target }];
+const ordered = orderByDirty([trace("a"), trace("b"), trace("c")], ["element c"]);
+assert.equal(ordered[0][0].target, "c", "a session touching a dirty element runs first");
+assert.deepEqual(ordered.slice(1).map((t) => t[0].target), ["a", "b"], "the rest keep their order");
+assert.equal(orderByDirty([trace("a"), trace("up")], ["on click up"])[0][0].target, "up", "a handler's target element counts as dirty");
+
+console.log("ok units: canonical digests, dependencies, the dirty set, and the session order");

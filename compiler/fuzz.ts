@@ -123,6 +123,19 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
   return jobs;
 }
 
+/** Order traces so the ones touching a dirty unit (by element name) run first, keeping the rest in
+ * order: an ambiguous edit is found quickly (docs/design/incremental.md). */
+export function orderByDirty(traces: Action[][], dirty: string[]): Action[][] {
+  const names = new Set<string>();
+  for (const k of dirty) {
+    if (k.startsWith("element ")) names.add(k.slice("element ".length).split(".").pop()!);
+    else if (k.startsWith("on ")) { const t = k.split(" ").slice(2).join(" "); if (t) names.add(t); }
+  }
+  if (!names.size) return traces;
+  const touches = (trace: Action[]) => trace.some((a) => names.has(a.target) || (a.list ? names.has(a.list) : false));
+  return [...traces].sort((x, y) => Number(touches(y)) - Number(touches(x)));
+}
+
 export function makeTraces(app: App, count: number, length: number, seed = 1): Action[][] {
   const templates = actionTemplates(app);
   const total = templates.reduce((s, t) => s + t.weight, 0);

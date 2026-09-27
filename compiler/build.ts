@@ -29,6 +29,7 @@ export interface BuildResult {
   examples: { passed: number; total: number };
   compiler?: { language: string; languageVersion: string; model: string }; // what this build was compiled with
   incremental?: boolean; // this build reused the previous build's clean regions
+  dirtyUnits?: string[]; // the units an incremental build rewrote (for the twin's session order)
   costUsd: number;
   ms: number;
 }
@@ -132,6 +133,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
         if (!why.length) {
           code = candidate;
           usedIncremental = true;
+          res.dirtyUnits = plan.diff.dirty;
           const kept = plan.regions.filter((r) => plan.diff.clean.includes(r)).length;
           log(`reusing the previous build's clean regions (${kept} kept, ${plan.regions.length - kept} rewritten)`);
         } else log(`the incremental edit is not safe (${why[0]}); compiling from scratch`);

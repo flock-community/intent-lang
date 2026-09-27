@@ -1,6 +1,6 @@
 # Design: spec units, code regions, and incremental builds
 
-Status: design, with the units and two safe increments built. Today every change to a spec compiles
+Status: built. Today every change to a spec compiles
 the app again from nothing, twice, and a twin build that stops on an ambiguity starts over after the
 fix. That is safe but slow and costly. Building on the previous code is only safe when we know, for
 every part of the spec, which part of the code it produced, and what else depends on it. Otherwise
@@ -30,8 +30,10 @@ agreed over 24 sessions. Built too (`incremental auto`): **resuming a stopped tw
 each keep their own previous code (`.intent/incremental/<app>/<target>/main` and `/probe`), so after
 a spec fix both resume from their own clean regions and only the dirty ones are rewritten; measured
 on the same app: changing one handler, both A and B logged `reusing the previous build's clean
-regions (2 kept, 1 rewritten)` and the twin still verified. What is left is ordering the twin's
-sessions by dirty unit.
+regions (2 kept, 1 rewritten)` and the twin still verified. Built too: the twin's sessions are
+ordered so the ones touching a dirty unit run first (`orderByDirty`), so a remaining ambiguity is
+found quickly. What is left is the measurement suite (recorded edits per app, and the planted bad
+edits of "How it is measured") before `incremental` can default to `auto`.
 
 ## Units
 
