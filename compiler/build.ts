@@ -112,7 +112,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const prompt = problems ? repairPrompt(base, target, code, problems) : base;
     writeFileSync(join(dir, `log/prompt-${attempt}.md`), prompt);
-    const r = await complete(SYSTEM, prompt);
+    const r = await complete(SYSTEM, prompt, !!opts.probe);
     res.costUsd += r.costUsd;
     if (r.error) {
       res.attempts.push({ stage: "llm", detail: r.error });

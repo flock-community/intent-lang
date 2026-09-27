@@ -123,7 +123,7 @@ async function compileCheck(app: App, specText: string, dir: string, base: strin
   let costUsd = 0;
   let previous: { code: string; problems: string } | undefined;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const r = await complete(SYSTEM, prompt(app, specText, dataModule, previous, first));
+    const r = await complete(SYSTEM, prompt(app, specText, dataModule, previous, first), first !== undefined);
     costUsd += r.costUsd;
     if (r.error) return { costUsd, error: r.error };
     const code = extractCode(r.text);

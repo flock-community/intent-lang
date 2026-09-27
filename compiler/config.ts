@@ -9,6 +9,8 @@ export type Twin = "auto" | "always" | "off";
 export interface CompilerConfig {
   llm: string; // the provider (compiler/providers/)
   model: string;
+  probeLlm: string; // the probe compiler's provider; empty: the same as `llm`
+  probeModel: string; // the probe compiler's model; empty: the same as `model`
   targets?: string[]; // the targets `build` makes; unset: elm,ts for screens, ts for services
   twin: Twin; // auto: twin unless a verified build is cached; always; off
   sessions: number; // random sessions that compare a twin build
@@ -17,12 +19,14 @@ export interface CompilerConfig {
   budget: number; // stop spending on the LLM after this many US dollars in this run (0: no limit)
 }
 
-export const DEFAULTS: CompilerConfig = { llm: "claude-cli", model: "claude-opus-5-5", twin: "auto", sessions: 24, length: 20, repairs: 3, budget: 0 };
+export const DEFAULTS: CompilerConfig = { llm: "claude-cli", model: "claude-opus-5-5", probeLlm: "", probeModel: "", twin: "auto", sessions: 24, length: 20, repairs: 3, budget: 0 };
 
 /** The option names, what each takes, and its environment variable. */
 export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string }> = {
   llm: { takes: "a provider name", env: "INTENT_LLM" },
   model: { takes: "a model name", env: "INTENT_MODEL" },
+  probeLlm: { takes: "a provider name (empty: the same as `llm`)", env: "INTENT_PROBE_LLM" },
+  probeModel: { takes: "a model name (empty: the same as `model`)", env: "INTENT_PROBE_MODEL" },
   targets: { takes: "targets separated by commas (elm, ts)", env: "INTENT_TARGETS" },
   twin: { takes: "auto, always or off", env: "INTENT_TWIN" },
   sessions: { takes: "a whole number, at least 1", env: "INTENT_SESSIONS" },
@@ -30,6 +34,9 @@ export const OPTIONS: Record<keyof CompilerConfig, { takes: string; env?: string
   repairs: { takes: "a whole number, 0 or more", env: "INTENT_REPAIRS" },
   budget: { takes: "US dollars, 0 for no limit (a run stops calling the LLM after this)", env: "INTENT_BUDGET" },
 };
+
+/** The command-line flag for an option: the key in kebab-case, except where an older name is kept. */
+const FLAG: Partial<Record<keyof CompilerConfig, string>> = { targets: "target", probeLlm: "probe-llm", probeModel: "probe-model" };
 
 export type Source = "flag" | "environment" | "intent.project" | "default";
 
@@ -70,6 +77,7 @@ function parse(key: keyof CompilerConfig, raw: string, where: string): CompilerC
       return ts;
     }
     default:
+      if (!raw.trim() && (key === "probeLlm" || key === "probeModel")) return "";
       if (!raw.trim()) throw bad();
       return raw.trim();
   }
@@ -82,7 +90,7 @@ export function configWithSources(): { config: CompilerConfig; from: Record<keyo
   const config = { ...DEFAULTS } as CompilerConfig;
   const from = {} as Record<keyof CompilerConfig, Source>;
   for (const key of Object.keys(OPTIONS) as (keyof CompilerConfig)[]) {
-    const flag = flags[key === "targets" ? "target" : key] ?? flags[key];
+    const flag = flags[FLAG[key] ?? key] ?? flags[key];
     const env = OPTIONS[key].env ? process.env[OPTIONS[key].env!] : undefined;
     const [raw, source, where] = flag !== undefined ? [flag, "flag", `--${key}`] : env !== undefined ? [env, "environment", OPTIONS[key].env!] : file[key] !== undefined ? [file[key], "intent.project", "intent.project"] : [undefined, "default", ""];
     if (raw !== undefined) (config as any)[key] = parse(key, raw, where);

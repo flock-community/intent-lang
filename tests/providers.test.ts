@@ -42,4 +42,19 @@ r = await openai("gpt-4o-mini").complete("sys", "user");
 assert.match(r.error ?? "", /no such model/, "an API error comes back as the error");
 
 globalThis.fetch = realFetch;
-console.log("ok providers: anthropic and openai map content, usage and errors");
+
+// The twin's probe compiler can come from another vendor: `probeLlm`/`probeModel` (a second,
+// independent reading, not just a second prompt on the same model).
+process.env.INTENT_LLM = "openai";
+process.env.INTENT_MODEL = "deepseek-chat";
+process.env.INTENT_PROBE_LLM = "anthropic";
+process.env.INTENT_PROBE_MODEL = "claude-sonnet-5-5";
+const { config } = await import("../compiler/config.ts");
+const { provider } = await import("../compiler/llm.ts");
+assert.equal(provider().name, "openai", "the main build uses `llm`");
+assert.equal(provider().model, "deepseek-chat");
+const probe = provider(config().probeLlm, config().probeModel || config().model);
+assert.equal(probe.name, "anthropic", "the probe can be another vendor");
+assert.equal(probe.model, "claude-sonnet-5-5");
+
+console.log("ok providers: anthropic and openai map content, usage and errors; the probe can be another vendor");

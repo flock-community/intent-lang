@@ -75,7 +75,11 @@ Elm error message for an undeclared status now matches TypeScript's.
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,
    ticket-pages, calculator 19/20 — every successful build 100% same app, Elm≡TS 100%; the one
    failure is DeepSeek not getting the calculator's second Elm build right, not a divergence;
-   `runs/2026-09-26-11-0*-deepseek*/`); a probe from another vendor still open.
+   `runs/2026-09-26-11-0*-deepseek*/`); ~~a probe from another vendor~~ done
+   (`probeLlm`/`probeModel`, `INTENT_PROBE_LLM`/`INTENT_PROBE_MODEL`: the twin's probe, and the
+   probe reading of `always`, can come from a different provider/model than the main build;
+   verified by pointing the probe at an unconfigured Anthropic and watching it consulted;
+   `tests/providers.test.ts`).
 6. **Smaller**: ~~platforms for screens, both targets~~ done (v44: a screen re-exports a pure
    platform and calls it; `apps/22-hash.intent`; Elm has its own `Crypto.elm`, kept in step with
    TypeScript by the parity test in `tests/fmt-parity`); ~~`list x of Text`~~ done (v41);

@@ -11,6 +11,7 @@ import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, parseSyntax, typeToString } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
 import { model } from "./llm.ts";
+import { config } from "./config.ts";
 import { printApp } from "./print.ts";
 
 export const LIB = join(PROJECT_ROOT, "lib");
@@ -70,9 +71,10 @@ export function readLockVersions(): Map<string, string> {
  * The compiler is part of what a build depends on: the language reference is the compiler's
  * prompt, and the model turns it into code. Both are pinned in intent.lock like bundles.
  */
-export function compilerPins(): { language: string; languageVersion: string; model: string } {
+export function compilerPins(): { language: string; languageVersion: string; model: string; probeLlm: string; probeModel: string } {
   const doc = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
-  return { language: sha(doc), languageVersion: doc.match(/language reference \((v\d+)/)?.[1] ?? "?", model: model() };
+  const c = config();
+  return { language: sha(doc), languageVersion: doc.match(/language reference \((v\d+)/)?.[1] ?? "?", model: model(), probeLlm: c.probeLlm, probeModel: c.probeModel };
 }
 
 export function readCompilerLock(): { language?: string; model?: string } {

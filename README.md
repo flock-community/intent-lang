@@ -395,7 +395,9 @@ differently, the spec is ambiguous. The build stops and explains, per spec line,
 A and compiler B read, and the sentence or example to add. Two *identical* compilers were not
 enough: on a deliberately vague word counter they agreed, because the same model reads the same
 way. The probe found three open questions (what separates words, punctuation at the edges,
-apostrophes and decimal points inside a word). A twin-verified build is cached by the canonical
+apostrophes and decimal points inside a word). Because the probe can come from *another vendor*
+(`probeLlm`/`probeModel`, `INTENT_PROBE_LLM`), the two readings need not share a model's blind
+spots. A twin-verified build is cached by the canonical
 spec plus the pinned compiler (language reference, model, and a digest of the harness: generators,
 prompts, drivers and runtime files), so building an unchanged spec again is instant and free,
 and a harness change builds anew.
