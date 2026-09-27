@@ -68,8 +68,10 @@ Elm error message for an undeclared status now matches TypeScript's.
      `docs/design/profiles.md` (generic element lines, a profile-driven harness) remains.
 4. **Incremental builds** (`docs/design/incremental.md`): ~~the `always` checks are keyed by what
    they depend on~~ done; ~~the app code is cached without its examples~~ done (an example-only edit
-   copies the previous code and runs the new examples, no LLM calls; measured, $0.00); units,
-   dependencies, `@spec` regions and resume a stopped twin build still open.
+   copies the previous code and runs the new examples, no LLM calls; measured, $0.00);
+   ~~units and dependencies~~ done (`compiler/units.ts` writes `units.json` beside `sourcemap.json`;
+   `diffUnits` reports the dirty, removed and clean behaviour units, following dependencies
+   transitively; `tests/units.test.ts`); `@spec` regions and resume a stopped twin build still open.
 5. **Distribution**: ~~an `intent` bin~~ and ~~`intent doctor`~~ done; the **Anthropic API provider**
    and an **OpenAI-compatible provider** done, and ~~measured with converge~~ done
    (DeepSeek via `llm openai`: 20-approval, 21-tags, 22-hash 12/12; counter, board, helpdesk,

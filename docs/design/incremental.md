@@ -1,19 +1,22 @@
 # Design: spec units, code regions, and incremental builds
 
-Status: design, with one safe increment built. Today every change to a spec compiles the app again
-from nothing, twice, and a twin build that stops on an ambiguity starts over after the fix. That is
-safe but slow and costly. Building on the previous code is only safe when we know, for every part of
-the spec, which part of the code it produced, and what else depends on it. Otherwise an edit can
-leave stale code behind, and nobody notices.
+Status: design, with the units and two safe increments built. Today every change to a spec compiles
+the app again from nothing, twice, and a twin build that stops on an ambiguity starts over after the
+fix. That is safe but slow and costly. Building on the previous code is only safe when we know, for
+every part of the spec, which part of the code it produced, and what else depends on it. Otherwise
+an edit can leave stale code behind, and nobody notices.
 
-Built (small): the `always` checks are keyed by what they depend on (the `- sentence` lines, the
-derived values, the data shape and the platforms) rather than the whole spec, so changing an
-example, screen or handler reuses the checks and skips their LLM calls (measured: a second build of
-the habits app with a new example logs no `checks for always`). Built too: a second cache key, the
-spec **without its examples**, so a build whose only change is an example copies the previous app
-code and just runs the new examples — no LLM calls at all (measured: a second build of a small app
-with a new example logs `the app code is unchanged; reused it` and costs $0.00). Changing a handler,
-screen or data still recompiles. The regions and the resumable build below are the rest.
+Built: the **units and their dependencies** (`compiler/units.ts`, written to `units.json` beside
+`sourcemap.json` on every build; `diffUnits` says which behaviour units an edit dirties, following
+dependencies transitively; `tests/units.test.ts`). Built (small): the `always` checks are keyed by
+what they depend on (the `- sentence` lines, the derived values, the data shape and the platforms)
+rather than the whole spec, so changing an example, screen or handler reuses the checks and skips
+their LLM calls (measured: a second build of the habits app with a new example logs no `checks for
+always`). Built too: a second cache key, the spec **without its examples**, so a build whose only
+change is an example copies the previous app code and just runs the new examples — no LLM calls at
+all (measured: a second build of a small app with a new example logs `the app code is unchanged;
+reused it` and costs $0.00). Changing a handler, screen or data still recompiles. The regions and
+the resumable build below are the rest.
 
 ## Units
 

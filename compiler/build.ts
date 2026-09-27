@@ -12,6 +12,7 @@ import { apiTraces, callText, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
+import { units } from "./units.ts";
 import { callDescs, hasClients, hasThrough } from "./calls.ts";
 import { usesClock } from "./refs.ts";
 import { prepareInvariants } from "./invariants.ts";
@@ -88,6 +89,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
   if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })), ...(e.effect ? { external: true } : {}) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
+  writeFileSync(join(dir, "units.json"), JSON.stringify(units(app), null, 2));
   // Apps that read the clock: where it starts in tests, and how far one clock tick moves it.
   if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })) }));
   // Several screens: their addresses, for the test driver (which keeps the history).
