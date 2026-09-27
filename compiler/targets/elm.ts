@@ -73,6 +73,7 @@ export function elmType(t: Type): string {
     case "List": return `List ${elmAtom(t.of)}`;
     case "Maybe": return `Maybe ${elmAtom(t.of)}`;
     case "Named": return t.name;
+    case "Ref": return t.key ? elmType(t.key) : "Int";
   }
 }
 
@@ -621,6 +622,7 @@ export function elmDecoder(app: App, t: Type): string {
       if (r) return r.base === "Text" ? "D.string" : r.base === "Int" ? "D.int" : "D.float";
       return `decode${t.name}`;
     }
+    case "Ref": return t.key ? elmDecoder(app, t.key) : "D.int";
   }
 }
 
@@ -638,6 +640,7 @@ export function elmEncoder(app: App, t: Type, v: string, d = 0): string {
       if (r) return elmEncoder(app, { k: r.base } as Type, v, d);
       return `encode${t.name} ${v}`;
     }
+    case "Ref": return t.key ? elmEncoder(app, t.key, v, d) : `J.int ${v}`;
   }
 }
 

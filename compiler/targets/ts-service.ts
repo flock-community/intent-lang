@@ -26,6 +26,7 @@ export function typeDesc(app: App, t: Type): string {
     case "Text": case "Int": case "Decimal": case "Bool": case "Date": case "DateTime": return `{ k: ${q(t.k)} }`;
     case "List": return `{ k: "List", of: ${typeDesc(app, t.of)} }`;
     case "Maybe": return `{ k: "Maybe", of: ${typeDesc(app, t.of)} }`;
+    case "Ref": return typeDesc(app, t.key ?? { k: "Int" });
     case "Named": {
       const rf = app.refined?.find((x) => x.name === t.name);
       if (rf) return `{ k: "Refined", name: ${q(rf.name)}, base: { k: ${q(rf.base)} }${rf.pattern !== undefined ? `, pattern: ${q(`^(?:${rf.pattern})$`)}` : ""}${rf.min !== undefined ? `, min: ${rf.min}` : ""}${rf.max !== undefined ? `, max: ${rf.max}` : ""} }`;

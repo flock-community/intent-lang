@@ -416,7 +416,7 @@ function checkDirectImports(app: App, sources: { file: string }[], bundles: { na
     if (!m.names.includes(how)) m.names.push(how);
   };
   for (const s of sentences(app)) if (s.line < LINE_BASE) for (const r of refsIn(s.text)) check(r.split(".")[0], s.line, `\`@${r.split(".")[0]}\``);
-  const types = (t: Type): string[] => (t.k === "Named" ? [t.name] : t.k === "List" || t.k === "Maybe" ? types(t.of) : []);
+  const types = (t: Type): string[] => (t.k === "Named" || t.k === "Ref" ? [t.name] : t.k === "List" || t.k === "Maybe" ? types(t.of) : []);
   for (const f of app.state) if (f.line < LINE_BASE) for (const n of types(f.type)) check(n, f.line, `\`${n}\``);
   for (const r of app.records) if (r.line < LINE_BASE && r.line > 0) for (const f of r.fields) for (const n of types(f.type)) check(n, r.line, `\`${n}\``);
   const walk = (els: Element[]) => els.forEach((el) => (el.line < LINE_BASE && el.of && check(el.of, el.line, `\`${el.of}\``), walk(el.children)));

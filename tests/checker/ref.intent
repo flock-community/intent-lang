@@ -1,0 +1,32 @@
+app RefKeys {
+  "A `ref X` field holds the key of X; the key must exist and be an Int or Text."
+}
+language v49
+
+record Author {
+  id: Int
+  name: Text
+}
+
+record Book {
+  title: Text
+  author: ref Author
+}
+
+record Tag {
+  on: Date
+}
+
+record Note {
+  text: Text
+  tag: ref Tag          # expect: NO_KEY
+  missing: ref Nope     # expect: UNKNOWN_NAME
+}
+
+state {
+  books: List Book = []
+}
+
+screen {
+  text ok = "ok"
+}

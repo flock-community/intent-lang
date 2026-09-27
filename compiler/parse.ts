@@ -735,7 +735,8 @@ function checkBodies(app: App, err: Err, warn: Err) {
  */
 function checkNothing(app: App, warn: Err) {
   // A value that may be nothing: an optional state field, an optional record field (`Book.rating`),
-  // or a lookup (`the ticket whose @id is @id`) that can find no row.
+  // or a lookup (`the ticket whose @id is @id`) that can find no row. A `ref` field is a key, read
+  // by comparison, not dereferenced: it is not optional in this sense.
   const optional = new Set([
     ...app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name),
     ...app.records.flatMap((r) => r.fields.filter((f) => f.type.k === "Maybe").map((f) => f.name)),
@@ -1055,6 +1056,8 @@ function parseType(s: string): Type | undefined {
     return of && { k: "Maybe", of };
   }
   if (s === "Text" || s === "Int" || s === "Decimal" || s === "Bool" || s === "Date" || s === "DateTime") return { k: s };
+  // `ticket: ref Ticket`: a field that holds the referenced record's key (`@Ticket`'s key field).
+  if ((m = s.match(new RegExp(`^ref\\s+(${UPPER})$`)))) return { k: "Ref", name: m[1] };
   if (new RegExp(`^${UPPER}$`).test(s)) return { k: "Named", name: s };
   return undefined;
 }
@@ -1064,6 +1067,7 @@ export function typeToString(t: Type): string {
     case "List": return `List ${typeToString(t.of)}`;
     case "Maybe": return `${typeToString(t.of)} or nothing`;
     case "Named": return t.name;
+    case "Ref": return `ref ${t.name}`;
     default: return t.k;
   }
 }
@@ -1472,6 +1476,20 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   }
   const checkType = (t: Type, line: number): boolean => {
     if (t.k === "List" || t.k === "Maybe") return checkType(t.of, line);
+    if (t.k === "Ref") {
+      const rec = records.get(t.name);
+      if (!rec) {
+        err(line, "UNKNOWN_NAME", `no record \`${t.name}\` to reference${suggest(t.name, [...records.keys()])}`);
+        return false;
+      }
+      const key = rec.fields.find((f) => f.type.k === "Int" || f.type.k === "Text");
+      if (!key) {
+        err(line, "NO_KEY", `${t.name} has no Int or Text field to be a key, so \`ref ${t.name}\` has no type: add one (e.g. \`id: Int\`)`);
+        return false;
+      }
+      t.key = key.type;
+      return true;
+    }
     if (t.k === "Named" && !records.has(t.name) && !choices.has(t.name) && !REFINED.has(t.name)) {
       err(line, "UNKNOWN_NAME", `unknown type \`${t.name}\`${suggest(t.name, [...typeNames])}`);
       return false;
@@ -2112,6 +2130,7 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
       if (r) return literalFits(l, { k: r.base }, choices) && satisfies(r, l.k === "text" ? l.v : l.k === "number" ? l.v : undefined);
       return l.k === "value" && !!choices.get(t.name)?.values.includes(l.v);
     }
+    case "Ref": return t.key ? literalFits(l, t.key, choices) : false;
   }
 }
 

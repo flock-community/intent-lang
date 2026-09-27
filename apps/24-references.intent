@@ -1,0 +1,84 @@
+app References {
+  "A comment thread: each comment refers to a ticket by key, and the reference is checked against the ticket's key."
+}
+language v49
+design {
+  look "A calm, modern admin. White surfaces on a light neutral background, one brand color, muted secondary text."
+  brand: indigo
+  neutral: slate
+  font: sans
+  radius: large
+}
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+record Comment {
+  ticket: ref Ticket
+  body: Text
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject
+    1  | "Cannot log in"
+    2  | "Wrong VAT on the invoice"
+  }
+  comments: List Comment = table {
+    ticket | body
+    1      | "Looking into the reset flow."
+    2      | "Corrected and re-sent."
+  }
+  chosen: Int or nothing = nothing
+}
+
+derive {
+  current = the ticket whose @id is @chosen, or nothing when there is no @chosen
+  thread = the @comments whose @ticket is @chosen, in their order, and none when there is no @chosen
+}
+
+screen {
+  section list as card {
+    heading "Tickets"
+    list tickets of Ticket as table {
+      text subject
+      button open "Open"
+    }
+  }
+  section detail as card {
+    visible when there is a @chosen
+    text title = the @subject of @current
+    text meta = "Ticket #{@id of @current}"
+    list thread of Comment as timeline {
+      text body
+    }
+    text emptyThread = "No comments yet." {
+      visible when @thread is empty
+    }
+  }
+}
+
+on click open {
+  - set @chosen to the @id of that ticket
+}
+
+example "open the first ticket" {
+  see tickets has 2 rows
+  see subject on row 1 = "Cannot log in"
+  see detail is hidden
+  click open on row with "Cannot log in"
+  see title = "Cannot log in"
+  see meta = "Ticket #1"
+  see thread has 1 row
+  see body on row 1 = "Looking into the reset flow."
+  see emptyThread is hidden
+}
+
+example "open the second ticket" {
+  click open on row with "Wrong VAT on the invoice"
+  see title = "Wrong VAT on the invoice"
+  see thread has 1 row
+  see body on row 1 = "Corrected and re-sent."
+}

@@ -9,7 +9,10 @@ export type Type =
   | { k: "DateTime" } // a moment, to the minute: "2026-09-24T09:00"
   | { k: "List"; of: Type }
   | { k: "Maybe"; of: Type }
-  | { k: "Named"; name: string };
+  | { k: "Named"; name: string }
+  // `ticket: ref Ticket`: a field that holds another record's key. `key` is the referenced
+  // record's key field's type, filled in by the checker; storage and reads use it.
+  | { k: "Ref"; name: string; key?: Type };
 
 export type Literal =
   | { k: "text"; v: string }

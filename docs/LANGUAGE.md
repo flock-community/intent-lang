@@ -1,4 +1,4 @@
-# Intent — language reference (v48)
+# Intent — language reference (v49)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -88,7 +88,8 @@ example "name" { … }        # proof (§6): steps
 ```
 
 Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `T or nothing`, a
-record name, a choice name. `T or nothing` is a value that may be absent: say so instead of
+record name, a choice name, and `ref X` — a field holding record `X`'s key (see the relations
+paragraph below). `T or nothing` is a value that may be absent: say so instead of
 using a stand-in such as `0` or `""` (`selected: Int or nothing = nothing`, then
 `visible when there is a @selected` and `set @selected to nothing`). `Maybe T` still reads.
 There is no null and no stand-in: wherever a sentence uses such a value, it says what happens
@@ -97,8 +98,11 @@ when there is none, in the sentence ("…, or nothing when there is no @selected
 warns (`UNGUARDED`) when it does not. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time).
 
-**Relations between records are declared, not left in a comment.** A record field holds another
-record's key, and a `relations` sentence names both sides:
+**A reference is declared, not left in a comment.** `ticket: ref Ticket` says the field holds a
+`Ticket`'s key — the referenced record's first `Int` or `Text` field, its key. The checker resolves
+and types it, so the app never carries a free-text key and the reference cannot drift when the
+referenced record changes. A record with no `Int` or `Text` field cannot be referenced (`NO_KEY`).
+The `relations` block states the same relation as a sentence, and is checked too:
 
 ```
 relations {
@@ -106,10 +110,9 @@ relations {
 }
 ```
 
-The checker requires both records, both fields, and equal key types, so the two sides cannot drift
-apart. The field stays a plain key; a sentence that reads one looks the row up (`the ticket whose
-@id is @ticket`) and says what happens when it finds none (else `UNGUARDED`). A reference field
-whose own type is the record (the app never sees the key) is a `NOT_YET` candidate.
+The checker requires both records, both fields, and equal key types. The field is the key: a
+sentence that reads the row looks it up (`the ticket whose @id is @ticket`) and says what happens
+when it finds none (else `UNGUARDED`).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -1146,6 +1149,7 @@ out in the canonical form.
 | `INDENT` | error | tabs, odd indentation, or a child where none is allowed |
 | `SYNTAX` | error | also: a `}` without its `{`, or a `{` that is never closed |
 | `UNKNOWN_NAME` | error | a reference to an undeclared element, field, type or value |
+| `NO_KEY` | error | a `ref X` where `X` has no `Int` or `Text` field to be its key |
 | `BAD_BINDING` | error | e.g. `field x` where state `x` is not Text |
 | `DUPLICATE` | error | a name declared twice in one scope |
 | `RESERVED` | error | a name that clashes with target keywords or generated names (see below) |
@@ -1258,6 +1262,13 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v49: `ticket: ref Ticket`: a record field whose type is another record's key. The key is the
+  referenced record's first `Int` or `Text` field, resolved by the checker and used as the field's
+  type (storage and reads are the key, so the app never carries a free-text key); a record with no
+  such field cannot be referenced (`NO_KEY`). The `relations` sentence still states and checks the
+  same relation. `apps/24-references.intent` proves it on both targets (twin-verified); regression
+  in `tests/checker/ref.intent`.
 
 - v48: per-screen element names: a name is unique within a screen, and two screens may reuse one
   (`back` on both); the one `on click back` handler serves both, because a handler belongs to the

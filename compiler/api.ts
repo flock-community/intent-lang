@@ -319,6 +319,7 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
     if (t.k === "Decimal") return pick([0, 1.5, 10, -2, 99.99]);
     if (t.k === "Bool") return rnd() < 0.5;
     if (t.k === "Text") return pick(TEXTS);
+    if (t.k === "Ref") return t.key ? valueFor(name, t.key) : null;
     if (t.k === "Named") {
       const c = app.choices.find((x) => x.name === t.name);
       if (c) return rnd() < 0.9 ? pick(c.values) : "Unknown";

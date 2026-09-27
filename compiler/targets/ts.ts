@@ -52,6 +52,7 @@ export function tsType(t: Type): string {
     case "List": return `${tsAtom(t.of)}[]`;
     case "Maybe": return `${tsType(t.of)} | null`;
     case "Named": return t.name;
+    case "Ref": return t.key ? tsType(t.key) : "unknown";
   }
 }
 
