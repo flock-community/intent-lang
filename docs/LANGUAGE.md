@@ -1,4 +1,4 @@
-# Intent — language reference (v54)
+# Intent — language reference (v55)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -1058,6 +1058,7 @@ click add
 click remove on row 2 [of visible]
 toggle done on row 1 [of visible]
 choose Done in filter
+choose Done in status on row 1 [of tasks]   # a select inside a list row: sets that row's item
 choose "Ann" in payer       # select … from: options are texts
 wait 3s                     # = 3 ticks with `clock every 1s`; without a tick: the clock moves on (§3b)
 tick 5 times
@@ -1243,9 +1244,11 @@ something when it wants different behaviour.
    a `footer` section is pinned to the bottom.
 6. **Buttons.** Without `enabled when`, a button is always enabled. Clicking a disabled
    button does nothing.
-7. **Fields.** Typing only changes the field's value unless an `on type` handler says more: the
-   state field of a top-level field, or — for a field inside a list row — that item's field (the
-   row's key names the item). Nothing is cleared unless a sentence says "clear".
+7. **Fields and selections.** Typing only changes the field's value unless an `on type` handler
+   says more: the state field of a top-level field, or — for a field inside a list row — that
+   item's field (the row's key names the item). Choosing a value in a select likewise changes the
+   select's value: the state field of a top-level select, or that item's choice field for a select
+   inside a list row. Nothing is cleared unless a sentence says "clear".
 8. **Time.** In tests only `clock` ticks and `wait` move time, from `examples start at` (§3b).
    Time has no randomness; the server's `@newToken` is the one random value (§4e).
 9. **Durations** shown as time use `Fmt.clock` (`m:ss`, or `h:mm:ss` from one hour up).
@@ -1273,6 +1276,12 @@ Each version below was added because a real spec needed it. Next candidates:
 - explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
 
 ## Changelog
+
+- v55: a `select` inside a list row: choosing a value sets that row's item's choice field (the row's
+  key names the item, §9.7); the example step is `choose Done in status on row 1`. The event
+  carries the row's key and the chosen value on both targets. `apps/26-row-status.intent` proves it
+  (2/2 examples, twin-verified). A `select … from …` inside a list row and a list inside a list row
+  stay `NOT_YET`.
 
 - v54: a field inside a list row (`list items of Item { field title }`) edits that row's item: §9.7
   says the row's key names the item, and typing sets its field. The example step is

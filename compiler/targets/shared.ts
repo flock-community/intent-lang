@@ -42,7 +42,7 @@ export interface EventDef {
   tag: string;
   on: "click" | "toggle" | "input" | "choose" | "tick";
   target: string; // wire target, "list.name" inside rows
-  payload?: "key" | "text" | "value" | "pick" | "key-text";
+  payload?: "key" | "text" | "value" | "pick" | "key-text" | "key-value" | "key-pick";
   choice?: string;
 }
 
@@ -57,10 +57,10 @@ export function events(app: App): EventDef[] {
       if (el.kind === "button") out.push({ tag: prefix + "Clicked", on: "click", target, payload: list ? "key" : undefined });
       if (el.kind === "checkbox") out.push({ tag: prefix + "Toggled", on: "toggle", target, payload: list ? "key" : undefined });
       if (el.kind === "field") out.push({ tag: prefix + "Typed", on: "input", target, payload: list ? "key-text" : "text" });
-      if (el.kind === "select" && el.from) out.push({ tag: prefix + "Chosen", on: "choose", target, payload: "pick" });
+      if (el.kind === "select" && el.from) out.push({ tag: prefix + "Chosen", on: "choose", target, payload: list ? "key-pick" : "pick" });
       else if (el.kind === "select") {
-        const t = stateType(el.name);
-        out.push({ tag: prefix + "Chosen", on: "choose", target, payload: "value", choice: t?.k === "Named" ? t.name : "" });
+        const t = list ? app.records.find((r) => r.name === list.of)?.fields.find((f) => f.name === el.name)?.type : stateType(el.name);
+        out.push({ tag: prefix + "Chosen", on: "choose", target, payload: list ? "key-value" : "value", choice: t?.k === "Named" ? t.name : "" });
       }
       if (el.kind === "list") walk(el.children, el);
       if (el.kind === "section") walk(el.children, list);
@@ -74,9 +74,9 @@ export function events(app: App): EventDef[] {
   return out.filter((e) => !seen.has(e.tag) && (seen.add(e.tag), true));
 }
 
-export function selectChoice(app: App, el: Element): string {
-  const t = app.state.find((f) => f.name === el.name)!.type;
-  return (t as { name: string }).name;
+export function selectChoice(app: App, el: Element, list?: Element): string {
+  const t = list ? app.records.find((r) => r.name === list.of)?.fields.find((f) => f.name === el.name)?.type : app.state.find((f) => f.name === el.name)?.type;
+  return (t as { name: string } | undefined)?.name ?? "";
 }
 
 export type TableLit = Extract<Literal, { k: "table" }>;

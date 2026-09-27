@@ -1303,7 +1303,6 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     }
   }
   if (kind === "list" && !["Text", "Int", "Decimal", "Bool", "Date", "DateTime"].includes(el.of ?? "") && !el.children.some((e) => e.kind !== "heading")) err(c.line, "SYNTAX", "a list needs row elements, indented under it", col);
-  if (kind === "select" && inList) err(c.line, "NOT_YET", "a select inside a list row is not in the language yet", col);
   return el;
 }
 
@@ -1318,8 +1317,8 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   let m: RegExpMatchArray | null;
   if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${QN})${ROW}$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], at: at(m[3], m[4]), line } };
   if ((m = t.match(new RegExp(`^(click|toggle)\\s+(${QN})${ROW}$`)))) return { step: { do: m[1] as "click", target: m[2], at: at(m[3], m[4]), line } };
-  if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: m[1], target: m[2], line } };
-  if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], line, quoted: true } };
+  if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})${ROW}$`)))) return { step: { do: "choose", value: m[1], target: m[2], at: at(m[3], m[4]), line } };
+  if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})${ROW}$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], at: at(m[3], m[4]), line, quoted: true } };
   if ((m = t.match(new RegExp(`^snapshot\\s+(${STR})$`)))) return { step: { do: "snapshot", name: parseString(m[1])!, line } };
   // api profile: `call createTicket with subject = "Printer", priority = Urgent`
   // In a screen's examples, \`call tickets.createTicket …\` is another client calling the provider.
@@ -1600,14 +1599,21 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       case "select":
         if (el.from) {
+          if (list) {
+            err(el.line, "NOT_YET", "a `select … from …` inside a list row is not in the language yet");
+            break;
+          }
           if (!st || st.type.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits state \`${el.name}\`, which must be Text`);
           const src = state.get(el.from.list);
           const srcRec = src && src.type.k === "List" && src.type.of.k === "Named" ? records.get(src.type.of.name) : undefined;
           if (!src && !derived.has(el.from.list)) err(el.line, "UNKNOWN_NAME", `no state or derive \`${el.from.list}\``);
           else if (src && !srcRec) err(el.line, "BAD_BINDING", `\`${el.from.list}\` must be a list of records`);
           else if (srcRec && srcRec.fields.find((x) => x.name === el.from!.field)?.type.k !== "Text") err(el.line, "BAD_BINDING", `${srcRec.name} needs a Text field \`${el.from.field}\``);
-        } else if (!st) err(el.line, "BAD_BINDING", `\`select ${el.name}\` edits state \`${el.name}\`, which is not declared`);
-        else if (st.type.k !== "Named" || !choices.has(st.type.name)) err(el.line, "BAD_BINDING", `\`select ${el.name}\` needs state \`${el.name}\` to be a choice (is ${typeToString(st.type)})`);
+        } else {
+          const f = list ? rowField : st;
+          if (!f) err(el.line, "BAD_BINDING", `\`select ${el.name}\` edits \`${el.name}\` in ${where}, which is not declared${list ? ` (add \`${el.name}: <Choice>\` to ${list.of})` : ""}`);
+          else if (f.type.k !== "Named" || !choices.has(f.type.name)) err(el.line, "BAD_BINDING", `\`select ${el.name}\` needs \`${el.name}\` to be a choice (is ${typeToString(f.type)})`);
+        }
         break;
       case "checkbox": {
         const f = list ? rowField : st;

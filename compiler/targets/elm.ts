@@ -127,7 +127,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   // Events
   const evs = events(app);
   const msgMembers = [...evs
-    .map((e) => e.tag + (e.payload === "key-text" ? " String String" : e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
+    .map((e) => e.tag + (e.payload === "key-text" || e.payload === "key-pick" ? " String String" : e.payload === "key-value" ? ` String ${e.choice}` : e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
   // A screen with nothing to click, type or choose: Elm has no empty type, so one no-op variant.
   out.push(`{-| Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. -}\ntype Msg\n    = ${msgMembers.length ? msgMembers.join("\n    | ") : "NoOp"}\n\n`);
   out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. -}\n\n`);
@@ -137,7 +137,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   out.push(`type alias LabeledButton =\n    { label : String, enabled : Bool }\n\n`);
   out.push(`{-| A select whose options come from the model: the option texts in order, and the selected one ("" for none). -}\ntype alias Pick =\n    { options : List String, selected : String }\n\n`);
   const aliases: string[] = [];
-  const fieldType = (el: Element): string => {
+  const fieldType = (el: Element, list?: Element): string => {
     let t: string;
     switch (el.kind) {
       case "text":
@@ -145,14 +145,14 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       case "button": t = el.expr ? "LabeledButton" : "Button"; break;
       case "checkbox": t = "Bool"; break;
       case "progress": t = "Int"; break;
-      case "select": t = el.from ? "Pick" : selectChoice(app, el); break;
-      case "list": t = `List ${typeName(el.name)}Row`; aliases.push(elmRecord(`${typeName(el.name)}Row`, [["key", "String"], ...rowFields(el.children)])); break;
-      case "section": t = `${typeName(el.name)}Section`; aliases.push(elmRecord(`${typeName(el.name)}Section`, rowFields(el.children))); break;
+      case "select": t = el.from ? "Pick" : selectChoice(app, el, list); break;
+      case "list": t = `List ${typeName(el.name)}Row`; aliases.push(elmRecord(`${typeName(el.name)}Row`, [["key", "String"], ...rowFields(el.children, el)])); break;
+      case "section": t = `${typeName(el.name)}Section`; aliases.push(elmRecord(`${typeName(el.name)}Section`, rowFields(el.children, list))); break;
       default: t = "";
     }
     return el.visibleWhen ? `Maybe ${t.includes(" ") ? `(${t})` : t}` : t;
   };
-  const rowFields = (els: Element[]): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [ident(e.name), fieldType(e)]);
+  const rowFields = (els: Element[], list?: Element): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [ident(e.name), fieldType(e, list)]);
   if (hasScreens(app)) {
     const scs = app.screens!;
     const rec = (fields: [string, string][]) => (fields.length ? `{ ${fields.map(([n, t]) => `${n} : ${t}`).join(", ")} }` : "{}");
@@ -190,14 +190,14 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   for (const a of aliases) out.push(a + "\n");
 
   // toNode
-  const items = (els: Element[], acc: string, d: number): string[] =>
+  const items = (els: Element[], acc: string, d: number, list?: Element): string[] =>
     els.map((el) => {
       if (el.kind === "heading") return `Just (Ui.NHeading ${q(el.label ?? "")})`;
       const v = `${acc}.${ident(el.name)}`;
-      if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${node(el, `v${d}`, d + 1)}) ${v}`;
-      return `Just (${node(el, v, d + 1)})`;
+      if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${node(el, `v${d}`, d + 1, list)}) ${v}`;
+      return `Just (${node(el, v, d + 1, list)})`;
     });
-  const node = (el: Element, v: string, d: number): string => {
+  const node = (el: Element, v: string, d: number, list?: Element): string => {
     switch (el.kind) {
       case "text": return `Ui.NText ${q(el.name)} ${v}`;
       case "field": return `Ui.NField ${q(el.name)} ${q(el.label ?? "")} ${v}`;
@@ -206,11 +206,11 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       case "progress": return `Ui.NProgress ${q(el.name)} ${q(el.label ?? "")} ${v}`;
       case "select": {
         if (el.from) return `Ui.NSelect ${q(el.name)} ${q(el.label ?? "")} ${v}.options ${v}.selected`;
-        const lc = lowerFirst(selectChoice(app, el));
+        const lc = lowerFirst(selectChoice(app, el, list));
         return `Ui.NSelect ${q(el.name)} ${q(el.label ?? "")} (List.map ${lc}ToString ${lc}Values) (${lc}ToString ${v})`;
       }
-      case "list": return `Ui.NList ${q(el.name)} (List.map (\\r${d} -> ( r${d}.key, List.filterMap identity [ ${items(el.children, `r${d}`, d + 1).join(", ")} ] )) ${v})`;
-      case "section": return `Ui.NSection ${q(el.name)} ${q(el.label ?? "")} (List.filterMap identity [ ${items(el.children, v, d + 1).join(", ")} ])`;
+      case "list": return `Ui.NList ${q(el.name)} (List.map (\\r${d} -> ( r${d}.key, List.filterMap identity [ ${items(el.children, `r${d}`, d + 1, el).join(", ")} ] )) ${v})`;
+      case "section": return `Ui.NSection ${q(el.name)} ${q(el.label ?? "")} (List.filterMap identity [ ${items(el.children, v, d + 1, list).join(", ")} ])`;
       default: return "";
     }
   };
@@ -225,7 +225,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   const cases = evs.map((e) => {
     const pat = e.on === "tick" ? `( "tick", _ )` : `( ${q(e.on)}, ${q(e.target)} )`;
     const body =
-      e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "key-text" ? `Just (${e.tag} w.key w.text)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
+      e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "key-text" ? `Just (${e.tag} w.key w.text)` : e.payload === "key-pick" ? `Just (${e.tag} w.key w.value)` : e.payload === "key-value" ? `Maybe.map (${e.tag} w.key) (${lowerFirst(e.choice!)}FromString w.value)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
     return `        ${pat} ->\n            ${body}\n`;
   });
   const nav = hasScreens(app) ? `        ( "navigate", path ) ->\n            Just (ScreenOpened (routeFromPath path))\n\n` : "";

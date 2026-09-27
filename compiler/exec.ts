@@ -522,7 +522,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "type": return { on: "input", target: s.target, text: s.text, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "click": return { on: "click", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
-    case "choose": return { on: "choose", target: s.target, value: s.value };
+    case "choose": return { on: "choose", target: s.target, value: s.value, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "restart": return { on: "restart", target: "" };
     case "open": return { on: "open", target: s.path };

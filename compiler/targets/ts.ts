@@ -92,13 +92,13 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
   if (hasData(app)) out.push(tsData(app));
   if (hasStored(app)) out.push(tsStoredFields(app));
   const evs = events(app);
-  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "key-text" ? "; key: string; text: string" : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)];
+  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "key-text" ? "; key: string; text: string" : e.payload === "key-pick" ? "; key: string; value: string" : e.payload === "key-value" ? `; key: string; value: ${e.choice}` : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)];
   if (hasScreens(app)) msgMembers.push(`{ tag: "ScreenOpened"; route: Route }`);
   // A screen with nothing to click, type or choose: no message at all.
   out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =${msgMembers.length ? `\n  | ${msgMembers.join("\n  | ")}` : " never"};\n\n`);
   out.push(`export type Button = { enabled: boolean };\nexport type LabeledButton = { label: string; enabled: boolean };\n/** A select whose options come from the model: the option texts in order, and the selected one ("" for none). */\nexport type Pick = { options: string[]; selected: string };\n\n`);
   const aliases: string[] = [];
-  const fieldType = (el: Element): string => {
+  const fieldType = (el: Element, list?: Element): string => {
     let t: string;
     switch (el.kind) {
       case "text":
@@ -106,14 +106,14 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
       case "button": t = el.expr ? "LabeledButton" : "Button"; break;
       case "checkbox": t = "boolean"; break;
       case "progress": t = "number"; break;
-      case "select": t = el.from ? "Pick" : selectChoice(app, el); break;
-      case "list": t = `${typeName(el.name)}Row[]`; aliases.push(`export type ${typeName(el.name)}Row = { key: string; ${rowFields(el.children)} };\n`); break;
-      case "section": t = `${typeName(el.name)}Section`; aliases.push(`export type ${typeName(el.name)}Section = { ${rowFields(el.children)} };\n`); break;
+      case "select": t = el.from ? "Pick" : selectChoice(app, el, list); break;
+      case "list": t = `${typeName(el.name)}Row[]`; aliases.push(`export type ${typeName(el.name)}Row = { key: string; ${rowFields(el.children, el)} };\n`); break;
+      case "section": t = `${typeName(el.name)}Section`; aliases.push(`export type ${typeName(el.name)}Section = { ${rowFields(el.children, list)} };\n`); break;
       default: t = "";
     }
     return el.visibleWhen ? `${t} | null` : t;
   };
-  const rowFields = (els: Element[]): string => els.filter((e) => e.kind !== "heading").map((e) => `${ident(e.name)}: ${fieldType(e)}`).join("; ");
+  const rowFields = (els: Element[], list?: Element): string => els.filter((e) => e.kind !== "heading").map((e) => `${ident(e.name)}: ${fieldType(e, list)}`).join("; ");
   if (hasScreens(app)) {
     const scs = app.screens!;
     const param = (p: { name: string; type: Type }) => `${p.name}: ${tsType(p.type)}`;
@@ -139,15 +139,15 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
   }
   for (const a of aliases) out.push(a + "\n");
 
-  const items = (els: Element[], acc: string): string[] =>
+  const items = (els: Element[], acc: string, listEl?: Element): string[] =>
     els.map((el) => {
       if (el.kind === "heading") return `{ k: "heading", v: ${q(el.label ?? "")} }`;
       const v = `${acc}.${ident(el.name)}`;
-      if (el.visibleWhen) return `${v} === null ? null : ${node(el, v)}`;
-      return node(el, v);
+      if (el.visibleWhen) return `${v} === null ? null : ${node(el, v, listEl)}`;
+      return node(el, v, listEl);
     });
   const list = (xs: string[]) => (xs.length ? `[${xs.join(", ")}].filter((x): x is Node => x !== null)` : `([] as Node[])`);
-  const node = (el: Element, v: string): string => {
+  const node = (el: Element, v: string, listEl?: Element): string => {
     switch (el.kind) {
       case "text": return `{ k: "text", n: ${q(el.name)}, v: ${v} } as Node`;
       case "field": return `{ k: "field", n: ${q(el.name)}, label: ${q(el.label ?? "")}, v: ${v} } as Node`;
@@ -156,9 +156,9 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
       case "progress": return `{ k: "progress", n: ${q(el.name)}, label: ${q(el.label ?? "")}, v: ${v} } as Node`;
       case "select":
         if (el.from) return `{ k: "select", n: ${q(el.name)}, label: ${q(el.label ?? "")}, options: [...${v}.options], v: ${v}.selected } as Node`;
-        return `{ k: "select", n: ${q(el.name)}, label: ${q(el.label ?? "")}, options: [...${lowerFirst(selectChoice(app, el))}Values], v: ${v} } as Node`;
-      case "list": return `{ k: "list", n: ${q(el.name)}, rows: ${v}.map((r) => ({ key: r.key, c: ${list(items(el.children, "r"))} })) } as Node`;
-      case "section": return `{ k: "section", n: ${q(el.name)}, label: ${q(el.label ?? "")}, c: ${list(items(el.children, v))} } as Node`;
+        return `{ k: "select", n: ${q(el.name)}, label: ${q(el.label ?? "")}, options: [...${lowerFirst(selectChoice(app, el, listEl))}Values], v: ${v} } as Node`;
+      case "list": return `{ k: "list", n: ${q(el.name)}, rows: ${v}.map((r) => ({ key: r.key, c: ${list(items(el.children, "r", el))} })) } as Node`;
+      case "section": return `{ k: "section", n: ${q(el.name)}, label: ${q(el.label ?? "")}, c: ${list(items(el.children, v, listEl))} } as Node`;
       default: return "null";
     }
   };
@@ -169,7 +169,7 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
   const cases = evs.map((e) => {
     if (e.on === "tick") return "";
     const body =
-      e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "key-text" ? `{ tag: ${q(e.tag)}, key: w.key ?? "", text: w.text ?? "" }` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
+      e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "key-text" ? `{ tag: ${q(e.tag)}, key: w.key ?? "", text: w.text ?? "" }` : e.payload === "key-pick" ? `{ tag: ${q(e.tag)}, key: w.key ?? "", value: w.value ?? "" }` : e.payload === "key-value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, key: w.key ?? "", value: w.value as ${e.choice} } : null` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
     return `    case ${q(`${e.on} ${e.target}`)}:\n      return ${body};\n`;
   });
   out.push(`export function fromWire(w: Wire): Msg | null {\n${hasScreens(app) ? `  // The harness shows a screen (an address, a link, going back): \\\`on open\\\`.\n  if (w.on === "navigate") return { tag: "ScreenOpened", route: routeFromPath(w.target) };\n` : ""}  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}${hasClients(app) ? `  if (w.on === "answer" && w.answer) return fromAnswer(w.answer as Answer);\n  if (w.on === "event" && w.event) return fromEvent(w.event as { event: string; body: unknown });\n` : ""}  return null;\n}\n`);

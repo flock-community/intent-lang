@@ -104,7 +104,7 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
       if (node.label) wrap.append(h("span", "", node.label));
       for (const o of node.options) {
         const b = h("button", o === node.v ? "option chosen" : "option", o);
-        b.addEventListener("click", () => dispatch({ on: "choose", target: target(node.n), value: o }));
+        b.addEventListener("click", () => dispatch({ on: "choose", target: target(node.n), key, value: o }));
         wrap.append(b);
       }
       return wrap;

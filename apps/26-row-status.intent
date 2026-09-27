@@ -1,0 +1,47 @@
+app RowStatus {
+  "Change a row's status with a select inside the row."
+}
+language v54
+design {
+  look "A calm, modern list. White surfaces on a light neutral background, one brand color, muted secondary text."
+  brand: indigo
+  neutral: slate
+  font: sans
+  radius: large
+}
+
+choice Status: Open | Done
+
+record Task {
+  id: Int
+  title: Text
+  status: Status
+}
+
+state {
+  tasks: List Task = table {
+    id | title   | status
+    1  | "Write" | Open
+    2  | "Read"  | Done
+  }
+}
+
+screen {
+  heading "Tasks"
+  list tasks of Task as table {
+    text title
+    select status
+  }
+  text open = "{number of @tasks that are @Open} open"
+}
+
+example "changing a row's status" {
+  see open = "1 open"
+  choose Done in status on row 1
+  see open = "0 open"
+}
+
+example "the other row is untouched" {
+  choose Open in status on row 2
+  see open = "2 open"
+}

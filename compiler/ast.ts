@@ -123,7 +123,7 @@ export type Step =
   | { do: "type"; text: string; target: string; at?: RowRef; line: number }
   | { do: "click"; target: string; at?: RowRef; line: number }
   | { do: "toggle"; target: string; at?: RowRef; line: number }
-  | { do: "choose"; value: string; target: string; line: number; quoted?: boolean }
+  | { do: "choose"; value: string; target: string; at?: RowRef; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
   | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail" | "slow" | "restart after effect" | "expire keys"; times: number; line: number } // a fault on the way to an api (a screen's provider)
