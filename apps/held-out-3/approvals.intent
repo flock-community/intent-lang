@@ -1,0 +1,307 @@
+app ExpenseApprovals {
+  "Team expense approvals: an employee submits an expense, a manager approves or rejects it while it is pending."
+  "The screen shows the pending expenses, newest first, and per category the total of the approved ones."
+}
+
+language v63
+
+import std.feedback
+import ui.admin
+
+choice Category: Travel | Meals | Equipment | Other
+choice Status: Pending | Approved | Rejected
+
+type Amount = Decimal from 0.01 to 5000                    # more than zero (in whole cents) and at most 5000.00 euros
+type AmountText = Text matching /\s*\d{1,4}([.,]\d{1,2})?\s*/   # euros, optionally with one or two digits of cents
+
+record Expense {
+  id: Int
+  description: Text
+  amount: Decimal                  # euros with cents
+  category: Category
+  status: Status
+}
+
+state {
+  stored expenses: List Expense = table {
+    id | description          | amount  | category  | status
+    1  | "Train to Utrecht"   | 120.50  | Travel    | Pending
+    2  | "Team lunch"         | 45.00   | Meals     | Approved
+    3  | "Hotel Berlin"       | 310.20  | Travel    | Approved
+    4  | "Standing desk"      | 899.99  | Equipment | Rejected
+    5  | "Printer paper"      | 12.00   | Other     | Pending
+    6  | "Conference flights" | 5000.00 | Travel    | Approved
+  }
+  descriptionDraft: Text = ""
+  amountDraft: Text = ""
+  categoryDraft: Category = Travel
+}
+
+derive {
+  pending = the @expenses whose @status is @Pending, highest @id first
+  amountValue: Decimal = @amountDraft read as a decimal
+  travelTotal: Decimal = the sum of @amount over the @expenses whose @category is @Travel and whose @status is @Approved
+  mealsTotal: Decimal = the sum of @amount over the @expenses whose @category is @Meals and whose @status is @Approved
+  equipmentTotal: Decimal = the sum of @amount over the @expenses whose @category is @Equipment and whose @status is @Approved
+  otherTotal: Decimal = the sum of @amount over the @expenses whose @category is @Other and whose @status is @Approved
+}
+
+screen {
+  heading "Expense approvals" as title
+
+  section submitForm "Submit an expense" as card {
+    field descriptionDraft "Description"
+    field amountDraft "Amount (EUR)"
+    select categoryDraft "Category"
+    button submit "Submit" as primary
+  }
+
+  section pendingCard "Pending" as card {
+    list pending of Expense as table {
+      text description
+      text category
+      text amountShown = "€ {amount as money}"
+      button approve "Approve" as primary
+      button reject "Reject" as danger
+    }
+    section nonePending as EmptyState {
+      visible when @pending is empty
+      text nonePendingTitle = "Nothing to approve"
+    }
+  }
+
+  section totals as grid {
+    section travelCard as StatCard {
+      text travelLabel = "Travel"
+      text travelShown = "€ {travelTotal as money}"
+    }
+    section mealsCard as StatCard {
+      text mealsLabel = "Meals"
+      text mealsShown = "€ {mealsTotal as money}"
+    }
+    section equipmentCard as StatCard {
+      text equipmentLabel = "Equipment"
+      text equipmentShown = "€ {equipmentTotal as money}"
+    }
+    section otherCard as StatCard {
+      text otherLabel = "Other"
+      text otherShown = "€ {otherTotal as money}"
+    }
+  }
+
+  use toast = Toast
+}
+
+on click submit {
+  if @descriptionDraft is blank {
+    - set @toast.message to "Please enter a description."
+    stop
+  }
+  if @amountDraft is not a valid @AmountText {
+    - set @toast.message to "The amount must be more than 0.00 and at most 5000.00 euros."
+    stop
+  }
+  if @amountValue is not a valid @Amount {
+    - set @toast.message to "The amount must be more than 0.00 and at most 5000.00 euros."
+    stop
+  }
+  - add an @Expense to the end of @expenses with @id = the highest @id in @expenses + 1, @description = @descriptionDraft trimmed, @amount = @amountValue, @category = @categoryDraft, @status @Pending
+  - clear @descriptionDraft and @amountDraft
+  - set @toast.message to ""
+}
+
+on click approve {
+  if that expense's @status is not @Pending {
+    stop
+  }
+  - set the @status of that expense to @Approved
+}
+
+on click reject {
+  if that expense's @status is not @Pending {
+    stop
+  }
+  - set the @status of that expense to @Rejected
+}
+
+rules {
+  - An approved or rejected @Expense can no longer change: its @description, @amount, @category and @status stay as they are.
+  - The @categoryDraft stays as chosen after a submission, so several of one category can be entered in a row.
+}
+
+always {
+  see every row of pending: amountShown is above 0
+  see every row of pending: amountShown is at most 5000
+  see travelShown is at least 0
+  see mealsShown is at least 0
+  see equipmentShown is at least 0
+  see otherShown is at least 0
+  - every @amount in @expenses is a valid @Amount
+  - no @Expense in @expenses has a blank @description
+  - no two @expenses have the same @id
+}
+
+example "the pending expenses, newest first, and the approved totals" {
+  see pending has 2 rows
+  see description on row 1 = "Printer paper"
+  see category on row 1 = "Other"
+  see amountShown on row 1 = "€ 12.00"
+  see description on row 2 = "Train to Utrecht"
+  see amountShown on row 2 = "€ 120.50"
+  see travelShown = "€ 5310.20"
+  see mealsShown = "€ 45.00"
+  see equipmentShown = "€ 0.00"
+  see otherShown = "€ 0.00"
+  see nonePending is hidden
+  see toast.message is hidden
+  snapshot "main page"
+}
+
+example "a new expense is pending and shown first" {
+  type "Taxi to airport" into descriptionDraft
+  type "38,50" into amountDraft
+  choose Meals in categoryDraft
+  click submit
+  see pending has 3 rows
+  see description on row 1 = "Taxi to airport"
+  see category on row 1 = "Meals"
+  see amountShown on row 1 = "€ 38.50"
+  see descriptionDraft = ""
+  see amountDraft = ""
+  see categoryDraft = Meals
+  see mealsShown = "€ 45.00"
+  see toast.message is hidden
+}
+
+example "the description is trimmed" {
+  type "  Parking  " into descriptionDraft
+  type "7.5" into amountDraft
+  click submit
+  see description on row 1 = "Parking"
+  see category on row 1 = "Travel"
+  see amountShown on row 1 = "€ 7.50"
+}
+
+example "an empty description is refused" {
+  type "25.00" into amountDraft
+  click submit
+  see toast.message = "Please enter a description."
+  see pending has 2 rows
+  see amountDraft = "25.00"
+}
+
+example "a description of only spaces is refused" {
+  type "   " into descriptionDraft
+  type "25.00" into amountDraft
+  click submit
+  see toast.message = "Please enter a description."
+  see pending has 2 rows
+}
+
+example "an amount of zero is refused" {
+  type "Coffee" into descriptionDraft
+  type "0.00" into amountDraft
+  click submit
+  see toast.message = "The amount must be more than 0.00 and at most 5000.00 euros."
+  see pending has 2 rows
+  see descriptionDraft = "Coffee"
+}
+
+example "an amount above 5000.00 is refused" {
+  type "Laptop" into descriptionDraft
+  type "5000.01" into amountDraft
+  click submit
+  see toast.message = "The amount must be more than 0.00 and at most 5000.00 euros."
+  see pending has 2 rows
+}
+
+example "an amount that is not euros and cents is refused" {
+  type "Lunch" into descriptionDraft
+  type "12.345" into amountDraft
+  click submit
+  see toast.message = "The amount must be more than 0.00 and at most 5000.00 euros."
+  type "twelve" into amountDraft
+  click submit
+  see toast.message = "The amount must be more than 0.00 and at most 5000.00 euros."
+  type "" into amountDraft
+  click submit
+  see toast.message = "The amount must be more than 0.00 and at most 5000.00 euros."
+  type "-5" into amountDraft
+  click submit
+  see toast.message = "The amount must be more than 0.00 and at most 5000.00 euros."
+  see pending has 2 rows
+}
+
+example "the edges of the amount are accepted" {
+  type "Stamp" into descriptionDraft
+  type "0.01" into amountDraft
+  choose Other in categoryDraft
+  click submit
+  see amountShown on row 1 = "€ 0.01"
+  type "New laptop" into descriptionDraft
+  type "5000" into amountDraft
+  choose Equipment in categoryDraft
+  click submit
+  see amountShown on row 1 = "€ 5000.00"
+  see pending has 4 rows
+}
+
+example "a refusal message goes away after a good submission" {
+  click submit
+  see toast.message = "Please enter a description."
+  type "Bus ticket" into descriptionDraft
+  type "3.20" into amountDraft
+  click submit
+  see toast.message is hidden
+  see description on row 1 = "Bus ticket"
+}
+
+example "approving adds to its category's total" {
+  click approve on row with "Train to Utrecht"
+  see pending has 1 row
+  see description on row 1 = "Printer paper"
+  see travelShown = "€ 5430.70"
+  see otherShown = "€ 0.00"
+}
+
+example "rejecting leaves the totals as they are" {
+  click reject on row with "Printer paper"
+  see pending has 1 row
+  see description on row 1 = "Train to Utrecht"
+  see otherShown = "€ 0.00"
+  see travelShown = "€ 5310.20"
+}
+
+example "a submitted expense can be approved" {
+  type "Taxi to airport" into descriptionDraft
+  type "38.50" into amountDraft
+  choose Meals in categoryDraft
+  click submit
+  click approve on row with "Taxi to airport"
+  see mealsShown = "€ 83.50"
+  see pending has 2 rows
+}
+
+example "nothing left to approve" {
+  click approve on row 1
+  click reject on row 1
+  see pending has 0 rows
+  see nonePending is shown
+  see nonePendingTitle = "Nothing to approve"
+  see travelShown = "€ 5310.20"
+  see otherShown = "€ 12.00"
+  snapshot "nothing pending"
+}
+
+example "expenses survive a restart, drafts do not" {
+  type "Taxi" into descriptionDraft
+  type "20" into amountDraft
+  click submit
+  click approve on row with "Train to Utrecht"
+  type "Half-typed" into descriptionDraft
+  restart
+  see pending has 2 rows
+  see description on row 1 = "Taxi"
+  see travelShown = "€ 5430.70"
+  see descriptionDraft = ""
+}

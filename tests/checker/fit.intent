@@ -1,0 +1,192 @@
+app FitChecks {
+  "References fit where they are used: the pairs a phrase relates are held to their types."
+}
+
+type Email = Text matching /[^@]+@[^@]+/
+choice Status: Open | Done
+choice Level: Info | Urgent
+
+record Ticket {
+  id: Int
+  title: Text
+  status: Status
+}
+
+record Comment {
+  id: Int
+  ticket: ref Ticket
+  body: Text
+}
+
+record Person {
+  name: Text
+  email: Email
+}
+
+state {
+  tickets: List Ticket = []
+  people: List Person = []
+  count: Int = 0
+  total: Decimal = 0
+  draft: Text = ""
+  status: Status = Open
+  picked: Ticket or nothing = nothing
+  mail: Email = "a@b"
+  tags: List Text = []
+  comments: List Comment = table {   # expect: UNKNOWN_NAME
+    id | ticket | body
+    1  | 1      | "First"
+    2  | 9      | "Lost"
+  }
+  chosenTicket: ref Ticket = 1
+  chosenComment: ref Comment = 1
+  seeded: List Ticket = table {
+    id | title | status
+    1  | "One" | Open
+  }
+}
+
+derive {
+  openTickets = the @tickets whose @status is @Open
+  openCount: Int = the number of @openTickets
+  wrongCount: Text = the number of @tickets   # expect: TYPE
+  first = the ticket whose @id is 1, or nothing when there is none
+}
+
+screen {
+  text count
+  list tickets of Ticket {
+    text title
+    button close "Close" {
+      enabled when @status is @Open
+    }
+  }
+  list comments of Comment {
+    text body
+    button jump "Jump"
+  }
+  button a "A"
+  button b "B"
+  button r "Relations"
+  button ops "Operators"
+}
+
+on click a {
+  - increase @count by 1
+  - set @total to @count
+  - set @count to @count plus 1
+  - set @draft to @mail
+  - set @mail to @draft
+  - set @status to @Done
+  - add @draft to the end of @tags
+  if there is a @picked {
+    - set @draft to @picked's @title
+  }
+  for each @t in @tickets where @t's @status is @Open {
+    - set @draft to @t's @title
+  }
+}
+
+on click b {
+  - increase @draft by 1                           # expect: TYPE
+  - set @count to @draft                           # expect: TYPE
+  - set @count to @total                           # expect: TYPE
+  - set @status to @Urgent                         # expect: TYPE
+  - add @count to the end of @tags                 # expect: TYPE
+  - remove the tickets whose @status is @Urgent from @tickets   # expect: TYPE
+  - set @draft to the @email of the ticket whose @id is 1, or "" when there is none   # expect: UNKNOWN_NAME
+  for each @t in @tickets {
+    - set @draft to @t's @name                     # expect: UNKNOWN_NAME
+  }
+}
+
+on click r {
+  - set @chosenTicket to @chosenComment   # expect: TYPE
+  - set @count to @openTickets   # expect: TYPE
+  - set @draft to the @title of the ticket whose @id is @chosenTicket, or "" when there is none
+  - set @draft to the @title of the ticket whose @id is @chosenComment, or "" when there is none   # expect: TYPE
+  - add a @Comment to the end of @comments with @id = 3, @ticket = @chosenTicket and @body = @draft
+  - add a @Comment to the end of @comments with @id = 4, @ticket = @draft and @body = "x"   # expect: TYPE
+  - add a @Comment to the end of @comments with @id = 5, @nope = 1 and @body = "x"   # expect: UNKNOWN_NAME
+  - add a @Ticket to the end of @tickets with @id = 6, @title = "t" and @status @Urgent   # expect: TYPE
+  - add a @Ticket to the end of @comments with @id = 7, @title = "t" and @status @Open   # expect: TYPE
+  if @draft is above 3 {   # expect: TYPE
+    stop
+  }
+  if @count is @draft {   # expect: TYPE
+    stop
+  }
+  for each @c in @comments {
+    - set @draft to @c's @ticket's @title   # expect: TYPE
+    - set @draft to @c's @body
+  }
+}
+
+on click ops {
+  - set @count to the number of @tickets
+  - set @total to the sum of @tickets's @id
+  - set @total to @count divided by 2
+  - set @count to @count divided by 2, rounded down
+  - set @draft to @draft trimmed
+  - set @total to @draft read as a decimal, rounded to cents
+  - set @count to @draft plus 1   # expect: TYPE
+  - set @count to the number of @draft   # expect: TYPE
+  - set @draft to @count trimmed   # expect: TYPE
+  - set @count to @count divided by 2   # expect: TYPE
+  - set @draft to nothing   # expect: TYPE
+  - set @count to the sum of @tickets's @title   # expect: TYPE
+  if @tags is empty {
+    stop
+  }
+  if @count is empty {   # expect: TYPE
+    stop
+  }
+  if the number of @tickets is above @draft {   # expect: TYPE
+    stop
+  }
+  - set @count to 1, @total to 2 and @status to @Done
+  - set @count to 1, @draft to 2 and @total to 3   # expect: TYPE
+  - set @total to the sum of @id over @tickets
+  - set @total to the sum of @title over @tickets   # expect: TYPE
+  if there are at least 2 @tickets {
+    stop
+  }
+  if there are 3 @count {   # expect: TYPE
+    stop
+  }
+  if @mail is a valid @Email {
+    stop
+  }
+  if @count is a valid @Email {   # expect: TYPE
+    stop
+  }
+  if @count is below 1 or above 10 {
+    stop
+  }
+  if @draft is below 1 or above 10 {   # expect: TYPE
+    stop
+  }
+  if @count is 3 or more {
+    stop
+  }
+  if @draft is 3 or more {   # expect: TYPE
+    stop
+  }
+  - set @count to the highest @id in @tickets + 1 (1 when there are none)
+  - set @draft to the @title of the ticket whose @id is 1, or "none" when there is none
+  - set @total to the sum of the @id of all @tickets
+  - set @total to the sum of the @title of all @tickets   # expect: TYPE
+}
+
+on click jump {
+  - set @draft to the @title of the ticket whose @id is @id, or "" when there is none   # expect: TYPE
+}
+
+on click close {
+  - set the @status of that ticket to @Done
+}
+
+example "fits" {
+  click a
+  see count = 2
+}

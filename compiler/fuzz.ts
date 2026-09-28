@@ -118,7 +118,7 @@ export function exploreJobs(app: App, count: number, length: number, seed = 7): 
       const ex = examples[Math.floor(rnd() * examples.length)];
       prefix = ex.slice(0, 1 + Math.floor(rnd() * ex.length));
     }
-    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), steers: steeredApis(app), paths: app.screens?.length ? screenPaths(app) : undefined, always: app.always });
+    jobs.push({ kind: "explore", prefix, length, seed: Math.floor(rnd() * 2 ** 31), pools, pool, ticks, others: otherCalls(app), waits: clockWaits(app), restarts: app.state.some((f) => f.stored), sizes: app.sizes, steers: steeredApis(app), paths: app.screens?.length ? screenPaths(app) : undefined, always: app.always });
   }
   return jobs;
 }
@@ -162,6 +162,7 @@ export function actionText(a: Action): string {
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}` : `choose ${a.value} in ${a.target}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
     case "restart": return "restart";
+    case "size": return `size ${a.target[0].toLowerCase()}${a.target.slice(1)}`;
     case "open": return `open ${JSON.stringify(a.target)}`;
     case "back": return "go back";
     case "steer": return `steer ${a.target} ${a.value}${a.value === "fail" ? ` ${a.times}` : ""}`;

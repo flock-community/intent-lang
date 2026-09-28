@@ -1,6 +1,8 @@
 # Design: profiles are specs
 
-Status: step 1 done. `lib/profile/ui.intent` and `lib/profile/api.intent` describe the element kinds,
+Status: step 1 done, and a third profile, `job` (v60, LANGUAGE.md §4k): an app without a screen
+whose state the harness shows, so examples, twin builds and random sessions work unchanged, with a
+headless entry (`job.mjs`, `{ run }`) for its host. Step 1: `lib/profile/ui.intent` and `lib/profile/api.intent` describe the element kinds,
 verbs, presentations and meanings; `uiProfile()` reads them (no hard-coded table), a test keeps
 LANGUAGE.md's presentation table in line, and `intent check` now checks a profile file like any
 other spec (`compiler/profile.ts` `checkProfile`). Steps 2–5 (generic element lines, an API harness,

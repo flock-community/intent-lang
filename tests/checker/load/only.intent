@@ -1,0 +1,35 @@
+app OnlyChecks {
+  "A manifest: `only` names what the app may use of an api, and the checker holds it to that."
+}
+
+import support.tickets
+
+uses support.ticketsApi as tickets only listTickets, getTicket, closeAll   # expect: UNKNOWN_NAME  # expect: UNDECLARED  # expect: UNUSED
+
+state {
+  rows: List Ticket = []
+}
+
+screen {
+  button reload "Reload"
+  button add "Add"
+  list rows of Ticket {
+    text subject
+  }
+}
+
+on click reload {
+  - call @tickets.listTickets
+}
+
+on answer tickets.listTickets {
+  - set @rows to its body
+}
+
+on click add {
+  - call @tickets.createTicket with @subject = "x"
+}
+
+on answer tickets.createTicket {
+  - set @rows to the @rows
+}

@@ -44,6 +44,7 @@ screen {
 
 example "assigning a task" {
   see assignee on row 1 = "Sam"
+  see title on row 1 = "Write"
   choose "Alex" in assignee on row 1
   see assignee on row 1 = "Alex"
   see assignee on row 2 = "Sam"

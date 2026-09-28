@@ -1,0 +1,27 @@
+contract notify.alertsApi {
+  "Raising alerts and listing them, over HTTP. The levels travel as the service already names them: info and urgent."
+}
+
+import notify.alerts
+
+event alertRaised: Alert               # an alert was raised, by anyone
+
+endpoint raise POST "/alerts" {
+  body text: Text
+  body level: Level
+  answers 201 Alert
+  answers 400 Problem
+}
+
+endpoint listAlerts GET "/alerts" {
+  query level: Level or nothing        # only alerts of this level; all when absent
+  answers 200 List Alert
+}
+
+example "an urgent alert" {
+  call raise with text = "Disk full", level = Urgent
+  see raise.status = 201
+  see raise.body.level = "Urgent"
+  call listAlerts with level = Urgent
+  see listAlerts.body has 1 row
+}

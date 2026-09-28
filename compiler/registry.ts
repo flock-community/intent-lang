@@ -23,6 +23,8 @@ export interface Project {
   requires: { name: string; version: string; line: number }[];
   /** How the compiler runs (the `compiler` block: `model …`, `twin …`): option → raw value, checked in config.ts. */
   compiler?: Record<string, string>;
+  /** Quality checks (the `quality` block): the rule sets used, and a level per rule. */
+  quality?: { use: string[]; levels: Record<string, "off" | "warning" | "error"> };
 }
 
 export interface IndexEntry {
@@ -54,14 +56,19 @@ export function readProject(path = PROJECT): Project | undefined {
   const p: Project = { name: "", requires: [] };
   let inRequires = false;
   let inCompiler = false;
+  let inQuality = false;
   fromBraces(readFileSync(path, "utf8")).text.split("\n").forEach((raw, i) => {
     const line = raw.replace(/#.*$/, "").trimEnd();
     if (!line.trim()) return;
     let m: RegExpMatchArray | null;
-    if ((m = line.match(/^project\s+(\S+)$/))) (p.name = m[1]), (inRequires = inCompiler = false);
-    else if ((m = line.match(/^registry\s+(\S+)$/))) (p.registry = m[1]), (inRequires = inCompiler = false);
-    else if (line === "requires") (inRequires = true), (inCompiler = false);
-    else if (line === "compiler") (inCompiler = true), (inRequires = false), (p.compiler ??= {});
+    if ((m = line.match(/^project\s+(\S+)$/))) (p.name = m[1]), (inRequires = inCompiler = inQuality = false);
+    else if ((m = line.match(/^registry\s+(\S+)$/))) (p.registry = m[1]), (inRequires = inCompiler = inQuality = false);
+    else if (line === "requires") (inRequires = true), (inCompiler = inQuality = false);
+    else if (line === "compiler") (inCompiler = true), (inRequires = inQuality = false), (p.compiler ??= {});
+    else if (line === "quality") (inQuality = true), (inRequires = inCompiler = false), (p.quality ??= { use: [], levels: {} });
+    else if (inQuality && (m = line.match(/^\s+use\s+(\S+)$/))) p.quality!.use.push(m[1]);
+    else if (inQuality && (m = line.match(/^\s+([A-Za-z][\w-]*)\s+(off|warning|error)$/))) p.quality!.levels[m[1]] = m[2] as "off";
+    else if (inQuality) throw new Error(`intent.project:${i + 1}: in \`quality\`: \`use <rule set>\` (std.quality, or a path to a module), or \`<RULE> off|warning|error\``);
     else if (inRequires && (m = line.match(/^\s+([a-z][\w.]*)\s+(\d+(?:\.\d+){0,2})$/))) p.requires.push({ name: m[1], version: m[2], line: i + 1 });
     else if (inCompiler && (m = line.match(/^\s+(llm|model|targets|twin|sessions|length|repairs)\s+(.+)$/))) p.compiler![m[1]] = m[2].trim();
     else if (inCompiler) throw new Error(`intent.project:${i + 1}: in \`compiler\`: \`llm\`, \`model\`, \`targets\`, \`twin\`, \`sessions\`, \`length\` or \`repairs\`, then its value (keys stay in the environment)`);
@@ -166,7 +173,7 @@ export function apiOf(b: App): string[] {
     for (const d of c.body?.derive ?? []) out.push(`derive ${c.name}.${d.name}`);
   }
   if (b.design) out.push("design");
-  for (const r of b.refined ?? []) out.push(`type ${r.name} = ${r.base} ${r.pattern ?? ""}${r.min ?? ""}..${r.max ?? ""}`);
+  for (const r of b.refined ?? []) out.push(`type ${r.name} = ${r.base} ${r.pattern ?? ""}${r.min ?? ""}..${r.max ?? ""}${r.minLength !== undefined || r.maxLength !== undefined ? ` length ${r.minLength ?? ""}..${r.maxLength ?? ""}` : ""}`);
   // A contract's surface is the wire: endpoint signatures, param and answer types, and field types.
   if (b.kind === "contract") {
     const ty = (t: import("./ast.ts").Type): string => (t.k === "List" || t.k === "Maybe" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k);

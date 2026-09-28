@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
 import { typeDesc } from "../api.ts";
-import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
+import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
 import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
@@ -65,6 +65,7 @@ export function tsDomain(app: App): string {
   for (const r of app.refined ?? []) {
     out.push(`/** A ${r.base === "Text" ? "text" : "number"} with a rule: see is${r.name}. */\nexport type ${r.name} = ${r.base === "Text" ? "string" : "number"};\n`);
     if (r.pattern !== undefined) out.push(`/** Whether a text is a valid ${r.name}. */\nexport function is${r.name}(s: string): boolean {\n  return new RegExp(${q(`^(?:${r.pattern})$`)}).test(s);\n}\n\n`);
+    else if (r.base === "Text") out.push(`/** Whether a text is a valid ${r.name}: its length in characters. */\nexport function is${r.name}(s: string): boolean {\n  return ${[r.minLength !== undefined ? `[...s].length >= ${r.minLength}` : "", r.maxLength !== undefined ? `[...s].length <= ${r.maxLength}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
     else out.push(`/** Whether a number is a valid ${r.name}. */\nexport function is${r.name}(n: number): boolean {\n  return ${[r.min !== undefined ? `n >= ${r.min}` : "", r.max !== undefined ? `n <= ${r.max}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
   }
   for (const r of app.records) out.push(`export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n\n`);
@@ -219,10 +220,10 @@ function genTsEntriesCalls(app: App): { main: string; test: string } {
   const main = `import * as App from "./app.ts";
 import { callEndpoints, callToJson, eventsByAlias, fromWire, toNode, type Call${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE, type Wire } from "./ui.ts";
-import { fetchCall, gate, newKey, listen, type CallOut, type Outgoing, type Usage } from "./calls.ts";
-import { outbox } from "./outbox.ts";
+import { ${hasThrough(app) ? "agreement, heldAnswer, rejectedAnswer, type Answer, " : ""}fetchCall, keyFor, listen, type CallOut, type Outgoing } from "./calls.ts";
+import { ${hasThrough(app) ? "keep, " : ""}outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
-${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
+${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
@@ -234,33 +235,26 @@ ${hasThrough(app) ? "const configFor = (alias: string) => (App.through(current) 
 // reload, a call that was never answered goes out again with the same idempotency key.
 const box = outbox(${q(`intent:${app.name}:outbox`)});
 const send = (call: CallOut, config: Record<string, unknown> | undefined) => fetchCall(callEndpoints, call, via, config).then((a) => { if (!a.unknown) box.done(call.key!); dispatch({ on: "answer", target: a.endpoint, answer: a }); });
-${hasThrough(app) ? `const held: CallOut[] = [];
-// A held call is written to its own durable box too, so a reload keeps waiting for approval.
-const heldBox = outbox(${q(`intent:${app.name}:held`)});
-const used: Record<string, Usage[]> = {};
-const decide = (call: CallOut) => gate(configFor(call.endpoint.split(".")[0]), call.endpoint, callEndpoints.find((e) => e.name === call.endpoint)?.external, call.args, used, Date.now());
-const letGo = (call: CallOut) => { heldBox.done(call.key!); (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call as CallOut & { key: string }); send(call, configFor(call.endpoint.split(".")[0])); };
-const hold = (call: CallOut) => { held.push(call); heldBox.put(call as CallOut & { key: string }); };
+${hasThrough(app) ? `// The agreement (through std.actions, calls.ts): a call no permission covers is held for approval.
+// The held calls, what each permission let through and the rejections applied survive a reload.
+const agreed = agreement(callEndpoints, keep(${q(`intent:${app.name}:agreement`)}));
+const letGo = (call: CallOut) => { box.put(call as CallOut & { key: string }); send(call, configFor(call.endpoint.split(".")[0])); };
 const perform = (calls: Call[]) => {
   for (const c of calls) {
-    const call = { ...callToJson(c), key: newKey() };
-    const how = decide(call);
-    if (how === "hold") { hold(call); continue; }
-    if (how === "reject") { heldBox.done(call.key!); continue; }
-    letGo(call);
+    const call = { ...callToJson(c) }; call.key = keyFor(call);
+    if (agreed.offer(call, configFor(call.endpoint.split(".")[0]), Date.now()) !== "hold") letGo(call);
+    else answerLater(heldAnswer(call)); // the screen learns it waits for approval
   }
 };
+// After every update: a new rejection drops the calls held now; a permission lets held calls out.
 const release = () => {
-  for (let i = held.length - 1; i >= 0; i--) {
-    const call = held[i];
-    const how = decide(call);
-    if (how === "hold" || how === "stop") continue;
-    held.splice(i, 1);
-    if (how === "reject") { heldBox.done(call.key!); continue; }
-    letGo(call);
-  }
-};` : `const perform = (calls: Call[]) => {
-  for (const c of calls) { const call = { ...callToJson(c), key: newKey() }; box.put(call as CallOut & { key: string }); send(call, undefined); }
+  const { send: out, dropped } = agreed.release(configFor, Date.now());
+  out.forEach(letGo);
+  dropped.forEach((c) => answerLater(rejectedAnswer(c)));
+};
+// Answers from the harness itself go after the current update, like any answer.
+const answerLater = (a: Answer) => void Promise.resolve().then(() => dispatch({ on: "answer", target: a.endpoint, answer: a }));` : `const perform = (calls: Call[]) => {
+  for (const c of calls) { const call = { ...callToJson(c) }; call.key = keyFor(call); box.put(call as CallOut & { key: string }); send(call, undefined); }
 };
 const release = () => {};`}
 let stream: { refresh: () => void } | undefined;
@@ -269,8 +263,8 @@ dispatch = mount(document.getElementById("app")!, {
     const r = App.init(${c ? "localClock()" : ""});
 ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (saved) r.model = App.restore(saved as Stored, r.model);\n" : ""}    current = r.model;
     for (const call of box.pending()) send(call, ${hasThrough(app) ? 'configFor(call.endpoint.split(".")[0])' : "undefined"});
-    ${hasThrough(app) ? "held.push(...heldBox.pending());\n    " : ""}perform(r.calls);
     release();
+    perform(r.calls);
     return r.model;
   },
   step: (w, m) => {
@@ -278,8 +272,9 @@ ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (save
     if (!e) return m;
     const r = App.update(e, m${c ? ", localClock()" : ""});
 ${st ? "    save(KEY, App.data(r.model), storedFields);\n" : ""}    current = r.model;
-    perform(r.calls);
+    // Release first: a rejection in this update drops the calls held before it, not the ones it makes.
     release();
+    perform(r.calls);
     stream?.refresh();
     return r.model;
   },
@@ -287,7 +282,7 @@ ${st ? "    save(KEY, App.data(r.model), storedFields);\n" : ""}    current = r.
   clockMs: ${app.clockMs ?? 0},
 });
 // Events from each api (Server-Sent Events at /events), for the events this app handles.
-stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, event: e }), via);${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}
+stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, event: e }), via${Object.keys(eventWireTypes(app)).length ? `, ${JSON.stringify(eventWireTypes(app))}` : ""});${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}${app.sizes ? `\n// The host shows the app at another size: show it again.\nwindow.addEventListener("intentsize", () => dispatch({ on: "noop", target: "" }));` : ""}
 `;
   const test = `import * as App from "./app.ts";
 import { callToJson, fromWire, toNode, type Call } from "./spec.ts";
@@ -374,7 +369,7 @@ function genTsEntriesFor(app: App): { main: string; test: string } {
   const main = `import * as App from "./app.ts";
 import { fromWire, toNode${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE } from "./ui.ts";
-${c ? `import { localClock } from "./clock.ts";\n` : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
+${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
@@ -422,6 +417,35 @@ ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The
 
 // ---------------------------------------------------------------- TypeScript
 
+/**
+ * A job's entry (`profile job`): the browser entry without its page. The same init, updates, calls,
+ * agreement and event streams, driven by `headless` instead of `mount`; the host imports it and calls
+ * `run({ event })` (docs/design/profiles.md).
+ */
+function jobEntry(app: App, main: string): string {
+  const swap = (s: string, from: string, to: string) => {
+    if (!s.includes(from)) throw new Error(`job entry: the browser entry changed; cannot find ${JSON.stringify(from.slice(0, 40))}`);
+    return s.replace(from, to);
+  };
+  const data = hasData(app) ? "(m) => App.data(m)" : "(m) => m";
+  let s = main.replace(/const style = document\.createElement\("style"\);\nstyle\.textContent = STYLE;\ndocument\.head\.append\(style\);\n/, "");
+  s = s.replace(/import \{ mount, STYLE(, type Wire)? \} from "\.\/ui\.ts";/, (_all, w) => `${w ? 'import type { Wire } from "./ui.ts";\n' : ""}import { headless } from "./headless.ts";`);
+  const wired = eventWireTypes(app);
+  const read = Object.keys(wired).length ? `\n  read: (e: { event: string; body: unknown }) => ({ ...e, body: fromWireValue(e.body, (${JSON.stringify(wired)} as Record<string, TypeDesc>)[e.event]) }),` : "";
+  if (read) s = `import { fromWire as fromWireValue, type TypeDesc } from "./api.ts";\n${s}`;
+  s = hasClients(app)
+    ? swap(s, 'dispatch = mount(document.getElementById("app")!, {', `const running = headless({\n  data: ${data},${read}`)
+    : swap(s, `${usesClock(app) ? "const dispatch = " : ""}mount(document.getElementById("app")!, {`, `const running = headless({\n  data: ${data},`);
+  s = swap(s, `  clockMs: ${app.clockMs ?? 0},\n});\n`, `  clockMs: ${app.clockMs ?? 0},\n});\n${hasClients(app) ? "dispatch = running.dispatch;\n" : usesClock(app) ? "const dispatch = running.dispatch;\n" : ""}`);
+  return `// The job's entry for its host (profile job): no page; \`run({ event })\` hands it an event and resolves\n// with its data once every call has been answered. Calls go through the host's transport when set.\n${s}\nexport default running.job;\n`;
+}
+
+/** The clock import of a browser entry; with `sizes`, the clock also says the size the host shows the app at. */
+const clockImport = (app: App) =>
+  app.sizes
+    ? `import { hostSize, localClock as clockOnly } from "./clock.ts";\n// The clock, with the size the host shows the app at (sizes in the spec).\nconst localClock = () => ({ ...clockOnly(), size: hostSize(${JSON.stringify(app.sizes)}) });\n`
+    : `import { localClock } from "./clock.ts";\n`;
+
 export function genTsCalls(app: App): string {
   const eps = clientEndpoints(app);
   const out: string[] = [];
@@ -429,21 +453,21 @@ export function genTsCalls(app: App): string {
   out.push(`/** A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \\`undo\\` takes an effect back (\\`undo @pay.charge\\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \\`undone by\\`, answered as that endpoint's \\`…Answered\\`." : ""} */\nexport type Call =\n${[...eps.map((c) => `  | { call: ${q(c.name)}${c.ep.params.length ? `; args: { ${c.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`), ...undos.map((u) => `  | { undo: ${q(u.of.name)}; answer: ${tsType(u.answer)}${u.usesArgs ? `; args: { ${u.of.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`)].join("\n")};\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`);
-    const unknown = c.ep.effect ? [`{ status: "unknown"; error: string }`] : [];
-    out.push(`/** What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Status 0: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? ' "unknown": still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed.' : ""} */\nexport type ${c.tag}Answer = ${[...variants, "{ status: 0; error: string }", ...unknown].join(" | ")};\n`);
+    const unknown = [...(c.ep.effect ? [`{ status: "unknown"; error: string }`] : []), ...(gated(app, c) ? [`{ status: "held" }`, `{ status: "rejected" }`] : [])];
+    out.push(`/** What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Status 0: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? ' "unknown": still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed.' : ""}${gated(app, c) ? ' "held": the call waits for approval (it has not gone out); its real answer follows once approved, or "rejected".' : ""} */\nexport type ${c.tag}Answer = ${[...variants, "{ status: 0; error: string }", ...unknown].join(" | ")};\n`);
   }
   out.push(`\n/** Endpoints as data, for sending calls. */\nexport const callEndpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n`);
   out.push(`/** The contract's answers per endpoint (status → body type): an answer that does not fit arrives as status 0. */\nexport const callAnswers: Record<string, Record<number, TypeDesc | null>> = {\n${eps.map((c) => `  ${q(c.name)}: { ${(c.ep.answers ?? []).map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}\n};\n\n`);
   const th = throughs(app);
   if (th.length) out.push(`/** What the client layers need from the app's state, per api (through, under uses): through(model) in the app module computes it. */\nexport type Through = { ${th.map((t) => `${t.alias}: { ${t.state.map((x) => `${x.param}: ${tsType(x.type)} /* state ${x.field} */`).join("; ")} }`).join("; ")} };\n\n`);
-  const undoCases = undos.map((u) => `    case ${q(u.of.name)}:\n      return { endpoint: ${q(`${u.of.alias}.${u.by.name}`)}, args: { ${u.args.map((a) => `${a.name}: ${a.from === "answer" ? ["c.answer", ...a.path].join(".") : `(c as { args: Record<string, unknown> }).args.${a.path[0]}`}`).join(", ")} } };\n`);
+  const undoCases = undos.map((u) => `    case ${q(u.of.name)}:\n      return { endpoint: ${q(`${u.of.alias}.${u.by.name}`)}, args: { ${u.args.map((a) => `${a.name}: ${a.from === "answer" ? ["c.answer", ...a.path].join(".") : `(c as { args: Record<string, unknown> }).args.${a.path[0]}`}`).join(", ")} }, undo: true };\n`);
   out.push(`export function callToJson(c: Call): CallOut {\n${undos.length ? `  // An undo is the call the contract names in \\\`undone by\\\`, with its args from the original answer.\n  if ("undo" in c)\n    switch (c.undo) {\n${undoCases.join("")}    }\n` : ""}  return { endpoint: ${undos.length ? "(c as { call: string }).call" : "c.call"}, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
   out.push(`const ANSWERED: Record<string, string> = { ${eps.map((c) => `${q(c.name)}: ${q(c.tag + "Answered")}`).join(", ")} };\n\n`);
   const evs = clientEvents(app);
   out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
   out.push(`/** Per alias, the events of its api this app handles. */\nexport const eventsByAlias: Record<string, string[]> = ${JSON.stringify(eventsByAlias(app))};\n\n`);
-  out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: e.body } as Msg;\n}\n\n`);
-  out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n  if (a.unknown && callEndpoints.some((e) => e.name === a.endpoint && e.external)) return { tag, answer: { status: "unknown", error: a.error ?? "no answer" } } as Msg;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as Msg;\n}\n`);
+  out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: e.body } as unknown as Msg;\n}\n\n`);
+  out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n${clientEndpoints(app).some((c) => gated(app, c)) ? '  if (a.held) return { tag, answer: { status: "held" } } as unknown as Msg;\n  if (a.rejected) return { tag, answer: { status: "rejected" } } as unknown as Msg;\n' : ""}  if (a.unknown && callEndpoints.some((e) => e.name === a.endpoint && e.external)) return { tag, answer: { status: "unknown", error: a.error ?? "no answer" } } as unknown as Msg;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as unknown as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as unknown as Msg;\n}\n`);
   return out.join("");
 }
 
@@ -516,6 +540,10 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
   const { main, test } = genTsEntries(app);
   writeFileSync(join(dir, "main.ts"), main);
   writeFileSync(join(dir, "test-entry.ts"), test);
+  if (app.profile === "job") {
+    copyFileSync(join(ROOT, "runtime/ts/headless.ts"), join(dir, "headless.ts"));
+    writeFileSync(join(dir, "job.ts"), jobEntry(app, main));
+  }
   writeFileSync(
     join(dir, "tsconfig.json"),
     JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, noUnusedLocals: false }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
@@ -533,6 +561,11 @@ async function compileTs(dir: string): Promise<string> {
   if (!b1.ok) return clean(b1.out);
   const b2 = await run(bin("esbuild"), ["test-entry.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=test.mjs", "--log-level=error"], dir);
   if (!b2.ok) return clean(b2.out);
+  if (existsSync(join(dir, "job.ts"))) {
+    // A job's entry for its host: an ES module whose default export is { run }.
+    const j = await run(bin("esbuild"), ["job.ts", "--bundle", "--format=esm", "--outfile=job.mjs", "--log-level=error"], dir);
+    if (!j.ok) return clean(j.out);
+  }
   if (existsSync(join(dir, "through.ts"))) {
     // The client layers, for the test driver.
     const t = await run(bin("esbuild"), ["through.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=through.mjs", "--log-level=error"], dir);

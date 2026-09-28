@@ -37,6 +37,8 @@ screen {
 
 example "changing a row's status" {
   see open = "1 open"
+  see tasks has 2 rows
+  see title on row 1 = "Write"
   choose Done in status on row 1
   see open = "0 open"
 }

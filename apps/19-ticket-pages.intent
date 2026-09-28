@@ -45,7 +45,9 @@ on click open {
 }
 
 on click solve {
-  - set the @status of the ticket whose @id is @id to @Solved, when there is one
+  if there is a ticket whose @id is @id {
+    - set the @status of that ticket to @Solved
+  }
   - go back
 }
 
@@ -59,6 +61,9 @@ on open ticket {
 
 example "from the list to a ticket and back" {
   see openCount = "2 open"
+  see tickets has 3 rows
+  see subject on row 2 = "Invoice shows wrong VAT"
+  see status on row 2 = "Open"
   click open on row 2 of tickets
   see screen = ticket
   see path = "/tickets/2"
@@ -72,6 +77,7 @@ example "from the list to a ticket and back" {
 example "a ticket by its address" {
   open "/tickets/3"
   see title = "#3 Dark mode"
+  see state = "Solved"
   see solve is disabled
   go back
   see screen = list

@@ -5,6 +5,8 @@
 // answers come back as the wire event `{ on: "answer", target: <endpoint>, answer: { … } }`.
 import type { App, Endpoint, LayerUse, Type } from "./ast.ts";
 import { layerConfig } from "./layer.ts";
+import { usedByAlias } from "./refs.ts";
+import { typeDescOf } from "./targets/ts-service.ts";
 import type { CallDesc } from "../runtime/ts/calls.ts";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
@@ -23,6 +25,9 @@ export function clientEndpoints(app: App): ClientEndpoint[] {
 }
 
 export const hasClients = (app: App) => clientEndpoints(app).length > 0;
+
+/** An external endpoint behind `through std.actions`: it can be held for approval, and rejected. */
+export const gated = (app: App, c: ClientEndpoint) => !!c.ep.effect && app.clients?.find((x) => x.alias === c.alias)?.through?.layer === "std.actions";
 
 /**
  * Endpoints the app can take back (\`undone by\` in the contract): the undo carries the original
@@ -89,5 +94,46 @@ export function eventsByAlias(app: App): Record<string, string[]> {
 
 /** Method, path and params per callable endpoint: how a call becomes an HTTP request. */
 export function callDescs(app: App): CallDesc[] {
-  return clientEndpoints(app).map((c) => ({ name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name })), ...(c.ep.effect ? { external: true } : {}) }));
+  return clientEndpoints(app).map((c) => {
+    // Types only where a choice has wire names: the runtime translates those at the edge.
+    // Types resolve in the app (its imports bring the contract's records and choices), else the contract.
+    const contract = scope(app, app.clients!.find((x) => x.alias === c.alias)!.contract);
+    const wired = (t: Type) => wireType(contract, t);
+    const answers = (c.ep.answers ?? []).some((a) => a.type && wired(a.type)) ? Object.fromEntries((c.ep.answers ?? []).map((a) => [a.status, a.type ? typeDescOf(contract, a.type) : null])) : undefined;
+    return { name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name, ...(wired(p.type) ? { type: typeDescOf(contract, p.type) } : {}) })), ...(answers ? { answers } : {}), ...(c.ep.effect ? { external: true } : {}), ...(c.ep.effect?.of ? { amount: c.ep.effect.of } : {}) };
+  });
+}
+
+/** Does a type (read in the app that declares it) hold a choice with wire names? */
+export function wireType(app: App, t: Type): boolean {
+  return t.k === "List" || t.k === "Maybe" ? wireType(app, t.of) : t.k === "Named" ? !!app.choices.find((c) => c.name === t.name)?.wire || !!app.records.find((r) => r.name === t.name)?.fields.some((f) => wireType(app, f.type)) : false;
+}
+
+/** The payload types of the events the app handles whose choices have wire names, by `alias.event`. */
+export function eventWireTypes(app: App): Record<string, ReturnType<typeof typeDescOf>> {
+  const out: Record<string, ReturnType<typeof typeDescOf>> = {};
+  for (const c of app.clients ?? []) {
+    const types = scope(app, c.contract);
+    for (const e of c.contract.events ?? []) if (wireType(types, e.type)) out[`${c.alias}.${e.name}`] = typeDescOf(types, e.type);
+  }
+  return out;
+}
+
+/** The records and choices a contract's types can name: the contract's own and the app's (its imports). */
+const scope = (app: App, contract: App): App => ({ ...contract, records: [...contract.records, ...app.records], choices: [...contract.choices, ...app.choices], refined: [...(contract.refined ?? []), ...(app.refined ?? [])] });
+
+/**
+ * The manifest (`manifest.json` in a build): per api, the contract and the endpoints and events
+ * the app may use — the `only` list of its `uses` when it has one, else what its handlers use. A
+ * host (OurOS) grants exactly these and refuses the rest.
+ */
+export function manifest(app: App): Record<string, { contract: string; declared: boolean; endpoints: string[]; events: string[] }> {
+  const used = usedByAlias(app);
+  const out: Record<string, { contract: string; declared: boolean; endpoints: string[]; events: string[] }> = {};
+  for (const c of app.clients ?? []) {
+    const eps = new Set((c.contract.endpoints ?? []).map((e) => e.name));
+    const names = c.only ?? [...used[c.alias].endpoints, ...used[c.alias].events];
+    out[c.alias] = { contract: c.contract.name, declared: !!c.only, endpoints: names.filter((n) => eps.has(n)).sort(), events: names.filter((n) => !eps.has(n)).sort() };
+  }
+  return out;
 }

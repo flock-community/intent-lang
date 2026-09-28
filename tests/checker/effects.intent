@@ -50,6 +50,28 @@ endpoint look GET "/bookings" {
   answer 200 with @bookings
 }
 
+endpoint pay POST "/pay" {
+  body amount: Int
+  body note: Text
+  returns Booking
+  effect external of @amount
+  answer 201 with a @Booking with @id = 1 and @day = "x"
+}
+
+endpoint payNote POST "/pay-note" {
+  body note: Text
+  returns Booking
+  effect external of @note                            # expect: TYPE
+  answer 201 with a @Booking with @id = 1 and @day = "x"
+}
+
+endpoint payNone POST "/pay-none" {
+  body note: Text
+  returns Booking
+  effect external of @total                           # expect: UNKNOWN_NAME
+  answer 201 with a @Booking with @id = 1 and @day = "x"
+}
+
 endpoint again POST "/again" {
   body day: Text
   returns Booking

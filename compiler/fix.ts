@@ -1,6 +1,6 @@
 // `intent fix`: apply the mechanical fixes a diagnostic names, so an author does not retype them.
-// Deliberately narrow — an old `Maybe T` type, an unmarked declared name (`UNMARKED`), a missing
-// `import`, and the `language vN` line. Anything that needs judgement is left for the author; the
+// Deliberately narrow — an old `Maybe T` type, an unmarked declared name (`UNMARKED`), a lookup's
+// other spelling (`SPELLING`), a missing `import`, and the `language vN` line. Anything that needs judgement is left for the author; the
 // command never trades one error for another (it checks the result before writing).
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -122,6 +122,15 @@ export function fixFile(file: string): { out: string; fixes: Fix[]; left: Diagno
         lines[d.line - 1] = marked;
         fixes.push({ line: d.line, code: "UNMARKED", what: `marked @${w}` });
       }
+    }
+  }
+  // `SPELLING`: a lookup written `the ticket where …` is `the ticket whose …`.
+  for (const d of diags.filter((x) => x.code === "SPELLING")) {
+    const line = lines[d.line - 1] ?? "";
+    const fixed = line.replace(/\bthe(\s+@?[a-z]\w*\s+)where\b/g, (all, mid, at) => (outsideString(line, at) ? `the${mid}whose` : all));
+    if (fixed !== line) {
+      lines[d.line - 1] = fixed;
+      fixes.push({ line: d.line, code: "SPELLING", what: "a lookup's `where` → `whose`" });
     }
   }
   let out = lines.join("\n");

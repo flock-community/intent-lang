@@ -26,9 +26,10 @@ const r = fixFile(file);
 assert.ok(r.fixes.some((f) => f.code === "UNMARKED" && f.what === "marked @count"), "the unmarked name is fixed");
 assert.match(r.out, /increase @count by 1/);
 assert.match(r.out, /maybe: Item or nothing = nothing/);
+assert.match(r.out, /first = the item whose @id is 1/, "a lookup's `where` becomes `whose`");
 const out = join(dir, "fixed.intent");
 writeFileSync(out, r.out);
 assert.equal(load(out, { ignoreLock: true }).diagnostics.filter((d) => d.level === "error").length, 0, "the fixed spec has no errors");
 assert.equal(r.left.filter((d) => d.level === "error").length, 0);
 
-console.log("ok fix: Maybe T, @unmarked names and the language line, only when no error is added");
+console.log("ok fix: Maybe T, @unmarked names, a lookup's where, and the language line, only when no error is added");

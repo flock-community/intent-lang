@@ -21,21 +21,31 @@ export const LAYER_FILES = ["layer.ts", "spec.ts", "http.ts", "fmt.ts"];
 
 // ---------------------------------------------------------------- generated interface
 
-export function typeDesc(app: App, t: Type): string {
+type TypeDescValue = import("../../runtime/ts/api.ts").TypeDesc;
+
+/** A spec type as the runtime's type description (routing, contract checks, wire names). */
+export function typeDescOf(app: App, t: Type): TypeDescValue {
   switch (t.k) {
-    case "Text": case "Int": case "Decimal": case "Bool": case "Date": case "DateTime": return `{ k: ${q(t.k)} }`;
-    case "List": return `{ k: "List", of: ${typeDesc(app, t.of)} }`;
-    case "Maybe": return `{ k: "Maybe", of: ${typeDesc(app, t.of)} }`;
-    case "Ref": return typeDesc(app, t.key ?? { k: "Int" });
+    case "Text": case "Int": case "Decimal": case "Bool": case "Date": case "DateTime": return { k: t.k };
+    case "List": return { k: "List", of: typeDescOf(app, t.of) };
+    case "Maybe": return { k: "Maybe", of: typeDescOf(app, t.of) };
+    case "Ref": return typeDescOf(app, t.key ?? { k: "Int" });
     case "Named": {
       const rf = app.refined?.find((x) => x.name === t.name);
-      if (rf) return `{ k: "Refined", name: ${q(rf.name)}, base: { k: ${q(rf.base)} }${rf.pattern !== undefined ? `, pattern: ${q(`^(?:${rf.pattern})$`)}` : ""}${rf.min !== undefined ? `, min: ${rf.min}` : ""}${rf.max !== undefined ? `, max: ${rf.max}` : ""} }`;
+      if (rf) return { k: "Refined", name: rf.name, base: { k: rf.base }, ...(rf.pattern !== undefined ? { pattern: `^(?:${rf.pattern})$` } : {}), ...(rf.min !== undefined ? { min: rf.min } : {}), ...(rf.max !== undefined ? { max: rf.max } : {}), ...(rf.minLength !== undefined ? { minLength: rf.minLength } : {}), ...(rf.maxLength !== undefined ? { maxLength: rf.maxLength } : {}) };
       const c = app.choices.find((x) => x.name === t.name);
-      if (c) return `{ k: "Choice", name: ${q(c.name)}, values: ${JSON.stringify(c.values)} }`;
+      if (c) return { k: "Choice", name: c.name, values: c.values, ...(c.wire ? { wire: c.values.map((v) => c.wire![v]) } : {}) };
       const r = app.records.find((x) => x.name === t.name)!;
-      return `{ k: "Record", name: ${q(r.name)}, fields: [${r.fields.map((f) => `{ name: ${q(f.name)}, type: ${typeDesc(app, f.type)} }`).join(", ")}] }`;
+      return { k: "Record", name: r.name, fields: r.fields.map((f) => ({ name: f.name, type: typeDescOf(app, f.type) })) };
     }
   }
+}
+
+/** The type description as TypeScript source: `{ k: "List", of: { k: "Int" } }`. */
+export function typeDesc(app: App, t: Type): string {
+  const show = (v: unknown): string =>
+    Array.isArray(v) ? (v.every((x) => typeof x === "string") ? JSON.stringify(v) : `[${v.map(show).join(", ")}]`) : v && typeof v === "object" ? `{ ${Object.entries(v).map(([k, x]) => `${k}: ${show(x)}`).join(", ")} }` : typeof v === "string" ? q(v) : String(v);
+  return show(typeDescOf(app, t));
 }
 
 const typeName = (e: { name: string }) => cap(e.name);
@@ -131,14 +141,16 @@ export const handlers: Handlers<Model> = {
 
 /** One request through the layers (in order), the router and the handlers, and back out through the layers. */
 const PIPELINE = `import * as App from "./app.ts";
-import { route } from "./api.ts";
+import { route, toWire } from "./api.ts";
 import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
 import type { Clock } from "./clock.ts";
-import { answerSources, endpoints, externalEndpoints, sources, usesToken } from "./spec.ts";
+import { answers, answerSources, endpoints, eventTypes, externalEndpoints, sources, usesToken } from "./spec.ts";
 import { layers } from "./layers.ts";
 import { fingerprint, keyed, KEY_HEADER, recall, remember, type Keys } from "./once.ts";
 
 const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
+// Choice values leave the service by their wire names (\`Info = "info"\`); requests are read back by route().
+const wireEvents = (evs: { event: string; body: unknown }[]) => evs.map((e) => ({ ...e, body: toWire(e.body, eventTypes[e.event]) }));
 
 export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[]; source?: string };
 
@@ -155,7 +167,7 @@ export function pipeline(token?: () => string) {
     if (!job) return [];
     const out = job(copy(model), clock);
     model = out.model;
-    return copy(out.publish ?? []);
+    return wireEvents(copy(out.publish ?? []));
   };
   const handle = (req: HttpRequest, clock?: Clock): Handled => {
     const passed: typeof layers = [];
@@ -212,8 +224,9 @@ export function pipeline(token?: () => string) {
         if (step) source = \`\${step} (endpoint \${endpoint})\`;
       }
     }
+    if (endpoint && res) res = { ...res, body: toWire(res.body, answers[endpoint]?.[res.status]) };
     for (const l of passed.reverse()) res = normalize(l.after(copy(req), copy(res), copy(configOf(l))));
-    return { ...normalize(res), endpoint, appAnswer, events, source };
+    return { ...normalize(res), endpoint, appAnswer, events: wireEvents(events), source };
   };
   /** The app's data, for the checks in \`always\` and to keep what is stored. */
   const data = () => ((App as any).data ? copy((App as any).data(model)) : undefined);
@@ -309,7 +322,7 @@ for (const j of jobList) setInterval(() => {
 }, j.every);
 `;
 
-const TEST_ENTRY = `import { conforms } from "./api.ts";
+const TEST_ENTRY = `import { conforms, fromWire } from "./api.ts";
 import { answers, eventTypes } from "./spec.ts";
 import { pipeline } from "./pipeline.ts";
 import type { Clock } from "./clock.ts";
@@ -338,7 +351,9 @@ export function start() {
     },
     send(method: string, path: string, query: Record<string, string>, body: unknown, headers: Record<string, string> = {}, clock?: Clock) {
       const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) }, clock);
-      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events, source: out.source };
+      // \`spec\`: the answer and events in the spec's names (a choice's wire name read back), for examples.
+      const spec = { body: out.endpoint ? fromWire(out.body, answers[out.endpoint]?.[out.status]) : out.body, events: out.events.map((e) => ({ ...e, body: fromWire(e.body, eventTypes[e.event]) })) };
+      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events, source: out.source, spec };
       // The contract is checked on every answer of the app (a status it does not declare, or a body of the wrong shape) and on every event it publishes.
       let problem = out.endpoint && out.appAnswer ? conforms(answers[out.endpoint], out.appAnswer) : undefined;
       for (const ev of out.events) {

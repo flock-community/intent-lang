@@ -10,10 +10,12 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v58** (see the changelog at the end of
-`docs/LANGUAGE.md`). If the changelog shows a newer version, read what changed first.
+Language version this skill matches: **v64** (see `docs/CHANGELOG.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
+
+Rules you add yourself go in `rules by ai { … }`; the user's go in `rules { … }`. Revise your own
+freely; change the user's only when they ask.
 
 Before writing, make sure you can answer these. Ask the user only what you cannot decide
 sensibly yourself, and state the defaults you chose instead of asking about everything.
@@ -95,9 +97,9 @@ Habits that make builds identical *and* correct:
   and "its" for the row's item in a row expression (§5 of the reference).
 - **Structure, not prose, for loops:** run steps once per row with
   `for each @notice in @notices where @notice.expiresAt is at or before @now { … }`; the loop's
-  name and its record's fields are in scope inside, rows come in the list's order, and an empty
-  list runs the block no times. To keep rows, add them to an empty result instead of removing
-  while reading.
+  name exists only inside the block (don't reuse an app name for it), the block visits the rows
+  the list had when it began, in order, so removing the current row is fine, and an empty list
+  runs it no times.
 - **Lists:** `list items of Item { … }` declares the row's elements inside the block; `list tags
   of Text` shows each value as a row and has no row block. Check either with `see x has N rows`.
   A `field` inside a row edits that row's item (type into it with `type "…" into x on row N`); a
@@ -107,17 +109,33 @@ Habits that make builds identical *and* correct:
   never a stand-in like `0` or `""` with a comment explaining it. Where you use it, say what
   happens when there is none: `if there is a @selected { … }`, an early
   `if there is no @selected { stop }`, or "…, or nothing when there is no @selected" (else `UNGUARDED`).
-- **Relations are declared, not a comment:** write `ticket: ref Ticket` for a field that holds
-  another record's key (the referenced record's first `Int`/`Text` field — its key), so the field
-  is typed and cannot drift; a `relations { - a @Comment's @ticket is a @Ticket's @id }` block
-  states the same relation as a sentence (both records, both fields, equal key types). Reading the
-  key is a lookup (`the ticket whose @id is @ticket`) — say what happens when it finds none.
+- **References are checked, the English is not:** `set @count to @draft`, `increase @draft`,
+  `@status is @Urgent` (a value of another choice) and `@ticket's @name` (no such field) are errors
+  before any build. So are relations: a `ref Ticket` is compared with a Ticket's key only, is
+  looked up (`the ticket whose @id is @ticket`) rather than read (`@ticket's @subject`), and seeded
+  rows point at seeded rows. Give a derived value its type when the checker asks (`UNTYPED`:
+  `total: Decimal = …`), so every sentence that uses it is checked too.
+- **Say which row.** "that ticket", "this habit", "its @status" need a row found or chosen before
+  them: the clicked row, a loop row, a lookup (`if no ticket has that @id { answer 404 }`), or a
+  new record. Otherwise the checker stops (`NO_ROW`): two compilers would each pick one.
+- **Quality rules are the project's.** `std.quality` is on by default; a team adds its own rule
+  set and sets levels in `intent.project` (`quality { use ./quality/team.ts  UNMARKED off }`).
+  Fix what the project raises to `error`; treat the rest as the backlog.
+- **Prefer the typed forms** (`plus`, `divided by, rounded down`, `trimmed`, `the number of`, `the sum
+  of … over …`, `A when C, otherwise B`): the checker types them whole. Run `intent check --typed`
+  on a spec: the sentences it lists are the ones left to judgement — make sure each is judgement on
+  purpose, and prove it with an example.
+- **References are declared, not a comment:** write `ticket: ref Ticket` for a field that holds
+  another record's key. The key is the field named `id`, or the one marked `key` (`key code:
+  Text`); never rely on field order. Reading the row is a lookup, always written `the ticket whose
+  @id is @ticket` (not `where`), and says what happens when it finds none: the row may be gone.
 - **Name intermediate values** in `derive` (`quantity = amount read as a whole number`)
   and use the name in templates and sentences, instead of repeating phrases.
 - **Watch templates with holes that can be empty** (`"{date} · {location}"` shows ` · `
   when nothing is chosen). Give the empty case its own text or hide the element.
-- **Validity rules are types, not sentences.** For an email, a code, an age or an amount, use or
-  declare a refined type (`import std.text` for `Email`, `type Age = Int from 0 to 150`) and
+- **Validity rules are types, not sentences.** For an email, a code, an age, an amount or a
+  length, use or declare a refined type (`import std.text` for `Email`, `type Age = Int from 0 to
+  150`, `type Title = Text of length 1 to 80`) and
   write "is a valid Email". Don't describe the rule in words: two compilers read words
   differently, but they check a type the same way.
 - **Template holes** hold a name, a row field, a name with a format (`{total as money}`) or a
@@ -272,14 +290,23 @@ a platform function (`apps/api/specs-api.intent`). A screen can use a pure platf
 targets (`apps/22-hash.intent` shows `@sha256`); `intent.tools` runs in the harness, so it is for
 services.
 
+## 5m. Jobs and sizes
+
+An agent or background worker nobody looks at is a job: `profile job`, no `screen`, the rest as
+usual (`uses`, `on event`, `on start`, a clock). Its state is what examples `see`: write
+`see passedOn = 1`, not a screen. A widget a host shows small or large declares
+`sizes compact | standard` and says what each shows with `visible when @size is @Standard`; prove
+both with `size standard` in an example.
+
 ## 5k. Several screens
 
 When an app has pages (a list and a detail, a catalogue and a publisher page), give each screen a
 name and an address: `screen ticket "/tickets/{id}" { path id: Int … }`. Move with
 `go to @ticket with @id = …` and `go back`; load what a screen shows in `on open <screen>`, not in
 the click that led there, so the address and the back button work too. Element names are unique
-within a screen; two screens may reuse a name (`back` on both), and the one `on click back` handler
-serves both. Prove it with examples that `open "/tickets/3"`, `go back`, and
+within a screen; two screens may reuse a name (`back` on both) for the *same* element: one kind,
+one `on click back` handler for both. If the two should behave differently, give them different
+names. The build's `sourcemap.json` keys them by screen (`about/back`). Prove it with examples that `open "/tickets/3"`, `go back`, and
 `see screen = …` (`apps/19-ticket-pages.intent`, `apps/23-tabs.intent`). Don't fake pages with
 sections shown or hidden.
 
@@ -330,14 +357,26 @@ not refund twice: charge, then `steer pay lose answer`, then click refund and se
 When a person must agree first, add `through std.actions { agree = permissions  rejected = rejected
 stop = stopped }` under `uses`: an `effect external` call goes out only when a `Permission` in
 `permissions` covers it (`endpoint`, `count` calls per `per` minutes, the most each may `upTo`, and
-`approver`); with no permission it waits. Give the user an Approve button that adds a permission
-(the harness then sends the held call with its original key) and a Reject button that adds the
-endpoint to `rejected` (the held call is dropped); none goes out while `stopped` is true. A one-time
-grant is `count = 1, per = 0`; with `fourEyes = true` a permission the `requester` granted
-themselves does not count. Prove held → approved, held → rejected and stopped
-(`apps/20-approval.intent`).
+`approver`; `per`, `upTo` and `approver` may be `nothing`); with no permission it waits. For an
+amount limit, the contract says which param is the amount: `effect external of @amount`. Give the
+user an Approve button that adds a permission (the harness then sends the held call with its
+original key) and a Reject button that adds the endpoint to `rejected` (the calls held then are
+dropped; the next one waits again); none goes out while `stopped` is true. A one-time grant is
+`@count = 1, @per = nothing`, and each grant is used once. With `fourEyes = true` a permission the
+`requester` granted themselves does not count. The answer handler hears `its status is held` when the call waits and `its status is rejected`
+when it is dropped, so show the wait from there. Prove held → approved, rejected then the next one
+approved, and stopped (`apps/20-approval.intent`). The gate protects against mistakes in the app;
+a service that must refuse unapproved calls checks approval itself.
 
 ## 5f. A screen that uses an API
+
+When an existing api spells choice values its own way (`"info"`), give the choice wire names in
+the contract (`choice Level: Info = "info" | Urgent = "urgent"`) and keep writing `Info` everywhere
+else: the harness translates at the edge.
+
+Ask only for what the screen uses: `uses ouros.notes as notes only listNotes, noteCreated`. The
+checker holds the app to that list and every build writes it to `manifest.json`, so a host grants
+exactly those rights.
 
 `uses <contract> as <alias>` plus `tested with "<provider spec>"` (§4g). Load data `on start`,
 and handle every call's answer with `on answer`: the success status, and `else` for the
@@ -382,7 +421,22 @@ remembering when you write or review a spec:
   before v14 had to keep it in words;
 - the second round of authors (reservations, library) asked what may go inside `{…}`, how to
   add a record and hand out ids, and how to un-pick a select; these are now in the reference
-  (§4, §5).
+  (§4, §5);
+- the third round of authors (expense approvals, parcel lockers; v63) wrote specs that check
+  clean from the reference alone. What they had to piece together:
+  - a number typed into a field is asked with `@amount reads as a decimal above 0`, then used
+    as `@amount read as a decimal`; "more than zero" in cents is `Decimal from 0.01`;
+  - `as money` gives two decimals and no currency sign: write `"€ {@total as money}"`;
+  - "cannot change once approved" is a rule about changes, which `always` cannot say yet: guard
+    the handlers (`if that expense is not @Pending { stop }`) and prove it with an example;
+  - a random code of digits has no form yet (`@newToken` is 32 hex characters);
+  - a contract example that needs a key only runs against an implementation with that key:
+    keep it in the implementation's examples;
+- a weaker model extending the language (v38–v58) added second spellings (`where` for `whose`,
+  `see x.enabled` for `see x is enabled`, `relations` next to `ref`), stand-ins (`0` for "forever"),
+  and prose guards to silence a warning (", when there is one"). Before adding a construct, look
+  for the one that already says it; write a guard as `if there is a … { }`; and never edit a
+  held-out author's spec to quiet the checker.
 
 ## Keep this skill current
 

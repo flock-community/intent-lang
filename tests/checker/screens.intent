@@ -20,6 +20,11 @@ screen list "/" {
     button open "Open"
   }
   text label = "List"
+  button maybe "Maybe"
+}
+
+screen help "/help" {
+  text helpText = "Help"
 }
 
 screen ticket "/tickets/{id}" {
@@ -46,6 +51,13 @@ screen day "/day/{day}" {
 screen flag "/flag/{flag}" {
   path flag: Bool                                # expect: NOT_YET
   text label = "Flag"
+  button dayLabel "Day"                          # expect: DUPLICATE
+}
+
+on click maybe {
+  if there is no ticket whose @id is 1 {
+    - go to @help
+  }
 }
 
 on click open {
@@ -73,4 +85,9 @@ example "to a ticket and back" {
   go back
   see title = "Printer on fire"                    # expect: STEP
   open "/nowhere"                                # expect: STEP
+}
+
+example "a conditional move leaves the screen unknown, not wrong" {
+  click maybe
+  see maybe is enabled
 }

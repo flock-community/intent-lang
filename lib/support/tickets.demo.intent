@@ -22,6 +22,7 @@ screen {
 
 example "tickets with their badges" {
   see tickets has 2 rows
+  see subject on row 1 = "Cannot log in"
   see priority on row 1 = "Urgent"
   see status on row 2 = "Solved"
 }

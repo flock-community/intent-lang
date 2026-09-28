@@ -1,0 +1,52 @@
+app UrgentWatch {
+  "A headless job: it watches alerts and, for every urgent one, tells the on-call person by raising an info alert."
+}
+language v60
+profile job
+import notify.alerts
+
+uses notify.alertsApi as alerts only raise, alertRaised {
+  tested with "apps/api/alerts-api.intent"
+}
+
+state {
+  stored passedOn: Int = 0
+  told: List Text = []
+  problem: Text = ""
+}
+
+on event alerts.alertRaised {
+  if its body's @level is @Urgent {
+    - increase @passedOn by 1
+    - add its body's @text to the end of @told
+    - call @alerts.raise with @text = "On-call told: {its body's @text}" and @level = @Info
+  }
+}
+
+on answer alerts.raise {
+  if its status is 201 {
+    - clear @problem
+  } else {
+    - set @problem to the error in its body
+  }
+}
+
+example "an urgent alert is passed on" {
+  call alerts.raise with text = "Disk full", level = Urgent
+  see passedOn = 1
+  see told has 1 row
+  see problem = ""
+}
+
+example "info alerts are left alone" {
+  call alerts.raise with text = "Backup done", level = Info
+  see passedOn = 0
+  see told has 0 rows
+}
+
+example "counted across a restart" {
+  call alerts.raise with text = "Disk full", level = Urgent
+  restart
+  see passedOn = 1
+  see told has 0 rows
+}

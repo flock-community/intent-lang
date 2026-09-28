@@ -1,0 +1,12 @@
+bundle lockers.lockers {
+  "Parcel lockers in a building: each locker has a number and a size; a parcel waits in one until it is picked up with its code."
+}
+
+choice Size: Small | Medium | Large
+
+type PickupCode = Text matching /[0-9]{6}/     # exactly six digits, leading zeros allowed
+
+record Locker {
+  key number: Int                # the number printed on the locker door
+  size: Size
+}

@@ -11,6 +11,8 @@ import { existsSync, writeFileSync } from "node:fs";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
 import { fixFile } from "./fix.ts";
+import { typedCoverage } from "./fit.ts";
+import { DEFAULT_QUALITY, loadRuleSets, type QualityConfig } from "./quality.ts";
 import { checkProfile } from "./profile.ts";
 import { compileApp } from "./twin.ts";
 import type { Target } from "./gen.ts";
@@ -22,10 +24,12 @@ import { TARGETS } from "./targets/index.ts";
 import { bin } from "./tools.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
+const BOOLEAN_FLAGS = new Set(["json", "typed", "styled", "kit", "check"]);
 const flags: Record<string, string> = {};
 const args: string[] = [];
 for (let i = 0; i < rest.length; i++) {
-  if (rest[i].startsWith("--")) flags[rest[i].slice(2)] = rest[i + 1]?.startsWith("--") || rest[i + 1] === undefined ? "true" : rest[++i];
+  // Yes/no flags take no value: `check --typed apps/a.intent` checks apps/a.intent too.
+  if (rest[i].startsWith("--")) flags[rest[i].slice(2)] = BOOLEAN_FLAGS.has(rest[i].slice(2)) || rest[i + 1]?.startsWith("--") || rest[i + 1] === undefined ? "true" : rest[++i];
   else args.push(rest[i]);
 }
 // The compiler's options: flags win over the environment, which wins over intent.project.
@@ -58,22 +62,58 @@ switch (cmd) {
       console.log(`${f}: ${errors ? "FAIL" : "ok"} — ${errors} error(s), ${diags.length - errors} warning(s)`);
       return errors;
     };
+    if (flags.typed) {
+      // How much of each spec the checker types whole, and the sentences left to judgement.
+      let all = 0, typed = 0;
+      for (const file of args) {
+        const { app } = loadSpec(resolve(file));
+        if (!app) {
+          console.log(`${file}: does not load (run intent check ${file})`);
+          continue;
+        }
+        const cov = typedCoverage(app);
+        const n = cov.filter((c) => c.typed).length;
+        all += cov.length;
+        typed += n;
+        console.log(`${file}: ${n}/${cov.length} sentences with references typed${cov.length ? ` (${Math.round((100 * n) / cov.length)}%)` : ""}`);
+        for (const c of cov.filter((x) => !x.typed)) console.log(`  ${c.line}  ${c.where}: ${c.text.length > 110 ? c.text.slice(0, 107) + "…" : c.text}`);
+      }
+      if (args.length > 1) console.log(`all: ${typed}/${all} typed (${all ? Math.round((100 * typed) / all) : 100}%)`);
+      // Exit once the report is written: exiting at once cuts it short when piped.
+      process.stdout.write("", () => process.exit(0));
+      break;
+    }
     if (flags.json) {
-      // Machine-readable diagnostics, for editors and CI.
+      // Machine-readable diagnostics, for editors and CI (the project's quality rule sets included).
+      const quality: QualityConfig = readProject()?.quality ?? DEFAULT_QUALITY;
+      const sets = await loadRuleSets(quality.use.length ? quality : DEFAULT_QUALITY);
       const out = args.map((file) => {
         const text = readFileSync(resolve(file), "utf8");
-        return { file, diagnostics: isProfile(text) ? checkProfile(text, file) : loadSpec(resolve(file)).diagnostics };
+        if (isProfile(text)) return { file, diagnostics: checkProfile(text, file) };
+        return { file, diagnostics: loadSpec(resolve(file), { quality: { sets, config: quality } }).diagnostics };
       });
       console.log(JSON.stringify(out, null, 2));
       process.exit(out.some((f) => f.diagnostics.some((d) => d.level === "error")) ? 1 : 0);
     }
+    // The compiler's checks, then the project's quality rule sets (std.quality unless intent.project says otherwise).
+    const quality: QualityConfig = readProject()?.quality ?? DEFAULT_QUALITY;
+    if (!quality.use.length) quality.use.push("std.quality");
+    const sets = await loadRuleSets(quality);
     let ok = true;
     for (const f of args) {
       if (isProfile(readFileSync(resolve(f), "utf8"))) {
         if (checkProfileFile(f)) ok = false;
-      } else if (!load(f).app) ok = false;
+        continue;
+      }
+      const { diagnostics, sources } = loadSpec(resolve(f), { quality: { sets, config: quality } });
+      const errors = diagnostics.filter((d) => d.level === "error").length;
+      if (diagnostics.length) console.log(formatDiagnostics(f, sources[0].text, diagnostics, sources));
+      console.log(`${f}: ${errors ? "FAIL" : "ok"} — ${errors} error(s), ${diagnostics.length - errors} warning(s)`);
+      if (errors) ok = false;
     }
-    process.exit(ok ? 0 : 1);
+    // Exit once everything is written: a long report piped elsewhere is otherwise cut short.
+    process.stdout.write("", () => process.exit(ok ? 0 : 1));
+    break;
   }
   case "install": {
     const project = readProject();
@@ -186,8 +226,9 @@ switch (cmd) {
   case "expand": {
     const { app, src } = load(args[0]);
     if (!app) process.exit(1);
-    console.log(src);
-    process.exit(0);
+    // Exit once the text is written: exiting at once cuts a long spec short when piped.
+    process.stdout.write(src + "\n", () => process.exit(0));
+    break;
   }
   case "review": {
     for (const f of args) {
@@ -261,7 +302,7 @@ switch (cmd) {
   }
   default:
     console.log(`usage:
-  intent check <file.intent>... [--json]   syntax and consistency check
+  intent check <file.intent>... [--json] [--typed]   syntax and consistency check; --typed: how much is typed
   intent lock <file.intent>...             pin the bundles these specs import (intent.lock)
   intent install [<file.intent>...]        download intent.project's requirements (minimal version selection)
   intent publish <lib/x/y.intent> [--registry dir]   publish with a computed version (needs its demo app)

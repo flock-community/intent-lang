@@ -1,0 +1,212 @@
+app LockersApi {
+  "The parcel lockers of one building. A courier deposits a parcel into a free locker of the size asked for and gets the locker number and a six-digit pickup code. The recipient picks it up with the number and the code; after that the locker is free again. A parcel not picked up within 72 hours expires and its locker is freed. A locker never holds two parcels."
+}
+
+profile api
+implements lockers.lockersApi
+import lockers.lockers
+import std.crypto
+
+examples start at 2026-09-24 09:00
+
+use secure = std.http.secure
+use auth = std.http.apiKey {
+  keys = table {
+    secret         | owner
+    "k-courier-a1" | "Courier A"
+    "k-courier-b2" | "Courier B"
+  }
+  public = "GET /lockers/free", "POST /lockers/*"
+}
+
+record Parcel {
+  locker: ref Locker             # the locker it waits in
+  code: PickupCode
+  depositedAt: DateTime
+  expiresAt: DateTime            # 72 hours after depositedAt
+}
+
+state {
+  lockers: List Locker = table {
+    number | size
+    1      | Small
+    2      | Small
+    3      | Small
+    4      | Medium
+    5      | Medium
+    6      | Large
+  }
+  stored parcels: List Parcel = []
+}
+
+derive {
+  waiting: List Parcel = the @parcels whose @expiresAt is after @now      # not yet expired
+  empty: List Locker = the @lockers that hold no parcel of @waiting
+  freeCounts: List FreeCount = one @FreeCount for each value of @Size in declared order (@Small, @Medium, @Large): @size is that value, and @free is the number of @empty with that @size
+}
+
+endpoint deposit {
+  if there is no locker in @empty whose @size is @body.size {
+    answer 409 "No {size} locker is free"
+  }
+  - remove from @parcels every parcel whose @expiresAt is at or before @now
+  - add a @Parcel to the end of @parcels with @locker = the lowest @number of the @empty whose @size is @body.size, @depositedAt = @now and @expiresAt = 72 hours after @now
+  - set the new parcel's @code to the first 6 digits (0 to 9) in the @sha256 of @newToken, padded with 0 at the end when it has fewer
+  answer 201 with a @Deposit with @locker, @code and @expiresAt of the new parcel
+}
+
+endpoint pickup {
+  if there is no locker in @lockers whose @number is @path.number {
+    answer 404 "No locker {number}"
+  }
+  if there is no parcel in @waiting whose @locker is @path.number {
+    answer 404 "Locker {number} is empty"
+  }
+  if the @code of that parcel is not @body.code {
+    answer 403 "Wrong pickup code"
+  }
+  - remove that parcel from @parcels
+  answer 200 with a @Pickup with @locker = @path.number and @size = the @size of that locker
+}
+
+endpoint freeLockers {
+  answer 200 with @freeCounts
+}
+
+every 1m {
+  for each @old in @parcels where @old.expiresAt is at or before @now {
+    - remove @old from @parcels
+  }
+}
+
+always {
+  - no two @parcels have the same @locker
+  - every @Parcel's @locker is the @number of a locker in @lockers
+  - every @Parcel's @expiresAt is exactly 72 hours after its @depositedAt
+}
+
+example "all lockers are free at first" {
+  call freeLockers
+  see freeLockers.status = 200
+  see freeLockers.body has 3 rows
+  see freeLockers.body[1].size = "Small"
+  see freeLockers.body[1].free = 3
+  see freeLockers.body[2].size = "Medium"
+  see freeLockers.body[2].free = 2
+  see freeLockers.body[3].size = "Large"
+  see freeLockers.body[3].free = 1
+}
+
+example "a courier deposits into the lowest free locker of that size" {
+  call deposit with header x-api-key = "k-courier-a1", size = Medium
+  see deposit.status = 201
+  see deposit.body.locker = 4
+  see deposit.body.code = "308122"
+  see deposit.body.expiresAt = 2026-09-27 09:00
+  call deposit with header x-api-key = "k-courier-b2", size = Medium
+  see deposit.body.locker = 5
+  call freeLockers
+  see freeLockers.body[1].free = 3
+  see freeLockers.body[2].free = 0
+  see freeLockers.body[3].free = 1
+}
+
+example "no free locker of that size" {
+  call deposit with header x-api-key = "k-courier-a1", size = Large
+  see deposit.status = 201
+  see deposit.body.locker = 6
+  call deposit with header x-api-key = "k-courier-a1", size = Large
+  see deposit.status = 409
+  see deposit.body.error = "No Large locker is free"
+  call freeLockers
+  see freeLockers.body[3].free = 0
+}
+
+example "the recipient picks up with the right code, and the locker is free again" {
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  see deposit.body.locker = 1
+  call pickup with number = 1, code = {deposit.body.code}
+  see pickup.status = 200
+  see pickup.body.locker = 1
+  see pickup.body.size = "Small"
+  call freeLockers
+  see freeLockers.body[1].free = 3
+  call pickup with number = 1, code = {deposit.body.code}
+  see pickup.status = 404
+  see pickup.body.error = "Locker 1 is empty"
+  call deposit with header x-api-key = "k-courier-b2", size = Small
+  see deposit.body.locker = 1
+}
+
+example "a wrong code is refused and the parcel stays" {
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  see deposit.body.code = "308122"
+  call pickup with number = 1, code = "308123"
+  see pickup.status = 403
+  see pickup.body.error = "Wrong pickup code"
+  call pickup with number = 2, code = "308122"
+  see pickup.status = 404
+  see pickup.body.error = "Locker 2 is empty"
+  call freeLockers
+  see freeLockers.body[1].free = 2
+  call pickup with number = 1, code = "308122"
+  see pickup.status = 200
+}
+
+example "a locker that does not exist, and a code that is not six digits" {
+  call pickup with number = 99, code = "123456"
+  see pickup.status = 404
+  see pickup.body.error = "No locker 99"
+  call pickup with number = 1, code = "12345"
+  see pickup.status = 400
+  see pickup.body.error = "code must be a valid PickupCode"
+  call pickup with number = 1
+  see pickup.status = 400
+  see pickup.body.error = "code is required"
+}
+
+example "a deposit needs a size and a courier's key" {
+  call deposit with header x-api-key = "k-courier-a1"
+  see deposit.status = 400
+  see deposit.body.error = "size is required"
+  call deposit with size = Small
+  see deposit.status = 401
+  see deposit.body.error = "Missing API key"
+  call deposit with header x-api-key = "k-nobody", size = Small
+  see deposit.status = 401
+  see deposit.body.error = "Unknown API key"
+  call freeLockers
+  see freeLockers.body[1].free = 3
+}
+
+example "a parcel can be picked up until 72 hours have passed" {
+  call deposit with header x-api-key = "k-courier-a1", size = Large
+  wait 71h
+  call freeLockers
+  see freeLockers.body[3].free = 0
+  wait 59m
+  call pickup with number = 6, code = {deposit.body.code}
+  see pickup.status = 200
+}
+
+example "after exactly 72 hours the parcel expires and its locker is free" {
+  call deposit with header x-api-key = "k-courier-a1", size = Large
+  wait 3d
+  call freeLockers
+  see freeLockers.body[3].free = 1
+  call pickup with number = 6, code = {deposit.body.code}
+  see pickup.status = 404
+  see pickup.body.error = "Locker 6 is empty"
+  call deposit with header x-api-key = "k-courier-b2", size = Large
+  see deposit.status = 201
+  see deposit.body.locker = 6
+}
+
+example "parcels survive a restart" {
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  restart
+  call freeLockers
+  see freeLockers.body[1].free = 2
+  call pickup with number = 1, code = {deposit.body.code}
+  see pickup.status = 200
+}

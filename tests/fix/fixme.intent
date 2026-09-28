@@ -1,5 +1,5 @@
 app FixMe {
-  "A spec with mechanical problems: an old Maybe type and an unmarked name."
+  "A spec with mechanical problems: an old Maybe type, an unmarked name and a lookup spelled with where."
 }
 
 record Item {
@@ -9,6 +9,11 @@ record Item {
 state {
   count: Int = 0
   maybe: Maybe Item = nothing
+  items: List Item = []
+}
+
+derive {
+  first = the item where @id is 1, or nothing when there is none
 }
 
 screen {

@@ -1,0 +1,29 @@
+app ThroughShadowChecks {
+  "A client layer's records are the app's: the app cannot declare its own with the same name."
+}
+
+import pay.payments
+
+uses pay.paymentsApi as pay {
+  tested with "apps/api/payments-api.intent"
+  through std.actions {
+    agree = permissions
+  }
+}
+
+record Permission {                       # expect: DUPLICATE
+  endpoint: Text
+  count: Text
+}
+
+state {
+  permissions: List Permission = []
+}
+
+screen {
+  text shown = "ok"
+}
+
+example "nothing" {
+  see shown = "ok"
+}

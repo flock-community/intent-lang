@@ -30,7 +30,11 @@ const out: string[] = [];
 const files = (dir: string) => { const r: string[] = []; const w = (d: string) => { for (const f of readdirSync(d).sort()) { const p = join(d, f); if (statSync(p).isDirectory()) w(p); else r.push(p); } }; w(dir); return r; };
 for (const spec of specs.sort()) {
   const { app } = load(spec, { ignoreLock: true });
-  if (!app) { out.push(`${spec} (does not load)`); continue; }
+  // A spec that stops loading is a regression, never a new snapshot: fail, even with --update.
+  if (!app) {
+    console.error(`${spec} does not load: fix it (intent check ${spec}) before the snapshot can be taken`);
+    process.exit(1);
+  }
   const text = printApp(app);
   const layer = app.kind === "layer", api = app.profile === "api" && !layer;
   if (app.kind === "contract") { out.push(`${spec} client ${h(genClient(app))}`); continue; }
@@ -43,7 +47,11 @@ for (const spec of specs.sort()) {
         const p = layer ? layerPrompt(spec, text, specSource, probe, !!app.beforeCall) : buildPrompt(target, spec, text, specSource, probe, api, hasClients(app), hasThrough(app), usesClock(app), gen.hasData(app), gen.hasStored(app));
         out.push(`${spec} ${target} prompt${probe ? "-probe" : ""} ${h(p)} repair ${h(repairPrompt(p, target, "code", "problems"))}`);
       }
-    } catch (e) { out.push(`${spec} ${target} ERROR ${(e as Error).message}`); }
+    } catch (e) {
+      // A scaffold that throws is a regression, never a snapshot entry.
+      console.error(`${spec} ${target}: the harness cannot scaffold it: ${(e as Error).message}`);
+      process.exit(1);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 }

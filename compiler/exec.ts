@@ -4,7 +4,9 @@
 // so a hanging build can be killed.
 import { run } from "./proc.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { gate, outgoing, persist, refused, type Answer, type CallDesc, type CallOut, type Outgoing, type Usage } from "../runtime/ts/calls.ts";
+import { agreement, heldAnswer, keyFor, outgoing, persist, refused, rejectedAnswer, type Answer, type CallDesc, type CallOut, type Outgoing } from "../runtime/ts/calls.ts";
+import { keep, memory } from "../runtime/ts/outbox.ts";
+import { fromWire, type TypeDesc } from "../runtime/ts/api.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
 import { literalJson } from "./api.ts";
@@ -22,7 +24,7 @@ import type { Check, Example, Step } from "./ast.ts";
 export type Obs = any; // Ui Node as JSON
 
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back" | "size";
   target: string; // element name ("" for tick; the endpoint for another client's call)
   call?: CallOut; // on "other": another client calls the provider
   ms?: number; // on "tick" from a `wait`: how far the clock moves
@@ -38,7 +40,7 @@ export interface Action {
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
   | { kind: "trace"; actions: Action[]; always?: Step[] }
-  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; steers?: string[]; paths?: string[]; always?: Step[] };
+  | { kind: "explore"; prefix: Action[]; length: number; seed: number; pools: Record<string, string[]>; pool: string[]; ticks: number[]; others?: Action[]; waits?: number[]; restarts?: boolean; sizes?: string[]; steers?: string[]; paths?: string[]; always?: Step[] };
 
 /** The first broken `always` check in a session: after `actions`, `check` failed on `screen`. */
 export interface Violation {
@@ -212,9 +214,11 @@ async function navigable(dir: string, session: Session): Promise<Session> {
 async function openSessionInner(dir: string, target: string): Promise<Session> {
   // Apps that read the clock (clock.json): the driver owns it. It starts at `examples start at`,
   // moves with every tick and every `wait`, and comes with every event (and every call to a provider).
-  const clockSpec: { start: string; tickMs: number } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
+  const clockSpec: { start: string; tickMs: number; sizes?: string[] } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
   let elapsed = 0; // ms since the start
-  const clockNow = () => (clockSpec ? clockAt(addMinutes(clockSpec.start, Math.floor(elapsed / 60000))) : undefined);
+  // The size the host shows the app at (`sizes` in the spec): the first, until an example says `size …`.
+  let size = clockSpec?.sizes?.[0];
+  const clockNow = () => (clockSpec ? { ...clockAt(addMinutes(clockSpec.start, Math.floor(elapsed / 60000))), ...(size ? { size } : {}) } : undefined);
   const inner = await openRawSession(dir, target, clockNow());
   const raw: Session = !clockSpec
     ? inner
@@ -229,11 +233,16 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
             return inner.send({ on: "noop", target: "", clock: clockNow() });
           }
           if (wire.on === "tick") elapsed += clockSpec.tickMs;
+          if (wire.on === "size") {
+            // The host shows the app at another size: the screen is shown again.
+            size = (w as { target: string }).target;
+            return inner.send({ on: "noop", target: "", clock: clockNow() });
+          }
           return inner.send({ ...w, clock: clockNow() });
         },
       };
   if (!existsSync(join(dir, "providers.json"))) return raw;
-  const { endpoints, providers } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string> };
+  const { endpoints, providers, events: eventTypes = {} } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string>; events?: Record<string, TypeDesc> };
   const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number }> = {};
   // The client layers (\`through\` under \`uses\`), as the build composed them: calls and event streams go through them.
   const layers: { apply: (alias: string, req: Outgoing, config: Record<string, unknown> | undefined) => Outgoing } | undefined = existsSync(join(dir, "through.mjs")) ? await import(pathToFileURL(join(dir, "through.mjs")).href + `?t=${Date.now()}`) : undefined;
@@ -275,13 +284,20 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
       if (f?.kind === "lose answer") return notes.push(`${res.status}, answer lost`), { endpoint: c.endpoint, status: 0, error: "no answer (answer lost)" };
       // `restart after effect`: the effect stands and the service restarts with its keys kept, so the
       // retry replays the answer; `expire keys`: the keys are gone, so the retry runs the endpoint again.
-      if (f?.kind === "restart after effect") return notes.push(`${res.status}, service restarted`), { endpoint: c.endpoint, status: 0, error: "no answer (service restarted)" };
+      if (f?.kind === "restart after effect") {
+        // The service really starts again: only its stored fields and its remembered keys survive.
+        const svc = client as { restart?: (saved: unknown) => void; data?: () => unknown };
+        svc.restart?.(svc.data?.());
+        return notes.push(`${res.status}, service restarted`), { endpoint: c.endpoint, status: 0, error: "no answer (service restarted)" };
+      }
       if (f?.kind === "expire keys") {
         (client as { remembered?: { set: (k: unknown) => void } }).remembered?.set({});
         return notes.push(`${res.status}, keys expired`), { endpoint: c.endpoint, status: 0, error: "no answer (keys expired)" };
       }
       if (res.headers?.["idempotent-replayed"] === "true") notes.push("replayed");
-      return { endpoint: c.endpoint, status: res.status, body: res.body };
+      // A choice comes back by its wire name: the screen reads it in the spec's names, as in the browser.
+      const answers = endpoints.find((e) => e.name === c.endpoint)?.answers;
+      return { endpoint: c.endpoint, status: res.status, body: answers ? fromWire(res.body, answers[res.status]) : res.body };
     };
     const answer = mine ? await persist(endpoints.find((e) => e.name === c.endpoint), attempt) : await attempt();
     return { alias, answer, events, note: notes.length ? ` (${notes.join(", ")})` : "" };
@@ -302,71 +318,60 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     }
     for (const ev of events) {
       log.push(`event ${alias}.${ev.event}`);
-      await raw.send({ on: "event", target: `${alias}.${ev.event}`, event: { event: `${alias}.${ev.event}`, body: ev.body } });
+      await raw.send({ on: "event", target: `${alias}.${ev.event}`, event: { event: `${alias}.${ev.event}`, body: fromWire(ev.body, eventTypes[`${alias}.${ev.event}`]) } });
       made.push(...(await raw.calls!()));
     }
     return made;
   };
-  const held: CallOut[] = [];
-  const withKey = (c: CallOut): CallOut => (c.key ? c : { ...c, key: `${c.endpoint.split(".")[0]}-${++made}` });
-  // The agreement gate (`through std.actions`): a call with no permission waits for approval, a
-  // rejected one is dropped, and the emergency stop answers at once. `usage` enforces a
-  // permission's count and period (`now`, from the test clock, in the same unit as `usage[].at`).
-  const externalOf = (c: CallOut) => endpoints.find((e) => e.name === c.endpoint)?.external;
+  // Test keys are counted (a replay is reproducible); an undo's key is what it undoes, as in the browser.
+  const withKey = (c: CallOut): CallOut => (c.key ? c : { ...c, key: c.undo ? keyFor(c) : `${c.endpoint.split(".")[0]}-${++made}` });
+  // The agreement (`through std.actions`, runtime/ts/calls.ts), the same one the browser runs: a call
+  // no permission covers is held, a rejection drops the calls held when it is given, and the
+  // emergency stop answers at once. `now` is the test clock, so a permission's period can pass.
+  const agreed = agreement(endpoints, keep("agreement", memory()));
   const nowMs = async (): Promise<number> => {
     const clock = await raw.clock?.();
     return clock?.now ? Date.parse(clock.now) : Date.now();
-  };
-  const usage: Record<string, Usage[]> = {};
-  const note = (c: CallOut, now: number) => {
-    if (externalOf(c)) (usage[c.endpoint] ??= []).push({ at: now, amount: Number((c.args as { amount?: unknown }).amount ?? 0) });
   };
   const settle = async (first: CallOut[] = []) => {
     const queue: CallOut[] = [...first, ...(await raw.calls!())].map(withKey);
     const now = await nowMs();
     for (let n = 0; queue.length; n++) {
       if (n >= 100) throw new Error("the calls do not settle: 100 answers in a row led to new calls");
-      const c = queue.shift()!;
-      const decision = gate(c.config, c.endpoint, externalOf(c), c.args, usage, now);
+      const c = withKey(queue.shift()!); // every call has its key before it is held or sent
+      const decision = agreed.offer(c, c.config, now);
       if (decision === "hold") {
-        held.push(c);
         log.push(`${c.endpoint} ${stable(c.args)} → held for approval`);
-        continue;
-      }
-      if (decision === "reject") {
-        log.push(`${c.endpoint} ${stable(c.args)} → rejected`);
+        // The screen learns it waits (`its status is held`), as in the browser.
+        await raw.send({ on: "answer", target: c.endpoint, answer: heldAnswer(c) });
+        queue.push(...(await raw.calls!()).map(withKey));
         continue;
       }
       if (decision === "stop") {
         log.push(`${c.endpoint} ${stable(c.args)} → stopped`);
-        await raw.send({ on: "answer", target: c.endpoint, answer: { endpoint: c.endpoint, status: 0, error: refused(c.config, c.endpoint, undefined, c.args)! } });
+        await raw.send({ on: "answer", target: c.endpoint, answer: { endpoint: c.endpoint, status: 0, error: refused(c.config)! } });
         queue.push(...(await raw.calls!()));
         continue;
       }
       const { alias, answer, events, note: why } = await send(c);
-      note(c, now);
       log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${why}`);
       await raw.send({ on: "answer", target: c.endpoint, answer });
       const made = await raw.calls!();
       queue.push(...(await deliverEvents(alias, events)), ...made);
     }
   };
-  // After an update, a held call whose endpoint was just allowed goes out (with its original key);
-  // one that was rejected is dropped. The emergency stop keeps it pending.
+  // After an update, the held calls a new rejection covers are dropped, and the ones a permission
+  // now covers go out (with their original key). Released before the update's own calls are offered.
   const release = async () => {
-    const now = await nowMs();
-    for (let i = held.length - 1; i >= 0; i--) {
-      const c = held[i];
-      const config = (await raw.through?.())?.[c.endpoint.split(".")[0]] as Record<string, unknown> | undefined;
-      const decision = gate(config, c.endpoint, externalOf(c), c.args, usage, now);
-      if (decision === "hold" || decision === "stop") continue;
-      held.splice(i, 1);
-      if (decision === "reject") {
-        log.push(`${c.endpoint} ${stable(c.args)} → rejected`);
-        continue;
-      }
+    const config = ((await raw.through?.()) ?? {}) as Record<string, Record<string, unknown>>;
+    const { send: out, dropped } = agreed.release((alias) => config[alias], await nowMs());
+    for (const c of dropped) {
+      log.push(`${c.endpoint} ${stable(c.args)} → rejected`);
+      await raw.send({ on: "answer", target: c.endpoint, answer: rejectedAnswer(c) });
+      await settle();
+    }
+    for (const c of out) {
       const { alias, answer, events, note: why } = await send(c);
-      note(c, now);
       log.push(`${c.endpoint} ${stable(c.args)} → ${answer.unknown ? "unknown" : answer.status}${why} (approved)`);
       await raw.send({ on: "answer", target: c.endpoint, answer });
       await settle(await deliverEvents(alias, events));
@@ -398,8 +403,8 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
         return;
       }
       await raw.send(w);
-      await settle();
       await release();
+      await settle();
     },
   };
 }
@@ -492,6 +497,7 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   if (a.on === "tick") return a.times === 0 && a.ms ? { wires: [{ on: "wait", target: "", ms: a.ms }] } : { wires: Array.from({ length: a.times ?? 1 }, () => ({ on: "tick", target: "" })) };
   if (a.on === "other") return { wires: [{ on: "other", call: a.call }] }; // handled by the session: another client calls the provider
   if (a.on === "restart") return { wires: [{ on: "restart", target: "" }] }; // handled by the session: saves, restarts, checks
+  if (a.on === "size") return { wires: [{ on: "size", target: a.target }] }; // handled by the session: the host's size, with the clock
   if (a.on === "open" || a.on === "back") return { wires: [{ on: a.on, target: a.target }] }; // handled by the session: the history
   if (a.on === "steer") return { wires: [{ on: "steer", target: a.target, value: a.value, times: a.times }] }; // handled by the session: the next attempts to that api go wrong
   const f = locate(obs, a.target, a.list, a.row, a.rowWith);
@@ -525,6 +531,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "choose": return { on: "choose", target: s.target, value: s.value, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "restart": return { on: "restart", target: "" };
+    case "size": return { on: "size", target: s.size };
     case "open": return { on: "open", target: s.path };
     case "back": return { on: "back", target: "" };
     case "steer": return { on: "steer", target: s.api, value: s.fault, times: s.times };
@@ -556,24 +563,6 @@ export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | un
   // Where an app with several screens is.
   if ((s.target === "screen" || s.target === "path") && !s.at && obs?.[s.target] !== undefined && c.is === "eq")
     return obs[s.target] === c.value ? undefined : `expected the ${s.target} to be ${JSON.stringify(c.value)}, but it is ${JSON.stringify(obs[s.target])}`;
-  // A property of an element (the profile's `shows`): `see x.value = "…"`, `see x.enabled is disabled`,
-  // `see x.checked is checked`, `see x.label = "…"`, `see x.rows = 3`.
-  if (!s.every && s.target.includes(".")) {
-    const root = s.target.slice(0, s.target.indexOf(".")), prop = s.target.slice(s.target.indexOf(".") + 1);
-    const lf = locate(obs, root, s.at?.list, s.at?.row, s.at?.with);
-    if (!("missing" in lf)) {
-      const n = lf.node;
-      const at = `\`${s.target}\``;
-      if (prop === "value" || prop === "label") {
-        const actual = String(prop === "label" ? n.label : n.k === "button" ? n.label : n.v);
-        return c.is === "eq" ? (actual === c.value ? undefined : `expected ${at} = ${JSON.stringify(c.value)}, got ${JSON.stringify(actual)}`) : `\`${prop}\` is checked with \`= "…"\``;
-      }
-      if (prop === "enabled") return n.enabled === (c.is === "enabled") ? undefined : `expected ${at} to be ${c.is}, but it is ${n.enabled ? "enabled" : "disabled"}`;
-      if (prop === "checked") return n.checked === (c.is === "checked") ? undefined : `expected ${at} to be ${c.is}`;
-      if (prop === "rows") return c.is === "eq" ? (String(n.rows.length) === c.value ? undefined : `expected ${at} = ${c.value} rows, got ${n.rows.length}`) : `\`rows\` is checked with \`= N\``;
-      return `\`${prop}\` is not a property to check (value, label, enabled, checked, rows)`;
-    }
-  }
   if (s.every) {
     // Check each row of the list; a missing list or a row without the element is skipped.
     const list = findIn(obs.c, s.every);
@@ -640,6 +629,7 @@ function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => 
   for (const o of job.others ?? []) out.push({ w: 1, a: varyOther(o, rnd) });
   if (job.waits?.length) out.push({ w: 2, a: { on: "tick", target: "", times: 0, ms: job.waits[Math.floor(rnd() * job.waits.length)] } });
   if (job.restarts) out.push({ w: 1, a: { on: "restart", target: "" } });
+  for (const s of job.sizes ?? []) out.push({ w: 1, a: { on: "size", target: s } }); // the host changes the size now and then
   for (const api of job.steers ?? []) out.push({ w: 1, a: steerAction(api, rnd) });
   if (job.paths?.length) {
     out.push({ w: 1, a: { on: "back", target: "" } });

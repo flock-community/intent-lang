@@ -1,13 +1,10 @@
-# Intent — language reference (v58)
+# Intent — language reference (v64)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
 by a harness) turns it into an app. The spec is the source; code is a disposable
 derivative that must be rebuildable at any moment and behave the same every time.
 
-Lineage: this is the app profile of `language.md` (v0.1). It keeps *scenarios as proof*,
-*closed vocabularies*, *text anchored to declared names* and *build is a pure function*,
-and narrows the scope to single-screen apps so that "is it the same app?" can be measured.
 
 ## 1. Principles
 
@@ -36,7 +33,7 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
   }
   ```
 
-  A file without braces is read by its indentation alone (the form before v24); `intent fmt`
+  A file without braces is read by its indentation alone; `intent fmt`
   turns it into braces.
 - **References:** in a sentence (a step, a condition, a derived value, a rule, an endpoint's or
   a layer's steps), a name from the spec is written with `@`: `@draft`, `@Item`, `@Open`,
@@ -55,6 +52,58 @@ and narrows the scope to single-screen apps so that "is it the same app?" can be
   (`"Page {page} of {pageCount}"`) or a phrase with references (`"{number of @items not @done} left"`).
   The checker reports an `@name` that is not declared, and hints (`UNMARKED`) when a sentence
   uses a declared name without `@`: mark it if you mean it, or reword if you mean the English word.
+
+  **References fit where they are used.** The English between references is free, but the
+  phrases the language knows relate two references, and the checker holds each pair to its types
+  (`TYPE`, or `UNKNOWN_NAME` for a missing field):
+
+  | Phrase | Must hold |
+  |---|---|
+  | `set @x to @y` / `set @x to @Value` | `@y` is a value `@x` can hold (an Int fits a Decimal, a T fits a `T or nothing`) |
+  | `increase` / `decrease @x by …` | `@x` is a number |
+  | `@x is @Value`, `whose @field is @Value` | the value belongs to `@x`'s choice |
+  | `@a's @b`, `the @b of the ticket`, `its body's @b` | `b` is a field of that record (of the answer's or event's body) |
+  | `add @y to (the end of) @xs` | `@y` fits the items of `@xs` |
+  | `add a @Ticket … with @f = @y, @g @Value, the given @h` | each is a field of Ticket, and each value fits it; the list holds Tickets |
+  | `call @api.endpoint with @p = @y` | `p` is a param of the endpoint, and `@y` fits it |
+  | `@x is @y` / `@x is above @y` (below, at least, at most, after, before, …) | comparable types; an order needs numbers or moments |
+  | `the ticket whose @f is @y` / `the @tickets whose …` | `f` is a field of Ticket, and `@y` fits it |
+
+  **Relations are checked as relations.** A `ref Ticket` holds a Ticket's key and fits nothing
+  else: it is compared with a Ticket's key (`the ticket whose @id is @ticket`), never with another
+  record's key or another record's reference; it is not read like a record (`@comment's @ticket's
+  @subject` is an error that shows the lookup to write); and a seeded row's reference must point at
+  a seeded row (`comments` row 2 holding ticket 9 when no ticket 9 is seeded is an error).
+
+  **The common operators have types.** A value built with them is typed whole, and a wrong operand
+  is an error before any build:
+
+  | Form | Takes | Gives |
+  |---|---|---|
+  | `@a plus / minus / times @b`, `+ - × *` | numbers | a number (Decimal when either is) |
+  | `@a divided by @b`, `/` | numbers | a Decimal (`, rounded down` makes it whole) |
+  | `@x trimmed`, `@x in capitals` | text | text |
+  | `@x read as a whole number / a decimal` | text | the number; ask first with `@x reads as a decimal (above 0)`, a condition |
+  | `@x, rounded (to cents / down / up)` | a number | the number, whole when down/up |
+  | `@x as money / a date / a clock` | a number or a moment | text (money: two decimals, no currency sign; write `"€ {@x as money}"`) |
+  | `the number of @xs`, `there are 3 @xs` | a list | an Int / a condition |
+  | `the sum of @xs's @f`, `the sum of @f over @xs`, `the sum of the @f of @xs` | a list of records with a number field | that number |
+  | `the highest / lowest @f in @xs` | a list of records | the field's type |
+  | `@x is empty / blank`, `@x contains @y` | text or a list | a condition |
+  | `@x is a valid @Email` | the refined type's base | a condition |
+  | `A when C; B when D`, `A when C, otherwise B`, `A, or B when there is none` | values of one type (in a template: anything shown) | that type |
+  | `its body`, `its body's @f`, `the error`, `its @f`, `the @f of that ticket` | an answer, an event, a row | its type |
+
+  Everything else between references is English, left to judgement (and to the examples that prove
+  it). `intent check --typed <files>` reports, per spec, how many sentences with references are
+  typed whole, and lists the rest: the places where judgement lives.
+
+  Inside `if there is a @x { … }`, and after `if there is no @x { stop }`, a `T or nothing` counts
+  as a `T`. A derived value has the type its form gives (`the number of …` is an Int, `the @tickets
+  whose …` a list of tickets, `the ticket whose …` a ticket or nothing) or the one it declares
+  (`total: Decimal = …`, checked against its form); when neither is known and it is used where its
+  type matters, the checker hints (`UNTYPED`) to declare it. A reference followed by more words that
+  compute (`@count plus 1`, `@draft, trimmed`) is left alone: this check never guesses.
 - `#` starts a comment (outside strings). Blank lines are ignored.
 - Names: element, field and state names are `lowerCamel`; app, record and choice names and
   choice values are `UpperCamel`.
@@ -72,48 +121,58 @@ import std.list             # reuse a bundle (§4b)
 extends support.helpdesk    # refine a published app (§4c): override, add to, drop
 record Name { … }           # a data shape: `field: Type [= default]` lines
 choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is what users see
+choice Level: Info = "info" | Urgent = "urgent"   # a wire name: how the value is written in JSON (§4f)
 type Email = Text matching /…/  # a refined type: a base type with one precise rule (§3a)
 design                      # optional: how the app looks (§4a)
 component Name "look"       # optional: a reusable look for sections/elements (§4a)
 state { … }                 # what the app remembers: `[stored] field: Type = default` lines
 clock every 1s              # optional: the app receives a tick every interval
-derive { … }                # named values computed from state: `name = sentence`
+derive { … }                # named values computed from state: `name = sentence`, or `name: Type = sentence` (its type, checked)
 screen { … }                # what the user sees, top to bottom (§4)
 screen name "/path" { … }   # or several screens, each with its address (§4i)
 on <verb> <element> { … }   # what happens (§5): `- sentence` lines
-rules { … }                 # invariants in words: `- sentence` lines
+rules { … }                 # guidance in words: `- sentence` lines; `rules by ai { … }` for rules an LLM wrote
 relations { … }             # declared relations between records: `- a @Comment's @ticket is a @Ticket's @id`
 always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data)
 example "name" { … }        # proof (§6): steps
 ```
 
 Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `T or nothing`, a
-record name, a choice name, and `ref X` — a field holding record `X`'s key (see the relations
-paragraph below). `T or nothing` is a value that may be absent: say so instead of
+record name, a choice name, and `ref X` — a field holding record `X`'s key (see the next
+paragraph). `T or nothing` is a value that may be absent: say so instead of
 using a stand-in such as `0` or `""` (`selected: Int or nothing = nothing`, then
 `visible when there is a @selected` and `set @selected to nothing`). `Maybe T` still reads.
 There is no null and no stand-in: wherever a sentence uses such a value, it says what happens
 when there is none, in the sentence ("…, or nothing when there is no @selected") or around it
 (`if there is a @selected { … }`, or an early `if there is no @selected { stop }`). The checker
 warns (`UNGUARDED`) when it does not. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
-(a DateTime, to the minute, in the app's own local time).
+(a DateTime, to the minute, in the app's own local time). In JSON a Date is `"2026-09-24"` and a
+DateTime `"2026-09-24T09:00"`; an example compares them as written in the spec
+(`see deposit.body.expiresAt = 2026-09-27 09:00`).
 
 **A reference is declared, not left in a comment.** `ticket: ref Ticket` says the field holds a
-`Ticket`'s key — the referenced record's first `Int` or `Text` field, its key. The checker resolves
-and types it, so the app never carries a free-text key and the reference cannot drift when the
-referenced record changes. A record with no `Int` or `Text` field cannot be referenced (`NO_KEY`).
-The `relations` block states the same relation as a sentence, and is checked too:
+`Ticket`'s key. A record's key is the field marked `key` (`key code: Text`), or else its field named
+`id`; the order of the fields never matters. A key is an `Int` or a `Text` (or a refined type of
+one) and is always there. The checker resolves and types the reference, so a seeded row must hold a
+key of the right type, and a record with no key cannot be referenced (`NO_KEY`).
 
 ```
-relations {
-  - a @Comment's @ticket is a @Ticket's @id
+record Ticket {
+  id: Int                   # the key: the field named `id`
+  subject: Text
+}
+
+record Comment {
+  ticket: ref Ticket        # holds a Ticket's id
+  body: Text
 }
 ```
 
-The checker requires both records, both fields, and equal key types. The field is the key: a
-sentence that reads the row looks it up (`the ticket whose @id is @ticket`, or the same with
-`where`) and says what happens when it finds none (else `UNGUARDED`). A lookup's `@` names the list
-or derived value it looks in, and the checker requires it (a typo is `UNKNOWN_NAME`).
+The field is the key, not the row: a sentence that reads the row looks it up (`the ticket whose
+@id is @ticket`) and says what happens when it finds none (else `UNGUARDED`), because the row may
+have been removed since. Removing a row does not remove the rows that refer to it (§9.12). A
+lookup's `@` names the list or derived value it looks in, and the checker requires it (a typo is
+`UNKNOWN_NAME`).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -159,9 +218,11 @@ it the same way:
 type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/    # the whole text must match
 type Age = Int from 0 to 150                              # inclusive
 type Price = Decimal from 0
+type Title = Text of length 1 to 80                       # characters; also `at most 80`, `at least 1`
 ```
 
 - Use it like any type: `mail: Email`, `body email: Email`, `List Email`.
+- A text's length counts characters (an emoji is one), the same on every target.
 - In sentences, "is a valid Email" means exactly the rule. The compiler generates the check
   (`isEmail`) for every target, and builds never write their own.
 - The checker checks seed data, defaults and literals against the rule before any build.
@@ -189,6 +250,24 @@ text date = "{the weekday of @today} {@today as a date}"
   09:00). `wait 1d`, `wait 2h`, `wait 15m` move the clock on and show the screen again. With a
   `clock every …` tick, `wait` also ticks that often. Random sessions mix in waits too.
 - In the browser and on the server, the clock is the local time.
+
+**The size a host shows the app at.** A widget that a host shows small or large declares its sizes,
+smallest first: `sizes compact | standard` (a top-level line). The app reads `@size`, a value of the
+choice `Size` the line declares (`@Compact`, `@Standard`), like it reads the clock, and never
+stores it:
+
+```
+sizes compact | standard
+
+list notes of Note {
+  visible when @size is @Standard
+}
+```
+
+- The host picks the size: `globalThis.__intentSize = "standard"` (then an `intentsize` event on
+  `window`), or `?size=standard` in the address; otherwise it is the first size.
+- In tests every example starts at the first size; the step `size standard` shows the app at another
+  size, and random sessions switch sizes too, so both are compared.
 
 **Recurring work** (apis): `every 15m { - … }` runs its steps on that interval, reading
 `@now`. On the server it runs on a timer; in tests, whenever a `wait` moves the clock past its
@@ -336,9 +415,8 @@ An app imports a platform like a bundle and names its functions in sentences:
 against its implementation in the installation's tests. Platforms so far: `std.crypto`
 (`sha256`) and `intent.tools` (`check`: a spec's checker result, public names, example
 fingerprints and digest, as `intent publish` computes them; a spec with imports is not checked
-alone). A **screen** can use a platform too: `apps/22-hash.intent` shows the `@sha256` of what the
-user types, in both targets (`std.crypto` has a reviewed implementation per target, kept in step by
-a parity test). A platform whose code runs in the harness (like `intent.tools`) is for services
+alone). A **screen** can use a platform too, for example the `@sha256` of what the user types
+(`std.crypto` has a reviewed implementation per target, and they give the same results). A platform whose code runs in the harness (like `intent.tools`) is for services
 only, and a platform with no Elm implementation is `NOT_YET` on Elm.
 
 ## 4a. Look: design, components, presentations
@@ -407,10 +485,10 @@ Built-in presentations (closed set; each has one meaning):
 
 ## 4b. Reuse: bundles, imports and behaviour components
 
-A **bundle** is a library file under `lib/`: `lib/std/list.intent` starts with
+A **bundle** is a library file under the project's `lib/`: `lib/std/list.intent` starts with
 `bundle std.list`. It holds records, choices, components and a `design`. State, screens and
-behaviour live inside its components. A bundle is proven by its demo app (for example
-`lib/std/list.demo.intent`).
+behaviour live inside its components. A bundle is proven by its demo app, next to it
+(`lib/std/list.demo.intent`).
 
 ```
 import std.list                      # everything std.list declares
@@ -514,7 +592,7 @@ expanded, and each line marked with where it came from.
 
 ## 4c. Refinement: improving someone else's app
 
-A published app (an `app` file in `lib/`, e.g. `lib/support/helpdesk.intent`) can be the base
+A published app (an `app` file in `lib/`, such as `support.helpdesk`) can be the base
 of another spec. The new spec starts as a copy of the base and names every change:
 
 ```intent
@@ -600,7 +678,7 @@ file per version), so any file server can host it.
 ## 4e. The api profile
 
 A spec with `profile api` describes an HTTP service instead of a screen. Its vocabulary is
-the profile spec `lib/profile/api.intent`. Records, choices, state, derive, rules, `always`,
+the `api` profile (a spec itself, like the screen profile `ui`). Records, choices, state, derive, rules, `always`,
 examples, imports and refinement work as everywhere else.
 
 ```
@@ -660,7 +738,55 @@ example "creating a ticket" {
   `request OPTIONS "/tickets" with header origin = "…", query status = Open, body text = "…"`,
   then `see request.status`, `see request.header.<name>`, `see request.body…`.
 
+## 4k. Jobs: an app without a screen
+
+A **job** (`profile job`) is an app that nobody looks at: an agent or a background worker. It has
+state, `uses` apis (calls, answers, events, the agreement), `on start`, `on event`, a `clock` and
+`on tick`, rules, `always` and examples, and no `screen` and no endpoints.
+
+```
+app UrgentWatch
+profile job
+import notify.alerts
+
+uses notify.alertsApi as alerts only raise, alertRaised {
+  tested with "services/alerts-api.intent"
+}
+
+state {
+  stored passedOn: Int = 0
+}
+
+on event alerts.alertRaised {
+  if its body's @level is @Urgent {
+    - increase @passedOn by 1
+    - call @alerts.raise with @text = "On-call told: {its body's @text}" and @level = @Info
+  }
+}
+
+example "an urgent alert is passed on" {
+  call alerts.raise with text = "Disk full", level = Urgent
+  see passedOn = 1
+}
+```
+
+- **What a job shows is its state.** The harness gives it a screen of its state fields (a `text`
+  per value, a `list` per list with its rows' plain fields), so examples `see` state by name
+  (`see passedOn = 1`, `see told has 2 rows`), and twin builds and random sessions compare it as for
+  any app. The expanded spec shows that screen as a comment; nobody writes it.
+- **Its entry** is `job.mjs`: an ES module whose default export is `{ run }`. The host imports it,
+  sets its transport (`globalThis.__intentTransport`) if calls do not go
+  over HTTP, and calls `run({ event: { event: "alerts.alertRaised", body } })` per event, or `run()`
+  to let it start. `run` resolves with the job's data once every call the event set off has been
+  answered. The browser entry (`index.html`) still works and shows the state, for debugging.
+
 ## 4f. Contracts: what goes over the wire
+
+**Wire names.** A choice value is written in JSON as its own name (`"Urgent"`), unless the choice
+gives every value a wire name (`choice Level: Info = "info" | Urgent = "urgent"`), for an api whose
+names are already fixed. The harness translates at the edge: requests, answers and events carry the
+wire names; the app, its examples, its stored data and its screen use the spec's names. A request
+with an unknown name is refused with the wire names (`level must be one of info, urgent`).
 
 A **contract** is a publishable file that says what a service accepts and answers, and nothing
 about how. It holds records, choices, endpoint signatures with every status they may answer,
@@ -742,6 +868,8 @@ endpoint sendReceipt POST "/charges/{id}/receipt" {
 
 - `effect external` is the only effect word. Without it an endpoint changes only the service's own
   data (a GET only reads). Retrying safely follows from the method, not from a declaration.
+  `effect external of @amount` also names the param that says how much the effect is (a number):
+  a standing permission's amount limit reads it (§4g).
 - `undone by <endpoint> with <param> = …` names the endpoint that compensates. It is a new action,
   not a rollback (a refund, a cancellation), with its params bound to this call's params (`@amount`)
   or its answer (`@charge.body.id`). An `external` endpoint without `undone by` is a **point of no
@@ -759,7 +887,7 @@ endpoint sendReceipt POST "/charges/{id}/receipt" {
   (the same for every attempt). "Exactly once" is not promised: no system can over a network; this
   is delivered at least once, and recognised when repeated.
 - A screen takes an effect back with `undo @alias.endpoint` (§4g); agreement before an external
-  call is designed in `docs/design/effects.md` and comes next.
+  call is `through std.actions` (§4g).
 
 ## 4g. Calling an API from a screen
 
@@ -769,7 +897,7 @@ answers come back as events:
 ```
 app TicketsUi
 uses support.ticketsApi as tickets {  # the contract; its types come with it
-  tested with "apps/api/tickets-api.intent"     # the provider the examples run against
+  tested with "services/tickets-api.intent"     # the provider the examples run against
 }
 
 on start {
@@ -797,6 +925,11 @@ on answer tickets.createTicket {
 
 - `uses <contract> as <alias>` makes the contract's endpoints callable as `<alias>.<endpoint>`.
   Its records and choices (and `Problem`) are available to the app.
+- `uses <contract> as <alias> only listNotes, noteCreated` is the app's **manifest** for that api:
+  the endpoints and events it may use. Calling, undoing through or handling anything else is an
+  error (`UNDECLARED`), and a listed name the app never uses is a hint (`UNUSED`). Every build
+  writes `manifest.json` (per api: its contract, endpoints and events; what the handlers use when
+  there is no `only`), so a host can grant exactly that.
 - `call <alias>.<endpoint> with a = …, b = …` in a handler step sends a request. An optional
   argument that is not given is absent.
 - `on answer <alias>.<endpoint>` handles the answer. "its status" is the status; "its body" is
@@ -936,7 +1069,7 @@ leaves: `see header x-api-key = "…"`, `see body.path = "/tickets/mine"`.
 
 ```
 uses support.deskApi as desk {
-  tested with "apps/api/desk-api.intent"
+  tested with "services/desk-api.intent"
   through std.http.sendKey {
     key = apiKey                    # bound to the screen's state: the key the user typed
   }
@@ -952,28 +1085,50 @@ signed in gets none, as in the browser.
 **Agreement before an external call.** `through std.actions` gates the calls a screen makes: an
 endpoint the contract marks `effect external` goes out only when a standing permission covers it
 (`agree`, a list of `Permission` records in the screen's state), and none goes out while the
-emergency stop is on (`stop`). A `Permission` says the endpoint, `count` calls per `per` minutes
-(0: forever), the most each call may amount to (`upTo`, 0: no amount limit) and who granted it
-(`approver`); a call that breaks one of them is not covered. With `fourEyes` on, a permission the
-requester (`requester`) granted themselves does not count. A call with no permission is **held for
-approval**: it does not reach the service yet, and the screen can show that it is waiting. Approving adds a permission (the
-harness then sends the held call, with its original key); rejecting adds the endpoint to `rejected`
-(the held call is dropped). A call while stopped is answered at once with the reason (`{the error}`),
-so the screen can show it.
+emergency stop is on (`stop`). A `Permission` says the endpoint, how many calls it lets through
+(`count`) per `per` minutes (nothing: ever), the most each call may amount to (`upTo`, read from the
+param the contract names in `effect external of @amount`; nothing: no limit) and who granted it
+(`approver`). Each permission counts the calls it let through, so two one-time grants are two calls.
+With `fourEyes` on, a permission the requester (`requester`) granted themselves does not count.
+
+A call no permission covers is **held for approval**: it does not reach the service yet, and its
+answer handler hears `its status is held` at once, so the screen can show that it waits. Adding a
+permission that covers it sends it, with its original key, and its real answer follows. Adding the
+endpoint to `rejected` drops the calls held for it at that moment, and each one's handler hears
+`its status is rejected`; a later call is held again (a person rejects one payment, not every
+payment to come).
+
+```
+on answer pay.charge {
+  if its status is held {
+    - set @message to "Waiting for approval"
+    stop
+  }
+  if its status is rejected {
+    - set @message to "Payment rejected"
+  } else if its status is 201 {
+    - set @message to "Paid"
+  }
+}
+```
+ A call while stopped is answered at once with the reason (`{the error}`), so the screen can
+show it. The held calls, what each permission let through and the rejections applied survive a
+reload.
 
 ```
 uses pay.paymentsApi as pay {
-  tested with "apps/api/payments-api.intent"
+  tested with "services/payments-api.intent"
   through std.actions {
-    agree = permissions           # List Permission: endpoint, count, per, upTo
-    rejected = rejected           # List Text: a person rejected these; held calls are dropped
+    agree = permissions           # List Permission: endpoint, count, per, upTo, approver
+    rejected = rejected           # List Text: each entry drops the calls held for that endpoint when it is added
     stop = stopped                # Bool: the emergency stop
   }
 }
 ```
 
-`apps/20-approval.intent` shows a payment held, approved once (a one-time permission), rejected
-and stopped.
+The gate runs in the screen, so it protects against the app's own mistakes and an agent acting too
+fast, not against someone who controls the browser: a service that must refuse unapproved calls
+checks the approval itself.
 
 **What every endpoint may answer.** A service behind layers answers things its endpoints do not
 (a 401 from `std.http.apiKey`). The contract says so once, and every endpoint's answers include
@@ -1033,9 +1188,11 @@ Idioms the compiler reads the same way every time:
   }
   ```
 
-  Rows are visited in the list's own order; the block runs once per row. To keep some rows, add
-  them to an empty result (`- add @row to @keep`) rather than removing from the list being read.
-  A list that may be empty needs no guard: with no rows, the block runs no times.
+  The block runs once for each row the list had when the loop began, in the list's order; removing
+  or adding rows inside the block does not change which rows it visits (§9.13), so the example above
+  is well defined. A list that may be empty needs no guard: with no rows, the block runs no times.
+  The row's name (`@notice`) exists only inside its block, must not hide a name the app already
+  has, and `in @xs` must be a list (the checker says so).
 - A step written as prose control ("- if …, … and stop", "- otherwise …") still reads, but the
   checker hints (`UNSTRUCTURED`) to write it as structure.
 - **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
@@ -1064,7 +1221,6 @@ choose "Ann" in payer       # select … from: options are texts
 wait 3s                     # = 3 ticks with `clock every 1s`; without a tick: the clock moves on (§3b)
 tick 5 times
 see count = "2"             # text/field value; numbers and choice values are allowed: see count = 2
-see go.enabled is disabled  # a property by name, from what the kind shows: .value, .label, .enabled, .checked, .rows
 see title on row 1 [of visible] = "Milk"
 click remove on row with "Milk"   # the first row showing that exact text
 see visible has 2 rows
@@ -1138,6 +1294,11 @@ and the data at that moment. `rules` stays for guidance the compiler reads but n
 something is done, what a word means); a rule that reads like an invariant gets an `UNCHECKED`
 hint to move it to `always`.
 
+**Who wrote a rule.** `rules { … }` are the person's; `rules by ai { … }` are rules an LLM added
+while writing or refining the spec. The compiler reads both the same way; the difference is who may
+change them: an LLM revises its own rules, and a person's only when the person asks. The source map
+marks an LLM's rule (`"origin": "ai"`).
+
 `has 1 row` and `has 3 rows` are both fine. `see x on row 2 is hidden` checks an element inside a
 row. A list hidden by `visible when` counts as not on the screen: check it with
 `see list is hidden`, not with a row count.
@@ -1149,6 +1310,41 @@ exists in more than one list.
 
 The checker runs before any compile. Errors stop the build; warnings are the backlog of
 places where the spec is not yet precise.
+
+**Two kinds of checks.** The compiler's checks decide whether a spec means one thing: syntax,
+references, types, relations, which row "that ticket" is. They are built in; a spec that fails one
+does not build. **Quality rules** are about completeness, style and a team's policy. They come in
+rule sets: `std.quality` by default, and a project can add its own and set each rule's level in
+`intent.project`:
+
+```
+quality {
+  use std.quality
+  use ./quality/team.ts          # a module whose default export is { name, rules }
+  UNMARKED off
+  STATUS_UNPROVEN error
+}
+```
+
+A rule has an id, a level (`off`, `warning`, `error`), what it asks for and a check over the spec
+(the loaded spec, its units, source map, typed coverage and sentences), returning findings with a
+line, a message and optionally a fix. A quality error fails `intent check` (and so CI); the build
+only enforces the compiler's checks. The compiler's errors cannot be switched off.
+`examples/quality/team.ts` is a small rule set to start from.
+
+`std.quality` holds the hints in the table below (`UNPROVEN`, `UNMARKED`, `UNGUARDED`,
+`UNCHECKED`, `UNTYPED`, `UNANCHORED`, `UNSTRUCTURED`, `SPELLING`, `PIVOT`, `NO_EXAMPLES`,
+`NO_HANDLER`, `SHADOWED`, `UNUSED`, `OVERRIDES_PROOF`): the compiler only records what it worked
+out (which elements the examples check, which components are used, what a refinement changes), and
+the rules judge it. Every `intent check`, build and `intent fix` applies std.quality at the
+project's levels; `intent check` also runs the project's own rule sets. It adds these rules:
+
+| Rule | Default | Asks for |
+|---|---|---|
+| `NEVER_UNCHECKED` | warning | a promise in the purpose (never, always, at most, no two) is an `always` rule |
+| `STATUS_UNPROVEN` | warning | every status an endpoint answers is seen in some example (a contract is proven by its implementation) |
+| `LONG_SENTENCE` | warning | a sentence stays under 40 words; name its parts in `derive` |
+| `JUDGEMENT` | off | each sentence left untyped is listed, so it is judgement on purpose |
 
 `intent fix <file>` applies the fixes that need no judgement: an old `Maybe T` type becomes
 `T or nothing`, an unmarked declared name gets its `@` (`UNMARKED`), a missing `import` is added
@@ -1162,8 +1358,10 @@ out in the canonical form.
 | `INDENT` | error | tabs, odd indentation, or a child where none is allowed |
 | `SYNTAX` | error | also: a `}` without its `{`, or a `{` that is never closed |
 | `UNKNOWN_NAME` | error | a reference to an undeclared element, field, type or value |
-| `NO_KEY` | error | a `ref X` where `X` has no `Int` or `Text` field to be its key |
+| `NO_ROW` | error | "that ticket", "this habit", "the new charge" or "its @f" with no such row before it (the clicked row, a loop row, a lookup, a new record) |
+| `NO_KEY` | error | a `ref X` where `X` has no key: no field marked `key` and none named `id` |
 | `BAD_BINDING` | error | e.g. `field x` where state `x` is not Text |
+| `TYPE` | error | a reference that does not fit where a phrase puts it (`increase @draft` on a Text, `set @count to @draft`, `@status is @Urgent` for another choice); a type that cannot hold what is declared |
 | `DUPLICATE` | error | a name declared twice in one scope |
 | `RESERVED` | error | a name that clashes with target keywords or generated names (see below) |
 | `STEP` | error | an example step that does not match the element (click a text, …) |
@@ -1180,10 +1378,13 @@ out in the canonical form.
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
 | `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone |
 | `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
-| `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …` / `the ticket where …`), without saying what happens when there is none |
+| `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …`), without saying what happens when there is none |
+| `SPELLING` | warning | a form written with another word than the language's: a lookup `the ticket where …` is `the ticket whose …` (`intent fix` rewrites it) |
 | `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
-| `UNUSED` | warning | a declared component is never used |
+| `UNTYPED` | warning | a derived value is used where its type matters, but its type is neither declared nor known from its form: declare it (`total: Decimal = …`) |
+| `UNUSED` | warning | a declared component is never used, or `only` lists a name the app never uses |
+| `UNDECLARED` | error | the app calls, undoes through or handles an endpoint or event its `uses … only` does not list |
 | `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
 | `LANGUAGE` | warning | the spec was written for an older language version |
@@ -1257,252 +1458,15 @@ something when it wants different behaviour.
    **Rounding words** map to fixed helpers: "rounded" is `Fmt.roundTo` (half away from
    zero), "rounded up" is `Fmt.roundUpTo`, and "rounded down" is `Fmt.roundDownTo`. Money in
    whole cents is `Fmt.cents`. Builds never invent their own rounding or epsilon.
-10. **Row keys** are internal. Any stable, unique string is fine.
+10. **Row keys.** Every row of a list carries a key that names the item it shows: the record's key
+    (§3) when the record has one, else the item's place in the state list it came from. A button,
+    field or select inside a row acts on the item with that key ("that ticket", §9.7), also when
+    the list on screen is filtered or derived from a state list. A row that shows a value with no
+    item in any state list (computed on the fly) cannot be edited: its fields and selects change
+    nothing (§9.11). The key itself is never shown and never appears in examples, which name rows
+    by position (`on row 2`) or by what they show (`on row with "Milk"`).
 11. **Impossible or ignored actions** leave the state unchanged.
-
-## Growing the language
-
-Intent is a language in progress. When a spec needs something the language cannot say
-yet, the checker reports `NOT_YET`. That is a candidate for the next version, not a rule.
-Each version below was added because a real spec needed it. Next candidates:
-
-- fields, selects and nested lists inside list rows (inline editing, sub-items);
-- `clock` in styled apps;
-- several screens with navigation;
-- lists of plain values on screen (`list tags of Text`, the row as `it`); now a one-field record;
-- effects the harness owns, such as HTTP and randomness with a seed;
-- invariants across rows ("no table is booked twice") and over state that is not on screen;
-- restyling a bundle component's elements from the app;
-- type parameters and slots, so a component can render the app's own rows;
-- a checker warning for templates whose hole can be empty (`"{date} · {location}"` showing ` · `);
-- explicit layout sizes (`look` is still words; a closed size vocabulary could replace them).
-
-## Changelog
-
-- v58: an element's properties can be checked by name, from what its kind shows: `see x.value = "…"`,
-  `see x.label = "…"`, `see x.enabled is disabled`, `see x.checked is checked`, `see x.rows = 3`
-  (docs/design/profiles.md, step 2). The existing sugar (`see x = "…"`, `see x is disabled`,
-  `see x has N rows`) stays. `tests/see.test.ts`.
-
-- v57: a lookup is a checked form: `the @tickets whose @status is @Open` (or `where …`) must name a
-  state list or a derived value after the `@`, so a typo is `UNKNOWN_NAME` instead of a sentence the
-  compiler reads as something else. Regression in `tests/checker/nothing.intent`.
-
-- v56: a `select … from …` inside a list row (options from a list of records; choosing sets that
-  row's item's Text field to the chosen option). `apps/27-row-assign.intent` proves it (1/1 example,
-  twin-verified on both targets). A `select … from …` outside a row already worked.
-
-- v55: a `select` inside a list row: choosing a value sets that row's item's choice field (the row's
-  key names the item, §9.7); the example step is `choose Done in status on row 1`. The event
-  carries the row's key and the chosen value on both targets. `apps/26-row-status.intent` proves it
-  (2/2 examples, twin-verified). A `select … from …` inside a list row and a list inside a list row
-  stay `NOT_YET`.
-
-- v54: a field inside a list row (`list items of Item { field title }`) edits that row's item: §9.7
-  says the row's key names the item, and typing sets its field. The example step is
-  `type "Bread" into title on row 1`; both targets carry the row's key with the typed text. A
-  `select` inside a list row and a list inside a list row stay `NOT_YET`.
-  `apps/25-row-edit.intent` proves it (2/2 examples, twin-verified).
-
-- v53: a lookup may say `where` as well as `whose` (`the ticket where @id is @ticket`); the
-  checker's `UNGUARDED` hint knows both. Regression in `tests/checker/nothing.intent`.
-
-- v52: a path param may be a `Date` or a `DateTime`, not only an `Int` or a `Text`
-  (`screen day "/day/{day}" { path day: Date }`); the address reads it as text, as it did for `Text`,
-  on both targets. (A `Bool`, list or record path param stays `NOT_YET`.)
-
-- v51: `import bundle.Name as Alias` now renames records, choices and refined types too, not only
-  components; the references to a renamed name inside that bundle are renamed with it, so two
-  bundles that declare the same name can be used side by side
-  (`import support.tickets.Ticket as Issue`; regression `tests/checker/load/aliases.intent`). A
-  screen with nothing to click, type or choose now generates a valid interface (`Msg = never` in
-  TypeScript; one `NoOp` variant in Elm) instead of an empty union.
-
-- v50: three more `steer` faults for the effectively-once path (docs/design/effects.md): `slow` (a
-  retry arrives while the first attempt still runs — the service answers 409 `in progress`, and the
-  client sends the same idempotency key again), `restart after effect` (the service restarts after
-  the effect with its keys kept, so the retry replays) and `expire keys` (a late retry after the
-  keys expired is treated as new and runs again). `apps/18-checkout.intent` proves all three (9/9
-  examples, twin-verified).
-
-- v49: `ticket: ref Ticket`: a record field whose type is another record's key. The key is the
-  referenced record's first `Int` or `Text` field, resolved by the checker and used as the field's
-  type (storage and reads are the key, so the app never carries a free-text key); a record with no
-  such field cannot be referenced (`NO_KEY`). The `relations` sentence still states and checks the
-  same relation. `apps/24-references.intent` proves it on both targets (twin-verified); regression
-  in `tests/checker/ref.intent`.
-
-- v48: per-screen element names: a name is unique within a screen, and two screens may reuse one
-  (`back` on both); the one `on click back` handler serves both, because a handler belongs to the
-  name. `see`/`click` resolve to the screen the example is on. `apps/23-tabs.intent` proves it on
-  both targets (25/25 sessions identical).
-
-- v47: `relations { - a @Comment's @ticket is a @Ticket's @id }`: relations between records are
-  declared and checked (both records, both fields, equal key types) instead of left in a comment;
-  the field stays a plain key and reading it is a lookup with a none case. `apps/10-helpdesk.intent`
-  declares one; regression in `tests/checker/relations.intent`.
-
-- v46: `@path.x` / `@query.x` / `@body.x` in an endpoint's step name a request param and say which
-  part it is, so a param is told apart from a field with the same name (`the ticket whose @id is
-  @path.id`); the checker refuses the wrong part or a step outside an endpoint. Used in
-  `apps/api/payments-api.intent`.
-
-- v45: agreement, four eyes: `std.actions` gained `fourEyes` and `requester` params, and
-  `Permission` gained `approver`. With `fourEyes` on, a permission the requester granted themselves
-  does not cover the call (it is held), so a second person must approve. Unit-tested in
-  `tests/gate.test.ts`; `apps/20-approval.intent` also pins what happens when a held call's answer
-  is lost (`steer pay lose answer` then approve → one charge).
-
-- v44: a screen can use platform functions, in both targets: spec.ts (or Spec.elm) re-exports them
-  from the installation's code and the app calls them in a sentence (`apps/22-hash.intent` shows
-  `@sha256`; the Elm `std.crypto` is checked against the TypeScript one in a parity test). A
-  platform that runs in the harness (`intent.tools`) stays for services, and one without an Elm
-  implementation is `NOT_YET` on Elm.
-
-- v43: agreement, permissions with bounds: `std.actions`'s `agree` is a list of `Permission`
-  records (`endpoint`, `count`, `per`, `upTo`), so a standing permission says how many calls a
-  period allows and the most each may amount to; a call that breaks one is held. A client layer's
-  records now merge into the app (like a server layer's). `apps/20-approval.intent` proves a
-  one-time permission lets exactly one payment through, on both targets.
-
-- v42: agreement, pending: a call with no standing permission is held for approval instead of
-  refused. Approving adds the endpoint to `agree` and the harness sends the held call with its
-  original key; rejecting adds it to `rejected` and the held call is dropped. `std.actions` gained
-  the `rejected` param; `apps/20-approval.intent` proves held → approved, held → rejected and the
-  stop, on both targets (25/25 sessions identical).
-
-- v41: `list x of Text` (or Int, Decimal, Bool, Date, DateTime): a list of plain values shows each
-  value as a row, with no row elements to declare. `see x has N rows` checks it
-  (`apps/21-tags.intent`, both targets).
-
-- v40: agreement, first slice: `through std.actions` (`lib/std/actions.intent`) gates a screen's
-  calls. An `effect external` endpoint goes out only when a standing permission covers it
-  (`agree`, a `List Text` of endpoint names from the state), and none goes out while the emergency
-  stop is on (`stop`). A refused call is answered with the reason, never sent; `apps/20-approval.intent`
-  proves a payment refused, allowed and stopped, on both targets (25/25 sessions identical).
-
-- v39: loops as structure: `for each @x in @xs where <condition> { … }` in a handler, an endpoint
-  or an `every` block, with the loop's name (and its record's fields) in scope inside. It replaces
-  the long "every notice whose … is removed …, and for each one …" sentence (`apps/api/notices-api.intent`).
-
-- v38: undo on the calling side: `undo @alias.endpoint` in a handler calls the `undone by`
-  endpoint with its arguments from the original call's answer, through the effectively-once path
-  with its own key; `undo @…` reports `EFFECT` for an endpoint that cannot be undone and
-  `NO_HANDLER` when the undo's answer is not handled. The call carries the answer in Elm
-  (`PayChargeUndo { answer = … }`) and TypeScript (`{ undo: "pay.charge", answer }`); a lost answer
-  replays instead of refunding twice. Proven by `apps/18-checkout.intent`'s Refund button.
-
-- v37: platform functions: `platform <name>` with `function f(x: T): R` and examples, implemented by
-  the installation (`runtime/ts/platform/`); `std.crypto.sha256`, `intent.tools.check`;
-  `apps/api/specs-api.intent` records what it computes, never what a sender claims.
-
-- v36: several screens: `screen <name> "<path>"` with `path x: T`, `go to @screen with …`,
-  `go back`, `on open <screen>`; `open`, `go back`, `see screen`, `see path` in examples. The harness
-  owns the route and the history (the address after `#` in the browser).
-
-- v35: from building a registry with Intent: the project is where the command runs (never the
-  installation by accident), and `std.*` comes from the installation; a service layer's param can
-  be bound to the app's state (`keys = apiKeys`), and its records are the app's; `@newToken`, a
-  fresh secret per request (`apps/api/members-api.intent`: sign-up); `public` entries by prefix
-  and method in `std.http.apiKey`; lists and records as `call` arguments; `\n` and `\t` in
-  strings; `NOT_YET` for lists of plain values; fewer false `UNMARKED` / `UNCHECKED` hints.
-
-- v34: effectively once. Services recognise a repeated request by its idempotency key (IETF
-  draft, Stripe): the same answer again, 422 for another request, 400 without a key for `effect
-  external`, kept 24 hours with the stored state. Screens send a key per call and send it again on a
-  lost answer, 5xx or 429 (three attempts in all); an external call with no answer is `unknown`.
-  `steer <api> …` in examples and random sessions; api sessions deliver keyed requests twice.
-
-- v33: effects on contract endpoints: `effect external` and `undone by <endpoint> with …`; the
-  checker (`EFFECT`, `PIVOT`); effects per handler in the source map. `lib/pay` (payments: charge,
-  refund, receipt) and `apps/api/payments-api.intent`. The harness part follows
-  `docs/design/effects.md`.
-
-- v32: `stored` state fields survive a restart (a screen keeps them in the browser, an api in a
-  data file); `restart` in examples, also in random sessions, and a check that stored fields come
-  back unchanged. The app hands over `data` and a `restore` for them (generated interface).
-
-- v31: `- sentence` lines in `always`: invariants over the data, checked after every step by a
-  separately compiled check; the app hands over its data (`Data`); `UNCHECKED` hint for rules that
-  read like invariants; `UNGUARDED` hint when a `T or nothing` value is used without saying what
-  happens when there is none (the helpdesk's drawer now says it).
-
-- v30: `T or nothing` for a value that may be absent (was `Maybe T`, which still reads); the
-  helpdesk's "0 for none" became `Int or nothing`.
-
-- v29: control words are structure: `if <condition> { … } else if … { … } else { … }`, `answer …`
-  (ends an endpoint), `stop` (ends a handler). Unreachable steps and endpoints that do not answer
-  on every path are errors; prose "and stop" / "otherwise" gets a hint.
-
-- v28: time: `Date` and `DateTime` types and literals, `@today` and `@now` in sentences,
-  `examples start at …`, `wait 1d` moves the clock in tests, date helpers in Fmt (the same in
-  every target), and `every 15m { … }` recurring work in apis.
-
-- v27: traceability: checker errors point at the step's own line; `see x.body… = value` must
-  be a value the field can hold; the source map covers endpoints, steps, events, layers, rules
-  and examples; `INTENT_TRACE=1` makes every api answer name its spec line.
-
-- v26: import what you use: names in a file's sentences and declarations must come from the
-  file or from a spec it names itself (`import`, `uses`, `implements`, `extends`).
-
-- v25: references in sentences are marked with `@` (`@draft`, `@Item`, `@pager.visible`), also
-  inside components (was `{page}`); unknown `@names` are errors, unmarked names a hint.
-
-- v24: blocks with braces (`screen { … }`), the canonical form; files without braces are still
-  read by indentation. `intent fmt` lays a file out in braces. The compiler reads braces.
-
-- v23: a client's layers: `before every call` in a layer, `through <layer>` under `uses` with
-  params bound to state or literals (`std.http.sendKey`); `given` in a layer's examples;
-  `every endpoint answers 401 Problem` in contracts; a base URL per api in the browser
-  (`api.<alias>`); event streams in tests only reach a screen the provider's layers let through.
-
-- v22: events: `event name: Type` in contracts and apis, `publish x with …` in endpoint steps,
-  `see x.body…` / `see x is absent` on what a call published, `on event <alias>.<event>` in
-  screens, another client's `call <alias>.<endpoint>` in a screen's examples; Server-Sent
-  Events at `/events`. The checker checks `see x.body.<path>` against the answer types.
-
-- v21: layers (`layer`, `param`, `provides`, `before every request`, `after every answer`,
-  `examples with`) and `use <name> = <layer>` in api apps; `std.http.secure`, `std.http.cors`
-  and `std.http.apiKey`; request and answer headers in api examples (`call … with header h =
-  …`, `see x.header.h`), raw `request` steps and `is absent`.
-
-- v20: screens call APIs through contracts: `uses <contract> as <alias>` (with `tested with
-  "<provider spec>"`), `call <alias>.<endpoint> with …` in handlers, `on answer <alias>.<endpoint>`
-  and `on start`. Examples run against the real provider build, settled after every step.
-
-- v19: refined types (`type Email = Text matching /…/`, `type Age = Int from 0 to 150`) with
-  generated checks for every target, checked seed data and api validation; `std.text`.
-- v18: contracts: `contract`, `answers <status> [Type]`, `implements`, endpoints by name only in
-  the implementation, `Problem`; checked by the checker, the TypeScript compiler (typed
-  handlers) and at run time; `intent client`; `{endpoint.body.x}` in `call` arguments.
-- v17: the api profile (`profile api`, `endpoint`, `call` / `see x.status|body…`), with a
-  TypeScript/Node harness; the same domain bundle serves a screen and an API.
-- v16: the UI vocabulary is a profile spec (`lib/profile/ui.intent`): element kinds, what they
-  show, their verbs, presentations and meanings; the checker reads it (docs/design/profiles.md).
-- v15: projects: `intent.project` (`registry`, `requires`), `intent install` with minimal
-  version selection, `intent publish` with computed versions (names + demo behaviour).
-- v14: numeric checks (`is at least|at most|above|below`) and per-row checks
-  (`see every row of <list>: …`), in `always` and in examples.
-- v13: refinement: `extends`, `override`, `add to … after …`, `drop`; base proofs run on the
-  refining spec; overrides fingerprinted in `intent.lock` (`BASE_CHANGED`).
-- v12: `empty` presentation; a select's `""` is a placeholder, never an option; template holes
-  and display formats documented; `language vN` line; the lock pins the language and model;
-  `SHADOWED` warning; header/toolbar grouping; a screen without a sidebar is one
-  centered column; plain sections stack; table columns size themselves.
-- v11: `visible when` and `look` on `use`; `as` on its own line; handler idioms (`and stop`,
-  `otherwise`, `its`); reserved names listed and narrowed (domain words like `Event` are free;
-  the generated message type is now `Msg`); `std.list.Pager` never shows a page past the end.
-- v10: modules: `bundle`, `import`, `intent.lock`; behaviour components (`param`, `state`,
-  `derive`, `screen`, `on`, `always` inside `component`; `use x = Component`); end-of-line
-  comments are notes; `search` fields defined (placeholder label, fixed width).
-- v9: components with a base presentation (`component X as card "…"`).
-- v8: sections inside list rows (component cards); `NOT_YET` instead of hard "unsupported";
-  layout defaults: spec order, button rows, sidebar footer.
-- v7: no language change; the harness gained the Kit (class recipes derived from `design`).
-- v6: `snapshot "…"` visual checkpoints; the look shows only what the spec names.
-- v5: styling: `design`, `component`, `as <presentation>`, `look`, `progress`, choice labels,
-  label + value on `progress`.
-- v4: `always` invariants, `has at most/at least N rows`.
-- v3: `on row with "…"` in examples, `Fmt.decimal`.
-- v2: `table` seed data, `select … from list.field`, rounding vocabulary (`Fmt.roundTo`, …).
-- v1: records, choices, state, screen, events, examples, §9 defaults.
+12. **References.** Removing a row leaves the `ref` fields that held its key as they are: nothing
+    cascades. A lookup of such a key finds none, and the sentence that reads it says what then.
+13. **Loops** visit the rows a list had when the loop began, in its order. Changing the list inside
+    the loop changes the list, not the visit.

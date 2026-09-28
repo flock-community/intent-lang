@@ -164,3 +164,15 @@ example "kept after a restart" {
   call createTicket with subject = "Scanner too", customer = "Ann", priority = Low
   see createTicket.body.id = 10
 }
+
+example "no such ticket, wherever it is asked for" {
+  call solveTicket with id = 99
+  see solveTicket.status = 404
+  see solveTicket.body.error = "No such ticket"
+  call addComment with id = 99, author = "Sam", text = "Hello"
+  see addComment.status = 404
+  see addComment.body.error = "No such ticket"
+  call listComments with id = 99
+  see listComments.status = 404
+  see listComments.body.error = "No such ticket"
+}

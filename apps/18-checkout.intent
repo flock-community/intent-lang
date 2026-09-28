@@ -87,6 +87,8 @@ example "the service restarts after the effect" {
   steer pay restart after effect
   click buy
   see message = "Paid: charge 1"
+  click refund
+  see message = "Refunded: charge 1"
 }
 
 example "an expired key charges again" {

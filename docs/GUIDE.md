@@ -822,5 +822,6 @@ node compiler/cli.ts build apps/api/desk-api.intent  # → runs/single/desk-api/
 | `apps/15-tickets-ui.intent` | a screen calling an API, following events |
 | `apps/16-desk-ui.intent` | signing in with a key through a client layer |
 | `lib/` | bundles, contracts and layers to reuse |
-| [`LANGUAGE.md`](LANGUAGE.md) | the full reference, with the changelog |
+| [`LANGUAGE.md`](LANGUAGE.md) | the full reference (also the compiler's prompt) |
+| [`CHANGELOG.md`](CHANGELOG.md) | how the language grew, and the next candidates |
 | [`../skills/intent-spec/SKILL.md`](../skills/intent-spec/SKILL.md) | how an LLM should write specs with you |

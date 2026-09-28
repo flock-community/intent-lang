@@ -16,4 +16,4 @@ Apps: apps/01-counter.intent, apps/02-todo.intent, apps/09-board.intent, apps/21
 | 21-tags | a new example (no code change) | yes | twin | app code | $0.000 | $0.000 | 94 |
 | 21-tags | a changed handler | yes | twin | regions | $0.007 | $0.021 | 5116 |
 
-10/10 edits kept a verified build.
+10/10 edits kept a verified build (a full rebuild would too). Reuse: regions in 3, the whole app code in 3 (example-only edits), a full build in 4.

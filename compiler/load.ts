@@ -5,10 +5,12 @@ import { bareWords, refsIn, sentences } from "./refs.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { applyQuality, withStdQuality, type QualityConfig, type RuleSet } from "./quality.ts";
+import { readProject } from "./registry.ts";
 import { LINE_BASE, type App, type ChoiceDecl, type Component, type Diagnostic, type Design, type Element, type RecordDecl, type RefinedDecl, type Type } from "./ast.ts";
 import { expandUses } from "./expand.ts";
 import { PROJECT_ROOT, ROOT } from "./gen.ts";
-import { checkApp, parseSyntax, typeToString } from "./parse.ts";
+import { checkApp, jobScreen, parseSyntax, typeToString } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
 import { model } from "./llm.ts";
 import { config } from "./config.ts";
@@ -93,7 +95,7 @@ function offsetLines(v: any, base: number) {
       else offsetLines(x, base);
 }
 
-export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded {
+export function load(file: string, opts: { ignoreLock?: boolean; quality?: false | { sets: RuleSet[]; config: QualityConfig } } = {}): Loaded {
   const sources = [{ file: shown(file), text: readFileSync(file, "utf8") }];
   const diagnostics: Diagnostic[] = [];
   const at = (line: number): { file: string; line: number } => ({ file: sources[Math.floor(line / LINE_BASE)]?.file ?? sources[0].file, line: line % LINE_BASE });
@@ -113,10 +115,10 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     const pins = compilerPins();
     const locked = readCompilerLock();
     if (locked.language && locked.language !== pins.language)
-      warn(1, "LOCK", `the language reference changed since intent.lock was written (now ${pins.languageVersion}); builds will read the new version. Review the changelog, then run \`intent lock\``);
+      warn(1, "LOCK", `the language reference changed since intent.lock was written (now ${pins.languageVersion}); builds will read the new version. Review docs/CHANGELOG.md, then run \`intent lock\``);
     if (locked.model && locked.model !== pins.model) warn(1, "LOCK", `the compiler model is ${pins.model}, but intent.lock pins ${locked.model}`);
     if (main.language && main.language !== pins.languageVersion)
-      warn(main.languageLine, "LANGUAGE", `this spec was written for language ${main.language}; the language is now ${pins.languageVersion}. Read the changelog in docs/LANGUAGE.md for what changed`);
+      warn(main.languageLine, "LANGUAGE", `this spec was written for language ${main.language}; the language is now ${pins.languageVersion}. Read the changelog in docs/CHANGELOG.md for what changed`);
   }
   const bundles: Loaded["bundles"] = [];
 
@@ -184,7 +186,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
       err(l.line, "UNKNOWN_NAME", `no layer \`${l.layer}\` (looked for ${shown(path)})`);
       continue;
     }
-    const loaded = load(path, opts);
+    const loaded = load(path, { ...opts, quality: undefined });
     if (!loaded.app) {
       err(l.line, "BAD_BINDING", `the layer ${l.layer} has errors; run \`intent check ${shown(path)}\``);
       continue;
@@ -221,6 +223,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
   }
 
   // Clients: `uses <contract> as <alias>` brings the contract's types, and its endpoints as calls.
+  const declared = new Set<RecordDecl | ChoiceDecl>([...app.records, ...app.choices]); // the app's own, before any layer's
   for (const u of app.uses ?? []) {
     const path = bundlePath(u.contract);
     if (!existsSync(path)) {
@@ -271,6 +274,12 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
         }
         l.spec = loaded.app;
         // A client layer's records and choices are the app's too (`std.actions` declares Permission).
+        // The app cannot declare one of its own with the same name: the layer reads its own.
+        for (const t of [...(loaded.app.records ?? []), ...(loaded.app.choices ?? [])]) {
+          const mine = [...declared].find((x) => x.name === t.name);
+          if (mine)
+            err(mine.line, "DUPLICATE", `\`${t.name}\` comes from the layer ${l.layer}: the app cannot declare its own (use the layer's, or give yours another name)`);
+        }
         for (const r of loaded.app.records ?? []) if (!app.records.some((x) => x.name === r.name)) app.records.push(r);
         for (const c of loaded.app.choices ?? []) if (!app.choices.some((x) => x.name === c.name)) app.choices.push(c);
         l.digest = sha(printApp(loaded.app)).slice(0, 12);
@@ -285,7 +294,7 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
         for (const p of params.values()) if (p.default === undefined && !l.bindings.some((b) => b.name === p.name)) err(l.line, "BAD_BINDING", `layer ${l.layer} needs \`${p.name}\`: bind it in an indented line (\`${p.name} = <state or literal>\`)`);
       }
     }
-    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through });
+    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through, ...(u.only ? { only: u.only } : {}), line: u.line });
   }
 
   // Load bundles depth-first; every bundle once.
@@ -334,14 +343,19 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     owner.set(name, by);
   };
   const aliases = new Map<string, Map<string, string>>(); // bundle → name → alias
+  const renamedAt = new Map<string, number>(); // "bundle.Name" → the import line that renamed it (a clash is reported there)
   for (const imp of app.imports ?? []) {
     if (!imp.name) continue;
     const b = loaded.get(imp.bundle);
     if (b && ![...b.records, ...b.choices, ...(b.refined ?? []), ...b.components].some((d) => d.name === imp.name))
       err(imp.line, "UNKNOWN_NAME", `bundle ${imp.bundle} has no \`${imp.name}\``);
-    if (imp.alias) {
+    // A new name that the bundle or the app already has would declare it twice: say so at the import.
+    const taken = b && imp.alias ? [...b.records, ...b.choices, ...(b.refined ?? []), ...b.components, ...app.records, ...app.choices, ...(app.refined ?? []), ...app.components].find((d) => d.name === imp.alias && d.name !== imp.name) : undefined;
+    if (taken) err(imp.line, "DUPLICATE", `\`${imp.alias}\` is already a name here (from ${b!.records.includes(taken as RecordDecl) || b!.choices.includes(taken as ChoiceDecl) || b!.components.includes(taken as Component) ? `bundle ${imp.bundle}` : "this app"}): rename \`${imp.name}\` to something else`);
+    else if (imp.alias) {
       if (!aliases.has(imp.bundle)) aliases.set(imp.bundle, new Map());
       aliases.get(imp.bundle)!.set(imp.name, imp.alias);
+      renamedAt.set(`${imp.bundle}.${imp.name}`, imp.line);
     }
   }
   // Rename the types a field or answer uses: an aliased record or choice, everywhere in the bundle.
@@ -355,23 +369,23 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     const m = aliases.get(name);
     for (const r of b.records) {
       const rec: RecordDecl = m ? { ...r, name: m.get(r.name) ?? r.name, fields: r.fields.map((f) => ({ ...f, type: renameType(f.type, m) })) } : r;
-      claim(rec.name, name, r.line);
+      claim(rec.name, name, renamedAt.get(`${name}.${r.name}`) ?? r.line);
       app.records.push(rec);
     }
     for (const c of b.choices) {
       const ch: ChoiceDecl = m ? { ...c, name: m.get(c.name) ?? c.name } : c;
-      claim(ch.name, name, c.line);
+      claim(ch.name, name, renamedAt.get(`${name}.${c.name}`) ?? c.line);
       app.choices.push(ch);
     }
     for (const r of b.refined ?? []) {
       const rf: RefinedDecl = m ? { ...r, name: m.get(r.name) ?? r.name } : r;
-      claim(rf.name, name, r.line);
+      claim(rf.name, name, renamedAt.get(`${name}.${r.name}`) ?? r.line);
       (app.refined ??= []).push(rf);
     }
     for (const c of b.components) {
       const alias = m?.get(c.name);
       const comp: Component = { ...c, name: alias ?? c.name, from: name };
-      claim(comp.name, name, c.line);
+      claim(comp.name, name, renamedAt.get(`${name}.${c.name}`) ?? c.line);
       app.components.push(comp);
     }
     if (b.design) designs.push(b.design);
@@ -391,12 +405,17 @@ export function load(file: string, opts: { ignoreLock?: boolean } = {}): Loaded 
     app.records.push({ name: "Problem", fields: [{ name: "error", type: { k: "Text" }, line: 0 }], line: 0 });
   for (const c of app.components) if (c.body) lintComponent(c, warn);
   const used = expandUses(app, err, warn);
+  jobScreen(app, err);
   app.sources = sources;
   if (app.name && app.kind !== "bundle") {
     // (a contract is checked as an api without behaviour)
     diagnostics.push(...checkApp(app, main.clockLine, used));
     checkDirectImports(app, sources, bundles, ownImports, err);
   }
+  // The compiler's checks, then std.quality's hints at the project's levels (`intent check` adds the
+  // project's own rule sets: it loads with `quality: false` and applies them all).
+  if (opts.quality !== false && app.name && app.kind !== "bundle")
+    diagnostics.splice(0, diagnostics.length, ...(opts.quality ? applyQuality(file, app, diagnostics, opts.quality.sets, opts.quality.config) : withStdQuality(file, app, diagnostics, readProject()?.quality?.levels)));
   const out = diagnostics.map((d) => ({ ...d, ...at(d.line) }));
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
   return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp };
@@ -556,23 +575,29 @@ export interface SourceEntry {
   instance?: string; // the component instance it belongs to (e.g. "pager")
   component?: string; // and that instance's component, with its bundle
   bundle?: string;
+  path?: string; // a screen's address
+  origin?: "ai"; // a rule an LLM wrote (`rules by ai`)
 }
 
 /**
  * Where everything in the app comes from: element names (the DOM's data-el), handlers, state and
- * derived values → spec file and line. The basis for "point at the app, change the spec".
+ * derived values → spec file and line. The basis for "point at the app, change the spec". With
+ * several screens an element's key starts with its screen (`about/title`), because two screens may
+ * reuse a name: the address says the screen (`screen about` → its path), the data-el the element.
  */
 export function sourceMap(app: App): Record<string, SourceEntry> {
   const map: Record<string, SourceEntry> = {};
   const instances = new Map<string, { component: string; bundle?: string }>();
-  const walk = (els: App["screen"], list?: string) => {
+  for (const s of app.screens ?? []) map[`screen ${s.name}`] = { kind: "screen", path: s.path, ...where(app, s.line) };
+  const walk = (els: App["screen"], list?: string, screen?: string) => {
     for (const el of els) {
       if (el.kind === "heading") continue;
+      const on = el.screen ?? screen;
       const comp = el.as && app.components.find((c) => c.name === el.as && c.body);
       if (comp) instances.set(el.name, { component: comp.name, bundle: comp.from });
-      const key = list ? `${list}[].${el.name}` : el.name;
+      const key = `${on ? `${on}/` : ""}${list ? `${list}[].${el.name}` : el.name}`;
       map[key] = { kind: el.kind, ...where(app, el.line) };
-      walk(el.children, el.kind === "list" ? el.name : list);
+      walk(el.children, el.kind === "list" ? el.name : list, on);
     }
   };
   walk(app.screen);
@@ -600,11 +625,11 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
   }
   for (const l of app.layers ?? []) map[`layer ${l.alias}`] = { kind: "layer", ...where(app, l.line) };
   for (const c of app.clients ?? []) if (c.through) map[`through ${c.alias}`] = { kind: "layer", ...where(app, c.through.line) };
-  app.rules.forEach((_, i) => app.ruleLines?.[i] && (map[`rule ${i + 1}`] = { kind: "rule", ...where(app, app.ruleLines[i]) }));
+  app.rules.forEach((_, i) => app.ruleLines?.[i] && (map[`rule ${i + 1}`] = { kind: "rule", ...where(app, app.ruleLines[i]), ...(app.ruleBy?.[i] === "ai" ? { origin: "ai" } : {}) }));
   for (const ex of app.examples) map[`example ${ex.name}`] = { kind: "example", ...where(app, ex.line) };
   // Tag everything that belongs to a component instance.
   for (const [key, entry] of Object.entries(map)) {
-    const name = key.replace(/^(state|derive|on \w+) /, "");
+    const name = key.replace(/^(state|derive|on \w+) /, "").replace(/^\w+\//, "");
     const inst = [...instances.keys()].filter((i) => name.startsWith(i + ".")).sort((a, b) => b.length - a.length)[0];
     if (inst) Object.assign(entry, { instance: inst, component: instances.get(inst)!.component, bundle: instances.get(inst)!.bundle });
   }

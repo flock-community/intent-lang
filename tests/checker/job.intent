@@ -1,0 +1,27 @@
+app JobChecks {
+  "A job has no screen: the harness shows its state, and examples see it by name."
+}
+profile job
+
+record Task {
+  id: Int
+  title: Text
+}
+
+state {
+  count: Int = 0
+  tasks: List Task = []
+}
+
+clock every 1m
+
+on tick {
+  - increase @count by 1
+}
+
+example "counts" {
+  tick
+  see count = 1
+  see tasks has 0 rows
+  see nothing = 1                     # expect: UNKNOWN_NAME
+}

@@ -93,4 +93,50 @@ assert.equal(planIncremental(elementEdit, { code: "", units: a }), undefined, "a
 const handlerEdit = app(spec("Text").replace("- increase @count by 1", "- increase @count by 2"));
 assert.ok(planIncremental(handlerEdit, { code: "", units: a }), "a handler change can be rewritten in place");
 
+// A rule is prose the compiler reads for everything: changing one rewrites all behaviour.
+const ruled = (word: string) => `app Ruled {
+  "Rules."
+}
+
+state {
+  count: Int = 0
+}
+
+screen {
+  text count
+  button up "+"
+}
+
+rules {
+  - the count is shown at the ${word} of the page
+}
+
+on click up {
+  - increase @count by 1
+}
+`;
+const rd = diffUnits(units(app(ruled("end"))), units(app(ruled("start"))));
+assert.deepEqual(rd.dirty, ["element count", "element up", "on click up"], "a changed rule dirties every behaviour unit");
+
+// Several screens may reuse a name: each screen's element is its own unit (`about/title`).
+const screens = units(app(`app Screens {
+  "Two screens."
+}
+
+screen home "/" {
+  text title = "Home"
+  button back "Back"
+}
+
+screen about "/about" {
+  text title = "About"
+  button back "Back"
+}
+
+on click back {
+  - go back
+}
+`));
+assert.deepEqual(screens.filter((u) => u.kind === "element").map((u) => u.key), ["element home/title", "element home/back", "element about/title", "element about/back"], "one unit per screen's element");
+
 console.log("ok units: canonical digests, dependencies, the dirty set, and the session order");

@@ -17,6 +17,7 @@ screen {
   button down "-"
   button clear "Clear"
   button nuke "Nuke"
+  button loops "Loops"
 }
 
 on click up {
@@ -38,6 +39,16 @@ on click clear {
   for each @row in @rows where @row.id is above 0 {
     - remove @row from @rows
   }
+}
+
+on click loops {
+  for each @count in @rows {               # expect: DUPLICATE
+    - remove @count from @rows
+  }
+  for each @one in @count {                # expect: TYPE
+    - set @count to 0
+  }
+  - set @count to @row.id                  # expect: UNKNOWN_NAME
 }
 
 on click nuke {

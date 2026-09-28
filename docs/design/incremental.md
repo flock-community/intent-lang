@@ -1,6 +1,6 @@
 # Design: spec units, code regions, and incremental builds
 
-Status: built. Today every change to a spec compiles
+Status: built, off by default (`incremental off`). Without it every change to a spec compiles
 the app again from nothing, twice, and a twin build that stops on an ambiguity starts over after the
 fix. That is safe but slow and costly. Building on the previous code is only safe when we know, for
 every part of the spec, which part of the code it produced, and what else depends on it. Otherwise
@@ -15,7 +15,7 @@ their LLM calls (measured: a second build of the habits app with a new example l
 always`). Built too: a second cache key, the spec **without its examples**, so a build whose only
 change is an example copies the previous app code and just runs the new examples — no LLM calls at
 all (measured: a second build of a small app with a new example logs `the app code is unchanged;
-reused it` and costs $0.00). Built too (v49, `incremental auto`, off by default): **regions and an
+reused it` and costs $0.00). Built too (`incremental auto`, off by default): **regions and an
 incremental rewrite**. The compiler marks each derived value and handler (`// @spec on click up` …
 `// @end`, `--` in Elm) and the harness checks the marks like it checks examples
 (`compiler/regions.ts`, `tests/regions.test.ts`). On an edit the compiler gets the last verified
@@ -32,8 +32,13 @@ a spec fix both resume from their own clean regions and only the dirty ones are 
 on the same app: changing one handler, both A and B logged `reusing the previous build's clean
 regions (2 kept, 1 rewritten)` and the twin still verified. Built too: the twin's sessions are
 ordered so the ones touching a dirty unit run first (`orderByDirty`), so a remaining ambiguity is
-found quickly. What is left is the measurement suite (recorded edits per app, and the planted bad
-edits of "How it is measured") before `incremental` can default to `auto`.
+found quickly. The measurement suite ran (`runs/incremental-edits.md`): every edit kept a verified
+build, but that alone is what a full rebuild also gives. Regions were actually reused in 3 of the
+10 edits; the board fell back to a full build on both, label edits never reuse, and on the helpdesk
+the model left a handler unmarked. Marks are therefore best-effort (a bad mark means a full build),
+and `incremental` stays off until marking holds on larger apps. Since v59 a changed `rules`
+sentence dirties every behaviour unit, a changed contract dirties what uses its alias, and an
+element on a named screen is its own unit (`element about/title`).
 
 ## Units
 

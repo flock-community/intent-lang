@@ -41,6 +41,7 @@ on click remove {
 
 example "editing a row" {
   see title on row 1 = "Milk"
+  see id on row 1 = "#1"
   type "Oat milk" into title on row 1
   see title on row 1 = "Oat milk"
   see title on row 2 = "Bread"

@@ -1,0 +1,84 @@
+app AlertsUi {
+  "Raise an alert with a level and see every alert, also those others raise."
+  "The service names the levels in lower case on the wire; the screen shows them as the spec names them."
+}
+language v60
+import notify.alerts
+
+uses notify.alertsApi as alerts only raise, listAlerts, alertRaised {
+  tested with "apps/api/alerts-api.intent"
+}
+
+state {
+  rows: List Alert = []
+  draft: Text = ""
+  chosen: Level = Info
+  urgentOnly: Bool = false
+}
+
+screen {
+  field draft "Alert"
+  select chosen
+  button raise "Raise" {
+    enabled when @draft is not blank
+  }
+  checkbox urgentOnly "Only urgent"
+  list rows of Alert {
+    text text
+    text level
+  }
+}
+
+on start {
+  - call @alerts.listAlerts
+}
+
+on toggle urgentOnly {
+  if @urgentOnly {
+    - call @alerts.listAlerts with @level = @Urgent
+  } else {
+    - call @alerts.listAlerts
+  }
+}
+
+on answer alerts.listAlerts {
+  if its status is 200 {
+    - set @rows to its body
+  }
+}
+
+on click raise {
+  - call @alerts.raise with @text = @draft and @level = @chosen
+}
+
+on answer alerts.raise {
+  if its status is 201 {
+    - clear @draft
+  }
+}
+
+on event alerts.alertRaised {
+  if no row in @rows has the @id of its body {
+    - add its body to the end of @rows
+  }
+}
+
+example "raising an urgent alert" {
+  see raise is disabled
+  see urgentOnly is unchecked
+  type "Disk full" into draft
+  choose Urgent in chosen
+  click raise
+  see rows has 1 row
+  see level on row 1 = "Urgent"
+  see draft = ""
+}
+
+example "only urgent ones" {
+  call alerts.raise with text = "Backup done", level = Info
+  call alerts.raise with text = "Disk full", level = Urgent
+  see rows has 2 rows
+  toggle urgentOnly
+  see rows has 1 row
+  see text on row 1 = "Disk full"
+}

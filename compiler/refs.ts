@@ -90,13 +90,13 @@ export const usesToken = (app: App): boolean => sentences(app).some((s) => refsI
 
 /** Does this app read the clock (`@now`, `@today`), or run recurring work? Then its logic gets the clock. */
 export function usesClock(app: App): boolean {
-  if (app.jobs?.length) return true;
+  if (app.jobs?.length || app.sizes) return true; // the host's size travels with the clock
   return sentences(app).some((s) => refsIn(s.text).some((r) => CLOCK_NAMES.includes(r.split(".")[0])));
 }
 
 /** Every name a sentence of this app may refer to. */
 export function declaredNames(app: App): Set<string> {
-  const names = new Set<string>([...CLOCK_NAMES, ...(app.profile === "api" ? [TOKEN_NAME] : [])]);
+  const names = new Set<string>([...CLOCK_NAMES, ...(app.profile === "api" ? [TOKEN_NAME] : []), ...(app.sizes ? ["size"] : [])]);
   for (const f of app.state) names.add(f.name);
   for (const d of app.derive) names.add(d.name);
   const walk = (els: Element[]) => {
@@ -161,3 +161,21 @@ export function resolves(ref: string, names: Set<string>): boolean {
   for (let i = parts.length - 1; i > 0; i--) if (names.has(parts.slice(0, i).join("."))) return parts.slice(i).every((p) => names.has(p));
   return false;
 }
+
+/** What an app's handlers use of each api: the endpoints it calls (and undoes through), the events it handles. */
+export function usedByAlias(app: App): Record<string, { endpoints: Set<string>; events: Set<string> }> {
+  const out: Record<string, { endpoints: Set<string>; events: Set<string> }> = {};
+  for (const c of app.clients ?? []) out[c.alias] = { endpoints: new Set(), events: new Set() };
+  for (const h of app.handlers) {
+    if (h.verb === "event" && h.target) out[h.target.split(".")[0]]?.events.add(h.target.split(".")[1]);
+    for (const st of h.steps) {
+      for (const m of st.matchAll(/\bcall\s+@?([a-z]\w*)\.([a-z]\w*)/gi)) out[m[1]]?.endpoints.add(m[2]);
+      for (const m of st.matchAll(/\bundo\s+@?([a-z]\w*)\.([a-z]\w*)/gi)) {
+        const by = app.clients?.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2])?.undoneBy?.endpoint;
+        if (by) out[m[1]]?.endpoints.add(by);
+      }
+    }
+  }
+  return out;
+}
+

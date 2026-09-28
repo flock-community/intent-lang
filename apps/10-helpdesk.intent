@@ -35,7 +35,7 @@ record Ticket {
 }
 
 record Comment {
-  ticket: Int
+  ticket: ref Ticket
   author: Text
   body: Text
 }
@@ -90,10 +90,6 @@ derive {
   current = the ticket whose @id is @selected, or nothing when there is no @selected
   thread = the @comments whose @ticket is @selected, in their order (none when there is no @selected)
   byPriority = one @Bar per @priority, in the order @Urgent, @High, @Normal, @Low: @label is the @priority's name, @count is the number of @tickets with that @priority that are not @Solved, and @share is @count × 100 divided by the largest @count of the four, rounded down (0 when all counts are 0)
-}
-
-relations {
-  - a @Comment's @ticket is a @Ticket's @id
 }
 
 screen {

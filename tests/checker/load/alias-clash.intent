@@ -1,0 +1,12 @@
+app AliasClash
+
+import support.tickets
+import support.tickets.Ticket as Comment   # expect: DUPLICATE
+
+state {
+  rows: List Comment = []
+}
+
+screen {
+  heading "Rows"
+}

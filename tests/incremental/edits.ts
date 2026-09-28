@@ -77,6 +77,8 @@ const build = async (specFile: string, text: string, out: string, _seed: boolean
 const rows: string[] = ["| app | edit | ok | verified | reused | A cost | total | ms |", "|---|---|---|---|---|---|---|---|"];
 let pass = 0;
 let total = 0;
+let regions = 0;
+let free = 0;
 for (const c of CASES) {
   const original = readFileSync(c.app, "utf8");
   const name = c.app.split("/").pop()!.replace(".intent", "");
@@ -100,13 +102,15 @@ for (const c of CASES) {
     const r = await build(file, text, join(dir, `${name}-out-${i + 1}`), false);
     const reused = r.aIncremental ? "regions" : r.aFree ? "app code" : "no";
     total++;
+    if (r.aIncremental) regions++;
+    if (r.aFree) free++;
     if (r.ok) pass++;
     rows.push(`| ${name} | ${e.what} | ${r.ok ? "yes" : "no"} | ${r.verified} | ${reused} | $${r.aCost.toFixed(3)} | $${r.cost.toFixed(3)} | ${r.ms} |`);
     prev = text;
   }
 }
 rmSync(dir, { recursive: true, force: true });
-const report = `# Incremental builds: recorded edits\n\nThe compiler is the one in this run; each row is an edit applied after the previous one.\nApps: ${CASES.map((c) => c.app).join(", ")}.\n\n${rows.join("\n")}\n\n${pass}/${total} edits kept a verified build.\n`;
+const report = `# Incremental builds: recorded edits\n\nThe compiler is the one in this run; each row is an edit applied after the previous one.\nApps: ${CASES.map((c) => c.app).join(", ")}.\n\n${rows.join("\n")}\n\n${pass}/${total} edits kept a verified build (a full rebuild would too). Reuse: regions in ${regions}, the whole app code in ${free} (example-only edits), a full build in ${total - regions - free}.\n`;
 writeFileSync("runs/incremental-edits.md", report);
 process.stdout.write(`${report}\n`);
 if (pass !== total) process.exit(1);

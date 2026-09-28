@@ -1,0 +1,49 @@
+app NoRowChecks {
+  "`that ticket` and `its` need a row introduced before them: the clicked row, a loop row, a lookup, a new record."
+}
+
+record Ticket {
+  id: Int
+  title: Text
+}
+
+state {
+  tickets: List Ticket = []
+  draft: Text = ""
+  chosen: Int = 0
+}
+
+derive {
+  firstTitle = the @title of that ticket   # expect: NO_ROW
+}
+
+screen {
+  list tickets of Ticket {
+    text title
+    button pick "Pick"
+  }
+  text hint = "Its title shows here."
+  button a "A"
+  button b "B"
+}
+
+on click pick {
+  - set @chosen to the @id of that ticket
+}
+
+on click a {
+  if no ticket has the @id @chosen {
+    stop
+  }
+  - set @draft to the @title of that ticket
+  for each @t in @tickets {
+    - set @draft to the @title of that ticket
+  }
+  - add a @Ticket to the end of @tickets with @id = 9 and @title = "New"
+  - set @draft to the @title of the new ticket
+}
+
+on click b {
+  - set @draft to the @title of that ticket   # expect: NO_ROW
+  - set @draft to its @title                  # expect: NO_ROW
+}

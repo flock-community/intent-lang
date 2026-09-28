@@ -1,0 +1,45 @@
+app Sized {
+  "A notes widget a host shows compact (the count only) or standard (the count and the list)."
+}
+language v60
+
+sizes compact | standard
+
+record Note {
+  id: Int
+  text: Text
+}
+
+state {
+  notes: List Note = table {
+    id | text
+    1  | "Buy milk"
+    2  | "Call Ann"
+  }
+}
+
+screen {
+  text count = "{the number of @notes} notes"
+  list notes of Note {
+    visible when @size is @Standard
+    text text
+  }
+  text more = "Open for more" {
+    visible when @size is @Compact
+  }
+}
+
+example "compact shows the count" {
+  see count = "2 notes"
+  see notes is hidden
+  see more = "Open for more"
+}
+
+example "standard shows the list" {
+  size standard
+  see notes has 2 rows
+  see text on row 1 = "Buy milk"
+  see more is hidden
+  size compact
+  see notes is hidden
+}

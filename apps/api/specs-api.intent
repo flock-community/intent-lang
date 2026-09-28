@@ -49,7 +49,7 @@ endpoint get GET "/specs/{name}" {
   answer 200 with that entry
 }
 
-example "a spec that checks is kept, with what was computed" {
+example "a spec that checks is kept, with what was computed, never what was sent" {
   call submit with source = "app Tiny {\n  \"One button.\"\n}\n\nstate {\n  count: Int = 0\n}\n\nscreen {\n  text count\n  button up \"+\"\n}\n\non click up {\n  - increase @count by 1\n}\n\nexample \"up\" {\n  click up\n  see count = \"1\"\n}\n"
   see submit.status = 201
   see submit.body.name = "Tiny"

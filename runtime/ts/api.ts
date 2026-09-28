@@ -12,9 +12,9 @@ export type TypeDesc =
   | { k: "DateTime" }
   | { k: "List"; of: TypeDesc }
   | { k: "Maybe"; of: TypeDesc }
-  | { k: "Choice"; name: string; values: string[] }
+  | { k: "Choice"; name: string; values: string[]; wire?: string[] } // wire: each value's name in JSON (`Info = "info"`), in order
   | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] }
-  | { k: "Refined"; name: string; base: TypeDesc; pattern?: string; min?: number; max?: number };
+  | { k: "Refined"; name: string; base: TypeDesc; pattern?: string; min?: number; max?: number; minLength?: number; maxLength?: number };
 
 export interface EndpointDesc {
   name: string;
@@ -48,7 +48,7 @@ export function conforms(answers: Record<number, TypeDesc | null> | undefined, r
 }
 
 const describe = (t: TypeDesc): string =>
-  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${t.values.join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
+  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${(t.wire ?? t.values).join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
 
 /** Does a JSON value fit a type (kept data read back, for example)? */
 export const fits = (v: unknown, t: TypeDesc): boolean => !("error" in check(v, t, "the value"));
@@ -118,12 +118,23 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
       const dt = typeof v === "string" ? parseDateTime(v) : null;
       return dt !== null ? { ok: dt } : bad;
     }
-    case "Choice": return typeof v === "string" && t.values.includes(v) ? { ok: v } : bad;
+    // A choice arrives by its wire name (or its own name) and is read as the spec's value.
+    case "Choice": {
+      if (typeof v !== "string") return bad;
+      const i = t.wire ? t.wire.indexOf(v) : -1;
+      return i >= 0 ? { ok: t.values[i] } : t.values.includes(v) ? { ok: v } : bad;
+    }
     case "Refined": {
       const b = check(v, t.base, name);
       if ("error" in b) return { error: `${name} must be a valid ${t.name}` };
       const x = b.ok as string | number;
-      const fits = t.pattern !== undefined ? new RegExp(t.pattern).test(String(x)) : (t.min === undefined || (x as number) >= t.min) && (t.max === undefined || (x as number) <= t.max);
+      const len = typeof x === "string" ? [...x].length : 0; // characters (code points), as on both targets
+      const fits =
+        t.pattern !== undefined
+          ? new RegExp(t.pattern).test(String(x))
+          : t.minLength !== undefined || t.maxLength !== undefined
+            ? (t.minLength === undefined || len >= t.minLength) && (t.maxLength === undefined || len <= t.maxLength)
+            : (t.min === undefined || (x as number) >= t.min) && (t.max === undefined || (x as number) <= t.max);
       return fits ? { ok: x } : bad;
     }
     case "List": {
@@ -148,6 +159,29 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
     }
   }
 }
+
+/** A value as it goes over the wire: every choice value by its wire name (`Info` → "info"). */
+export function toWire(v: unknown, t: TypeDesc | null | undefined): unknown {
+  if (!t || v === null || v === undefined) return v;
+  switch (t.k) {
+    case "Maybe": return toWire(v, t.of);
+    case "Choice": return t.wire && typeof v === "string" && t.values.includes(v) ? t.wire[t.values.indexOf(v)] : v;
+    case "List": return Array.isArray(v) ? v.map((x) => toWire(x, t.of)) : v;
+    case "Record": return v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, toWire(x, t.fields.find((f) => f.name === k)?.type)])) : v;
+    default: return v;
+  }
+}
+
+/** A value from the wire in the spec's names (a choice's wire name read as its value); unchanged if it does not fit. */
+export function fromWire(v: unknown, t: TypeDesc | null | undefined): unknown {
+  if (!t) return v;
+  const c = check(v, t, "the value");
+  return "error" in c ? v : c.ok;
+}
+
+/** Does a type carry wire names anywhere (so the harness must translate it)? */
+export const hasWire = (t: TypeDesc | null | undefined): boolean =>
+  !!t && (t.k === "Choice" ? !!t.wire : t.k === "List" || t.k === "Maybe" ? hasWire(t.of) : t.k === "Record" ? t.fields.some((f) => hasWire(f.type)) : false);
 
 /** A query or path value arrives as text: read it as its type. */
 function fromText(s: string | undefined, t: TypeDesc): unknown {

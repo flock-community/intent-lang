@@ -140,13 +140,9 @@ export function refine(base: App, child: App, refinements: Refinement[], err: Er
     }
   }
 
-  // The base's proofs still apply. Say which of them touch what the child changed.
-  for (const ex of app.examples) {
-    const touched = [...new Set(ex.steps.flatMap((s) => ("target" in s ? [s.target] : [])).filter((t) => overridden.has(t)))];
-    if (touched.length)
-      warn(ex.line, "OVERRIDES_PROOF", `base example "${ex.name}" checks ${touched.map((t) => `\`${t}\``).join(", ")}, which this spec changes: it must still pass, or \`drop example "${ex.name}"\``);
-  }
-  for (const a of app.always) if ("target" in a && overridden.has(a.target)) warn(a.line, "OVERRIDES_PROOF", `a base \`always\` check is about \`${a.target}\`, which this spec changes: it must still hold`);
+  // The base's proofs still apply; which of them touch what the child changed is a quality rule's
+  // to say (std.quality OVERRIDES_PROOF): the compiler records what was changed.
+  app.facts = { ...app.facts, overridden: [...overridden] };
 
   // The child's own additions.
   if (child.screen.length) err(child.screen[0].line, "SYNTAX", "a spec that `extends` another has no `screen` block; place new elements with `add to <section> [after <element>]`");
@@ -158,6 +154,7 @@ export function refine(base: App, child: App, refinements: Refinement[], err: Er
   app.derive.push(...child.derive);
   app.handlers.push(...child.handlers);
   app.ruleLines = [...(app.ruleLines ?? app.rules.map(() => 1)), ...(child.ruleLines ?? child.rules.map(() => 1))];
+  if (app.ruleBy || child.ruleBy) app.ruleBy = [...(app.ruleBy ?? app.rules.map(() => "human" as const)), ...(child.ruleBy ?? child.rules.map(() => "human" as const))];
   app.rules.push(...child.rules);
   app.always.push(...child.always);
   app.examples.push(...child.examples);

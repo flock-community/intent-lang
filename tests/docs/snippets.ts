@@ -45,5 +45,16 @@ for (const f of sources) {
   }
 }
 rmSync(tmp, { recursive: true, force: true });
-console.log(failures ? `${failures} failure(s)` : `doc snippets pass (${checked} tagged)`);
+
+// The reference is the compiler's prompt: it says what the language is. No history (versions,
+// changelog: docs/CHANGELOG.md) and no paths into this repository (apps/, runs/, tests/, …).
+{
+  const ref = readFileSync(new URL("../../docs/LANGUAGE.md", import.meta.url), "utf8").split("\n");
+  ref.forEach((line, i) => {
+    if (i === 0) return; // the header names the version the compiler pins
+    const bad = line.match(/\b(apps|runs|tests|compiler|docs|runtime|skills|registry)\/|^## (Changelog|Growing the language)\b|\bv\d{1,3}\b(?!\.)/);
+    if (bad && !/`language v\d+`/.test(line)) (failures++, console.log(`docs/LANGUAGE.md:${i + 1}: \`${bad[0]}\` is history or a path into this repository, not the language: ${line.trim().slice(0, 100)}`));
+  });
+}
+console.log(failures ? `${failures} failure(s)` : `doc snippets pass (${checked} tagged), and the reference holds only the language`);
 process.exit(failures ? 1 : 0);

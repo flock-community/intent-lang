@@ -1,0 +1,45 @@
+app AlertsApi {
+  "An alert service for tests and demos: it keeps alerts and announces each one."
+}
+
+import notify.alerts
+
+implements notify.alertsApi
+
+state {
+  stored alerts: List Alert = []
+}
+
+endpoint raise {
+  if @text, trimmed, is blank {
+    answer 400 "Text is required"
+  }
+  - add an @Alert to the end of @alerts with @id = the highest @id in @alerts + 1 (1 when there are none), @text trimmed and the given @level
+  - publish @alertRaised with the new alert
+  answer 201 with the new alert
+}
+
+endpoint listAlerts {
+  if there is a @level {
+    answer 200 with the @alerts whose @level is @query.level
+  }
+  answer 200 with @alerts
+}
+
+example "levels, filtered" {
+  call raise with text = "Backup done", level = Info
+  call raise with text = "Disk full", level = Urgent
+  see raise.body.id = 2
+  see raise.body.level = "Urgent"
+  call listAlerts with level = Info
+  see listAlerts.body has 1 row
+  see listAlerts.body[1].text = "Backup done"
+  call listAlerts
+  see listAlerts.body has 2 rows
+}
+
+example "text is required" {
+  call raise with text = "  ", level = Info
+  see raise.status = 400
+  see raise.body.error = "Text is required"
+}

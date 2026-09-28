@@ -21,7 +21,8 @@ derive {
   ratedSafe = the @rating of the book whose @id is 1, or 0 when there is none
   lookedUp = the @rating of the book whose @id is 2    # expect: UNGUARDED
   lookedUpSafe = the @rating of the book whose @id is 2, or 0 when there is none
-  lookedUpWhere = the @rating of the book where @id is 3  # expect: UNGUARDED
+  lookedUpWhere = the @rating of the book where @id is 3  # expect: UNGUARDED  # expect: SPELLING
+  both = @picked plus the @rating of the book whose @id is @total, or 0 when there is none  # expect: UNGUARDED
   bogus = the @thing whose @id is 1            # expect: UNKNOWN_NAME
 }
 
@@ -33,6 +34,7 @@ screen {
 
 on click pick {
   - set @picked to 2
+  - set @total to the @rating of the @total whose @id is 1, or 0 when there is none  # expect: UNKNOWN_NAME
 }
 
 on click add {

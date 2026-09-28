@@ -44,12 +44,15 @@ export interface RefinedDecl {
   pattern?: string; // Text: the whole text must match
   min?: number;
   max?: number;
+  minLength?: number; // Text `of length a to b`: characters (code points), not bytes
+  maxLength?: number;
   line: number;
 }
 
 export interface RecordDecl {
   name: string;
   fields: Field[];
+  key?: string; // `key id: Int`: the field a `ref` holds (without one, the field named `id`)
   line: number;
 }
 
@@ -57,6 +60,7 @@ export interface ChoiceDecl {
   name: string;
   values: string[];
   labels: Record<string, string>; // value → display text (defaults to the value)
+  wire?: Record<string, string>; // value → its name in JSON (`Info = "info"`); the value itself when absent
   line: number;
 }
 
@@ -125,6 +129,7 @@ export type Step =
   | { do: "toggle"; target: string; at?: RowRef; line: number }
   | { do: "choose"; value: string; target: string; at?: RowRef; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
+  | { do: "size"; size: string; line: number } // the host shows the app at another size (`size standard`)
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
   | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail" | "slow" | "restart after effect" | "expire keys"; times: number; line: number } // a fault on the way to an api (a screen's provider)
   | { do: "open"; path: string; line: number } // arrive at an address (a screen of an app with several)
@@ -190,7 +195,7 @@ export interface Endpoint {
   returns?: Type; // undefined: the answer has no body
   answers?: { status: number; type?: Type; line: number }[]; // the contract: every status it may answer, with its body type
   signatureOnly?: boolean; // `endpoint name` in an app that implements a contract: method, path and params come from it
-  effect?: { kind: "external"; line: number }; // `effect external`: reaches outside the system (money, mail, another company)
+  effect?: { kind: "external"; of?: string; line: number }; // `effect external`: reaches outside the system (money, mail, another company); `of @amount`: the param that says how much
   // `undone by cancel with id = @reserve.body.id`: the endpoint that compensates, its args bound to this call (its params, its answer)
   undoneBy?: { endpoint: string; args: { name: string; value: string }[]; line: number };
   body?: Stmt[];
@@ -228,14 +233,15 @@ export interface App {
   endpoints?: Endpoint[];
   events?: EventDecl[];
   startsAt?: string; // `examples start at 2026-09-24 09:00`: the clock at the start of every example and session
+  sizes?: string[]; // `sizes compact | standard`: the sizes a host may show the screen at (as choice values, `Compact`); the first is the default
   jobs?: { every: number; name: string; steps: string[]; stepLines?: number[]; body?: Stmt[]; line: number }[]; // api: `every 15m { … }`
   everyAnswer?: { status: number; type?: Type; line: number }[]; // `every endpoint answers 401 Problem`: added to every endpoint's answers // what an api (or contract) announces: `event ticketCreated: Ticket`
   name: string;
   imports?: Import[];
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
   implements?: { name: string; line: number }; // an api app that implements a published contract
-  uses?: { contract: string; alias: string; testedWith?: string; through?: LayerUse; line: number }[]; // clients of contracts
-  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse }[]; // resolved by the loader
+  uses?: { contract: string; alias: string; testedWith?: string; through?: LayerUse; only?: string[]; line: number }[]; // clients of contracts
+  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse; only?: string[]; line?: number }[]; // resolved by the loader
   refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];
@@ -247,16 +253,17 @@ export interface App {
   choices: ChoiceDecl[];
   state: Field[];
   clockMs?: number;
-  derive: { name: string; sentence: string; line: number; note?: string }[];
+  derive: { name: string; sentence: string; type?: Type; line: number; note?: string }[]; // type: `total: Decimal = …`, when declared
   screen: Element[]; // every element, of every screen (each tagged with its screen when there are several)
   screens?: ScreenDecl[]; // several screens (`screen <name> "<path>" { … }`); one unnamed screen when absent
   handlers: Handler[];
   rules: string[];
   ruleLines?: number[]; // the line of each rule
+  ruleBy?: ("human" | "ai")[];
+  facts?: Facts; // what the compiler worked out, for the quality rules to judge (compiler/quality) // who wrote each rule (`rules by ai { … }`); a person, when absent
   examples: Example[];
   always: Step[]; // invariants: `see` steps that must hold after every action
   invariants?: { text: string; line: number }[]; // `- sentence` in `always`: over the app's data, checked after every step
-  relations?: { text: string; line: number }[]; // `- sentence` in `relations`: how records refer to each other, checked
 }
 
 export interface EventDecl {
@@ -300,4 +307,13 @@ export interface Diagnostic {
   col: number;
   message: string;
   file?: string;
+}
+
+/** What the compiler worked out while checking, for the quality rules (std.quality) to judge. */
+export interface Facts {
+  proven?: string[]; // elements some example checks (`name`, or `list.name` for a row's element)
+  usedComponents?: string[]; // components some element uses (`… as Name`)
+  clockLine?: number; // the line of `clock every …`
+  overridden?: string[]; // names a refinement changes (`override …`, `drop …`)
+  untypedDerived?: { name: string; where: string }[]; // derived values used where their type matters, with no type known
 }

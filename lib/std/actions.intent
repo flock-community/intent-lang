@@ -1,21 +1,22 @@
 layer std.actions {
   "External calls go out only when a standing permission covers them; with none the call waits for approval, and while the emergency stop is on, none goes out."
+  "A rejection is about the calls waiting when it is given: they are dropped, and a later call waits for approval again."
   "The harness gates the calls with the bound permissions (docs/design/effects.md); this layer only carries them."
 }
 
 record Permission {
   endpoint: Text                     # "pay.charge"
-  count: Int                         # how many calls the period allows (a one-time grant: 1)
-  per: Int                           # the period in minutes (0: the count applies forever)
-  upTo: Int                          # the most each call may amount to (0: no amount limit)
-  approver: Text                     # who granted it ("" when nobody is named)
+  count: Int                         # how many calls this permission lets through per period (a one-time grant: 1)
+  per: Int or nothing                # the period in minutes (nothing: the count applies forever)
+  upTo: Int or nothing               # the most each call may amount to, by the param the contract names in `effect external of @amount` (nothing: no limit)
+  approver: Text or nothing          # who granted it (for four eyes)
 }
 
 param agree: List Permission = []    # the standing permissions
-param rejected: List Text = []       # the endpoints a person rejected: a held call is dropped
+param rejected: List Text = []       # one entry per rejection: it drops the calls to that endpoint waiting when it is added
 param stop: Bool = false             # the emergency stop: nothing external goes out while it is on
 param fourEyes: Bool = false         # a permission the requester granted themselves does not count
-param requester: Text = ""           # who is asking (for four eyes)
+param requester: Text or nothing = nothing  # who is asking (for four eyes)
 
 before every call {
   - the request goes as it is: the harness decides whether the call goes out at all, holds it for approval, or drops it
@@ -24,12 +25,12 @@ before every call {
 examples with {
   agree = table {
     endpoint     | count | per | upTo | approver
-    "pay.charge" | 1     | 60  | 0    | "Sam"
+    "pay.charge" | 1     | 60  | nothing | "Sam"
   }
   rejected = []
   stop = false
   fourEyes = false
-  requester = ""
+  requester = nothing
 }
 
 example "the call itself is unchanged" {

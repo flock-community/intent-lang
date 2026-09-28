@@ -35,21 +35,24 @@ export function units(app: App): Unit[] {
   const refsOfAll = (...texts: (string | undefined)[]) => texts.flatMap((t) => (t ? refsOf(t) : []));
   const stmtText = (b?: Stmt[]): string[] => (b ?? []).flatMap((s) => (s.k === "if" ? s.branches.flatMap((br) => [br.cond ?? "", ...stmtText(br.body)]) : s.k === "for" ? [s.where ?? "", ...stmtText(s.body)] : "text" in s ? [s.text] : []));
 
-  for (const r of app.refined ?? []) add("type", r.name, r.line, { base: r.base, pattern: r.pattern, min: r.min, max: r.max }, []);
+  for (const r of app.refined ?? []) add("type", r.name, r.line, { base: r.base, pattern: r.pattern, min: r.min, max: r.max, minLength: r.minLength, maxLength: r.maxLength }, []);
   for (const c of app.choices) add("choice", c.name, c.line, c, []);
-  for (const r of app.records) add("record", r.name, r.line, r.fields.map((f) => ({ name: f.name, type: f.type })), r.fields.flatMap((f) => typesOf(f.type)));
+  for (const r of app.records) add("record", r.name, r.line, { key: r.key, fields: r.fields.map((f) => ({ name: f.name, type: f.type })) }, r.fields.flatMap((f) => typesOf(f.type)));
   for (const c of app.components) add("component", c.name, c.line, { base: c.base, look: c.look, params: c.params }, []);
 
   for (const f of app.state) add("state", f.name, f.line, { type: f.type, default: f.default, stored: f.stored }, typesOf(f.type));
   for (const p of app.params ?? []) add("param", p.name, p.line, p, []);
-  for (const d of app.derive) add("derive", d.name, d.line, d.sentence, refsOf(d.sentence));
+  for (const d of app.derive) add("derive", d.name, d.line, d.type ? { sentence: d.sentence, type: d.type } : d.sentence, [...refsOf(d.sentence), ...(d.type ? typesOf(d.type) : [])]);
 
-  const walk = (els: Element[], list?: string) => {
+  // With several screens an element's unit starts with its screen (`about/title`): two screens may
+  // reuse a name, and each is its own code.
+  const walk = (els: Element[], list?: string, screen?: string) => {
     for (const el of els) {
       if (el.kind === "heading") continue;
-      const name = list ? `${list}.${el.name}` : el.name;
+      const on = el.screen ?? screen;
+      const name = `${on ? `${on}/` : ""}${list ? `${list}.${el.name}` : el.name}`;
       add("element", name, el.line, { kind: el.kind, label: el.label, expr: el.expr, of: el.of, visibleWhen: el.visibleWhen, enabledWhen: el.enabledWhen, from: el.from, as: el.as, look: el.look, component: el.component, bindings: el.bindings }, [...refsOfAll(el.expr, el.visibleWhen, el.enabledWhen, ...(el.bindings ?? []).map((b) => b.value)), ...(el.of ? [el.of] : [])]);
-      walk(el.children, el.kind === "list" ? name : list);
+      walk(el.children, el.kind === "list" ? (list ? `${list}.${el.name}` : el.name) : list, on);
     }
   };
   walk(app.screen);
@@ -60,9 +63,10 @@ export function units(app: App): Unit[] {
   for (const j of app.jobs ?? []) add("every", j.name.slice(5), j.line, { every: j.every, steps: j.steps }, refsOfAll(...j.steps, ...stmtText(j.body)));
   for (const l of app.layers ?? []) add("layer", l.alias, l.line, l, []);
   for (const c of app.clients ?? []) if (c.through) add("through", c.alias, c.through.line, c.through, []);
+  // An api the screen calls: a changed contract (an endpoint, a type, an event) dirties what uses the alias.
+  for (const c of app.clients ?? []) add("uses", c.alias, c.through?.line ?? 0, { contract: c.contract.endpoints, events: c.contract.events, records: c.contract.records }, []);
   app.rules.forEach((r, i) => add("rule", String(i + 1), app.ruleLines?.[i] ?? 0, r, refsOf(r)));
   for (const a of app.invariants ?? []) add("always", `${a.line}`, a.line, a.text, refsOf(a.text));
-  for (const rel of app.relations ?? []) add("relation", `${rel.line}`, rel.line, rel.text, refsOf(rel.text));
   for (const ex of app.examples) {
     const deps = ex.steps.flatMap((s) => [...("target" in s ? [s.target] : []), ...("at" in s && s.at?.list ? [s.at.list] : [])]);
     add("example", ex.name, ex.line, ex.steps, deps);
@@ -87,15 +91,19 @@ export function diffUnits(prev: Unit[], next: Unit[]): Diff {
   // A unit changed if it is new or its canonical text changed; a removed unit dirties what read it.
   const gone = new Set(next.filter((u) => before.get(u.key)?.digest !== u.digest).map((u) => u.key));
   for (const k of removed) gone.add(k);
-  const goneNames = new Set([...gone].map((k) => k.slice(k.indexOf(" ") + 1).split(".").pop()!));
+  // A name as the spec reads it: without its screen (`about/title`) or its list (`items.done`).
+  const bare = (name: string) => name.split("/").pop()!.split(".").pop()!;
+  const goneNames = new Set([...gone].map((k) => bare(k.slice(k.indexOf(" ") + 1))));
+  // A rule is prose the compiler reads for everything: a changed rule rewrites all behaviour.
+  const everything = [...gone].some((k) => k.startsWith("rule "));
   // Propagate: a unit that names a changed or removed unit is affected too, transitively.
   for (let pass = 0; pass < next.length; pass++) {
     let grew = false;
     for (const u of next) {
       if (gone.has(u.key)) continue;
-      if (u.depends.some((d) => goneNames.has(d))) {
+      if (everything || u.depends.some((d) => goneNames.has(d))) {
         gone.add(u.key);
-        goneNames.add(u.name.split(".").pop()!);
+        goneNames.add(bare(u.name));
         grew = true;
       }
     }

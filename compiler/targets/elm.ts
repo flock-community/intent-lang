@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
-import { callDescs, clientEndpoints, clientEvents, eventsByAlias, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
+import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
 import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
@@ -95,7 +95,7 @@ ${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
   if (app.platforms?.some((p) => p.name === "std.crypto")) out.push(`{-| Platform std.crypto: SHA-256, from the installation's reviewed code (never a home-made version). -}\nsha256 : String -> String\nsha256 =\n    Crypto.sha256\n\n\n`);
-  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec. -}\ntype alias Clock =\n    { now : DateTime, today : Date }\n\n\n`);
+  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. -}\ntype alias Clock =\n    { now : DateTime, today : Date${app.sizes ? ", size : Size" : ""} }\n\n\n`);
   for (const r of app.refined ?? []) {
     // A refined type is its base type plus a generated check: `isEmail : String -> Bool`.
     const lc = lowerFirst(r.name);
@@ -103,7 +103,11 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     out.push(`type alias ${r.name} =\n    ${base}\n\n`);
     if (r.pattern !== undefined)
       out.push(`${lc}Pattern : Regex.Regex\n${lc}Pattern =\n    Maybe.withDefault Regex.never (Regex.fromString ${q(`^(?:${r.pattern})$`)})\n\n\n{-| Whether a text is a valid ${r.name}. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    Regex.contains ${lc}Pattern s\n\n`);
-    else {
+    else if (r.base === "Text") {
+      // Characters as code points (String.toList), the same count as TypeScript's [...s].length.
+      const conds = [r.minLength !== undefined ? `n >= ${r.minLength}` : "", r.maxLength !== undefined ? `n <= ${r.maxLength}` : ""].filter(Boolean).join(" && ");
+      out.push(`{-| Whether a text is a valid ${r.name}: its length in characters. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    let\n        n =\n            List.length (String.toList s)\n    in\n    ${conds || "True"}\n\n`);
+    } else {
       const conds = [r.min !== undefined ? `n >= ${r.min}` : "", r.max !== undefined ? `n <= ${r.max}` : ""].filter(Boolean).join(" && ");
       out.push(`{-| Whether a number is a valid ${r.name}. -}\nis${r.name} : ${base} -> Bool\nis${r.name} n =\n    ${conds || "True"}\n\n`);
     }
@@ -331,7 +335,7 @@ type alias Model =
 {-| The clock JavaScript sends: { now, today }; the one before when it cannot be read. -}
 decodeClock : D.Value -> Spec.Clock -> Spec.Clock
 decodeClock v before =
-    Result.withDefault before (D.decodeValue (D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string)) v)
+    Result.withDefault before (D.decodeValue ${elmClockDecoder(app)} v)
 
 ${st ? `
 {-| The model with what this browser kept (the stored fields), when there is any. -}
@@ -359,7 +363,7 @@ main =
                         { app = Tuple.first (send ${init}) ${c ? ", clock = start " : ""}}
 
                     start =
-                        decodeClock flags { now = "2026-01-05T09:00", today = "2026-01-05" }
+                        decodeClock flags ${elmClockStart(app)}
                 in
                 ( model, Tuple.second (send ${init}) )
         , update =
@@ -432,7 +436,7 @@ type alias Model =
 
 decodeClock : D.Value -> Spec.Clock -> Spec.Clock
 decodeClock v before =
-    Result.withDefault before (D.decodeValue (D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string)) v)
+    Result.withDefault before (D.decodeValue ${elmClockDecoder(app)} v)
 
 
 main : Program D.Value Model D.Value
@@ -442,7 +446,7 @@ main =
             \\flags ->
                 let
                     start =
-                        decodeClock flags { now = "2026-01-05T09:00", today = "2026-01-05" }
+                        decodeClock flags ${elmClockStart(app)}
 
                     first =
                         ${c ? "App.init start" : "App.init"}
@@ -609,6 +613,14 @@ view model =
 
 // ---------------------------------------------------------------- Elm
 
+/** The decoder for the clock JavaScript sends: { now, today } (and { size } with `sizes`). */
+const elmClockDecoder = (app: App) =>
+  app.sizes
+    ? `(D.map3 Spec.Clock (D.field "now" D.string) (D.field "today" D.string) (D.oneOf [ D.field "size" (D.map (Spec.sizeFromString >> Maybe.withDefault Spec.${app.sizes[0]}) D.string), D.succeed Spec.${app.sizes[0]} ]))`
+    : `(D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string))`;
+/** The clock before JavaScript says otherwise. */
+const elmClockStart = (app: App) => `{ now = "2026-01-05T09:00", today = "2026-01-05"${app.sizes ? `, size = Spec.${app.sizes[0]}` : ""} }`;
+
 export function elmDecoder(app: App, t: Type): string {
   switch (t.k) {
     case "Text": return "D.string";
@@ -676,8 +688,8 @@ export function genElmCalls(app: App): string {
   out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \`undo\` takes an effect back (\`undo @pay.charge\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \`undone by\`, answered as that endpoint's \`…Answered\`." : ""} -}\ntype Call\n    = ${callVariants.join("\n    | ")}\n\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);
-    const unknown = c.ep.effect ? [`${c.tag}Unknown String`] : [];
-    out.push(`{-| What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? " Unknown: still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed." : ""} -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`, ...unknown].join("\n    | ")}\n\n\n`);
+    const unknown = [...(c.ep.effect ? [`${c.tag}Unknown String`] : []), ...(gated(app, c) ? [`${c.tag}Held`, `${c.tag}Rejected`] : [])];
+    out.push(`{-| What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? " Unknown: still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed." : ""}${gated(app, c) ? " Held: the call waits for approval (it has not gone out); its real answer follows once approved, or Rejected." : ""} -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`, ...unknown].join("\n    | ")}\n\n\n`);
   }
   const th = throughs(app);
   if (th.length) {
@@ -695,18 +707,20 @@ export function genElmCalls(app: App): string {
         const v = a.from === "answer" ? ["u.answer", ...a.path].join(".") : `u.${a.path[0]}`;
         return `( ${q(a.name)}, ${elmEncoder(app, a.type, v)} )`;
       });
-      return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ) ]\n`;
+      return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ), ( "undo", J.bool True ) ]\n`;
     }),
   ];
   out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${callCases.join("\n")}\n\n`);
-  out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault ("unexpected answer " ++ String.fromInt status) (D.decodeValue (D.field "error" D.string) v)\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err e ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit: " ++ D.errorToString e)\n    in\n    case endpoint of\n${eps
+  out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault ("unexpected answer " ++ String.fromInt status) (D.decodeValue (D.field "error" D.string) v)\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n${clientEndpoints(app).some((c) => gated(app, c)) ? '        held =\n            Result.withDefault False (D.decodeValue (D.field "held" D.bool) v)\n\n        rejected =\n            Result.withDefault False (D.decodeValue (D.field "rejected" D.bool) v)\n\n' : ""}        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err e ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit: " ++ D.errorToString e)\n    in\n    case endpoint of\n${eps
     .map((c) => {
       const cases = (c.ep.answers ?? []).map((a) => `                        ${a.status} ->\n                            ${a.type ? `body ${elmDecoder(app, a.type)} ${c.tag}${a.status} ${c.tag}Failed` : `${c.tag}${a.status}`}\n`);
       // The same message TypeScript's `conforms` gives: an answer the contract does not declare.
       const statuses = (c.ep.answers ?? []).map((a) => a.status).join(", ");
       const fallback = `${c.tag}Failed (if status == 0 then failure else endpoint ++ " answered " ++ String.fromInt status ++ ", which the contract does not declare (${statuses})")`;
       const byStatus = `(case status of\n${cases.join("\n")}\n                        _ ->\n                            ${fallback}\n                    )`;
-      return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    ${c.ep.effect ? `(if unknown then\n                        ${c.tag}Unknown failure\n\n                     else\n                        ${byStatus.replace(/\n/g, "\n    ")}\n                    )` : byStatus}\n                )\n`;
+      const inner = c.ep.effect ? `(if unknown then\n                        ${c.tag}Unknown failure\n\n                     else\n                        ${byStatus.replace(/\n/g, "\n    ")}\n                    )` : byStatus;
+      const answer = gated(app, c) ? `(if held then\n                        ${c.tag}Held\n\n                     else if rejected then\n                        ${c.tag}Rejected\n\n                     else\n                        ${inner.replace(/\n/g, "\n    ")}\n                    )` : inner;
+      return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    ${answer}\n                )\n`;
     })
     .join("\n")}\n        _ ->\n            Nothing\n`);
   const evs = clientEvents(app);
@@ -878,23 +892,25 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
       join(dir, "glue.ts"),
       `// The JavaScript side of the Elm app: calls with fetch (through each api's client layer), answers and
 // events in, and the local clock (at the start, then every 15 seconds).
-import { fetchCall, gate, listen, newKey, type CallDesc, type CallOut, type Outgoing, type Usage } from "./calls.ts";
-import { outbox } from "./outbox.ts";
+import { agreement, fetchCall, heldAnswer, keyFor, listen, rejectedAnswer, type Answer, type CallDesc, type CallOut, type Outgoing } from "./calls.ts";
+import { keep, outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
-import { localClock } from "./clock.ts";
+import { ${app.sizes ? "hostSize, " : ""}localClock } from "./clock.ts";
 import { load, save } from "./store.ts";
 import type { TypeDesc } from "./api.ts";
 
 const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
+// The clock the app gets${app.sizes ? ", with the size the host shows it at" : ""}.
+const hostClock = () => ${app.sizes ? `({ ...localClock(), size: hostSize(${JSON.stringify(app.sizes)}) })` : "localClock()"};
 // Stored state lives in this browser (localStorage), under the app's name.
 const KEY = ${q(`intent:${app.name}`)};
 const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };
 const storedDefaults: Record<string, unknown> = { ${storedDefaults(app)} };
 
 // The flags: the local clock, and what this browser kept of the stored state.
-(globalThis as any).intentClock = () => ({ ...localClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields, storedDefaults) ?? null } : {}) });
+(globalThis as any).intentClock = () => ({ ...hostClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields, storedDefaults) ?? null } : {}) });
 (globalThis as any).intentConnect = (app: any) => {
-  if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(localClock()), 15000);
+  if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(hostClock()), 15000);${app.sizes ? `\n  // The host shows the app at another size: the app gets the clock with it at once.\n  if (app.ports.clockTicks) window.addEventListener("intentsize", () => app.ports.clockTicks.send(hostClock()));` : ""}
   if (app.ports.save) app.ports.save.subscribe((data: Record<string, unknown>) => save(KEY, data, storedFields));
 ${hasScreens(app) ? `  // Several screens: the address after # is where the app is; the app's \\\`go to\\\` / \\\`go back\\\` change it.
   const address = () => decodeURI(location.hash.slice(1)) || "/";
@@ -908,23 +924,17 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
   // is written to a durable outbox first, so a reload sends an unanswered call again with that key.
   const box = outbox(${q(`intent:${app.name}:outbox`)});
   const send = (call: CallOut) => fetchCall(endpoints, call, (alias: string, req: Outgoing) => apply(alias, req, call.config ?? undefined), call.config).then((a) => { if (!a.unknown) box.done(call.key!); app.ports.answer.send(a); });
-  // The agreement gate (\`through std.actions\`): a call with no permission waits for approval; a
-  // rejected one is dropped. The permissions arrive on the \`through\` port after every update.
-  const held: CallOut[] = [];
-  // A held call is written to its own durable box too, so a reload keeps waiting for approval.
-  const heldBox = outbox(${q(`intent:${app.name}:held`)});
-  const used: Record<string, Usage[]> = {};
-  const decide = (call: CallOut) => gate(latest[call.endpoint.split(".")[0]], call.endpoint, endpoints.find((e) => e.name === call.endpoint)?.external, call.args, used, Date.now());
-  const letGo = (call: CallOut) => { heldBox.done(call.key!); (used[call.endpoint] ??= []).push({ at: Date.now(), amount: Number((call.args as { amount?: unknown }).amount ?? 0) }); box.put(call); send(call); };
+  // The agreement (through std.actions, calls.ts): a call no permission covers is held for approval.
+  // The held calls, what each permission let through and the rejections applied survive a reload.
+  const agreed = agreement(endpoints, keep(${q(`intent:${app.name}:agreement`)}));
+  const letGo = (call: CallOut) => { box.put(call); send(call); };
+  // After every update: a new rejection drops the calls held now; a permission lets held calls out.
+  // Answers from the harness itself (held, rejected) go after the current update, like any answer.
+  const answerLater = (a: Answer) => void Promise.resolve().then(() => app.ports.answer.send(a));
   const release = () => {
-    for (let i = held.length - 1; i >= 0; i--) {
-      const call = held[i];
-      const how = decide(call);
-      if (how === "hold" || how === "stop") continue;
-      held.splice(i, 1);
-      if (how === "reject") { heldBox.done(call.key!); continue; }
-      letGo(call);
-    }
+    const { send: out, dropped } = agreed.release((alias) => latest[alias], Date.now());
+    out.forEach(letGo);
+    dropped.forEach((c) => answerLater(rejectedAnswer(c)));
   };
   // The client layers' config arrives from the app after every update (and after init): reopen the streams it changes.
   if (app.ports.through)
@@ -933,16 +943,14 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
       stream?.refresh();
       release();
     });
-  held.push(...heldBox.pending());
   app.ports.request.subscribe((c: any) => {
-    const call = { ...c, key: newKey() } as CallOut;
-    const how = decide(call);
-    if (how === "hold") { held.push(call); heldBox.put(call); return; }
-    if (how === "reject") { heldBox.done(call.key!); return; }
-    letGo(call);
+    const call = { ...c } as CallOut;
+    call.key = keyFor(call);
+    if (agreed.offer(call, latest[call.endpoint.split(".")[0]], Date.now()) !== "hold") letGo(call);
+    else answerLater(heldAnswer(call)); // the screen learns it waits for approval
   });
   for (const call of box.pending()) send(call);
-  stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias]));
+  stream = listen(${JSON.stringify(eventsByAlias(app))}, (e) => app.ports.events.send(e), (alias: string, req: Outgoing) => apply(alias, req, latest[alias])${Object.keys(eventWireTypes(app)).length ? `, ${JSON.stringify(eventWireTypes(app))}` : ""});
 };
 `,
     );

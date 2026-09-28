@@ -6,6 +6,7 @@ profile api
 
 state {
   count: Int = 0
+  body: Text = ""                          # expect: RESERVED
 }
 
 endpoint bump POST "/bump" {               # expect: NO_ANSWER

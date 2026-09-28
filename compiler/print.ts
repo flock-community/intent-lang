@@ -35,20 +35,21 @@ function duration(ms: number): string {
 
 /** `effect external` and `undone by …` of an endpoint. */
 const effectLines = (ep: NonNullable<App["endpoints"]>[number], ind: string): string[] => [
-  ...(ep.effect ? [`${ind}effect external`] : []),
+  ...(ep.effect ? [`${ind}effect external${ep.effect.of ? ` of @${ep.effect.of}` : ""}`] : []),
   ...(ep.undoneBy ? [`${ind}undone by ${ep.undoneBy.endpoint}${ep.undoneBy.args.length ? ` with ${ep.undoneBy.args.map((a) => `${a.name} = ${a.value}`).join(", ")}` : ""}`] : []),
 ];
 
 export function stepText(s: Step): string {
   const at = "at" in s && s.at ? ` on row ${s.at.with !== undefined ? `with ${q(s.at.with)}` : s.at.row}${s.at.list ? ` of ${s.at.list}` : ""}` : "";
   switch (s.do) {
-    case "type": return `type ${q(s.text)} into ${s.target}`;
+    case "type": return `type ${q(s.text)} into ${s.target}${at}`;
     case "click": return `click ${s.target}${at}`;
     case "toggle": return `toggle ${s.target}${at}`;
-    case "choose": return `choose ${s.quoted ? q(s.value) : s.value} in ${s.target}`;
+    case "choose": return `choose ${s.quoted ? q(s.value) : s.value} in ${s.target}${at}`;
     case "tick": return s.ms ? `wait ${duration(s.ms)}` : `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
     case "restart": return "restart";
+    case "size": return `size ${s.size[0].toLowerCase()}${s.size.slice(1)}`;
     case "open": return `open ${q(s.path)}`;
     case "back": return "go back";
     case "steer": return `steer ${s.api} ${s.fault}${s.fault === "fail" ? ` ${s.times}` : ""}`;
@@ -137,6 +138,7 @@ export function printApp(app: App): string {
   block([`${app.kind ?? "app"} ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
   if (app.profile && app.profile !== "ui" && app.kind !== "layer") block([`profile ${app.profile}`]);
   if (app.startsAt) block([`examples start at ${app.startsAt.replace("T", " ")}`]);
+  if (app.sizes) block([`sizes ${app.sizes.map((x) => x[0].toLowerCase() + x.slice(1)).join(" | ")}`]);
   // Layers the api runs behind, in order, with their bound params.
   for (const l of app.layers ?? [])
     block([
@@ -171,9 +173,11 @@ export function printApp(app: App): string {
   }
   // Look components only; behaviour components are already expanded into the app.
   block(app.components.filter((c) => c.look || c.base).map((c) => `component ${c.name}${c.base ? ` as ${c.base}` : ""} ${q(c.look)}${origin(app, c.line)}`));
-  block((app.refined ?? []).map((r) => `type ${r.name} = ${r.base} ${r.pattern !== undefined ? `matching /${r.pattern}/` : [r.min !== undefined ? `from ${r.min}` : "", r.max !== undefined ? `to ${r.max}` : ""].filter(Boolean).join(" ")}${origin(app, r.line)}`));
-  block(app.choices.map((c) => `choice ${c.name}: ${c.values.map((v) => (c.labels[v] !== v ? `${v} ${q(c.labels[v])}` : v)).join(" | ")}${origin(app, c.line)}`));
-  for (const r of app.records) block([`record ${r.name}${origin(app, r.line)}`, ...r.fields.map((f) => `  ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${lit(f.default, "  ")}` : ""}${origin(app, 0, f.note)}`)]);
+  const lengthRule = (r: NonNullable<App["refined"]>[number]) => (r.minLength !== undefined && r.maxLength !== undefined ? `of length ${r.minLength} to ${r.maxLength}` : r.maxLength !== undefined ? `of length at most ${r.maxLength}` : `of length at least ${r.minLength}`);
+  block((app.refined ?? []).map((r) => `type ${r.name} = ${r.base} ${r.pattern !== undefined ? `matching /${r.pattern}/` : r.minLength !== undefined || r.maxLength !== undefined ? lengthRule(r) : [r.min !== undefined ? `from ${r.min}` : "", r.max !== undefined ? `to ${r.max}` : ""].filter(Boolean).join(" ")}${origin(app, r.line)}`));
+  // `Size` comes from the `sizes` line, printed above.
+  block(app.choices.filter((c) => !(app.sizes && c.name === "Size" && c.values.join() === app.sizes.join())).map((c) => `choice ${c.name}: ${c.values.map((v) => `${v}${c.labels[v] !== v ? ` ${q(c.labels[v])}` : ""}${c.wire?.[v] !== undefined ? ` = ${q(c.wire[v])}` : ""}`).join(" | ")}${origin(app, c.line)}`));
+  for (const r of app.records) block([`record ${r.name}${origin(app, r.line)}`, ...r.fields.map((f) => `  ${r.key === f.name ? "key " : ""}${f.name}: ${typeToString(f.type)}${f.default ? ` = ${lit(f.default, "  ")}` : ""}${origin(app, 0, f.note)}`)]);
   if (app.kind === "layer") {
     block((app.params ?? []).map((f) => `param ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${(Array.isArray(f.default) ? f.default : [f.default]).map((v) => lit(v, "")).join(", ")}` : ""}${origin(app, f.line, f.note)}`));
     block((app.provides ?? []).map((f) => `provides ${f.name}: ${typeToString(f.type)}${origin(app, f.line, f.note)}`));
@@ -184,10 +188,12 @@ export function printApp(app: App): string {
   }
   block(app.state.length ? ["state", ...app.state.map((f) => `  ${f.stored ? "stored " : ""}${f.name}: ${typeToString(f.type)} = ${lit(f.default!, "  ")}${origin(app, f.line, f.note)}`)] : []);
   if (app.clockMs) block([`clock every ${app.clockMs}ms`]);
-  block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
+  block(app.derive.length ? ["derive", ...app.derive.map((d) => `  ${d.name}${d.type ? `: ${typeToString(d.type)}` : ""} = ${d.sentence}${origin(app, d.line, d.note)}`)] : []);
   if (app.screens?.length)
     for (const sc of app.screens)
       block([`screen ${sc.name} ${q(sc.path)}${origin(app, sc.line, sc.note)}`, ...sc.params.map((p) => `  path ${p.name}: ${typeToString(p.type)}`), ...app.screen.filter((e) => e.screen === sc.name).flatMap((e) => element(app, e, "  "))]);
+  // A job's screen is the harness's (its state), never written: shown as a note for the reader.
+  else if (app.profile === "job" && app.screen.length) block(["# The harness shows this job's state, as if it were this screen:", ...["screen", ...app.screen.flatMap((e) => element(app, e, "  "))].map((l) => `#   ${l}`)]);
   else if (app.screen.length) block(["screen", ...app.screen.flatMap((e) => element(app, e, "  "))]);
   block((app.everyAnswer ?? []).map((a) => `every endpoint answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`));
   block((app.events ?? []).map((e) => `event ${e.name}: ${typeToString(e.type)}${origin(app, e.line, e.note)}`));
@@ -201,8 +207,13 @@ export function printApp(app: App): string {
     ]);
   for (const j of app.jobs ?? []) block([`every ${j.name.slice(5)}`, ...body(j, "  ")]);
   for (const h of app.handlers) block([`on ${h.verb}${h.target ? ` ${h.target}` : ""}${origin(app, h.line, h.note)}`, ...body(h, "  ")]);
-  block(app.rules.length ? ["rules", ...app.rules.map((r) => `  - ${r}`)] : []);
-  block(app.relations?.length ? ["relations", ...app.relations.map((r) => `  - ${r.text}${origin(app, r.line)}`)] : []);
+  // Rules in runs of one origin: `rules` (a person's) and `rules by ai`.
+  for (let i = 0; i < app.rules.length; ) {
+    const by = app.ruleBy?.[i] ?? "human";
+    const run: string[] = [];
+    for (; i < app.rules.length && (app.ruleBy?.[i] ?? "human") === by; i++) run.push(`  - ${app.rules[i]}`);
+    block([by === "ai" ? "rules by ai" : "rules", ...run]);
+  }
   block(app.always.length || app.invariants?.length ? ["always", ...app.always.map((s) => `  ${stepText(s)}${origin(app, s.line)}`), ...(app.invariants ?? []).map((i) => `  - ${i.text}${origin(app, i.line)}`)] : []);
   for (const ex of app.examples) block([`example ${q(ex.name)}`, ...ex.steps.map((s) => `  ${stepText(s)}`)]);
   // The canonical form has braces for blocks: what the compiler reads, and what `intent expand` shows.

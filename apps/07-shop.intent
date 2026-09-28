@@ -28,11 +28,11 @@ state {
 }
 
 derive {
-  left = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
-  lineTotal = for a line: @price of that product × the number of items paid for; for Apple every third apple is free, so you pay for @qty minus (@qty divided by 3, rounded down); for other @products you pay for @qty
-  subtotal = sum of all line totals
-  discount = when @appliedCode is "SAVE10" and @subtotal is at least 20.00: 10% of @subtotal, rounded to cents; when @appliedCode is "FIVER" and @subtotal is at least 30.00: 5.00; otherwise 0
-  total = @subtotal minus @discount
+  left: Int = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
+  lineTotal: Decimal = for a line: @price of the product whose @name is the @name of that line (0 when there is none) × the number of items paid for; for Apple every third apple is free, so you pay for @qty minus (@qty divided by 3, rounded down); for other @products you pay for @qty
+  subtotal: Decimal = sum of all line totals
+  discount: Decimal = when @appliedCode is "SAVE10" and @subtotal is at least 20.00: 10% of @subtotal, rounded to cents; when @appliedCode is "FIVER" and @subtotal is at least 30.00: 5.00; otherwise 0
+  total: Decimal = @subtotal minus @discount
 }
 
 screen {

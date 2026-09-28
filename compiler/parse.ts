@@ -5,7 +5,9 @@ import { uiProfile, verbKinds } from "./profile.ts";
 import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import { fromBraces } from "./braces.ts";
-import { bareWords, CLOCK_NAMES, declaredNames, refsIn, resolves, sentences, usesClock } from "./refs.ts";
+import { checkFit } from "./fit.ts";
+import { withStdQuality } from "./quality.ts";
+import { declaredNames, refsIn, resolves, sentences, usedByAlias, usesClock } from "./refs.ts";
 import type { ScreenDecl, Stmt, App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
 
 interface Line {
@@ -103,7 +105,10 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     } else if ((m = t.match(new RegExp(`^import\\s+(${BUNDLE_NAME})(?:\\.(${UPPER}))?(?:\\s+as\\s+(${UPPER}))?$`)))) {
       if (m[3] && !m[2]) err(node.line, "SYNTAX", "`as` renames one imported name: `import std.list.Pager as TicketPager`");
       app.imports!.push({ bundle: m[1], name: m[2], alias: m[3], line: node.line });
-    } else if ((m = t.match(new RegExp(`^uses\\s+(${BUNDLE_NAME})\\s+as\\s+(${LOWER})$`)))) {
+    } else if ((m = t.match(new RegExp(`^uses\\s+(${BUNDLE_NAME})\\s+as\\s+(${LOWER})(?:\\s+only\\s+(.+))?$`)))) {
+      // `only listNotes, noteCreated`: the endpoints and events this app may use (its manifest).
+      const only = m[3]?.split(/\s*,\s*|\s+and\s+/).map((x) => x.trim()).filter(Boolean);
+      if (only?.some((x) => !new RegExp(`^${LOWER}$`).test(x))) err(node.line, "SYNTAX", "`only` lists endpoint and event names of the contract: `uses ouros.notes as notes only listNotes, noteCreated`");
       // A client of a contract; `tested with "<provider spec>"` names the implementation examples run against.
       let testedWith: string | undefined;
       let through: LayerUse | undefined;
@@ -117,7 +122,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
           through = { alias: m[2], layer: lm[1], bindings: c.children.map((b) => parseBinding(b, err, true)).filter((b): b is Binding => !!b), line: c.line };
         } else err(c.line, "SYNTAX", 'under `uses`: `tested with "path/to/provider.intent"` or `through <client layer>`', c.indent + 1);
       }
-      (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, through, line: node.line });
+      (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, through, ...(only ? { only } : {}), line: node.line });
     } else if ((m = t.match(new RegExp(`^use\\s+(${LOWER})\\s*=\\s*(${LOWER}(?:\\.${LOWER})+)$`)))) {
       // An api app runs behind a layer: \`use cors = std.http.cors\`, params bound in indented lines.
       (app.layers ??= []).push({ alias: m[1], layer: m[2], bindings: node.children.map((c) => parseBinding(c, err, true)).filter((b): b is Binding => !!b), line: node.line });
@@ -163,7 +168,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       const r = parseRefinement(node, ctx);
       if (r) (app.refinements ??= []).push(r);
     } else if ((m = t.match(/^profile\s+([a-z]+)$/))) {
-      if (!["ui", "api"].includes(m[1])) err(node.line, "UNKNOWN_NAME", `no profile \`${m[1]}\` (ui, api)`);
+      if (!["ui", "api", "job"].includes(m[1])) err(node.line, "UNKNOWN_NAME", `no profile \`${m[1]}\` (ui, api, job)`);
       app.profile = m[1];
     } else if ((m = t.match(new RegExp(`^endpoint\\s+(${LOWER})\\s+(GET|POST|PUT|PATCH|DELETE)\\s+(${STR})$`)))) {
       app.endpoints ??= [];
@@ -179,6 +184,16 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       const type = parseType(m[2]);
       if (!type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
       else (app.events ??= []).push({ name: m[1], type, line: node.line, note: node.note });
+    } else if ((m = t.match(/^sizes\s+(.+)$/))) {
+      // The sizes a host shows the screen at, smallest first: \`sizes compact | standard\`. The app
+      // reads \`@size\` (a value of the choice \`Size\`: \`@Compact\`) like it reads \`@now\`.
+      const words = m[1].split(/\s*\|\s*/).map((w) => w.trim());
+      if (words.length < 2 || words.some((w) => !/^[a-z][a-zA-Z0-9]*$/.test(w))) err(node.line, "SYNTAX", "`sizes compact | standard`: two or more lower-case names, the default first");
+      else if (app.sizes) err(node.line, "DUPLICATE", "one `sizes` line per app");
+      else {
+        app.sizes = words.map((w) => w[0].toUpperCase() + w.slice(1));
+        app.choices.push({ name: "Size", values: app.sizes, labels: Object.fromEntries(app.sizes.map((v) => [v, v])), line: node.line });
+      }
     } else if ((m = t.match(/^examples\s+start\s+at\s+(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)$/))) {
       // The clock at the start of every example and random session (default 2026-01-05 09:00, a Monday).
       app.startsAt = m[1].length === 10 ? `${m[1]}T09:00` : m[1].replace(" ", "T");
@@ -210,7 +225,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "relations", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -274,7 +289,8 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   };
   if ((m = t.match(new RegExp(`^type\\s+(${UPPER})\\s*=\\s*(Text|Int|Decimal)\\s+(.+)$`)))) {
     onlyTop("type");
-    // A refined type: a base type with a rule. `matching /re/` for Text, `from a [to b]` / `to b` for numbers.
+    // A refined type: a base type with a rule. `matching /re/` or `of length a to b` (`at most b`,
+    // `at least a`) for Text, `from a [to b]` / `to b` for numbers.
     const [, name, base, rule] = m;
     const r: RefinedDecl = { name, base: base as "Text", line: node.line };
     let rm: RegExpMatchArray | null;
@@ -285,11 +301,17 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       } catch {
         err(node.line, "SYNTAX", `\`/${rm[1]}/\` is not a valid pattern`);
       }
+    } else if (base === "Text" && (rm = rule.match(/^of\s+length\s+(?:(\d+)\s+to\s+(\d+)|at\s+most\s+(\d+)|at\s+least\s+(\d+))$/))) {
+      const lo = rm[1] ?? rm[4];
+      const hi = rm[2] ?? rm[3];
+      if (lo !== undefined) r.minLength = Number(lo);
+      if (hi !== undefined) r.maxLength = Number(hi);
+      if (r.minLength !== undefined && r.maxLength !== undefined && r.minLength > r.maxLength) err(node.line, "BAD_BINDING", `${name}: a length from ${r.minLength} is above to ${r.maxLength}`);
     } else if (base !== "Text" && (rm = rule.match(/^(?:from\s+(-?\d+(?:\.\d+)?))?\s*(?:to\s+(-?\d+(?:\.\d+)?))?$/)) && (rm[1] || rm[2])) {
       if (rm[1]) r.min = Number(rm[1]);
       if (rm[2]) r.max = Number(rm[2]);
     } else {
-      err(node.line, "SYNTAX", base === "Text" ? "a refined text looks like `type Email = Text matching /…/`" : `a refined number looks like \`type Age = ${base} from 0 to 150\``);
+      err(node.line, "SYNTAX", base === "Text" ? "a refined text looks like `type Email = Text matching /…/` or `type Title = Text of length 1 to 80`" : `a refined number looks like \`type Age = ${base} from 0 to 150\``);
       return true;
     }
     (app.refined ??= []).push(r);
@@ -297,26 +319,40 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     onlyTop("record");
     const rec: RecordDecl = { name: m[1], fields: [], line: node.line };
     for (const c of node.children) {
-      const f = parseField(c, err, false);
-      if (f) rec.fields.push(f);
+      // `key id: Int`: the field another record's `ref` holds.
+      const key = /^key\s+/.test(c.text);
+      const f = parseField(key ? { ...c, text: c.text.replace(/^key\s+/, "") } : c, err, false);
+      if (!f) continue;
+      rec.fields.push(f);
+      if (key && rec.key) err(c.line, "DUPLICATE", `record ${rec.name} has one key: \`${rec.key}\` is already its key`);
+      else if (key) rec.key = f.name;
     }
     if (!rec.fields.length) err(node.line, "SYNTAX", `record ${rec.name} has no fields`);
     app.records.push(rec);
   } else if ((m = t.match(new RegExp(`^choice\\s+(${UPPER})\\s*(?::\\s*(.*))?$`)))) {
     onlyTop("choice");
-    // Values, each optionally with a display label: `choice Filter: All "Everything" | Open`.
+    // Values, each optionally with a display label and a wire name (its text in JSON, for an api
+    // that already exists): `choice Level: Info "Information" = "info" | Warn = "warn"`.
     const values: string[] = [];
     const labels: Record<string, string> = {};
+    const wire: Record<string, string> = {};
     const addValue = (raw: string, line: number, col = 1) => {
-      const vm = raw.trim().match(new RegExp(`^(${UPPER})(?:\\s+(${STR}))?$`));
-      if (!vm) return err(line, "SYNTAX", `choice value \`${raw.trim()}\` must be an UpperCamel name, optionally followed by a "label"`, col);
+      const vm = raw.trim().match(new RegExp(`^(${UPPER})(?:\\s+(${STR}))?(?:\\s*=\\s*(${STR}))?$`));
+      if (!vm) return err(line, "SYNTAX", `choice value \`${raw.trim()}\` must be an UpperCamel name, optionally followed by a "label" and \`= "wire name"\``, col);
       values.push(vm[1]);
       labels[vm[1]] = vm[2] !== undefined ? parseString(vm[2])! : vm[1];
+      if (vm[3] !== undefined) {
+        const w = parseString(vm[3])!;
+        if (Object.values(wire).includes(w)) err(line, "DUPLICATE", `the wire name "${w}" is already another value's`, col);
+        wire[vm[1]] = w;
+      }
     };
     if (m[2] !== undefined && m[2].trim()) for (const v of splitCells(m[2])) addValue(v, node.line);
     for (const c of node.children) addValue(c.text, c.line, c.indent + 1);
     if (values.length < 2) err(node.line, "SYNTAX", `choice ${m[1]} needs at least two values, e.g. \`choice ${m[1]}: A | B\``);
-    app.choices.push({ name: m[1], values, labels, line: node.line });
+    const some = Object.keys(wire).length;
+    if (some && some < values.length) err(node.line, "SYNTAX", `choice ${m[1]}: give every value a wire name, or none (${values.filter((v) => !(v in wire)).join(", ")} has none)`);
+    app.choices.push({ name: m[1], values, labels, ...(some ? { wire } : {}), line: node.line });
   } else if (t === "design") {
     onlyTop("design");
     app.design = parseDesign(node, err);
@@ -337,9 +373,14 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     ctx.clockLine = node.line;
   } else if (t === "derive") {
     for (const c of node.children) {
-      const dm = c.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
-      if (!dm) err(c.line, "SYNTAX", "a derived value looks like `name = sentence`", c.indent + 1);
-      else app.derive.push({ name: dm[1], sentence: dm[2] + flattenChildren(c), line: c.line, note: c.note });
+      // `name = sentence`, or with its type declared: `total: Decimal = the sum of …` (then checked).
+      const dm = c.text.match(new RegExp(`^(${LOWER})\\s*(?::\\s*([^=]+?))?\\s*=\\s*(.+)$`));
+      if (!dm) err(c.line, "SYNTAX", "a derived value looks like `name = sentence` (or `name: Type = sentence`)", c.indent + 1);
+      else {
+        const type = dm[2] ? parseType(dm[2].trim()) : undefined;
+        if (dm[2] && !type) err(c.line, "SYNTAX", `\`${dm[2].trim()}\` is not a type`, c.indent + 1);
+        app.derive.push({ name: dm[1], sentence: dm[3] + flattenChildren(c), ...(type ? { type } : {}), line: c.line, note: c.note });
+      }
     }
   } else if (t === "screen") {
     if (app.screens?.length) err(node.line, "SYNTAX", "this app has named screens: give this one a name and a path too (`screen <name> \"/path\"`)");
@@ -385,14 +426,17 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       else app.always.push(r.step);
     }
     if (!node.children.length) err(node.line, "SYNTAX", "expected `see …` checks or `- sentence` lines");
-  } else if (t === "rules") {
-    const lines: number[] = [];
-    app.rules.push(...parseBullets(node, err, lines));
-    (app.ruleLines ??= []).push(...lines);
-  } else if (t === "relations") {
+  } else if ((m = t.match(/^rules(?:\s+by\s+(\S+))?$/))) {
+    // `rules by ai { … }`: rules an LLM wrote (and may revise); plain `rules` are the person's.
+    if (m[1] && m[1] !== "ai" && m[1] !== "human") err(node.line, "SYNTAX", "`rules by ai` or `rules by human` (who wrote them; without `by`, a person did)");
+    const by = m[1] === "ai" ? "ai" : "human";
     const lines: number[] = [];
     const texts = parseBullets(node, err, lines);
-    app.relations = [...(app.relations ?? []), ...texts.map((text, i) => ({ text, line: lines[i] }))];
+    app.ruleBy = [...(app.ruleBy ?? app.rules.map(() => "human" as const)), ...texts.map(() => by)];
+    app.rules.push(...texts);
+    (app.ruleLines ??= []).push(...lines);
+  } else if (t === "relations") {
+    err(node.line, "SYNTAX", "a relation is said on the field that holds the key: `ticket: ref Ticket` in the record (the `relations` block is gone since v59)");
   } else if ((m = t.match(new RegExp(`^example\\s+(${STR})$`)))) {
     if (where === "component") err(node.line, "NOT_YET", "examples inside a component are not in the language yet; prove a component with examples in its bundle's demo app");
     const ex: Example = { name: parseString(m[1])!, steps: [], line: node.line };
@@ -423,9 +467,9 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
       const type = m[2] ? parseType(m[2]) : undefined;
       if (m[2] && !type) err(c.line, "SYNTAX", `\`${m[2]}\` is not a type`, c.indent + 1);
       (ep.answers ??= []).push({ status: Number(m[1]), type, line: c.line });
-    } else if ((m = c.text.match(/^effect\s+(\S+)$/))) {
-      if (m[1] === "external") ep.effect = { kind: "external", line: c.line };
-      else err(c.line, "SYNTAX", `the only effect is \`effect external\` (it reaches outside the system: money, mail, another company's service). Keys and retries follow from the method, so there is no other kind to declare`, c.indent + 1);
+    } else if ((m = c.text.match(new RegExp(`^effect\\s+(\\S+)(?:\\s+of\\s+@(${LOWER}))?$`)))) {
+      if (m[1] === "external") ep.effect = { kind: "external", ...(m[2] ? { of: m[2] } : {}), line: c.line };
+      else err(c.line, "SYNTAX", `the only effect is \`effect external\` (it reaches outside the system: money, mail, another company's service), optionally \`effect external of @amount\` (the param that says how much). Keys and retries follow from the method, so there is no other kind to declare`, c.indent + 1);
     } else if ((m = c.text.match(new RegExp(`^undone\\s+by\\s+(${LOWER})(?:\\s+with\\s+(.+))?$`)))) {
       const args: { name: string; value: string }[] = [];
       for (const part of m[2] ? m[2].split(/\s*,\s*/) : []) {
@@ -515,6 +559,28 @@ function parseComponent(node: Line, name: string, base: string | undefined, look
   return { name, base, look, line: node.line, params: hasBody ? params : undefined, body: hasBody ? body : undefined };
 }
 
+/**
+ * A job (`profile job`) has no screen: it works on events, answers and the clock. The harness shows
+ * its state instead — a text per value, a list per list (its rows' plain fields) — so examples
+ * (`see sent has 2 rows`), twin builds and random sessions work as for any app, and nobody writes
+ * a screen for it. A job with a screen, or with endpoints, is a mistake.
+ */
+export function jobScreen(app: App, err: Err) {
+  if (app.profile !== "job") return;
+  if (app.screen.length) return err(app.screen[0].line, "SYNTAX", "a job has no screen: the harness shows its state (`profile job`)");
+  if (app.endpoints?.length) return err(app.endpoints[0].line, "SYNTAX", "a job has no endpoints: it calls apis (`uses`) and handles their events");
+  if (app.sizes) return err(1, "SYNTAX", "a job is not shown, so it has no `sizes`");
+  const records = new Map(app.records.map((r) => [r.name, r]));
+  const plain = (t: Type): boolean => (t.k === "Maybe" ? plain(t.of) : t.k === "Named" ? !records.has(t.name) : t.k !== "List");
+  for (const f of app.state) {
+    const t = f.type.k === "Maybe" ? f.type.of : f.type;
+    if (t.k === "List" && t.of.k === "Named" && records.has(t.of.name))
+      app.screen.push({ kind: "list", name: f.name, of: t.of.name, children: records.get(t.of.name)!.fields.filter((x) => plain(x.type)).map((x) => ({ kind: "text" as const, name: x.name, children: [], line: f.line })), line: f.line });
+    else if (t.k === "List" && plain(t.of)) app.screen.push({ kind: "list", name: f.name, of: typeToString(t.of), children: [], line: f.line });
+    else if (plain(f.type)) app.screen.push({ kind: "text", name: f.name, children: [], line: f.line });
+  }
+}
+
 /** Parse and check a self-contained file (no imports). Files with imports go through `load()`. */
 export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
   const { app, diagnostics, clockLine } = parseSyntax(src);
@@ -524,14 +590,17 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
   // Semantic checks run even after syntax errors, so one pass reports as much as possible.
   else if (app.name && app.kind !== "bundle" && app.kind !== "platform") {
     const used = expandUses(app, err, warn);
+    jobScreen(app, err);
     check(app, err, warn, clockLine, used);
-    checkRefs(app, err, warn);
-    checkRelations(app, err);
+    checkRefs(app, err);
     checkLookups(app, err);
-    checkBodies(app, err, warn);
-    checkEffects(app, err, warn);
+    checkLoops(app, err);
+    checkFit(app, err);
+    checkBodies(app, err);
+    checkEffects(app, err);
     checkScreens(app, err);
-    checkHints(app, warn);
+    // std.quality's hints (compiler/quality): the compiler decides what the spec means, they what makes it good.
+    diagnostics.splice(0, diagnostics.length, ...withStdQuality("", app, diagnostics));
   }
   diagnostics.sort((a, b) => a.line - b.line || a.col - b.col);
   return { app: diagnostics.some((d) => d.level === "error") ? undefined : app, diagnostics };
@@ -544,13 +613,13 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
   const warn: Err = (line, code, message, col = 1) => diags.push({ level: "warning", code, line, col, message });
   check(app, err, warn, clockLine, used);
-  checkRefs(app, err, warn);
-  checkRelations(app, err);
+  checkRefs(app, err);
   checkLookups(app, err);
-  checkBodies(app, err, warn);
-  checkEffects(app, err, warn);
+  checkLoops(app, err);
+  checkFit(app, err);
+  checkBodies(app, err);
+  checkEffects(app, err);
   checkScreens(app, err);
-  checkHints(app, warn);
   return diags;
 }
 
@@ -603,7 +672,7 @@ function checkScreens(app: App, err: Err) {
  * calling side, a point of no return (external, no `undone by`) comes after the steps that can
  * still be undone.
  */
-function checkEffects(app: App, err: Err, warn: Err) {
+function checkEffects(app: App, err: Err) {
   const own = (line: number) => line < LINE_BASE;
   const eps = app.endpoints ?? [];
   const records = new Map(app.records.map((r) => [r.name, r]));
@@ -620,6 +689,14 @@ function checkEffects(app: App, err: Err, warn: Err) {
   for (const ep of eps) {
     // Declared in this file (an implementing app gets them from its contract, checked there).
     if (ep.method === "GET" && ep.effect && own(ep.effect.line)) err(ep.effect.line, "EFFECT", `endpoint ${ep.name} is a GET: it only reads, so it has no effect to declare`);
+    // `effect external of @amount`: a permission's amount limit reads this param, so it must be a number the call sends.
+    const of = ep.effect?.of;
+    if (of && own(ep.effect!.line)) {
+      const p = ep.params.find((x) => x.name === of);
+      const t = p?.type.k === "Maybe" ? p.type.of : p?.type;
+      if (!p) err(ep.effect!.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${of}\` to measure its effect by${suggest(of, ep.params.map((x) => x.name))}`);
+      else if (!(t?.k === "Int" || t?.k === "Decimal" || (t?.k === "Named" && (app.refined ?? []).some((r) => r.name === t.name && r.base !== "Text")))) err(ep.effect!.line, "TYPE", `\`effect external of @${of}\`: \`${of}\` is ${typeToString(p.type)}; an amount is an Int or a Decimal`);
+    }
     const u = ep.undoneBy;
     if (!u || !own(u.line)) continue;
     if (ep.method === "GET") {
@@ -644,45 +721,6 @@ function checkEffects(app: App, err: Err, warn: Err) {
     }
     for (const p of undo.params) if (p.type.k !== "Maybe" && !u.args.some((a) => a.name === p.name)) err(u.line, "EFFECT", `\`${undo.name}\` needs \`${p.name}\`: bind it (\`with ${p.name} = …\`)`);
   }
-  // Calling side: in one handler, a point of no return goes last.
-  for (const h of app.handlers) {
-    if (!own(h.line) || !app.clients?.length) continue;
-    let pivot: { name: string; line: number } | undefined;
-    for (const [i, st] of h.steps.entries())
-      for (const m of st.matchAll(/\bcall\s+@?([a-z]\w*)\.([a-z]\w*)/gi)) {
-        const target = app.clients.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2]);
-        if (!target?.effect) continue;
-        const line = h.stepLines?.[i] ?? h.line;
-        if (!target.undoneBy) pivot ??= { name: `${m[1]}.${m[2]}`, line };
-        else if (pivot) warn(line, "PIVOT", `\`${m[1]}.${m[2]}\` can be undone, but it comes after \`${pivot.name}\` (line ${pivot.line}), which cannot: put the step that cannot be undone last, after everything that can still fail`);
-      }
-  }
-}
-
-/**
- * Declared relations between records (`relations { - a @Comment's @ticket is a @Ticket's @id }`):
- * checked, so a relation is not a comment. The field holds the other record's key.
- */
-function checkRelations(app: App, err: Err) {
-  const byName = new Map(app.records.map((r) => [r.name, r]));
-  for (const { text, line } of app.relations ?? []) {
-    if (line >= LINE_BASE) continue;
-    const m = text.match(new RegExp(`^a @(\\w+)['\u2019]s @(\\w+) is (?:the |a )?@(\\w+)['\u2019]s @(\\w+)$`));
-    if (!m) {
-      err(line, "SYNTAX", "a relation looks like `a @Comment's @ticket is a @Ticket's @id`");
-      continue;
-    }
-    const [, a, af, b, bf] = m;
-    const ra = byName.get(a);
-    const rb = byName.get(b);
-    const fa = ra?.fields.find((f) => f.name === af);
-    const fb = rb?.fields.find((f) => f.name === bf);
-    if (!ra) err(line, "UNKNOWN_NAME", `no record \`${a}\`${suggest(a, [...byName.keys()])}`);
-    else if (!fa) err(line, "UNKNOWN_NAME", `${a} has no field \`${af}\` (${ra.fields.map((f) => f.name).join(", ")})`);
-    if (!rb) err(line, "UNKNOWN_NAME", `no record \`${b}\`${suggest(b, [...byName.keys()])}`);
-    else if (!fb) err(line, "UNKNOWN_NAME", `${b} has no field \`${bf}\` (${rb.fields.map((f) => f.name).join(", ")})`);
-    if (fa && fb && JSON.stringify(fa.type) !== JSON.stringify(fb.type)) err(line, "BAD_BINDING", `${a}.${af} is ${typeToString(fa.type)}, but ${b}.${bf} is ${typeToString(fb.type)}: a relation joins equal keys`);
-  }
 }
 
 /**
@@ -691,36 +729,59 @@ function checkRelations(app: App, err: Err) {
  * sentence the compiler silently reads as something else.
  */
 function checkLookups(app: App, err: Err) {
-  const lists = new Set([...app.state.filter((f) => f.type.k === "List").map((f) => f.name), ...app.derive.map((d) => d.name)]);
-  const look = (text: string, line: number) => {
-    if (line >= LINE_BASE) return;
-    for (const m of text.matchAll(/\bthe\s+@([a-z]\w*)\s+(?:whose|where)\b/g))
-      if (!lists.has(m[1])) err(line, "UNKNOWN_NAME", `\`@${m[1]}\` is not a state list or a derived value to look in`);
-  };
-  for (const d of app.derive) look(d.sentence, d.line);
-  for (const a of app.invariants ?? []) look(a.text, a.line);
-  app.rules.forEach((r, i) => look(r, app.ruleLines?.[i] ?? 0));
+  const lists = new Set([...app.state.filter((f) => f.type.k === "List").map((f) => f.name), ...app.derive.map((d) => d.name), ...(app.params ?? []).filter((p) => p.type.k === "List").map((p) => p.name)]);
+  const singular = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
+  for (const s of sentences(app)) {
+    if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
+    const loops = new Set([...s.text.matchAll(/\bfor each @([a-z]\w*)/g)].map((m) => m[1]));
+    for (const m of s.text.matchAll(/\bthe\s+@([a-z]\w*)\s+(?:whose|where)\b/g))
+      if (!lists.has(m[1]) && !loops.has(m[1])) err(s.line, "UNKNOWN_NAME", `\`@${m[1]}\` (${s.where}) is not a state list or a derived value to look in`);
+  }
 }
 
-/** Hints: unguarded absent values, and rules that read like invariants. */
-function checkHints(app: App, warn: Err) {
-  checkNothing(app, warn);
-  // A rule that reads like an invariant is only guidance in `rules`; in `always` it is checked.
-  app.rules.forEach((r, i) => {
-    // A definition ("a @Release meets an item when it is at least …") is not a claim about the data.
-    const claim = r.match(/\b(never|always|at most|at least|no two|cannot|can't|must not|may not)\b/i);
-    const defines = claim && /\b(when|if|means|counts as|is called)\b/i.test(r.slice(0, claim.index));
-    if (claim && !defines && (app.ruleLines?.[i] ?? 0) < LINE_BASE)
-      warn(app.ruleLines?.[i] ?? 1, "UNCHECKED", `this rule reads like something that must always hold, but \`rules\` is only guidance: move it to \`always { - … }\` so every session checks it`);
-  });
+/**
+ * `for each @x in @xs where … { … }`: `@x` names the row inside the block only, it does not hide a
+ * name the app already has, and `@xs` is a list.
+ */
+function checkLoops(app: App, err: Err) {
+  const own = new Set([...app.state.map((f) => f.name), ...app.derive.map((d) => d.name), ...(app.params ?? []).map((p) => p.name)]);
+  const fields = new Set(app.records.flatMap((r) => r.fields.map((f) => f.name)));
+  const typeOf = new Map<string, Type>([...app.state.map((f) => [f.name, f.type] as const), ...(app.params ?? []).map((p) => [p.name, p.type] as const)]);
+  const loops = new Set<string>();
+  const collect = (b?: Stmt[]) => (b ?? []).forEach((s) => (s.k === "for" ? (loops.add(s.name), collect(s.body)) : s.k === "if" ? s.branches.forEach((br) => collect(br.body)) : undefined));
+  const bodies = [...app.handlers.map((h) => h.body), ...(app.endpoints ?? []).map((e) => e.body), ...(app.jobs ?? []).map((j) => j.body)];
+  bodies.forEach(collect);
+  // A loop's name used outside its loop (and not a name the app has otherwise) names nothing there.
+  const stray = [...loops].filter((x) => !own.has(x) && !fields.has(x));
+  const roots = (text: string) => refsIn(text).map((r) => r.split(".")[0]);
+  const walk = (b: Stmt[] | undefined, scope: Set<string>) => {
+    for (const st of b ?? []) {
+      const line = st.k === "if" ? st.branches[0].line : st.line;
+      if (line >= LINE_BASE) continue;
+      const texts = st.k === "if" ? st.branches.map((br) => br.cond ?? "") : st.k === "for" ? [st.list] : "text" in st ? [st.text as string] : [];
+      for (const t of texts) for (const r of roots(t)) if (stray.includes(r) && !scope.has(r)) err(line, "UNKNOWN_NAME", `\`@${r}\` is the row of a \`for each\` elsewhere: it names nothing outside its own block`);
+      if (st.k === "if") st.branches.forEach((br) => walk(br.body, scope));
+      if (st.k === "for") {
+        if (own.has(st.name)) err(st.line, "DUPLICATE", `the loop's row \`@${st.name}\` would hide the app's own \`${st.name}\`: give the row another name`);
+        const list = st.list.replace(/^@/, "").split(".")[0];
+        const t = typeOf.get(list);
+        if (t && !st.list.includes(".") && t.k !== "List") err(st.line, "TYPE", `\`for each … in @${list}\`: \`${list}\` is ${typeToString(t)}, not a list`);
+        const inner = new Set([...scope, st.name]);
+        for (const r of roots(st.where ?? "")) if (stray.includes(r) && !inner.has(r)) err(st.line, "UNKNOWN_NAME", `\`@${r}\` is the row of a \`for each\` elsewhere: it names nothing outside its own block`);
+        walk(st.body, inner);
+      }
+    }
+  };
+  bodies.forEach((b) => walk(b, new Set()));
 }
+
 
 /**
  * Structure in bodies: an endpoint answers on every path; nothing follows `answer` or `stop` in
  * its block; `answer` only where there is a request to answer. Control words written as prose
  * ("- if …, … and stop") get a hint with the structured form.
  */
-function checkBodies(app: App, err: Err, warn: Err) {
+function checkBodies(app: App, err: Err) {
   const ends = (s: Stmt, withStop: boolean): boolean =>
     s.k === "answer" || (withStop && s.k === "stop") || (s.k === "step" && /^answer\s/.test(s.text)) || (s.k === "if" && s.branches.some((b) => b.cond === undefined) && s.branches.every((b) => endsBlock(b.body, withStop)));
   const endsBlock = (b: Stmt[], withStop: boolean) => b.some((s) => ends(s, withStop));
@@ -730,8 +791,6 @@ function checkBodies(app: App, err: Err, warn: Err) {
       if (i > 0 && ends(b[i - 1], true)) err(lineOf(s), "UNREACHABLE", `this never runs: the step before it ${b[i - 1].k === "stop" ? "stops" : "answers"} (${where})`);
       if (s.k === "answer" && !canAnswer) err(s.line, "STEP", `\`answer\` is for an endpoint (or a layer's \`before every request\`); ${where} has no request to answer`);
       if (s.k === "stop" && where.startsWith("endpoint")) err(s.line, "STEP", "an endpoint ends a path with `answer …`, not `stop`: a path that stops answers nothing");
-      if (s.k === "step" && s.line < LINE_BASE && (/^(if|when)\s/i.test(s.text) || /^otherwise\b/i.test(s.text) || /\band stop\b/.test(s.text)))
-        warn(s.line, "UNSTRUCTURED", `write control words as structure: \`if <condition> { … } else { … }\`, \`answer …\` and \`stop\` instead of "${s.text.slice(0, 40)}${s.text.length > 40 ? "…" : ""}"`);
       if (s.k === "if") s.branches.forEach((br) => walk(br.body, where, canAnswer));
       if (s.k === "for") walk(s.body, where, canAnswer);
     });
@@ -748,92 +807,13 @@ function checkBodies(app: App, err: Err, warn: Err) {
   }
 }
 
-/**
- * A value that may be absent (`T or nothing`) is handled where it is used: a sentence that reads
- * it says what happens when there is none, or sits inside an `if` that asks. Otherwise: a hint.
- */
-function checkNothing(app: App, warn: Err) {
-  // A value that may be nothing: an optional state field, an optional record field (`Book.rating`),
-  // or a lookup (`the ticket whose @id is @id`) that can find no row. A `ref` field is a key, read
-  // by comparison, not dereferenced: it is not optional in this sense.
-  const optional = new Set([
-    ...app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name),
-    ...app.records.flatMap((r) => r.fields.filter((f) => f.type.k === "Maybe").map((f) => f.name)),
-  ]);
-  const esc = (x: string) => x.replace(/\./g, "\\.");
-  const handles = (text: string, x: string) =>
-    new RegExp(`there is (a |an |no )?@${esc(x)}\\b|\\bno @${esc(x)}\\b|@${esc(x)} is (not )?(nothing|set)|without (a |an )?@${esc(x)}\\b|\\b(set|clear) @${esc(x)}\\b|\\bwhen there is none\\b`).test(text);
-  const reads = (text: string) => [...new Set(refsIn(text).map((r) => r.split(".")[0]))].filter((x) => optional.has(x) && !handles(text, x));
-  const hint = (line: number, x: string, where: string) =>
-    line < LINE_BASE && warn(line, "UNGUARDED", `@${x} may be nothing (${where}): say what happens then, inside \`if there is a @${x} { … }\` or in the sentence ("…, or nothing when there is no @${x}")`);
-  // A lookup reads one row of a list ("the ticket whose @id is @id"): it can find nothing. A list
-  // filter ("the @tickets whose …") returns a list and needs no guard.
-  const singular = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
-  const lists = new Set([...app.state.filter((f) => f.type.k === "List").map((f) => f.name), ...app.derive.map((d) => d.name)]);
-  const saysNone = (text: string) => /\bwhen there is (none|no|one|a)\b|\bor nothing\b|\bwhen none\b|\bif there is no\b|\bwithout\b/.test(text);
-  const lookup = (text: string) => [...text.matchAll(/\bthe\s+@?([a-z]\w*)\s+(?:whose|where)\b/g)].some((m) => singular.has(m[1]) && !lists.has(m[1]));
-  const lookupHint = (line: number, text: string, where: string) => line < LINE_BASE && lookup(text) && !saysNone(text) && warn(line, "UNGUARDED", `a lookup ("the … whose …" / "the … where …", ${where}) can find nothing: say what happens then ("… when there is none")`);
-  const walk = (b: Stmt[], guarded: Set<string>, where: string) => {
-    for (const s of b) {
-      if (s.k === "step" || s.k === "answer") {
-        for (const x of reads(s.text)) if (!guarded.has(x)) hint(s.line, x, where);
-        lookupHint(s.line, s.text, where);
-      }
-      if (s.k === "if") {
-        for (const br of s.branches) {
-          if (br.cond) lookupHint(br.line, br.cond, where);
-          const inner = new Set(guarded);
-          for (const x of optional) if (br.cond !== undefined && handles(br.cond, x)) inner.add(x);
-          walk(br.body, inner, where);
-        }
-        // `if there is no @x { stop }`: an early exit guards what follows
-        const [only] = s.branches;
-        const last = only.body[only.body.length - 1];
-        if (s.branches.length === 1 && only.cond !== undefined && last && (last.k === "stop" || last.k === "answer"))
-          for (const x of optional) if (handles(only.cond, x)) guarded = new Set([...guarded, x]);
-      }
-      if (s.k === "for") {
-        if (s.where) {
-          for (const x of reads(s.where)) if (!guarded.has(x)) hint(s.line, x, where);
-          lookupHint(s.line, s.where, where);
-        }
-        walk(s.body, guarded, where);
-      }
-    }
-  };
-  for (const h of app.handlers) if (h.body) walk(h.body, new Set(), `on ${h.verb}${h.target ? " " + h.target : ""}`);
-  for (const ep of app.endpoints ?? []) if (ep.body) walk(ep.body, new Set(), `endpoint ${ep.name}`);
-  for (const d of app.derive) {
-    for (const x of reads(d.sentence)) hint(d.line, x, `derive ${d.name}`);
-    lookupHint(d.line, d.sentence, `derive ${d.name}`);
-  }
-  const els = (list: Element[]) => list.forEach((el) => {
-    for (const t of [el.expr, el.visibleWhen, el.enabledWhen]) if (t) {
-      for (const x of reads(t)) hint(el.line, x, `${el.kind} ${el.name}`);
-      lookupHint(el.line, t, `${el.kind} ${el.name}`);
-    }
-    els(el.children);
-  });
-  els(app.screen);
-}
 
 /**
  * References in sentences: every `@name` must be declared; a bare word that is a declared name
  * gets a hint to mark it (it may also just be English: "the title of the page").
  */
-function checkRefs(app: App, err: Err, warn: Err) {
+function checkRefs(app: App, err: Err) {
   const names = declaredNames(app);
-  const unmarked = new Map<number, Set<string>>();
-  // The hint is only for data (element names such as "empty" or "add" are mostly English), and a
-  // word that names a record in lower case ("that ticket") is the row's item.
-  const elements = new Set<string>();
-  const walk = (els: App["screen"]) => els.forEach((el) => (elements.add(el.name), walk(el.children)));
-  walk(app.screen);
-  const data = new Set([...app.state.map((f) => f.name), ...app.derive.map((d) => d.name)]);
-  // Time words ("3 days", "@days days after") and the clock's own words are English more often than names.
-  const TIME_WORDS = ["second", "seconds", "minute", "minutes", "hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years"];
-  const hinted = new Set([...names].filter((n) => (!elements.has(n) || data.has(n)) && n !== "error" && !CLOCK_NAMES.includes(n) && !TIME_WORDS.includes(n)));
-  const rowItems = new Set(app.records.map((r) => r.name[0].toLowerCase() + r.name.slice(1)));
   for (const s of sentences(app)) {
     if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
     // `@path.id` / `@query.q` / `@body.room`: a request param, told apart from a field with the same
@@ -848,13 +828,7 @@ function checkRefs(app: App, err: Err, warn: Err) {
         else if (p.in !== q[1]) err(s.line, "UNKNOWN_NAME", `\`${q[2]}\` is a ${p.in} param, not ${q[1]}: write \`@${p.in}.${q[2]}\``);
       } else if (!resolves(r, names)) err(s.line, "UNKNOWN_NAME", `\`@${r}\` (${s.where}) is not declared${suggest(r, [...names])}`);
     }
-    // "its body" / "its status" of an answer or event are the language's, not a field.
-    let text = /^on (answer|event)/.test(s.where) ? s.text.replace(/\bits (body|status)\b/g, " ") : s.text;
-    text = text.replace(/^\([\w.]+\) /, ""); // a rule from a component instance: checked in its bundle
-    text = text.replace(/^(call|publish)\b/, " "); // the language's own step words, even when an endpoint or event has that name
-    for (const w of bareWords(text)) if (hinted.has(w) && !rowItems.has(w)) (unmarked.get(s.line) ?? unmarked.set(s.line, new Set()).get(s.line)!).add(w);
   }
-  for (const [line, ws] of unmarked) warn(line, "UNMARKED", `${[...ws].map((w) => `"${w}"`).join(", ")} ${ws.size > 1 ? "are declared names" : "is a declared name"}: in a sentence, write ${[...ws].map((w) => `\`@${w}\``).join(", ")} when you mean ${ws.size > 1 ? "them" : "it"}`);
 }
 
 // ---------------------------------------------------------------- lines
@@ -1402,6 +1376,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return;
   }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
+  if ((m = t.match(/^size\s+([a-z][a-zA-Z0-9]*)$/))) return { step: { do: "size", size: m[1][0].toUpperCase() + m[1].slice(1), line } };
   if ((m = t.match(/^wait\s+(\d+)\s+(seconds?|minutes?|hours?|days?)$/))) {
     err(line, "SYNTAX", `write the time as \`wait ${m[1]}${m[2][0] === "s" ? "s" : m[2][0]}\` (s, m, h or d)`, col);
     return;
@@ -1464,6 +1439,11 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   const checkReserved = (name: string, line: number) => {
     for (const part of name.split(".")) if (RESERVED.has(part)) err(line, "RESERVED", `\`${part}\` is reserved; pick another name`);
   };
+  // In an api, `@path.x` / `@query.x` / `@body.x` name a request's parts: state and derived values
+  // cannot take those names (a record field can: it is read through its row, never as `@body.x`).
+  const checkRequestPart = (name: string, line: number) => {
+    if (app.endpoints?.length && ["path", "query", "body"].includes(name)) err(line, "RESERVED", `\`${name}\` names a request's part in an api (\`@${name}.x\`); pick another name`);
+  };
 
   for (const r of app.records) {
     if (typeNames.has(r.name)) err(r.line, "DUPLICATE", `type \`${r.name}\` is declared twice (or clashes with the app name)`);
@@ -1499,9 +1479,15 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         err(line, "UNKNOWN_NAME", `no record \`${t.name}\` to reference${suggest(t.name, [...records.keys()])}`);
         return false;
       }
-      const key = rec.fields.find((f) => f.type.k === "Int" || f.type.k === "Text");
+      // The key is declared (`key code: Text`), or the field named `id`; never a field's position.
+      const key = rec.fields.find((f) => f.name === (rec.key ?? "id"));
       if (!key) {
-        err(line, "NO_KEY", `${t.name} has no Int or Text field to be a key, so \`ref ${t.name}\` has no type: add one (e.g. \`id: Int\`)`);
+        err(line, "NO_KEY", `${t.name} has no key, so \`ref ${t.name}\` holds nothing: name its key field \`id\`, or mark one \`key code: Text\``);
+        return false;
+      }
+      const k = key.type.k === "Named" ? REFINED.get(key.type.name)?.base : key.type.k;
+      if (k !== "Int" && k !== "Text") {
+        err(key.line, "TYPE", `${t.name}'s key \`${key.name}\` is ${typeToString(key.type)}: a key is an Int or a Text, always there`);
         return false;
       }
       t.key = key.type;
@@ -1549,6 +1535,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     if (state.has(f.name)) err(f.line, "DUPLICATE", `state \`${f.name}\` declared twice`);
     state.set(f.name, f);
     checkReserved(f.name, f.line);
+    checkRequestPart(f.name, f.line);
     checkType(f.type, f.line);
     checkDefault(f);
     if (f.type.k === "Named" && records.has(f.type.name)) err(f.line, "BAD_BINDING", `state of record type needs a literal default; use \`${f.type.name} or nothing = nothing\``);
@@ -1558,6 +1545,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     if (state.has(d.name) || derived.has(d.name)) err(d.line, "DUPLICATE", `\`${d.name}\` is already declared`);
     derived.add(d.name);
     checkReserved(d.name, d.line);
+    checkRequestPart(d.name, d.line);
+    if (d.type) checkType(d.type, d.line);
   }
 
   // The api profile has endpoints instead of a screen.
@@ -1594,11 +1583,18 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     (byScreen.get(k) ?? byScreen.set(k, []).get(k)!).push(el);
   }
   for (const els of byScreen.values()) walk(els, undefined, new Map());
+  // A reused name is one element on several screens: one handler and one event serve them all, so
+  // the kind must agree (a `button back` here and a `field back` there would share nothing sensible).
+  const kindOf = new Map<string, Element>();
+  for (const { el, list } of all) {
+    if (list || !el.screen) continue;
+    const first = kindOf.get(el.name);
+    if (!first) kindOf.set(el.name, el);
+    else if (first.kind !== el.kind) err(el.line, "DUPLICATE", `\`${el.name}\` is a ${first.kind} on screen \`${first.screen}\` (line ${first.line}) and a ${el.kind} here: a name reused across screens is the same kind of element, with one handler. Give this one its own name`);
+  }
   if (!app.screen.length) err(1, "SYNTAX", "the app has no `screen`");
 
   for (const { el, list } of all) {
-    if (list && el.kind !== "heading" && records.get(list.of!)?.fields.some((f) => f.name === el.name) && (state.has(el.name) || derived.has(el.name)))
-      warn(el.line, "SHADOWED", `\`${el.name}\` is a field of ${list.of} and also an app-level name; inside the row it means the row's field. Rename the app-level one to avoid mix-ups`);
   }
   for (const { el, list } of all) {
     const rowType = list ? records.get(list.of!) : undefined;
@@ -1667,7 +1663,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   for (const c of app.components) {
     if (typeNames.has(c.name) || valueOwner.has(c.name)) err(c.line, "DUPLICATE", `component \`${c.name}\` clashes with a type or value name`);
     // A library offers more than one app uses: only the app's own components must be used.
-    if (!usedComponents.has(c.name) && c.line < LINE_BASE) warn(c.line, "UNUSED", `component \`${c.name}\` is never used (\`… as ${c.name}\`)`);
+    // Whether it is used is a quality rule's (std.quality UNUSED): the compiler records it.
   }
 
   // Handlers.
@@ -1717,7 +1713,6 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     if (handled.has(key)) err(h.line, "DUPLICATE", `there is already an \`on ${key}\``);
     handled.add(key);
   }
-  if (app.clockMs && !app.handlers.some((h) => h.verb === "tick")) warn(clockLine, "NO_HANDLER", "the app has a clock but no `on tick`");
   // Calls: `call @tickets.createTicket …` must name an endpoint of a client, and its answer should be handled.
   if (app.clients?.length)
     for (const h of app.handlers)
@@ -1727,7 +1722,6 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           const client = app.clients.find((c) => c.alias === m[1]);
           if (!client) err(line, "UNKNOWN_NAME", `no client \`${m[1]}\`; declare it with \`uses <contract> as ${m[1]}\``);
           else if (!client.contract.endpoints?.some((e) => e.name === m[2])) err(line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${m[2]}\`${suggest(m[2], client.contract.endpoints?.map((e) => e.name) ?? [])}`);
-          else if (!handled.has(`answer ${m[1]}.${m[2]}`)) warn(line, "NO_HANDLER", `\`${m[1]}.${m[2]}\` is called, but its answer is ignored: add \`on answer ${m[1]}.${m[2]}\``);
         }
   // Undo: `undo @pay.charge …` takes back an effect through the endpoint its contract names in `undone by`.
   if (app.clients?.length)
@@ -1738,9 +1732,17 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           const ep = app.clients.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2]);
           if (!ep) err(line, "UNKNOWN_NAME", `no endpoint \`${m[1]}.${m[2]}\` to undo`);
           else if (!ep.undoneBy) err(line, "EFFECT", `\`${m[1]}.${m[2]}\` cannot be undone: its contract names no \`undone by\``);
-          else if (!handled.has(`answer ${m[1]}.${ep.undoneBy.endpoint}`)) warn(line, "NO_HANDLER", `undoing \`${m[1]}.${m[2]}\` calls \`${m[1]}.${ep.undoneBy.endpoint}\`, but its answer is ignored: add \`on answer ${m[1]}.${ep.undoneBy.endpoint}\``);
         }
-  for (const { el } of all) if (el.kind === "button" && !handled.has(`click ${el.name}`)) warn(el.line, "NO_HANDLER", `button \`${el.name}\` has no \`on click ${el.name}\``);
+  // The manifest: `uses … as notes only listNotes, noteCreated` names what this app may use of an
+  // api; using anything else is an error (the host would refuse it), naming what the contract lacks too.
+  const usedApi = usedByAlias(app);
+  for (const c of app.clients ?? []) {
+    if (!c.only || (c.line ?? 0) >= LINE_BASE) continue;
+    const names = new Set([...(c.contract.endpoints ?? []).map((e) => e.name), ...(c.contract.events ?? []).map((e) => e.name)]);
+    for (const n of c.only) if (!names.has(n)) err(c.line ?? 1, "UNKNOWN_NAME", `\`only ${n}\`: contract ${c.contract.name} has no endpoint or event \`${n}\`${suggest(n, [...names])}`);
+    const used = [...usedApi[c.alias].endpoints, ...usedApi[c.alias].events];
+    for (const n of used) if (!c.only.includes(n)) err(c.line ?? 1, "UNDECLARED", `the app uses \`${c.alias}.${n}\`, which \`only\` does not list: add it, or stop using it`);
+  }
 
   // Examples.
   const seen = new Set<string>(); // "list.name" or "name" checked by some `see`
@@ -1757,13 +1759,17 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     const stack: string[] = [];
     const goTo = (name: string | undefined) => { if (name) (stack.push(current!), (current = name)); };
     const goBack = () => { if (stack.length) current = stack.pop()!; };
-    const navOf = (button: string): string | "back" | undefined => {
-      const steps = app.handlers.find((h) => h.verb === "click" && h.target === button)?.steps ?? [];
-      const to = steps.map((st) => st.match(/\bgo\s+to\s+@?([a-z]\w*)/i)?.[1]).find(Boolean);
-      if (to) return to;
-      return steps.some((st) => /\bgo\s+back\b/.test(st)) ? "back" : undefined;
+    // Where a click goes: a `go to` / `go back` at the handler's top level is certain; one inside an
+    // `if` or a loop depends on the state, so after it the screen is unknown (and not checked) until
+    // an `open` or a certain move says again.
+    const navOf = (button: string): string | "back" | "unknown" | undefined => {
+      const h = app.handlers.find((x) => x.verb === "click" && x.target === button);
+      const dest = (text: string) => text.match(/\bgo\s+to\s+@?([a-z]\w*)/i)?.[1] ?? (/\bgo\s+back\b/.test(text) ? "back" : undefined);
+      const nested = (b: Stmt[]): boolean => b.some((st) => (st.k === "if" ? st.branches.some((br) => nested(br.body) || br.body.some((x) => "text" in x && dest(x.text as string))) : st.k === "for" ? st.body.some((x) => "text" in x && dest(x.text as string)) || nested(st.body) : false));
+      if (h?.body && nested(h.body)) return "unknown";
+      return (h?.steps ?? []).map(dest).find(Boolean);
     };
-    const onScreen = (el: Element) => !app.screens?.length || !el.screen || el.screen === current;
+    const onScreen = (el: Element) => !app.screens?.length || !el.screen || current === undefined || el.screen === current;
     for (const s of ex.steps) {
       if (s.do === "tick") {
         // `tick` needs a clock tick; `wait` needs one, or an app that reads the clock (@now, @today).
@@ -1805,6 +1811,12 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
         else if (!client) err(s.line, "STEP", `\`steer\` goes wrong on the way to an api this screen uses; there is no \`${s.api}\`${app.clients?.length ? ` (${app.clients.map((c) => c.alias).join(", ")})` : ""}`);
         else if (!client.testedWith) err(s.line, "STEP", `\`steer ${s.api}\` needs a real provider to go wrong with: add \`tested with "…"\` to its \`uses\``);
+        continue;
+      }
+      if (s.do === "size") {
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
+        else if (!app.sizes) err(s.line, "STEP", "`size …` shows the app at another size: declare them first, `sizes compact | standard`");
+        else if (!app.sizes.includes(s.size)) err(s.line, "UNKNOWN_NAME", `no size \`${s.size[0].toLowerCase() + s.size.slice(1)}\` (${app.sizes.map((x) => x[0].toLowerCase() + x.slice(1)).join(", ")})`);
         continue;
       }
       if (s.do === "restart") {
@@ -1876,7 +1888,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         case "click": {
           need(["button"], "click");
           const dest = navOf(el.name);
-          if (dest === "back") goBack();
+          if (dest === "unknown") (current = undefined), (stack.length = 0);
+          else if (dest === "back") goBack();
           else if (dest) goTo(dest);
           break;
         }
@@ -1888,8 +1901,9 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
             break;
           }
           if (s.quoted) err(s.line, "STEP", `options of \`${el.name}\` are choice values: write \`choose ${s.value} in ${el.name}\` without quotes`);
-          const st = state.get(el.name);
-          const ch = st && st.type.k === "Named" ? choices.get(st.type.name) : undefined;
+          // A select inside a list row sets the row item's field; a top-level one, the state field.
+          const t = list ? app.records.find((r) => r.name === list.of)?.fields.find((f) => f.name === el.name)?.type : state.get(el.name)?.type;
+          const ch = t?.k === "Named" ? choices.get(t.name) : undefined;
           if (ch && !ch.values.includes(s.value)) err(s.line, "UNKNOWN_NAME", `\`${s.value}\` is not a value of ${ch.name} (${ch.values.join(", ")})`);
           break;
         }
@@ -1916,27 +1930,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
     }
   }
-  if (!app.examples.length) warn(1, "NO_EXAMPLES", "the app has no examples; nothing proves its behaviour");
-  for (const { el, list } of all) {
-    // Fields and selects just mirror their state (built-in binding), so they need no proof of their own.
-    const dynamic = el.kind === "text" || el.kind === "checkbox" || el.kind === "list" || el.kind === "progress" || (el.kind === "button" && (el.enabledWhen || el.expr));
-    if (!dynamic) continue;
-    if (el.line >= LINE_BASE) continue; // from a bundle: its demo app proves it
-    if (el.kind === "text" && el.expr && parseString(el.expr) !== undefined && !el.expr.includes("{")) continue; // a constant
-    const key = list ? `${list.name}.${el.name}` : el.name;
-    if (!seen.has(key)) warn(el.line, "UNPROVEN", `\`${el.kind} ${el.name}\` is never checked by a \`see\` step`);
-  }
-
-  // Anchoring: sentences should mention declared names.
-  const names = new Set<string>([
-    ...state.keys(), ...derived, ...all.map((a) => a.el.name), ...records.keys(), ...choices.keys(), ...valueOwner.keys(),
-    ...app.records.flatMap((r) => r.fields.map((f) => f.name)),
-    ...(app.clients ?? []).flatMap((c) => [c.alias, ...(c.contract.endpoints ?? []).map((e) => e.name)]),
-    ...(app.screens ?? []).flatMap((sc) => [sc.name, ...sc.params.map((p) => p.name)]),
-  ]);
-  const anchored = (s: string) => (s.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []).some((w) => names.has(w));
-  for (const h of app.handlers) h.steps.forEach((s, i) => !anchored(s) && !/nothing|initial state/i.test(s) && !/^(if|answer)\s/.test(s) && s !== "go back" && warn(h.stepLines?.[i] ?? h.line, "UNANCHORED", `"${s}" mentions no declared name`));
-  app.rules.forEach((r, i) => !anchored(r) && warn(app.ruleLines?.[i] ?? 1, "UNANCHORED", `rule "${r}" mentions no declared name`));
+  // What the examples prove, and the components used: facts the quality rules judge (std.quality).
+  app.facts = { ...app.facts, proven: [...seen], usedComponents: [...usedComponents], clockLine };
 }
 
 /** A see-target on a raw answer: \`status\`, \`header.x\`, \`body…\` (layers), or the same after \`request.\` (apps). */
@@ -1960,7 +1955,6 @@ function checkLayer(app: App, err: Err, warn: Err, checkType: (t: Type, line: nu
       if (s.do === "see") err(s.line, "UNKNOWN_NAME", `a layer's example sees the answer: \`see status = 200\`, \`see header vary = "origin"\`, \`see body.reached = true\``);
       else err(s.line, "STEP", `a layer's example sends \`request METHOD "/path" with header name = "…"\` and checks with \`see\`, not \`${s.do}\``);
     }
-  if (!app.examples.length) warn(1, "NO_EXAMPLES", "the layer has no examples; nothing proves its behaviour");
 }
 
 function checkApi(
@@ -2128,8 +2122,6 @@ function checkApi(
       } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\`, \`see\`, \`wait\` and \`restart\`, not \`${s.do}\``);
     }
   }
-  for (const ep of eps.values()) if (!app.examples.some((ex) => ex.steps.some((s) => s.do === "call" && s.endpoint === ep.name))) warn(ep.line, "UNPROVEN", `endpoint \`${ep.name}\` is never called in an example`);
-  if (!app.examples.length) warn(1, "NO_EXAMPLES", "the api has no examples; nothing proves its behaviour");
 }
 
 /** Is this a Date or DateTime (or `T or nothing` of one)? */
@@ -2177,6 +2169,7 @@ function valueFits(t: Type, v: string, choices: Map<string, ChoiceDecl>): boolea
 export function satisfies(r: RefinedDecl, v: string | number | undefined): boolean {
   if (v === undefined) return false;
   if (r.pattern !== undefined) return typeof v === "string" && new RegExp(`^(?:${r.pattern})$`).test(v);
+  if (r.base === "Text") return typeof v === "string" && (r.minLength === undefined || [...v].length >= r.minLength) && (r.maxLength === undefined || [...v].length <= r.maxLength);
   if (typeof v !== "number") return false;
   return (r.min === undefined || v >= r.min) && (r.max === undefined || v <= r.max);
 }

@@ -12,6 +12,7 @@ export interface LlmResult {
   costUsd: number;
   ms: number;
   error?: string;
+  unpriced?: boolean; // the provider does not know this model's price: its cost counts as 0
 }
 
 export interface Provider {
@@ -56,6 +57,8 @@ export async function complete(system: string, prompt: string, probe = false): P
   }
   const r = await p.complete(system, prompt);
   spentUsd += r.costUsd;
+  // A budget cannot hold over a model whose price is unknown: say so instead of counting it as free.
+  if (budget > 0 && r.unpriced && !r.error) return { ...r, text: "", error: `the price of ${p.name} model \`${p.model}\` is unknown, so the budget cannot be kept: add it to the provider's price table, or set budget 0` };
   return r;
 }
 

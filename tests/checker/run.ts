@@ -23,11 +23,13 @@ for (const f of readdirSync(join(dir, "load")).filter((f) => f.endsWith(".intent
   for (const e of expected) if (!got.includes(e)) (failures++, console.log(`load/${f}: missing ${e}`));
   for (const d of diags) if (d.level === "error" && !expected.includes(`${d.line}:${d.code}`)) (failures++, console.log(`load/${f}: unexpected ${d.line}:${d.code} ${d.message}`));
 }
-const apps = join(dir, "../../apps");
-for (const f of readdirSync(apps).filter((f) => f.endsWith(".intent"))) {
-  const errs = load(join(apps, f)).diagnostics.filter((d) => d.level === "error");
-  if (errs.length) (failures++, console.log(`apps/${f}: ${errs.length} error(s)`));
-}
+// Every spec in apps/ (services and held-out specs too) and every bundle in lib/ checks without errors.
+const specs = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? specs(join(d, e.name)) : e.name.endsWith(".intent") ? [join(d, e.name)] : []));
+for (const root of ["apps", "lib"])
+  for (const f of specs(join(dir, "../..", root)).filter((f) => !f.includes("/lib/profile/"))) { // profiles: tests/profile.test.ts
+    const errs = load(f).diagnostics.filter((d) => d.level === "error");
+    if (errs.length) (failures++, console.log(`${f.slice(f.indexOf(root))}: ${errs.length} error(s): ${errs.map((e) => `${e.line}:${e.code}`).join(", ")}`));
+  }
 // The profile is the source of truth; the language reference (the compiler's prompt) must agree.
 const { uiProfile } = await import("../../compiler/profile.ts");
 const doc = readFileSync(join(dir, "../../docs/LANGUAGE.md"), "utf8");

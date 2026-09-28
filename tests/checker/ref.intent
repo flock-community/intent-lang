@@ -1,11 +1,11 @@
 app RefKeys {
-  "A `ref X` field holds the key of X; the key must exist and be an Int or Text."
+  "A `ref X` field holds the key of X: the field marked `key`, or the field named `id`, never a field's position."
 }
-language v49
+language v59
 
 record Author {
-  id: Int
   name: Text
+  id: Int
 }
 
 record Book {
@@ -13,18 +13,49 @@ record Book {
   author: ref Author
 }
 
+record Country {
+  name: Text
+  key code: Text
+}
+
+record Visit {
+  country: ref Country
+}
+
+record Twice {
+  key a: Int
+  key b: Int            # expect: DUPLICATE
+}
+
 record Tag {
-  on: Date
+  key on: Date          # expect: TYPE
+}
+
+record Plain {
+  label: Text
 }
 
 record Note {
   text: Text
-  tag: ref Tag          # expect: NO_KEY
+  tag: ref Tag
+  plain: ref Plain      # expect: NO_KEY
   missing: ref Nope     # expect: UNKNOWN_NAME
 }
 
 state {
-  books: List Book = []
+  books: List Book = table {
+    title   | author
+    "Emma"  | 1
+    "Nope"  | "Austen"  # expect: BAD_BINDING
+  }
+  visits: List Visit = table {
+    country
+    "NL"
+  }
+}
+
+relations {             # expect: SYNTAX
+  - a @Book's @author is an @Author's @id
 }
 
 screen {

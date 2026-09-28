@@ -3,7 +3,7 @@
 // `llm openai` (INTENT_LLM, --llm); the model is `model` in the options.
 import type { LlmResult, Provider } from "../llm.ts";
 
-/** US dollars per million tokens (input, output), for the models we know. Unknown: cost 0. */
+/** US dollars per million tokens (input, output), for the models we know. Unknown: `unpriced`. */
 const PRICES: Record<string, { in: number; out: number }> = {
   "gpt-4o": { in: 2.5, out: 10 },
   "gpt-4o-mini": { in: 0.15, out: 0.6 },
@@ -25,12 +25,15 @@ export function openai(model: string): Provider {
           headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
           body: JSON.stringify({ model, max_tokens: 8192, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
         });
-        const j = (await res.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { message?: string } };
+        const j = (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { message?: string } };
         if (!res.ok || j.error) throw new Error(j.error?.message ?? `HTTP ${res.status}`);
         const text = j.choices?.[0]?.message?.content ?? "";
         const p = PRICES[model];
         const costUsd = p ? ((j.usage?.prompt_tokens ?? 0) * p.in + (j.usage?.completion_tokens ?? 0) * p.out) / 1_000_000 : 0;
-        return { text, costUsd, ms: Date.now() - t0 };
+        // A cut-off or filtered answer is not code: report it rather than compile half a file.
+        const finish = j.choices?.[0]?.finish_reason;
+        const error = finish === "length" ? "the answer was cut off at max_tokens" : finish === "content_filter" ? "the answer was filtered" : undefined;
+        return { text: error ? "" : text, costUsd, ms: Date.now() - t0, ...(error ? { error } : {}), ...(p ? {} : { unpriced: true }) };
       } catch (e) {
         return { text: "", costUsd: 0, ms: Date.now() - t0, error: (e as Error).message };
       }

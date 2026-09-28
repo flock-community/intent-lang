@@ -51,12 +51,12 @@ state {
 
 derive {
   visibleProducts = the @products whose @category is @category (@AllProducts shows all), in table order
-  left = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
-  lineTotal = for a line: the @price of that product × @qty
+  left: Int = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
+  lineTotal: Decimal = for a line: the @price of the product whose @name is the @name of that line (0 when there is none) × @qty
   itemCount = the sum of @qty over @cart
-  subtotal = the sum of all line totals
-  discount = when @appliedCode is "FRESH10" and @subtotal is at least 10.00: 10% of @subtotal, rounded to cents; otherwise 0
-  total = @subtotal minus @discount
+  subtotal: Decimal = the sum of all line totals
+  discount: Decimal = when @appliedCode is "FRESH10" and @subtotal is at least 10.00: 10% of @subtotal, rounded to cents; otherwise 0
+  total: Decimal = @subtotal minus @discount
 }
 
 screen {

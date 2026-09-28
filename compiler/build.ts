@@ -15,7 +15,8 @@ import { compilerPins, sourceMap, where } from "./load.ts";
 import { units } from "./units.ts";
 import { checkIncremental, checkRegions, regionUnits } from "./regions.ts";
 import { loadIncremental, planIncremental, saveIncremental } from "./incremental.ts";
-import { callDescs, hasClients, hasThrough } from "./calls.ts";
+import { typeDescOf } from "./targets/ts-service.ts";
+import { callDescs, eventWireTypes, hasClients, hasThrough, manifest, wireType } from "./calls.ts";
 import { usesClock } from "./refs.ts";
 import { prepareInvariants } from "./invariants.ts";
 import { dataField, hasData, hasInvariants, hasStored } from "./gen.ts";
@@ -47,7 +48,8 @@ export interface BuildOptions {
 
 /** Apps that make calls: which provider build answers which alias, for the test driver. */
 export function writeProviders(app: App, dir: string, providers: Record<string, string>) {
-  writeFileSync(join(dir, "providers.json"), JSON.stringify({ endpoints: callDescs(app), providers }, null, 2));
+  const events = eventWireTypes(app);
+  writeFileSync(join(dir, "providers.json"), JSON.stringify({ endpoints: callDescs(app), providers, ...(Object.keys(events).length ? { events } : {}) }, null, 2));
 }
 
 export async function buildOnce(app: App, specFile: string, specText: string, target: Target, dir: string, opts: BuildOptions = {}): Promise<BuildResult> {
@@ -93,11 +95,13 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   }
   const { appFile, specSource } = layer ? svc!.scaffoldLayer(app, dir) : api ? svc!.scaffoldApi(app, dir, opts.layers) : tm.scaffold(app, dir, opts.layers);
   if (hasClients(app)) writeProviders(app, dir, opts.providers ?? {});
-  if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name })), ...(e.effect ? { external: true } : {}) }))));
+  // What this app may use of each api (its `only` lists, else what its handlers use): a host grants these.
+  if (app.clients?.length) writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest(app), null, 2));
+  if (api) writeFileSync(join(dir, "endpoints.json"), JSON.stringify((app.endpoints ?? []).map((e) => ({ name: e.name, method: e.method, path: e.path, params: e.params.map((p) => ({ in: p.in, name: p.name, ...(wireType(app, p.type) ? { type: typeDescOf(app, p.type) } : {}) })), ...(e.effect ? { external: true } : {}) }))));
   writeFileSync(join(dir, "sourcemap.json"), JSON.stringify(sourceMap(app), null, 2));
   writeFileSync(join(dir, "units.json"), JSON.stringify(units(app), null, 2));
   // Apps that read the clock: where it starts in tests, and how far one clock tick moves it.
-  if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })) }));
+  if (usesClock(app)) writeFileSync(join(dir, "clock.json"), JSON.stringify({ start: app.startsAt ?? "2026-01-05T09:00", tickMs: app.clockMs ?? 0, jobs: (app.jobs ?? []).map((j) => ({ name: j.name, every: j.every })), ...(app.sizes ? { sizes: app.sizes } : {}) }));
   // Several screens: their addresses, for the test driver (which keeps the history).
   if (app.screens?.length) writeFileSync(join(dir, "screens.json"), JSON.stringify(app.screens.map((s) => ({ name: s.name, path: s.path }))));
   // Stored state: which fields of the data a restart keeps (the driver saves them, restarts, and checks they came back).

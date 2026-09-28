@@ -1,0 +1,59 @@
+contract lockers.lockersApi {
+  "Parcel lockers over HTTP: a courier deposits a parcel into a free locker of a size and gets the locker number and a pickup code; the recipient picks it up with both; anyone may ask how many lockers of each size are free."
+}
+
+import lockers.lockers
+
+record Deposit {
+  locker: Int                    # the number of the locker the parcel went into
+  code: PickupCode               # the secret the recipient needs; told only to the courier, once
+  expiresAt: DateTime            # 72 hours after the deposit; the locker is freed then
+}
+
+record Pickup {
+  locker: Int                    # the locker that is free again
+  size: Size
+}
+
+record FreeCount {
+  size: Size
+  free: Int                      # lockers of this size holding no parcel
+}
+
+endpoint deposit POST "/parcels" {
+  body size: Size
+  answers 201 Deposit
+  answers 401 Problem            # no known courier key (std.http.apiKey)
+  answers 409 Problem            # no locker of that size is free
+}
+
+endpoint pickup POST "/lockers/{number}/pickup" {
+  path number: Int
+  body code: PickupCode
+  answers 200 Pickup
+  answers 403 Problem            # the code is not this parcel's code
+  answers 404 Problem            # no such locker, or no parcel in it
+}
+
+endpoint freeLockers GET "/lockers/free" {
+  answers 200 List FreeCount     # one row per size: Small, Medium, Large
+}
+
+example "a parcel is deposited and picked up once" {
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  see deposit.status = 201
+  call pickup with number = {deposit.body.locker}, code = {deposit.body.code}
+  see pickup.status = 200
+  see pickup.body.size = "Small"
+  call pickup with number = {deposit.body.locker}, code = {deposit.body.code}
+  see pickup.status = 404
+}
+
+example "every size is counted" {
+  call freeLockers
+  see freeLockers.status = 200
+  see freeLockers.body has 3 rows
+  see freeLockers.body[1].size = "Small"
+  see freeLockers.body[2].size = "Medium"
+  see freeLockers.body[3].size = "Large"
+}

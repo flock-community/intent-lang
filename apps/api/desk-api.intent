@@ -156,3 +156,12 @@ example "the desk's web pages may call; other pages may not read the answers" {
   see myTickets.status = 200
   see myTickets.header.access-control-allow-origin is absent
 }
+
+example "no such ticket to take or solve" {
+  call takeTicket with header x-api-key = "k-sam-91bc", id = 99
+  see takeTicket.status = 404
+  see takeTicket.body.error = "No such ticket"
+  call solveTicket with header x-api-key = "k-sam-91bc", id = 99
+  see solveTicket.status = 404
+  see solveTicket.body.error = "No such ticket"
+}

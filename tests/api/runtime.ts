@@ -1,8 +1,14 @@
 // The api runtime answers bad input itself, with fixed messages: every build must answer the same.
-import { conforms, route, type EndpointDesc } from "../../runtime/ts/api.ts";
+import { conforms, fromWire, route, toWire, type EndpointDesc, type TypeDesc } from "../../runtime/ts/api.ts";
+import { toHttp } from "../../runtime/ts/calls.ts";
 
 const Email = { k: "Refined" as const, name: "Email", base: { k: "Text" as const }, pattern: "^(?:[^@\\s]+@[^@\\s]+\\.[^@\\s]+)$" };
+const Title = { k: "Refined" as const, name: "Title", base: { k: "Text" as const }, minLength: 1, maxLength: 3 }; // characters, not UTF-16 units
 const Age = { k: "Refined" as const, name: "Age", base: { k: "Int" as const }, min: 0, max: 150 };
+// Wire names: `choice Level: Info = "info" | Urgent = "urgent"`.
+const Level: TypeDesc = { k: "Choice", name: "Level", values: ["Info", "Urgent"], wire: ["info", "urgent"] };
+const Alert: TypeDesc = { k: "Record", name: "Alert", fields: [{ name: "level", type: Level }, { name: "levels", type: { k: "List", of: Level } }] };
+const wired: EndpointDesc[] = [{ name: "raise", method: "POST", path: "/alerts/{level}", params: [{ in: "path", name: "level", type: Level }, { in: "body", name: "also", type: { k: "Maybe", of: Level } }] }];
 const eps: EndpointDesc[] = [
   { name: "signUp", method: "POST", path: "/people", params: [{ in: "body", name: "email", type: Email }, { in: "body", name: "age", type: { k: "Maybe", of: Age } }, { in: "body", name: "kind", type: { k: "Choice", name: "Kind", values: ["Member", "Guest"] } }] },
   { name: "person", method: "GET", path: "/people/{id}", params: [{ in: "path", name: "id", type: { k: "Int" } }] },
@@ -19,6 +25,15 @@ const cases: [string, unknown, unknown][] = [
   ["contract ok", conforms({ 201: Email }, { status: 201, body: "ann@x.nl" }), undefined],
   ["contract status", conforms({ 201: Email }, { status: 200, body: "ann@x.nl" }), "answered 200, which the contract does not declare (201)"],
   ["contract body", conforms({ 201: Email }, { status: 201, body: "nope" }), "answered 201, but the body must be a valid Email"],
+  ["wire out", toWire({ level: "Urgent", levels: ["Info", "Urgent"] }, Alert), { level: "urgent", levels: ["info", "urgent"] }],
+  ["wire in", fromWire({ level: "urgent", levels: ["info"] }, Alert), { level: "Urgent", levels: ["Info"] }],
+  ["wire request", route(wired, "POST", "/alerts/urgent", {}, { also: "info" }), { request: { endpoint: "raise", level: "Urgent", also: "Info" } }],
+  ["wire request refuses", route(wired, "POST", "/alerts/loud", {}, {}), { response: { status: 400, body: { error: "level must be one of info, urgent" } } }],
+  ["wire call", toHttp([{ name: "a.raise", method: "POST", path: "/alerts/{level}", params: [{ in: "path", name: "level", type: Level }, { in: "body", name: "also", type: Level }] }], { endpoint: "a.raise", args: { level: "Urgent", also: "Info" } }), { method: "POST", path: "/alerts/urgent", query: {}, body: { also: "info" } }],
+  ["wire answer fits", conforms({ 200: Alert }, { status: 200, body: { level: "urgent", levels: [] } }), undefined],
+  ["length ok", conforms({ 200: Title }, { status: 200, body: "🎉🎉🎉" }), undefined],
+  ["length long", conforms({ 200: Title }, { status: 200, body: "four" }), "answered 200, but the body must be a valid Title"],
+  ["length empty", conforms({ 200: Title }, { status: 200, body: "" }), "answered 200, but the body must be a valid Title"],
 ];
 let failures = 0;
 for (const [name, got, want] of cases)

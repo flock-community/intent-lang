@@ -1,0 +1,30 @@
+app RowChecks {
+  "A select inside a list row chooses among the values of the row item's field."
+}
+
+choice Status: Open | Done
+choice Color: Red | Banana
+
+record Task {
+  id: Int
+  status: Status
+}
+
+state {
+  status: Color = Red
+  tasks: List Task = table {
+    id | status
+    1  | Open
+  }
+}
+
+screen {
+  list tasks of Task {
+    select status
+  }
+}
+
+example "choosing in a row" {
+  choose Done in status on row 1
+  choose Banana in status on row 1         # expect: UNKNOWN_NAME
+}

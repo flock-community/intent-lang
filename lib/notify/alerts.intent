@@ -1,0 +1,11 @@
+bundle notify.alerts {
+  "Alerts with a level, as an existing service names them on the wire (lower case)."
+}
+
+choice Level: Info = "info" | Urgent = "urgent"
+
+record Alert {
+  id: Int
+  text: Text
+  level: Level
+}

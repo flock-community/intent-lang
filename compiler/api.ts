@@ -168,7 +168,9 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
       const h = toHttp(eps, c);
       const external = eps.find((e) => e.name === c.endpoint)?.external;
       const headers = external && !Object.keys(c.headers ?? {}).some((k) => k.toLowerCase() === "idempotency-key") ? { ...c.headers, "idempotency-key": `call-${++made}` } : (c.headers ?? {});
-      const res = client.send(h.method, h.path, h.query, h.body, headers, clockAtMs(elapsed));
+      const wire = client.send(h.method, h.path, h.query, h.body, headers, clockAtMs(elapsed));
+      // Examples speak the spec's names: a choice's wire name is read back as its value.
+      const res = wire.spec ? { ...wire, body: wire.spec.body, events: wire.spec.events } : wire;
       responses.set(c.endpoint, res);
       record(res);
       return res;

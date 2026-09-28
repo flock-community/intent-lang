@@ -56,3 +56,9 @@ example "kept after a restart" {
   call charge with amount = 300, description = "Tea"
   see charge.body.id = 2
 }
+
+example "no such charge to look at" {
+  call getCharge with id = 7
+  see getCharge.status = 404
+  see getCharge.body.error = "No such charge"
+}

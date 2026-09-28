@@ -1,0 +1,12 @@
+app JobWithScreen {
+  "A job that declares a screen is a mistake: the harness shows its state."
+}
+profile job
+
+state {
+  count: Int = 0
+}
+
+screen {
+  text count                            # expect: SYNTAX
+}

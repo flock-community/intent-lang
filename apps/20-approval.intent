@@ -1,7 +1,7 @@
 app Approval {
-  "A payment that goes out only after a person allows it: without a permission the call waits, a one-time permission lets one payment through, Reject drops it, and Stop blocks every external call."
+  "A payment that goes out only after a person allows it: without a permission the call waits, a one-time permission lets one payment through, Reject drops that payment (the next one waits for approval again), and Stop blocks every external call."
 }
-language v47
+language v60
 import pay.payments
 
 uses pay.paymentsApi as pay {
@@ -39,19 +39,15 @@ screen {
 }
 
 on click buy {
-  - set @waiting to true
-  - set @message to "Waiting for approval"
   - call @pay.charge with @amount = 12500 and @description = "Yoga, 10 classes"
 }
 
 on click allow {
   - set @waiting to false
-  - add a @Permission to the end of @permissions with @endpoint = "pay.charge", @count = 1, @per = 0, @upTo = 12500 and @approver = "Sam"
+  - add a @Permission to the end of @permissions with @endpoint = "pay.charge", @count = 1, @per = nothing, @upTo = 12500 and @approver = "Sam"
 }
 
 on click reject {
-  - set @waiting to false
-  - set @message to "Payment rejected"
   - add "pay.charge" to the end of @rejected
 }
 
@@ -60,8 +56,15 @@ on click stop {
 }
 
 on answer pay.charge {
+  if its status is held {
+    - set @waiting to true
+    - set @message to "Waiting for approval"
+    stop
+  }
   - set @waiting to false
-  if its status is 201 {
+  if its status is rejected {
+    - set @message to "Payment rejected"
+  } else if its status is 201 {
     - set @message to "Paid: charge {the @id in its body}"
   } else if its status is unknown {
     - set @message to "We could not confirm the payment yet."
@@ -97,6 +100,26 @@ example "held, then rejected" {
   see message = "Payment rejected"
   see buy is enabled
   see reject is disabled
+}
+
+example "a rejection is about that payment, not every payment" {
+  click buy
+  click reject
+  see message = "Payment rejected"
+  click buy
+  see message = "Waiting for approval"
+  see allow is enabled
+  click allow
+  see message = "Paid: charge 1"
+}
+
+example "a second approval, a second payment" {
+  click buy
+  click allow
+  see message = "Paid: charge 1"
+  click buy
+  click allow
+  see message = "Paid: charge 2"
 }
 
 example "a lost answer on the approved call" {

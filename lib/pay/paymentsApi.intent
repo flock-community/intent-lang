@@ -9,7 +9,7 @@ endpoint charge POST "/charges" {
   body description: Text
   answers 201 Charge
   answers 400 Problem
-  effect external
+  effect external of @amount
   undone by refund with id = @charge.body.id
 }
 

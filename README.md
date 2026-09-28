@@ -62,7 +62,7 @@ What the language covers today:
 
 | | |
 |---|---|
-| Screens | state, derived values, lists of records and of plain values, records with declared `relations` and `ref` keys, sections, templates, handlers, examples, `always` rules, a clock |
+| Screens | state, derived values, lists of records and of plain values, records that refer to each other (`ref`, with declared keys), sections, templates, handlers, examples, `always` rules, a clock |
 | Looks | a `design`, presentations (`as table`, `as sidebar`), `look "…"` in words, styled builds checked in a browser |
 | Reuse | bundles, behaviour components (`use pager = Pager`), refinement (`extends`, `override`), a registry with versions |
 | APIs | `profile api`, endpoints, `@path.x`/`@body.x` to tell a param from a field, contracts with every answer and event, layers (`std.http.cors`, `std.http.apiKey`, `std.http.secure`) |
@@ -136,7 +136,8 @@ converged 20-approval, 21-tags and 22-hash 12/12 builds, and counter, board, hel
 and the calculator 19/20 builds — every build that succeeded was 100% the same app and Elm≡TS 100%
 (`runs/2026-09-26-11-02-deepseek/`, `runs/2026-09-26-11-03-deepseek-screens/`). The one failure
 (the calculator's second Elm build) is DeepSeek not getting that app right after repairs, not a
-compiler divergence: the builds that did compile agreed on every screen.
+compiler divergence: the builds that did compile agreed on every screen. These runs are shallower than the
+Claude rounds (2 builds per target with 12 sessions each, against 3 builds with 40 sessions at r35), so they show the provider works, not that it converges as well.
 
 ## How the harness makes the LLM stable
 

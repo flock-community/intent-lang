@@ -116,17 +116,25 @@ through the same outbox:
 Built (v40–v45): the gate, pending / approve / reject, permissions with bounds, a durable held box,
 and four eyes. `lib/std/actions.intent` carries the agreement in params bound to the screen's state.
 A call with no covering permission is held; approving adds a `Permission` (`endpoint`, `count`,
-`per`, `upTo`, `approver`) and the harness sends the held call with its original key; rejecting
-drops it; the stop refuses at once. The harness counts calls per endpoint to enforce `count`/`per`,
-keeps a held call (with its key) in a durable box, and with `fourEyes` refuses a permission the
-`requester` granted themselves. `apps/20-approval.intent` and `tests/gate.test.ts` prove it.
+`per`, `upTo`, `approver`; the optional ones are `or nothing`) and the harness sends the held call
+with its original key; a rejection drops the calls held when it is given (not the endpoint for
+good); the stop refuses at once. Each permission counts the calls it let through, so two one-time
+grants are two calls. The amount limit reads the param the contract names (`effect external of
+@amount`); an endpoint that names none is not covered by a limited permission. The held calls, the
+usage per permission and the rejections applied are kept durably (a reload does not reset a
+one-time grant). One implementation (`agreement()` in `runtime/ts/calls.ts`) serves the TypeScript
+and Elm glue and the test executor. `apps/20-approval.intent` and `tests/gate.test.ts` prove it.
+
+**What it is not.** The gate runs in the screen, against state the user's browser holds. It stops
+the app's own mistakes and an agent acting too fast; it is not an access control. A service that
+must refuse unapproved calls checks an approval token itself (a later step, with the host).
 
 ```
 uses booking.api as booking {
   tested with "apps/api/booking-api.intent"
   through std.actions {
-    agree = permissions         # List Permission: endpoint, count, per, upTo
-    rejected = rejected         # List Text: a person rejected these; held calls are dropped
+    agree = permissions         # List Permission: endpoint, count, per, upTo, approver
+    rejected = rejected         # List Text: each entry drops the calls held for it when added
     stop = stopped              # Bool: the emergency stop
   }
 }
@@ -134,10 +142,13 @@ uses booking.api as booking {
 
 - **Built:** a call with no covering permission (or one that breaks a permission's count, period or
   amount) is held for approval; the app shows it as waiting, approves (the harness sends the held
-  call with its original key) or rejects (it is dropped). A call while stopped is answered at once
+  call with its original key) or rejects (the calls held then are dropped). A call while stopped is answered at once
   with the reason. The refusal/approval is not `unknown`, so it is not retried. A held call and its
   key survive a page reload (the durable box), and a test session's restart.
-- **Next:** four eyes (the approver is not the requester) is an optional param.
+- **Built (v60):** the screen hears a held call at once (`its status is held`) and a rejected one
+  (`its status is rejected`), like `unknown`: one answer handler covers every outcome.
+- **Next:** the design's third decision, *edit* (change the held call's arguments before
+  approving), is not built.
 
 ## How it is tested
 
@@ -169,8 +180,33 @@ steer booking expire keys        # a late retry after the keys expired
    ticket and desk APIs and screens with it.
 3. **v38: undo**, **v40–v45: agreement.** `undo @x`; `std.actions` with the gate, the emergency
    stop, pending / approve / reject, permissions with count / period / amount, a durable held box,
-   and four eyes — `apps/20-approval.intent`. Next: the remaining faults.
+   and four eyes — `apps/20-approval.intent`. v50: the remaining faults.
 4. **Then:** openouros's six action scenarios (UC4) as specs against these, as the held-out test.
+
+## A host owns the transport
+
+A generated screen sends its calls with `fetchCall` and watches each api's events with `listen`
+(`runtime/ts/calls.ts`). A host that is not HTTP — OurOS, whose every contract call goes over its own
+bus — sets `globalThis.__intentTransport` before the app starts:
+
+```ts
+interface Transport {
+  send(req: Outgoing & { alias: string; endpoint: string }): Promise<{ status: number; body?: unknown; error?: string; inProgress?: boolean }> | { … };
+  listen?(alias: string, req: Outgoing, onEvent: (e: { event: string; body: unknown }) => void): () => void;
+}
+```
+
+- `send` gets the endpoint (to route by contract, not URL) and the HTTP-shaped request *after* the
+  client layers, so `through std.http.sendKey` still applies. The runtime's rules for a call stay
+  the same over the transport: the idempotency key, sending again on no answer, a 5xx, a 429 or
+  "still in progress", `unknown` at the end; a `send` that throws is no answer.
+- `listen` subscribes to one api's events with the stream request after the client layers (a key),
+  and returns an unsubscribe. When that request changes (the user signed in) the old subscription
+  ends and `listen` is called again. Only apis the app handles events of are subscribed. A host
+  without `listen` delivers no events: nothing is fetched from the page's own origin.
+- Without the hook the harness uses `fetch` and server-sent events.
+- Both targets: the Elm app hands its calls to the generated `glue.ts` through ports, and the glue
+  calls the same `fetchCall` and `listen`. Tested in `tests/transport.test.ts` (the runtime itself).
 
 ## What stays out
 

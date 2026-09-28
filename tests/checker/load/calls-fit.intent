@@ -1,0 +1,46 @@
+app CallsFit
+
+import support.tickets
+
+uses support.ticketsApi as tickets {
+  tested with "apps/api/tickets-api.intent"
+}
+
+state {
+  rows: List Ticket = []
+  draft: Text = ""
+  count: Int = 0
+  last: Text = ""
+}
+
+screen {
+  text count
+  button add "Add"
+  button bad "Bad"
+  button add2 "Add 2"
+}
+
+on click add {
+  - call @tickets.createTicket with @subject = @draft, @customer = "Web" and @priority = @Normal
+}
+
+on click bad {
+  - call @tickets.createTicket with @subject = @count, @customer = "Web" and @priority = @Normal   # expect: TYPE
+}
+
+on click add2 {
+  - call @tickets.createTicket with @subjekt = @draft, @customer = "Web" and @priority = @Normal   # expect: UNKNOWN_NAME
+}
+
+on answer tickets.createTicket {
+  if its status is 201 {
+    - set @last to its body's @subject
+    - set @count to its body   # expect: TYPE
+    - set @last to the error in its body
+    - set @last to its body's @body                # expect: UNKNOWN_NAME
+  }
+}
+
+on event tickets.ticketCreated {
+  - set @last to its body's @customer
+}

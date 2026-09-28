@@ -88,13 +88,15 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`), ~~v32 stored
    state (survives a restart)~~ done, ~~v33 effects declared on contracts~~ done, ~~v34 effectively once (keys, retries, `unknown`,
    `steer` faults)~~ done, ~~v35 registry feedback~~ done, ~~v36 several screens~~ done (converge at
-   v35: 72/72, `runs/r35-converge/`). Next, per `docs/design/effects.md` (grounded in Stripe, IETF, AWS, sagas,
-   Temporal): the durable outbox (pending calls survive a restart), then undo and agreement
-   (`std.actions`). Later (the language is alpha): diagnostics that
-   carry their fix and `intent fix` with pinned `language vN`; identity and references for stored
-   records, then unions of records and several targets per app. Also
-   open: styled builds of screens that make calls, and Kotlin as a second API target. Wire
-   names for choice values wait until a spec must match an existing API.
+   v35: 72/72, `runs/r35-converge/`), ~~the durable outbox, undo (v38), agreement (v40–v45,
+   `std.actions`)~~ done, ~~`intent fix` with pinned `language vN`~~ done, ~~references with
+   declared keys (v49, reworked in v59)~~ done. v59 reviewed v38–v58 (one spelling per form, no
+   stand-ins, per-screen traceability). Next, from OurOS: a host transport for calls and events
+   (built, `docs/design/effects.md`), a per-alias manifest (`uses x as y only …`, v60), `origin` on
+   rules (v60), wire names for choice values and bounded `Text` (v60), held calls seen by the
+   screen (v60), a headless job profile (v60, `profile job`) and `sizes` on a screen (v60). Next:
+   a terminal renderer of the same screens. Later: the screen seeing a held call, unions of records and several targets per app,
+   styled builds of screens that make calls, and Kotlin as a second API target.
 
 ## Lessons from the experiments (keep applying them)
 
@@ -108,8 +110,9 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
 - **Measure before and after every change** with `intent converge`, and check that the
   measurement itself is sound (fuzzer depth, planted bugs, `data-el` placement).
 - **The language is a work in progress.** A missing construct is `NOT_YET`, a candidate for
-  the next version, not a prohibition. Every addition goes in the changelog in
-  `docs/LANGUAGE.md`.
+  the next version, not a prohibition. Every addition goes in the changelog,
+  `docs/CHANGELOG.md`; the reference (`docs/LANGUAGE.md`) is the compiler's prompt and says only
+  what the language is — no history, no paths into this repository.
 
 ## The spec-writing skill
 
@@ -123,8 +126,9 @@ goes there first.
 
 `README.md` covers usage, architecture and results. `docs/LANGUAGE.md` is the reference;
 it is also the compiler's prompt, so keep it accurate. `apps/` holds the example specs.
-`compiler/` holds the parser/checker, code generation, the LLM stages, the drivers and the
-pipeline. Target languages are modules in `compiler/targets/` (one interface, `target.ts`) and
+`compiler/` holds the parser/checker (references and types in `fit.ts`), code generation, the LLM
+stages, the drivers and the pipeline; quality rule sets live apart from the compiler's checks
+(`compiler/quality.ts`, `std.quality` in `compiler/quality/std.ts`). Target languages are modules in `compiler/targets/` (one interface, `target.ts`) and
 LLM providers in `compiler/providers/` (`llm.ts`): a new language or provider is a module and a
 line in a registry, and must pass the same examples, `always` rules and twin builds, with a
 converge run recorded for it. `runs/history.jsonl` holds every measured round.

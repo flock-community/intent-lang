@@ -105,6 +105,7 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
   body.rules.forEach((r, i) => {
     // Keep rules and their lines side by side (an app's own rules may have none recorded).
     app.ruleLines = [...(app.ruleLines ?? app.rules.map(() => 1)), body.ruleLines?.[i] ?? comp.line];
+    if (app.ruleBy || body.ruleBy) app.ruleBy = [...(app.ruleBy ?? app.rules.map(() => "human" as const)), body.ruleBy?.[i] ?? "human"];
     app.rules.push(`(${inst}) ${rwAll(r)}`);
   });
   for (const h of body.handlers) {
