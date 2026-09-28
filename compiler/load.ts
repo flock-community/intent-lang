@@ -510,7 +510,7 @@ function lintComponent(c: Component, warn: (line: number, code: string, message:
       if (locals.has(w) && !refsIn(text).includes(w) && !text.includes(`{${w}}`)) return warn(line, "UNSCOPED", `\`${w}\` belongs to component ${c.name}; write \`@${w}\` so each use gets its own`);
   };
   for (const d of body.derive) check(d.sentence, d.line);
-  for (const h of body.handlers) for (const s of h.steps) check(s, h.line);
+  for (const h of body.handlers) h.steps.forEach((s, i) => check(s, h.stepLines?.[i] ?? h.line)); // on the step's own line
   for (const r of body.rules) check(r, c.line);
   const walk = (els: typeof body.screen) => {
     for (const el of els) {

@@ -255,8 +255,11 @@ switch (cmd) {
     const c = config();
     // A service (an api, a layer) is built by the configured targets that can build services.
     const service = app.profile === "api" || app.kind === "layer";
-    const wanted = (c.targets ?? (service ? ["ts"] : ["elm", "ts"])) as Target[];
-    const targets = service ? (wanted.filter((t) => TARGETS[t].service).length ? wanted.filter((t) => TARGETS[t].service) : (["ts"] as Target[])) : wanted;
+    // A job (`profile job`) likewise, by the targets that write a job's entry (job.mjs).
+    const job = app.profile === "job";
+    const able = (t: Target) => (service ? !!TARGETS[t].service : !job || !!TARGETS[t].job);
+    const wanted = (c.targets ?? (service || job ? ["ts"] : ["elm", "ts"])) as Target[];
+    const targets = service || job ? (wanted.filter(able).length ? wanted.filter(able) : (["ts"] as Target[])) : wanted;
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
     const results = await Promise.all(
       targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, incremental: c.incremental === "auto", cleanCheck: c.cleanCheck === "always", sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => console.log(`[${t}] ${m}`) })),

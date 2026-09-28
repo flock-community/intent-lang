@@ -1,0 +1,32 @@
+app Unscoped {
+  "Inside a component its own names are written with @, so each use gets its own; a bare one is UNSCOPED."
+}
+
+component Counter {
+  param step = 1
+  state {
+    value: Int = 0
+  }
+  derive {
+    doubled = value times 2                        # expect: UNSCOPED
+    tripled = @value times 3                       # expect-not: UNSCOPED
+    label = "on step @step"                        # expect-not: UNSCOPED
+  }
+  screen {
+    text shown = "{@doubled} {@tripled} {@label}"
+    button up "Up"
+  }
+  on click up {
+    - increase value by @step                      # expect: UNSCOPED
+    - increase @value by @step                     # expect-not: UNSCOPED
+  }
+}
+
+screen {
+  use counter = Counter
+}
+
+example "counting" {
+  click counter.up
+  see counter.shown = "8 12 on step 1"
+}

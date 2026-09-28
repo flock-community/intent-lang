@@ -1,0 +1,26 @@
+app NoExamples {                                   # expect: NO_EXAMPLES
+  "An app with a clock and no examples: nothing proves it, and nothing handles the tick."
+}
+
+record Item {
+  name: Text
+  price: Decimal
+}
+
+state {
+  items: List Item = []
+  seconds: Int = 0
+  picked: Text or nothing = nothing
+}
+
+clock every 1s                                     # expect: NO_HANDLER
+
+screen {
+  text seconds
+  button pick "Pick"
+}
+
+on click pick {
+  - set @picked to the @name of the item where @price is above 3          # expect: SPELLING  # expect: UNGUARDED
+  - set @picked to the @name of the item whose @price is above 3, or "" when there is none   # expect-not: SPELLING  # expect-not: UNGUARDED
+}

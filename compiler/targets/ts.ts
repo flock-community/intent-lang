@@ -387,7 +387,7 @@ ${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
   },
   render: (m) => toNode(App.view(m${c ? ", localClock()" : ""})),
   clockMs: ${app.clockMs ?? 0},
-});${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}
+});${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}${app.sizes ? `\n// The host shows the app at another size: show it again.\nwindow.addEventListener("intentsize", () => dispatch({ on: "noop", target: "" }));` : ""}
 `;
   const test = `import * as App from "./app.ts";
 import { fromWire, toNode } from "./spec.ts";
@@ -639,4 +639,5 @@ Fmt.parseDateTime(text): DateTime | null      // "YYYY-MM-DD HH:MM" or "YYYY-MM-
     platform: "Platform functions (this spec imports one): a sentence that names a function (`the @sha256 of the given @text`) calls exactly that function, imported from `./spec.ts`. They are the installation's reviewed code: never write your own version of what they do.",
   },
   open: openTs,
+  job: true,
 };

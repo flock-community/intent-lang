@@ -80,8 +80,8 @@ export async function converge(files: string[], o: ConvergeOptions): Promise<App
       const deps = await buildDeps(app, { styled: o.styled, kit: o.kit, twin: "auto", sessions: o.traces, length: o.length, repairs: 3, log: (m) => console.log(`${name}: ${m}`) });
       if ("problem" in deps) throw new Error(`${file}: ${deps.problem}`);
       const jobs: Promise<BuildResult & { id: string }>[] = [];
-      // A service or a layer has one target (TypeScript): no Elm builds to count against it.
-      const targets = app.profile === "api" || app.kind === "layer" ? o.targets.filter((t) => t === "ts") : o.targets;
+      // A service, a layer or a job has one target (TypeScript): no Elm builds to count against it.
+      const targets = app.profile === "api" || app.kind === "layer" || app.profile === "job" ? o.targets.filter((t) => t === "ts") : o.targets;
       for (const target of targets)
         for (let i = 1; i <= o.builds; i++) {
           const id = `${target}-${i}`;

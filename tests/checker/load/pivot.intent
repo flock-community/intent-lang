@@ -1,0 +1,37 @@
+app PivotOrder {
+  "A call that cannot be undone goes last: a receipt (an email) cannot be unsent, a charge can be refunded."
+}
+
+import pay.payments
+
+uses pay.paymentsApi as pay {
+  tested with "apps/api/payments-api.intent"
+}
+
+state {
+  last: Charge or nothing = nothing
+}
+
+screen {
+  button receiptFirst "Receipt first"
+  button chargeFirst "Charge first"
+}
+
+on click receiptFirst {
+  - call @pay.sendReceipt with @id = 1 and @email = "ann@example.com"
+  - call @pay.charge with @amount = 500 and @description = "Tea"          # expect: PIVOT
+}
+
+on click chargeFirst {
+  - call @pay.charge with @amount = 500 and @description = "Tea"          # expect-not: PIVOT
+  - call @pay.sendReceipt with @id = 1 and @email = "ann@example.com"     # expect-not: PIVOT
+  - undo @pay.sendReceipt                                                 # expect: EFFECT
+}
+
+on answer pay.charge {
+  - set @last to its body
+}
+
+on answer pay.sendReceipt {
+  stop
+}

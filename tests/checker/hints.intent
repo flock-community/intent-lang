@@ -1,0 +1,54 @@
+app Hints {
+  "std.quality's hints on a small app: each on the line it is about, with a near miss next to it."
+}
+
+record Item {
+  name: Text
+  price: Decimal
+}
+
+state {
+  items: List Item = []
+  name: Text = ""
+  count: Int = 0
+  last: Decimal = 0
+}
+
+derive {
+  total = the sum of the @price of every item in @items                  # expect: UNTYPED
+  shown: Decimal = the sum of the @price of every item in @items         # expect-not: UNTYPED
+  blurb = a very long description of the @items that goes on and on with many words that nobody reads at all because the sentence keeps going far past the point where a reader would stop and ask for the parts to be named # expect: LONG_SENTENCE
+  short = the number of @items                     # expect-not: LONG_SENTENCE
+}
+
+rules {
+  - be friendly                                    # expect: UNANCHORED
+  - be friendly about @items                       # expect-not: UNANCHORED
+  - the @count is never below zero                 # expect: UNCHECKED
+  - an @Item counts as cheap when it is at most 5  # expect-not: UNCHECKED
+}
+
+screen {
+  text count                                       # expect: UNPROVEN
+  text heading = "Shop"                            # expect-not: UNPROVEN
+  text sum = "{@shown}"                            # expect-not: UNPROVEN
+  button add "Add"                                 # expect-not: NO_HANDLER
+  button clear "Clear"                             # expect: NO_HANDLER
+  list items of Item {
+    text name                                      # expect: SHADOWED
+    text price                                     # expect-not: SHADOWED
+  }
+}
+
+on click add {
+  - make it nice                                   # expect: UNANCHORED
+  - increase @count by 1                           # expect-not: UNANCHORED
+  - if @total is above 100 then set @count to 0    # expect: UNSTRUCTURED
+  - set @count to @total
+  - set @last to @shown
+}
+
+example "sum" {
+  see sum = "0.00"
+  see items has 0 rows
+}

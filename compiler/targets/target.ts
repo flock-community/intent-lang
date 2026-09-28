@@ -47,6 +47,8 @@ export interface TargetModule {
   open(dir: string, clock?: { now: string; today: string }): Promise<Session>;
   /** Services (the api profile, layers), for a target that can build them. */
   service?: ServiceModule;
+  /** Jobs (`profile job`): the target writes the job's entry for its host (job.mjs). A target without it cannot build them. */
+  job?: boolean;
 }
 
 /** A target's services: an api (typed handlers behind a fixed router and server) and layers. */

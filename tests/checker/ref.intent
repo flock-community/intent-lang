@@ -10,7 +10,7 @@ record Author {
 
 record Book {
   title: Text
-  author: ref Author
+  author: ref Author    # expect-not: NO_KEY
 }
 
 record Country {
@@ -19,7 +19,7 @@ record Country {
 }
 
 record Visit {
-  country: ref Country
+  country: ref Country  # expect-not: NO_KEY
 }
 
 record Twice {
@@ -48,6 +48,7 @@ state {
     "Emma"  | 1
     "Nope"  | "Austen"  # expect: BAD_BINDING
   }
+  lastPlain: ref Plain or nothing = nothing   # expect: NO_KEY
   visits: List Visit = table {
     country
     "NL"

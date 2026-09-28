@@ -1,0 +1,64 @@
+app ApiChecks {
+  "An api's own checks and hints: undeclared statuses, answers on every path, unproven endpoints and statuses."
+}
+
+profile api
+
+record Note {
+  id: Int
+  text: Text
+}
+
+state {
+  notes: List Note = []
+}
+
+endpoint addNote POST "/notes" {                   # expect-not: STATUS_UNPROVEN  # expect-not: UNPROVEN
+  body text: Text
+  answers 201 Note
+  answers 400 Problem
+  if @text is blank {
+    answer 400 "Text is required"
+  }
+  - add a @Note to the end of @notes with @id = the number of @notes + 1 and the given @text
+  answer 201 with the new note
+}
+
+endpoint getNote GET "/notes/{id}" {               # expect: STATUS_UNPROVEN
+  path id: Int
+  answers 200 Note
+  answers 404 Problem
+  if no note has that @id {
+    answer 410 "Gone"                              # expect: CONTRACT
+  }
+  answer 200 with that note
+}
+
+endpoint count GET "/count" {                      # expect: UNPROVEN  # expect: NO_ANSWER
+  returns Int
+  if @notes is empty {
+    answer 200 with 0
+  } else if the number of @notes is above 10 {
+    answer 200 with 10
+  }
+}
+
+endpoint clear POST "/clear" {                     # expect: UNPROVEN
+  returns Int
+  if @notes is empty {
+    answer 200 with 0
+    - remove every note from @notes                # expect: UNREACHABLE
+  } else {
+    - remove every note from @notes
+    answer 200 with 0
+  }
+}
+
+example "a note" {
+  call addNote with text = "Buy milk"
+  see addNote.status = 201
+  call addNote with text = ""
+  see addNote.status = 400
+  call getNote with id = 1
+  see getNote.status = 200
+}

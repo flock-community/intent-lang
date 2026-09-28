@@ -86,6 +86,35 @@ endpoint gone POST "/gone" {
   answer 201 with a @Booking with @id = 1 and the given @day
 }
 
+endpoint peek GET "/bookings/peek" {
+  returns List Booking
+  undone by cancel with id = @peek.body.id            # expect: EFFECT
+  answer 200 with @bookings
+}
+
+endpoint hold POST "/holds" {
+  body day: Text
+  returns Booking
+  effect external
+  undone by reserve with day = @day                   # expect: EFFECT
+  answer 201 with a @Booking with @id = 1 and the given @day
+}
+
+endpoint book POST "/book" {
+  body day: Text
+  returns Booking
+  effect external
+  undone by cancel                                    # expect: EFFECT
+  answer 201 with a @Booking with @id = 1 and the given @day
+}
+
+endpoint ping POST "/ping" {
+  body day: Text
+  effect external
+  undone by cancel with id = @ping.body.id            # expect: EFFECT
+  answer 204
+}
+
 example "reserve and cancel" {
   call reserve with day = "Mon"
   see reserve.status = 201

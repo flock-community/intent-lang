@@ -33,4 +33,33 @@ assert.deepEqual(await running.job.run(), { seen: [], answered: 0 }, "run() with
 assert.deepEqual(await running.job.run({ event: { event: "a.alertRaised", body: { level: "urgent" } } }), { seen: ["Urgent"], answered: 1 }, "the event is read in the spec's names, and run waits for the call's answer");
 
 delete host.__intentTransport;
-console.log("ok headless: a job runs an event, waits for its calls, and returns its data");
+
+// A job's entry (job.mjs) is TypeScript only: the TypeScript scaffold writes job.ts, and a build on
+// a target that cannot write it stops at once with the reason (it never reaches the model), rather
+// than producing a page of the job's state that no host can run.
+{
+  const { mkdtempSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { load } = await import("../compiler/load.ts");
+  const { buildOnce } = await import("../compiler/build.ts");
+  const { scaffold } = await import("../compiler/gen.ts");
+  const { TARGETS } = await import("../compiler/targets/index.ts");
+  const spec = new URL("../apps/30-urgent-watch.intent", import.meta.url).pathname;
+  const { app } = load(spec, { ignoreLock: true });
+  assert.equal(app?.profile, "job");
+  const dir = mkdtempSync(join(tmpdir(), "job-"));
+  try {
+    scaffold(app!, "ts", join(dir, "ts"));
+    assert.ok(existsSync(join(dir, "ts/job.ts")), "the TypeScript scaffold writes the job's entry");
+    assert.ok(TARGETS.ts.job && !TARGETS.elm.job, "only TypeScript writes a job's entry (so far)");
+    const r = await buildOnce(app!, "30-urgent-watch.intent", "", "elm", join(dir, "elm"));
+    assert.equal(r.ok, false, "a job on Elm does not build");
+    assert.match(r.attempts[0]?.detail ?? "", /job.*job\.mjs.*TypeScript harness only.*build it with the ts target/, "and says why, and what to do");
+    assert.equal(r.costUsd, 0, "without asking the model");
+    assert.ok(!existsSync(join(dir, "elm")), "and writes nothing");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+console.log("ok headless: a job runs an event, waits for its calls, and returns its data; on Elm it is refused with the reason");

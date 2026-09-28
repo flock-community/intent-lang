@@ -1,0 +1,33 @@
+app EventsOnly {
+  "`only` covers events too: handling one it does not list is undeclared. A value from a bundle this file does not import is an import error."
+}
+
+uses notify.alertsApi as alerts only raise {      # expect: UNDECLARED  # expect-not: UNUSED
+  tested with "apps/api/alerts-api.intent"
+}
+
+state {
+  count: Int = 0
+}
+
+screen {
+  text count
+  button send "Send"
+}
+
+on click send {
+  - call @alerts.raise with @text = "Disk full" and @level = @Urgent     # expect: IMPORT
+}
+
+on answer alerts.raise {
+  - increase @count by 1
+}
+
+on event alerts.alertRaised {
+  - increase @count by 1
+}
+
+example "sent" {
+  click send
+  see count = 2
+}

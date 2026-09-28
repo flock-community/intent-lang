@@ -1,4 +1,4 @@
-# Intent — language reference (v64)
+# Intent — language reference (v65)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -132,7 +132,6 @@ screen { … }                # what the user sees, top to bottom (§4)
 screen name "/path" { … }   # or several screens, each with its address (§4i)
 on <verb> <element> { … }   # what happens (§5): `- sentence` lines
 rules { … }                 # guidance in words: `- sentence` lines; `rules by ai { … }` for rules an LLM wrote
-relations { … }             # declared relations between records: `- a @Comment's @ticket is a @Ticket's @id`
 always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data)
 example "name" { … }        # proof (§6): steps
 ```
@@ -208,6 +207,9 @@ state {
   }
 }
 ```
+
+A cell holds one value. A list in a cell (`[1, 2]`) is `NOT_YET`: put the items in a record of their
+own with a field that points back to the row (`record Tick { habit: ref Habit  day: Int }`).
 
 ## 3a. Refined types
 
@@ -320,6 +322,8 @@ Binding (checked by the compiler):
 - `list x of Record { … }` shows the rows of that record (the row's elements are declared inside
   the block). `list x of Text` (or Int, Decimal, Bool, Date, DateTime) shows each value as a row:
   it has no row elements, so `see x has N rows` is how an example checks it.
+- A list row cannot hold a list of its own (`NOT_YET`): show the sub-items in a list of their own
+  next to it, filtered by the selected row.
 - Element names are unique within a screen, and two screens may reuse one (`back` on both, §4i):
   the handler (`on click back`) belongs to the name, so both screens share its behaviour. Inside a
   list, row elements have their own scope. Sections do not create a scope.
@@ -328,8 +332,8 @@ Binding (checked by the compiler):
 - `select x from items.name` with `x` = `""`, or a text that is not among the options,
   shows no option as chosen. `""` is shown as an empty placeholder; it is never one of the
   options. To un-pick, a handler sets `x` to `""` (for example a "Clear" button).
-- Relations between records are by value: keep the related record's name, title or id in a
-  field (`workshop: Text`, `ticket: Int`), and match on it.
+- A relation between records is a `ref` field (`ticket: ref Ticket`, §3): it holds the related
+  record's key, and a sentence that needs the row looks it up (`the ticket whose @id is @ticket`).
 - A filter with an "all" option is its own choice, with its own value names:
   `choice CategoryFilter: AnyCategory "All" | OnlyBrakes "Brakes" | …`. Value names are unique
   across the app.
@@ -417,7 +421,8 @@ against its implementation in the installation's tests. Platforms so far: `std.c
 fingerprints and digest, as `intent publish` computes them; a spec with imports is not checked
 alone). A **screen** can use a platform too, for example the `@sha256` of what the user types
 (`std.crypto` has a reviewed implementation per target, and they give the same results). A platform whose code runs in the harness (like `intent.tools`) is for services
-only, and a platform with no Elm implementation is `NOT_YET` on Elm.
+only, and an app that uses a platform with no Elm implementation builds on TypeScript only: an Elm
+build stops with the reason before any model call.
 
 ## 4a. Look: design, components, presentations
 
@@ -534,7 +539,8 @@ component Pager as footer "The page info on the left; previous and next on the r
 ```
 
 Inside a component, write its own names and its params with `@` (`@page`, `@items`), so that
-every use gets its own copy. The checker warns (`UNSCOPED`) when you don't.
+every use gets its own copy. The checker warns (`UNSCOPED`) when you don't. A component has no
+examples of its own (`NOT_YET`): the demo app of its bundle proves it, through a `use`.
 
 An app places a component with `use`, and binds its params in its block:
 
@@ -574,7 +580,7 @@ A `use` can also take `visible when …` and `look "…"`, like any element:
 ```
 
 The look of a bundle component's elements belongs to the bundle; an app cannot restyle
-them one by one yet (`NOT_YET`). Change the design, or propose a change to the bundle.
+them one by one. Change the design, or propose a change to the bundle.
 
 **Locking.** `intent.lock` (one per repository, at its root) pins every bundle by content hash,
 plus the language reference and the model the compiler uses. A bundle that changed since it
@@ -774,7 +780,8 @@ example "an urgent alert is passed on" {
   per value, a `list` per list with its rows' plain fields), so examples `see` state by name
   (`see passedOn = 1`, `see told has 2 rows`), and twin builds and random sessions compare it as for
   any app. The expanded spec shows that screen as a comment; nobody writes it.
-- **Its entry** is `job.mjs`: an ES module whose default export is `{ run }`. The host imports it,
+- **Its entry** is `job.mjs` (the TypeScript target writes it; a job does not build on Elm): an ES
+  module whose default export is `{ run }`. The host imports it,
   sets its transport (`globalThis.__intentTransport`) if calls do not go
   over HTTP, and calls `run({ event: { event: "alerts.alertRaised", body } })` per event, or `run()`
   to let it start. `run` resolves with the job's data once every call the event set off has been
@@ -1096,7 +1103,9 @@ answer handler hears `its status is held` at once, so the screen can show that i
 permission that covers it sends it, with its original key, and its real answer follows. Adding the
 endpoint to `rejected` drops the calls held for it at that moment, and each one's handler hears
 `its status is rejected`; a later call is held again (a person rejects one payment, not every
-payment to come).
+payment to come). Only such a call is held or rejected: `its status is held` (or `rejected`) in the
+answer handler of an endpoint that is not `effect external`, or of an api not used `through
+std.actions`, is an `EFFECT` error.
 
 ```
 on answer pay.charge {
@@ -1355,7 +1364,7 @@ out in the canonical form.
 | Code | Level | When |
 |---|---|---|
 | `SYNTAX` | error | a line does not match any form |
-| `INDENT` | error | tabs, odd indentation, or a child where none is allowed |
+| `INDENT` | error | a block under a line that takes none (a state field, a binding, an example step); in a file without braces also tabs, odd indentation, or a line indented more than one step |
 | `SYNTAX` | error | also: a `}` without its `{`, or a `{` that is never closed |
 | `UNKNOWN_NAME` | error | a reference to an undeclared element, field, type or value |
 | `NO_ROW` | error | "that ticket", "this habit", "the new charge" or "its @f" with no such row before it (the clicked row, a loop row, a lookup, a new record) |
@@ -1365,7 +1374,7 @@ out in the canonical form.
 | `DUPLICATE` | error | a name declared twice in one scope |
 | `RESERVED` | error | a name that clashes with target keywords or generated names (see below) |
 | `STEP` | error | an example step that does not match the element (click a text, …) |
-| `NOT_YET` | error | a construct the language does not have yet (see "Growing the language") |
+| `NOT_YET` | error | a construct the language does not have yet: examples inside a component, a list in a table cell, a list inside a list row, a base that extends another spec, a path param that is not an Int, Text, Date or DateTime (the changelog lists the candidates for the next version) |
 | `NO_HANDLER` | warning | a button without `on click` |
 | `UNPROVEN` | warning | a dynamic element never checked by any `see` |
 | `UNANCHORED` | warning | a rule or handler sentence that mentions no declared name |
@@ -1376,7 +1385,7 @@ out in the canonical form.
 | `UNREACHABLE` | error | a step after `stop` or `answer` in the same block |
 | `NO_ANSWER` | error | an endpoint that does not `answer` on every path |
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
-| `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone |
+| `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone; `its status is held` or `rejected` in the answer handler of a call that is not `effect external` through `std.actions` |
 | `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
 | `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …`), without saying what happens when there is none |
 | `SPELLING` | warning | a form written with another word than the language's: a lookup `the ticket where …` is `the ticket whose …` (`intent fix` rewrites it) |
@@ -1385,7 +1394,9 @@ out in the canonical form.
 | `UNTYPED` | warning | a derived value is used where its type matters, but its type is neither declared nor known from its form: declare it (`total: Decimal = …`) |
 | `UNUSED` | warning | a declared component is never used, or `only` lists a name the app never uses |
 | `UNDECLARED` | error | the app calls, undoes through or handles an endpoint or event its `uses … only` does not list |
-| `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint, undeclared status) |
+| `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint or event, a different method or path, params written again, undeclared status) |
+| `PROVIDER` | error | the provider named in `tested with` has errors, or does not implement the contract it is tested for |
+| `PROFILE` | error | a profile file (`profile ui { element … }`) is not well formed: a line that is no profile line, no name, or no `element` |
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
 | `LANGUAGE` | warning | the spec was written for an older language version |
 | `OVERRIDES_PROOF` | warning | a base example or `always` check is about something this spec overrides |

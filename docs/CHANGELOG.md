@@ -25,6 +25,20 @@ A version is added when specs need it; each should serve many apps, not one. Nex
 
 ## Changelog
 
+- v65: tests and checks for v1. Every diagnostic code is expected by a test and listed in §7 (a
+  test fails when one is not). `its status is held` / `rejected` in the answer handler of a call that
+  is not `effect external` through `std.actions` is an `EFFECT` error (only the agreement holds or
+  rejects a call). A job (`profile job`) builds on the TypeScript target only: on Elm the build stops
+  with the reason instead of making a page no host can run, and `intent build` / `intent converge`
+  build a job with TypeScript. The TypeScript page of an app with `sizes` and no apis is shown
+  again when the host changes the size (`intentsize`), as the other entries already were. A
+  `ref X` with a default reports a missing key once, and `UNSCOPED` in a component's handler is on
+  the step's own line. §7 adds `PROVIDER` and `PROFILE`, says which `INDENT` cases a file with
+  braces has, and names the `NOT_YET` cases; the reference says where each of those is not in the
+  language yet (a list in a table cell, a list inside a list row, examples inside a component) and
+  no longer claims `NOT_YET` for restyling a bundle component; relations are `ref` fields, not
+  values, and the `relations` block is gone from the block list.
+
 - v64: from the third held-out round (expense approvals, parcel lockers): `@x reads as a decimal
   (above 0)` is a typed condition; `every @x in @xs is …`, `no two @xs have the same @f`, `no @R in
   @xs has a blank @f`, `there is no ticket in @xs whose …`, `remove from @xs every ticket whose …`

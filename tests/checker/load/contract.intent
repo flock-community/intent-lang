@@ -1,0 +1,33 @@
+app ContractChecks {
+  "An implementation matches its contract exactly: every endpoint, no extra ones, the contract's signatures and events."
+}
+
+import notify.alerts
+
+implements notify.alertsApi                           # expect-not: CONTRACT
+
+state {
+  alerts: List Alert = []
+}
+
+event alertCleared: Alert                             # expect: CONTRACT
+
+endpoint raise POST "/alerts/new" {                   # expect: CONTRACT
+  body text: Text
+  body level: Level
+  answer 201 with an @Alert with @id = 1, the given @text and the given @level
+}
+
+endpoint listAlerts {                                 # expect: CONTRACT
+  query level: Level or nothing
+  answer 200 with @alerts
+}
+
+endpoint clear POST "/alerts/clear" {                 # expect: CONTRACT
+  answer 204
+}
+
+example "raise" {
+  call raise with text = "x", level = Info
+  see raise.status = 201
+}

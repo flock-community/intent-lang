@@ -95,7 +95,7 @@ language review (`docs/reviews/language-review.md`). Next, in this order:
    (built, `docs/design/effects.md`), a per-alias manifest (`uses x as y only …`, v60), `origin` on
    rules (v60), wire names for choice values and bounded `Text` (v60), held calls seen by the
    screen (v60), a headless job profile (v60, `profile job`) and `sizes` on a screen (v60). Next:
-   a terminal renderer of the same screens. Later: the screen seeing a held call, unions of records and several targets per app,
+   a terminal renderer of the same screens. Later: unions of records and several targets per app,
    styled builds of screens that make calls, and Kotlin as a second API target.
 
 ## Lessons from the experiments (keep applying them)

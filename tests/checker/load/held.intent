@@ -1,0 +1,61 @@
+app HeldChecks {
+  "Only the agreement holds or rejects a call: `its status is held` / `rejected` need an external endpoint through std.actions."
+}
+
+import pay.payments
+
+uses pay.paymentsApi as pay {
+  tested with "apps/api/payments-api.intent"
+  through std.actions {
+    agree = permissions
+  }
+}
+
+uses pay.paymentsApi as direct {
+  tested with "apps/api/payments-api.intent"
+}
+
+state {
+  permissions: List Permission = []
+  message: Text = ""
+}
+
+screen {
+  button buy "Buy"
+  text message
+}
+
+on click buy {
+  - call @pay.charge with @amount = 500 and @description = "Tea"
+  - call @pay.getCharge with @id = 1
+  - call @direct.charge with @amount = 500 and @description = "Tea"
+}
+
+on answer pay.charge {
+  if its status is held {                          # expect-not: EFFECT
+    - set @message to "Waiting"
+  } else if its status is rejected {               # expect-not: EFFECT
+    - set @message to "Rejected"
+  } else {
+    - set @message to "Paid"
+  }
+}
+
+on answer pay.getCharge {
+  if its status is held {                          # expect: EFFECT
+    - set @message to "Waiting"
+  }
+}
+
+on answer direct.charge {
+  if its status is rejected {                      # expect: EFFECT
+    - set @message to "Rejected"
+  } else if its status is unknown {                # expect-not: EFFECT
+    - set @message to "Unknown"
+  }
+}
+
+example "held" {
+  click buy
+  see message = "Waiting"
+}

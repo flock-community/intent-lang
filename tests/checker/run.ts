@@ -1,5 +1,6 @@
 // Regression test for the checker: every `# expect: CODE` comment must produce that diagnostic
-// on that line, and no other errors may appear. Valid apps in apps/ must have no errors.
+// on that line, and no other errors may appear; a `# expect-not: CODE` comment (a near miss) must
+// not produce it on that line. Valid apps in apps/ must have no errors.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "../../compiler/parse.ts";
@@ -7,21 +8,31 @@ import { load } from "../../compiler/load.ts";
 
 let failures = 0;
 const dir = new URL(".", import.meta.url).pathname;
-for (const f of readdirSync(dir).filter((f) => f.endsWith(".intent") && f !== "broken.intent")) {
+// A diagnostic is reported once: the same code and message twice on one line is a checker bug.
+const twice = (ds: { line: number; code: string; message: string; file?: string }[]) => ds.map((d) => `${d.file ?? ""}:${d.line}:${d.code} ${d.message}`).filter((k, i, all) => all.indexOf(k) !== i);
+const marks = (src: string, word: string) => src.split("\n").flatMap((l, i) => [...l.matchAll(new RegExp(`# ${word}: ([A-Z_]+)`, "g"))].map((m) => `${i + 1}:${m[1]}`));
+for (const f of readdirSync(dir).filter((f) => f.endsWith(".intent"))) {
   const src = readFileSync(join(dir, f), "utf8");
-  const expected = src.split("\n").flatMap((l, i) => [...l.matchAll(/# expect: ([A-Z_]+)/g)].map((m) => `${i + 1}:${m[1]}`));
+  const expected = marks(src, "expect");
   const got = parse(src).diagnostics.map((d) => `${d.line}:${d.code}`);
+  for (const k of twice(parse(src).diagnostics)) (failures++, console.log(`${f}: reported twice: ${k}`));
   for (const e of expected) if (!got.includes(e)) (failures++, console.log(`${f}: missing ${e}`));
+  for (const e of marks(src, "expect-not")) if (got.includes(e)) (failures++, console.log(`${f}: ${e} is reported, but this line is a near miss that must not raise it`));
   for (const d of parse(src).diagnostics) if (d.level === "error" && !expected.includes(`${d.line}:${d.code}`)) (failures++, console.log(`${f}: unexpected ${d.line}:${d.code} ${d.message}`));
 }
 // Specs that need the loader (imports, contracts, clients): the same \`# expect:\` comments, checked through load().
 for (const f of readdirSync(join(dir, "load")).filter((f) => f.endsWith(".intent"))) {
   const src = readFileSync(join(dir, "load", f), "utf8");
-  const expected = src.split("\n").flatMap((l, i) => [...l.matchAll(/# expect: ([A-Z_]+)/g)].map((m) => `${i + 1}:${m[1]}`));
-  const diags = load(join(dir, "load", f), { ignoreLock: true }).diagnostics.filter((d) => d.line < 100_000);
+  const expected = marks(src, "expect");
+  // Only this file's own lines: a diagnostic in an imported spec has that spec's file and line numbers.
+  const loaded = load(join(dir, "load", f), { ignoreLock: true });
+  const diags = loaded.diagnostics.filter((d) => d.file === loaded.sources[0].file);
+  for (const k of twice(loaded.diagnostics)) (failures++, console.log(`load/${f}: reported twice: ${k}`));
   const got = diags.map((d) => `${d.line}:${d.code}`);
   for (const e of expected) if (!got.includes(e)) (failures++, console.log(`load/${f}: missing ${e}`));
+  for (const e of marks(src, "expect-not")) if (got.includes(e)) (failures++, console.log(`load/${f}: ${e} is reported, but this line is a near miss that must not raise it`));
   for (const d of diags) if (d.level === "error" && !expected.includes(`${d.line}:${d.code}`)) (failures++, console.log(`load/${f}: unexpected ${d.line}:${d.code} ${d.message}`));
+  for (const d of loaded.diagnostics) if (d.level === "error" && d.file !== loaded.sources[0].file) (failures++, console.log(`load/${f}: unexpected error in ${d.file}:${d.line}: ${d.code} ${d.message}`));
 }
 // Every spec in apps/ (services and held-out specs too) and every bundle in lib/ checks without errors.
 const specs = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? specs(join(d, e.name)) : e.name.endsWith(".intent") ? [join(d, e.name)] : []));

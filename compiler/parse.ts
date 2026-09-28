@@ -1499,8 +1499,9 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     }
     return true;
   };
-  const checkDefault = (f: Field) => {
-    if (!f.default || !checkType(f.type, f.line)) return;
+  // The field's type is checked (and reported) once, by the caller: `typeOk` is its result.
+  const checkDefault = (f: Field, typeOk: boolean) => {
+    if (!f.default || !typeOk) return;
     if (f.default.k === "table") {
       const table = f.default;
       const rec = f.type.k === "List" && f.type.of.k === "Named" ? records.get(f.type.of.name) : undefined;
@@ -1525,8 +1526,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       if (seen.has(f.name)) err(f.line, "DUPLICATE", `field \`${f.name}\` declared twice in ${r.name}`);
       seen.add(f.name);
       checkReserved(f.name, f.line);
-      checkType(f.type, f.line);
-      checkDefault(f);
+      checkDefault(f, checkType(f.type, f.line));
       if (f.type.k === "Named" && f.type.name === r.name) err(f.line, "BAD_BINDING", "a record cannot contain itself");
     }
   }
@@ -1536,8 +1536,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     state.set(f.name, f);
     checkReserved(f.name, f.line);
     checkRequestPart(f.name, f.line);
-    checkType(f.type, f.line);
-    checkDefault(f);
+    checkDefault(f, checkType(f.type, f.line));
     if (f.type.k === "Named" && records.has(f.type.name)) err(f.line, "BAD_BINDING", `state of record type needs a literal default; use \`${f.type.name} or nothing = nothing\``);
   }
   const derived = new Set<string>();
@@ -1733,6 +1732,20 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           if (!ep) err(line, "UNKNOWN_NAME", `no endpoint \`${m[1]}.${m[2]}\` to undo`);
           else if (!ep.undoneBy) err(line, "EFFECT", `\`${m[1]}.${m[2]}\` cannot be undone: its contract names no \`undone by\``);
         }
+  // `its status is held` / `rejected` come only from the agreement: an `effect external` endpoint of an api used `through std.actions`.
+  for (const h of app.handlers) {
+    if (h.verb !== "answer" || !h.target) continue;
+    const [alias, name] = h.target.split(".");
+    const client = app.clients?.find((c) => c.alias === alias);
+    const ep = client?.contract.endpoints?.find((e) => e.name === name);
+    if (!ep) continue; // reported above
+    for (const [i, st] of h.steps.entries())
+      for (const m of st.matchAll(/\bits\s+status\s+is\s+(held|rejected)\b/g)) {
+        const line = h.stepLines?.[i] ?? h.line;
+        if (client!.through?.layer !== "std.actions") err(line, "EFFECT", `\`its status is ${m[1]}\`: only a call that waits for approval is ${m[1]}, and \`${h.target}\` does not go \`through std.actions\` (add it under \`uses … as ${alias}\`)`);
+        else if (!ep.effect) err(line, "EFFECT", `\`its status is ${m[1]}\`: the agreement only holds calls that reach outside, and \`${h.target}\` has no \`effect external\` in its contract`);
+      }
+  }
   // The manifest: `uses … as notes only listNotes, noteCreated` names what this app may use of an
   // api; using anything else is an error (the host would refuse it), naming what the contract lacks too.
   const usedApi = usedByAlias(app);

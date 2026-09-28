@@ -10,7 +10,7 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **v64** (see `docs/CHANGELOG.md`). If the changelog shows a newer version, read what changed first.
+Language version this skill matches: **v65** (see `docs/CHANGELOG.md`). If the changelog shows a newer version, read what changed first.
 
 ## 1. Understand the intent (interview)
 
@@ -294,7 +294,8 @@ services.
 
 An agent or background worker nobody looks at is a job: `profile job`, no `screen`, the rest as
 usual (`uses`, `on event`, `on start`, a clock). Its state is what examples `see`: write
-`see passedOn = 1`, not a screen. A widget a host shows small or large declares
+`see passedOn = 1`, not a screen. A job builds on the TypeScript target only (its entry, `job.mjs`,
+is TypeScript); `intent build` picks it. A widget a host shows small or large declares
 `sizes compact | standard` and says what each shows with `visible when @size is @Standard`; prove
 both with `size standard` in an example.
 
@@ -364,7 +365,8 @@ original key) and a Reject button that adds the endpoint to `rejected` (the call
 dropped; the next one waits again); none goes out while `stopped` is true. A one-time grant is
 `@count = 1, @per = nothing`, and each grant is used once. With `fourEyes = true` a permission the
 `requester` granted themselves does not count. The answer handler hears `its status is held` when the call waits and `its status is rejected`
-when it is dropped, so show the wait from there. Prove held → approved, rejected then the next one
+when it is dropped, so show the wait from there (only for an `effect external` endpoint of an api
+used `through std.actions`: anywhere else `held`/`rejected` is an `EFFECT` error). Prove held → approved, rejected then the next one
 approved, and stopped (`apps/20-approval.intent`). The gate protects against mistakes in the app;
 a service that must refuse unapproved calls checks approval itself.
 

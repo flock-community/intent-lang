@@ -1,0 +1,33 @@
+app IndentInBraces {
+  "With braces the layout is free (a tab is fine), but a block under a line that takes none is an INDENT error."
+}
+
+state {
+  count: Int = 0 {
+    label: Text = ""                    # expect: INDENT
+  }
+	tabbed: Text = ""                     # expect-not: INDENT
+  rows: List Row = table {              # expect-not: INDENT
+    id
+    1
+  }
+}
+
+record Row {
+  id: Int
+}
+
+screen {
+  text count
+  text tabbed
+  list rows of Row {
+    text id
+  }
+}
+
+example "a step with a block" {
+  see count = 0 {
+    see tabbed = ""                     # expect: INDENT
+  }
+  see rows has 1 rows
+}

@@ -85,6 +85,11 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       return res;
     }
   }
+  if (app.profile === "job" && !tm.job) {
+    // Without its entry (job.mjs) a job's build is a page of its state, which no host can run.
+    res.attempts.push({ stage: "compile", detail: `a job (\`profile job\`) has its entry for the host (job.mjs) in the TypeScript harness only (so far); ${target} is not in the harness yet: build it with the ts target` });
+    return res;
+  }
   if (app.screens?.length && !tm.prompt.screens) {
     res.attempts.push({ stage: "compile", detail: `apps with several screens are not in the ${target} harness yet (docs/design/screens.md)` });
     return res;

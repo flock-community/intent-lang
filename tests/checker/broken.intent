@@ -1,29 +1,36 @@
 app Broken
-  "Errors on purpose."
+  "Errors on purpose, in the old indentation form (no braces): every block is read by its indentation."
 
 record Item
-  title: Txt
+  title: Txt                    # expect: UNKNOWN_NAME
 
 state
-  count: Int = 1.5
-  name: Text
+  count: Int = 1.5              # expect: BAD_BINDING
+  name: Text                    # expect: SYNTAX
 
-scren
+scren                           # expect: SYNTAX
   text x
 
 screen
   text count
-  field count "Count"
-  buton go "Go"
+  field count "Count"           # expect: DUPLICATE  # expect: BAD_BINDING
+  buton go "Go"                 # expect: SYNTAX
   button go "Go"
   button stop "Stop"
-	text tabbed
+	text tabbed                   # expect: INDENT
+   text odd                     # expect: INDENT
+  button third "Third"          # expect-not: INDENT
+      text deeper               # expect: INDENT  # expect: SYNTAX
 
-on click goo
+on click goo                    # expect: UNKNOWN_NAME
   - do things
 
+rules
+  - keep @count short
+   - one space too many          # expect: INDENT
+
 example "bad"
-  click count
-  see nope = 3
-  choose Red in count
-  wait 3s
+  click count                   # expect: STEP
+  see nope = 3                  # expect: UNKNOWN_NAME
+  choose Red in count           # expect: STEP
+  wait 3s                       # expect: STEP

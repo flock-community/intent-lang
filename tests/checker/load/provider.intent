@@ -1,0 +1,27 @@
+app ProviderChecks {
+  "The provider an api's examples run against must check clean and implement that contract."
+}
+
+uses notify.alertsApi as alerts {                     # expect: PROVIDER
+  tested with "tests/checker/load/contract.intent"
+}
+
+uses pay.paymentsApi as wrong {                       # expect: PROVIDER
+  tested with "apps/api/alerts-api.intent"
+}
+
+uses pay.paymentsApi as pay {                         # expect-not: PROVIDER
+  tested with "apps/api/payments-api.intent"
+}
+
+state {
+  count: Int = 0
+}
+
+screen {
+  text count
+}
+
+example "nothing yet" {
+  see count = 0
+}
