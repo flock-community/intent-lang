@@ -5,7 +5,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { App, Element as SpecElement } from "./ast.ts";
-import { canonical, type Action, type Obs } from "./exec.ts";
+import { canonical, rowsOf, type Action, type Obs } from "./exec.ts";
 
 export const VIEWPORT = { width: 1280, height: 800 };
 
@@ -119,8 +119,10 @@ function pageExtract(arg: { shapes: Shape[]; title: string }) {
   return { node: { k: "screen", title: arg.title, c: walk(arg.shapes, document, null) }, errors };
 }
 
-// Runs inside the page: perform one action; returns an error text when it could not be done.
-function pageAct(a: { on: string; target: string; list?: string; row?: number; text?: string; value?: string }): string | null {
+// Runs inside the page: perform one action; returns an error text when it could not be done. `rows`
+// is the path of rows (outermost first): outer list → its row → the inner list in that row → its row.
+// An element (and a row) belongs to its nearest [data-row].
+function pageAct(a: { on: string; target: string; rows: { list: string; row: number }[]; text?: string; value?: string }): string | null {
   const visible = (el: Element) => (el as any).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
   const rowOf = (el: Element) => el.closest("[data-row]");
   const find = (scope: Element | Document, row: Element | null, name: string): HTMLElement | null => {
@@ -129,12 +131,13 @@ function pageAct(a: { on: string; target: string; list?: string; row?: number; t
   };
   let scope: Element | Document = document;
   let row: Element | null = null;
-  if (a.list) {
-    const list = find(document, null, a.list);
-    if (!list) return `list ${a.list} not on screen`;
-    const rows = Array.from(list.querySelectorAll("[data-row]")).filter((r) => rowOf(r.parentElement!) === null);
-    row = rows[(a.row ?? 1) - 1] ?? null;
-    if (!row) return `no row ${a.row}`;
+  for (const lv of a.rows) {
+    const list = find(scope, row, lv.list);
+    if (!list) return `list ${lv.list} not on screen`;
+    const outer: Element | null = row;
+    const rows: Element[] = Array.from(list.querySelectorAll("[data-row]")).filter((r) => rowOf(r.parentElement!) === outer);
+    row = rows[lv.row - 1] ?? null;
+    if (!row) return `no row ${lv.row} in ${lv.list}`;
     scope = row;
   }
   const el = find(scope, row, a.target);
@@ -228,12 +231,19 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
     },
     async act(a, dom) {
       if (a.on === "tick") return "ticks are not supported in the styled profile";
-      let row = a.row;
-      if (a.list && a.rowWith !== undefined) {
-        const l = findList(dom, a.list);
-        const i = l ? l.rows.findIndex((r: any) => JSON.stringify(r).includes(JSON.stringify(a.rowWith))) : -1;
-        if (i < 0) return `no row showing ${JSON.stringify(a.rowWith)}`;
-        row = i + 1;
+      // The path of rows, each by position (a row showing a text is found on the observed page).
+      const rows: { list: string; row: number }[] = [];
+      let nodes = dom.c;
+      for (const lv of rowsOf(a)) {
+        const l = findList({ c: nodes }, lv.list);
+        let row = lv.row ?? 1;
+        if (lv.rowWith !== undefined) {
+          const i = l ? l.rows.findIndex((r: any) => JSON.stringify(r.c.filter((n: any) => n.k !== "list")).includes(JSON.stringify(lv.rowWith))) : -1;
+          if (i < 0) return `no row showing ${JSON.stringify(lv.rowWith)}`;
+          row = i + 1;
+        }
+        rows.push({ list: lv.list, row });
+        nodes = l?.rows[row - 1]?.c ?? [];
       }
       // "choose option N" picks by position among the options the page offers (like the logic driver does).
       let value = a.value;
@@ -242,7 +252,7 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
         if (!sel?.options?.length) return `no options in ${a.target}`;
         value = sel.options[a.pick % sel.options.length];
       }
-      return page.evaluate(pageAct, { on: a.on, target: a.target, list: a.list, row, text: a.text, value });
+      return page.evaluate(pageAct, { on: a.on, target: a.target, rows, text: a.text, value });
     },
     async rects() {
       await settle();
@@ -252,11 +262,12 @@ export async function openStyled(dir: string, app: App): Promise<StyledSession> 
         const keyOf = new Map<Element, string>();
         for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-el]"))) {
           if (!(el as any).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
-          const row = el.closest("[data-row]");
+          // The path of rows the element is in: `tasks[1].items[2].removeItem` (each row among its own list's rows).
           let key = el.getAttribute("data-el")!;
-          if (row) {
+          for (let row = el.closest("[data-row]"); row; row = row.parentElement!.closest("[data-row]")) {
             const list = row.parentElement!.closest("[data-el]");
-            const all = list ? Array.from(list.querySelectorAll("[data-row]")) : [];
+            const own = row.parentElement!.closest("[data-row]");
+            const all = list ? Array.from(list.querySelectorAll("[data-row]")).filter((r) => r.parentElement!.closest("[data-row]") === own) : [];
             if (!rows.has(row)) rows.set(row, all.indexOf(row) + 1);
             key = `${list?.getAttribute("data-el")}[${rows.get(row)}].${key}`;
           }

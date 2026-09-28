@@ -8,6 +8,7 @@ const Age = { k: "Refined" as const, name: "Age", base: { k: "Int" as const }, m
 // Wire names: `choice Level: Info = "info" | Urgent = "urgent"`.
 const Level: TypeDesc = { k: "Choice", name: "Level", values: ["Info", "Urgent"], wire: ["info", "urgent"] };
 const Alert: TypeDesc = { k: "Record", name: "Alert", fields: [{ name: "level", type: Level }, { name: "levels", type: { k: "List", of: Level } }] };
+const Note: TypeDesc = { k: "Record", name: "Note", fields: [{ name: "text", type: { k: "Text" } }, { name: "due", type: { k: "Maybe", of: { k: "Date" } } }] };
 const wired: EndpointDesc[] = [{ name: "raise", method: "POST", path: "/alerts/{level}", params: [{ in: "path", name: "level", type: Level }, { in: "body", name: "also", type: { k: "Maybe", of: Level } }] }];
 const eps: EndpointDesc[] = [
   { name: "signUp", method: "POST", path: "/people", params: [{ in: "body", name: "email", type: Email }, { in: "body", name: "age", type: { k: "Maybe", of: Age } }, { in: "body", name: "kind", type: { k: "Choice", name: "Kind", values: ["Member", "Guest"] } }] },
@@ -34,6 +35,21 @@ const cases: [string, unknown, unknown][] = [
   ["length ok", conforms({ 200: Title }, { status: 200, body: "🎉🎉🎉" }), undefined],
   ["length long", conforms({ 200: Title }, { status: 200, body: "four" }), "answered 200, but the body must be a valid Title"],
   ["length empty", conforms({ 200: Title }, { status: 200, body: "" }), "answered 200, but the body must be a valid Title"],
+  // Nothing on the wire: a `T or nothing` is always written as null; on input null and a missing key are
+  // both nothing; for a `T`, a missing key is "is required" and null is "must be <type>".
+  ["nothing: null in", route(eps, "POST", "/people", {}, { email: "ann@x.nl", age: null, kind: "Member" }), { request: { endpoint: "signUp", email: "ann@x.nl", age: null, kind: "Member" } }],
+  ["nothing: missing in", route(eps, "POST", "/people", {}, { email: "ann@x.nl", kind: "Member" }), { request: { endpoint: "signUp", email: "ann@x.nl", age: null, kind: "Member" } }],
+  ["T: missing is required", route(eps, "POST", "/people", {}, { age: 3, kind: "Member" }), { response: { status: 400, body: { error: "email is required" } } }],
+  ["T: null must be", route(eps, "POST", "/people", {}, { email: null, kind: "Member" }), { response: { status: 400, body: { error: "email must be a valid Email" } } }],
+  ["T: null choice must be", route(eps, "POST", "/people", {}, { email: "ann@x.nl", kind: null }), { response: { status: 400, body: { error: "kind must be one of Member, Guest" } } }],
+  ["T: null in a record field", conforms({ 200: Note }, { status: 200, body: { text: null, due: null } }), "answered 200, but the body.text must be text"],
+  ["T: missing in a record field", conforms({ 200: Note }, { status: 200, body: { due: null } }), "answered 200, but the body.text is required"],
+  ["nothing: missing in a record field fits", conforms({ 200: Note }, { status: 200, body: { text: "a" } }), undefined],
+  ["nothing: written as null", toWire({ text: "a" }, Note), { text: "a", due: null }],
+  ["nothing: null stays null", toWire({ text: "a", due: null }, Note), { text: "a", due: null }],
+  ["nothing: in a list of records", toWire([{ text: "a" }], { k: "List", of: Note }), [{ text: "a", due: null }]],
+  ["nothing: read as null", fromWire({ text: "a" }, Note), { text: "a", due: null }],
+  ["nothing: a call writes null", toHttp([{ name: "a.note", method: "POST", path: "/notes", params: [{ in: "body", name: "text", type: { k: "Text" } }, { in: "body", name: "due", type: { k: "Maybe", of: { k: "Date" } } }] }], { endpoint: "a.note", args: { text: "a" } }), { method: "POST", path: "/notes", query: {}, body: { text: "a", due: null } }],
 ];
 let failures = 0;
 for (const [name, got, want] of cases)

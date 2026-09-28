@@ -23,13 +23,16 @@ type Node
     | NSection String String (List Node)
 
 
+{-| An event: `key` is the row's key; `keys` a row inside a row's path of keys, the outer row's first
+(empty for a top-level element or a row of a top-level list).
+-}
 type alias Wire =
-    { on : String, target : String, key : String, text : String, value : String }
+    { on : String, target : String, key : String, keys : List String, text : String, value : String }
 
 
 noWire : Wire
 noWire =
-    { on = "", target = "", key = "", text = "", value = "" }
+    { on = "", target = "", key = "", keys = [], text = "", value = "" }
 
 
 wireDecoder : D.Decoder Wire
@@ -38,7 +41,7 @@ wireDecoder =
         opt name =
             D.oneOf [ D.field name D.string, D.succeed "" ]
     in
-    D.map5 Wire (opt "on") (opt "target") (opt "key") (opt "text") (opt "value")
+    D.map6 Wire (opt "on") (opt "target") (opt "key") (D.oneOf [ D.field "keys" (D.list D.string), D.succeed [] ]) (opt "text") (opt "value")
 
 
 encode : Node -> J.Value
@@ -81,25 +84,32 @@ encode node =
 
 render : Node -> Html Wire
 render node =
-    view "" "" node
+    view [] [] node
 
 
-view : String -> String -> Node -> Html Wire
-view list key node =
+{-| A node inside the rows `keys` of the lists `lists` (outermost first: a row inside a row has two). -}
+view : List String -> List String -> Node -> Html Wire
+view lists keys node =
     let
         target n =
-            if list == "" then
-                n
+            String.join "." (lists ++ [ n ])
+
+        key =
+            Maybe.withDefault "" (List.head (List.reverse keys))
+
+        path =
+            if List.length keys > 1 then
+                keys
 
             else
-                list ++ "." ++ n
+                []
 
         wire on n =
-            { noWire | on = on, target = target n, key = key }
+            { noWire | on = on, target = target n, key = key, keys = path }
     in
     case node of
         NScreen title c ->
-            Html.main_ [ A.class "screen" ] (Html.h1 [] [ Html.text title ] :: List.map (view list key) c)
+            Html.main_ [ A.class "screen" ] (Html.h1 [] [ Html.text title ] :: List.map (view lists keys) c)
 
         NHeading v ->
             Html.h2 [ A.class "heading" ] [ Html.text v ]
@@ -115,7 +125,7 @@ view list key node =
                   else
                     [ Html.span [] [ Html.text label ] ]
                  )
-                    ++ [ Html.input [ A.value v, E.onInput (\t -> { noWire | on = "input", target = target n, key = key, text = t }) ] [] ]
+                    ++ [ Html.input [ A.value v, E.onInput (\t -> { noWire | on = "input", target = target n, key = key, keys = path, text = t }) ] [] ]
                 )
 
         NButton n label enabled ->
@@ -148,7 +158,7 @@ view list key node =
                                      else
                                         "option"
                                     )
-                                , E.onClick { noWire | on = "choose", target = target n, key = key, value = o }
+                                , E.onClick { noWire | on = "choose", target = target n, key = key, keys = path, value = o }
                                 ]
                                 [ Html.text o ]
                         )
@@ -156,7 +166,7 @@ view list key node =
                 )
 
         NList n rows ->
-            Html.ul [ A.class "list" ] (List.map (\( k, c ) -> Html.li [ A.class "row" ] (List.map (view n k) c)) rows)
+            Html.ul [ A.class "list" ] (List.map (\( k, c ) -> Html.li [ A.class "row" ] (List.map (view (lists ++ [ n ]) (keys ++ [ k ])) c)) rows)
 
         NSection _ label c ->
             Html.section [ A.class "section" ]
@@ -166,5 +176,5 @@ view list key node =
                   else
                     [ Html.h2 [] [ Html.text label ] ]
                  )
-                    ++ List.map (view list key) c
+                    ++ List.map (view lists keys) c
                 )

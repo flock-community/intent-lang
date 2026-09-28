@@ -1,0 +1,43 @@
+app NavFix {
+  "Lookups of a reference's own row, which are following the reference."
+}
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+record Comment {
+  id: Int
+  ticket: ref Ticket
+}
+
+state {
+  tickets: List Ticket = []
+  comments: List Comment = []
+  chosen: ref Ticket or nothing = nothing
+  draft: Text = ""
+}
+
+derive {
+  title = the @subject of the ticket whose @id is @chosen, or "" when there is none
+}
+
+screen {
+  text title
+  list comments of Comment {
+    text about = the @subject of the ticket whose @id is its @ticket, or "(removed)" when there is none
+    button pick "Pick"
+  }
+}
+
+on click pick {
+  if there is no ticket whose @id is that comment's @ticket {
+    stop
+  }
+  - set @draft to the @subject of that ticket
+}
+
+example "picks" {
+  see title = ""
+}

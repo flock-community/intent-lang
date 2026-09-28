@@ -1,4 +1,4 @@
-module Crypto exposing (sha256)
+module Crypto exposing (sha256, sha256Bytes, utf8)
 
 {-| The Elm side of the `std.crypto` platform: SHA-256, pure, so a screen's `update`/`view`
 can use it. Kept in step with the TypeScript implementation by the parity test
@@ -10,19 +10,23 @@ import Bitwise as B
 
 sha256 : String -> String
 sha256 message =
-    let
-        bytes =
-            utf8 message
-
-        bitLength =
-            List.length bytes * 8
-
-        blocks =
-            chunksOf 64 (padded bytes bitLength)
-    in
-    List.foldl compress initialHash blocks
+    hashWords (utf8 message)
         |> List.map hex32
         |> String.concat
+
+
+{-| The SHA-256 of bytes (each 0 to 255), as 32 bytes: the same code, for keyed hashing (`Draw`:
+HMAC-SHA-256).
+-}
+sha256Bytes : List Int -> List Int
+sha256Bytes bytes =
+    hashWords bytes
+        |> List.concatMap (\w -> [ B.and 255 (B.shiftRightZfBy 24 w), B.and 255 (B.shiftRightZfBy 16 w), B.and 255 (B.shiftRightZfBy 8 w), B.and 255 w ])
+
+
+hashWords : List Int -> List Int
+hashWords bytes =
+    List.foldl compress initialHash (chunksOf 64 (padded bytes (List.length bytes * 8)))
 
 
 initialHash : List Int

@@ -1,14 +1,19 @@
 app Checkout {
   "Buy a class pass: one payment per click, never two, even when the connection drops."
+  "Anyone pays; a refund is given by a member of staff, who types the shop's key."
 }
 language v50
 import pay.payments
 
 uses pay.paymentsApi as pay {
   tested with "apps/api/payments-api.intent"
+  through std.http.sendKey {
+    key = staffKey
+  }
 }
 
 state {
+  staffKey: Text = ""              # the key a member of staff types to give a refund
   message: Text = ""
   paying: Bool = false
   refunding: Bool = false
@@ -17,6 +22,7 @@ state {
 
 screen {
   text pass = "Yoga, 10 classes: € 125.00"
+  field staffKey "Staff key"
   button buy "Pay" {
     enabled when not @paying
   }
@@ -87,6 +93,7 @@ example "the service restarts after the effect" {
   steer pay restart after effect
   click buy
   see message = "Paid: charge 1"
+  type "k-shop-5e1d" into staffKey
   click refund
   see message = "Refunded: charge 1"
 }
@@ -113,6 +120,7 @@ example "the service is down for a moment" {
 example "refunding" {
   click buy
   see message = "Paid: charge 1"
+  type "k-shop-5e1d" into staffKey
   click refund
   see message = "Refunded: charge 1"
   see refund is disabled
@@ -121,7 +129,22 @@ example "refunding" {
 example "a lost answer does not refund twice" {
   click buy
   see message = "Paid: charge 1"
+  type "k-shop-5e1d" into staffKey
   steer pay lose answer
+  click refund
+  see message = "Refunded: charge 1"
+}
+
+example "a refund needs the shop's key" {
+  click buy
+  see message = "Paid: charge 1"
+  click refund
+  see message = "Refund failed: Missing API key"
+  see refund is enabled
+  type "k-till-77c2" into staffKey
+  click refund
+  see message = "Refund failed: Not allowed"
+  type "k-shop-5e1d" into staffKey
   click refund
   see message = "Refunded: charge 1"
 }

@@ -11,8 +11,10 @@ export type Type =
   | { k: "Maybe"; of: Type }
   | { k: "Named"; name: string }
   // `ticket: ref Ticket`: a field that holds another record's key. `key` is the referenced
-  // record's key field's type, filled in by the checker; storage and reads use it.
-  | { k: "Ref"; name: string; key?: Type };
+  // record's key field's type, filled in by the checker; storage and reads use it. `in`: the
+  // state list the key is looked up in when the reference is followed (`ref Ticket in tickets`);
+  // without it, the record's one home list (compiler/fit.ts `homeOf`).
+  | { k: "Ref"; name: string; key?: Type; in?: string };
 
 export type Literal =
   | { k: "text"; v: string }
@@ -24,7 +26,8 @@ export type Literal =
   | { k: "date"; v: string } // 2026-09-24
   | { k: "dateTime"; v: string } // 2026-09-24 09:00, kept as "2026-09-24T09:00"
   | { k: "table"; columns: string[]; rows: Literal[][] } // seed data for List Record
-  // Only as \`call\` arguments in examples: \`needs = [{ bundle = "std.list", minimum = "1.0" }]\`.
+  // \`call\` arguments in examples (\`needs = [{ bundle = "std.list", minimum = "1.0" }]\`), and a
+  // table cell that holds a row's inner list (\`[{ id = 1, label = "Milk" }]\`).
   | { k: "list"; items: Literal[] }
   | { k: "record"; fields: { name: string; value: Literal }[] };
 
@@ -46,6 +49,9 @@ export interface RefinedDecl {
   max?: number;
   minLength?: number; // Text `of length a to b`: characters (code points), not bytes
   maxLength?: number;
+  // `Text of 6 digits`: a code of exactly n characters from a closed alphabet (compiler/alphabets.ts),
+  // or `from "…"` (the characters given). A type with a listed space: it can be drawn (`a random @T`).
+  code?: { n: number; alphabet: string; chars: string };
   line: number;
 }
 
@@ -121,6 +127,9 @@ export interface RowRef {
   row: number; // 1-based; 0 when `with` is used
   with?: string; // the first row showing this exact text (a text value, field value or button label)
   list?: string;
+  // A row inside a row (a list in a list row): the row of the outer list it is in. Steps name the
+  // innermost row first: `toggle done on row 2 on row 1` is item 2 of task 1.
+  parent?: RowRef;
 }
 
 export type Step =
@@ -131,11 +140,15 @@ export type Step =
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "size"; size: string; line: number } // the host shows the app at another size (`size standard`)
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
+  // `steer random PickupCode = "308122", "555001"`: the next draws of that type take these values, in
+  // order; `steer random shuffle keeps order` / `reverses order`; `steer random pick 3` (the third item).
+  | { do: "random"; what: string; values?: Literal[]; order?: "keep" | "reverse"; pick?: number; line: number }
   | { do: "steer"; api: string; fault: "lose request" | "lose answer" | "duplicate" | "fail" | "slow" | "restart after effect" | "expire keys"; times: number; line: number } // a fault on the way to an api (a screen's provider)
   | { do: "open"; path: string; line: number } // arrive at an address (a screen of an app with several)
   | { do: "back"; line: number } // the browser's back button
   | { do: "restart"; line: number } // the app starts again: stored state keeps its values, the rest starts from its default
-  | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; line: number } // api profile
+  // api profile. `as`: the call is made as that caller, with their key (`call solveTicket as "Ann" with id = 4`).
+  | { do: "call"; endpoint: string; args: { name: string; value: Literal }[]; headers?: { name: string; value: Literal }[]; as?: string; line: number }
   // A raw HTTP request (layers, and apps that use them): its answer is `request.status|header.x|body…`.
   // In a layer's examples: a param's value from here on (\`given key = ""\`).
   | { do: "given"; name: string; value: Literal; line: number }
@@ -143,7 +156,7 @@ export type Step =
   | { do: "see"; target: string; at?: RowRef; every?: string; check: Check; line: number }; // every: check each row of that list
 
 export type Check =
-  | { is: "eq"; value: string } // canonical string of the expected value
+  | { is: "eq"; value: string; nothing?: true } // canonical string of the expected value; `= nothing` (an answer's value is null)
   | { is: "rows"; count: number; cmp?: "atMost" | "atLeast"; countParam?: string }
   | { is: "disabled" | "enabled" | "hidden" | "shown" | "checked" | "unchecked" }
   // A number read from what is shown ("10 left" → 10), compared with a number or another element in the same scope.
@@ -227,9 +240,15 @@ export interface App {
   after?: { steps: string[]; line: number; stepLines?: number[]; body?: Stmt[] };
   beforeCall?: { steps: string[]; line: number; stepLines?: number[]; body?: Stmt[] }; // a client layer: changes every outgoing call (adds a key, …)
   exampleConfig?: Binding[]; // `examples with`: the params the layer's own examples run with
+  // A layer that provides `caller`: how a test acts as a caller (`call x as "Ann"`), in its typed form:
+  // `acts as @caller with header @keyHeader = the @secret of the key in @keys whose @owner is @caller`.
+  actsAs?: { header: string; list: string; secret: string; owner: string; line: number };
+  // An api's access block (v70): who may call which endpoint and hear which event; default deny.
+  access?: AccessBlock;
   // An api app: the layers it runs behind, in order (`use cors = std.http.cors`).
   layers?: LayerUse[];
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
+  language?: string; // `language v70`: the language version the spec was written for
   endpoints?: Endpoint[];
   events?: EventDecl[];
   startsAt?: string; // `examples start at 2026-09-24 09:00`: the clock at the start of every example and session
@@ -241,7 +260,8 @@ export interface App {
   extends?: { name: string; line: number }; // refinement of a published app (see refine.ts)
   implements?: { name: string; line: number }; // an api app that implements a published contract
   uses?: { contract: string; alias: string; testedWith?: string; through?: LayerUse; only?: string[]; line: number }[]; // clients of contracts
-  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse; only?: string[]; line?: number }[]; // resolved by the loader
+  // resolved by the loader. providerCallers: whom a test may act as against the provider (`call x.y as "Sam"`), its key owners.
+  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse; only?: string[]; line?: number; providerCallers?: string[]; providerAccess?: Record<string, string[]> }[];
   refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];
@@ -265,6 +285,39 @@ export interface App {
   always: Step[]; // invariants: `see` steps that must hold after every action
   invariants?: { text: string; line: number }[]; // `- sentence` in `always`: over the app's data, checked after every step
 }
+
+/**
+ * `access { roles = grants  - an @Agent may call @solveTicket when that ticket's @assignee is the @caller: "…" }`.
+ * Permits (`anyone`, `any caller`, roles) and forbids (`no one may … when …`); conditions are typed whole
+ * (compiler/access.ts), so the harness enforces them and the LLM never writes an access check.
+ */
+export interface AccessBlock {
+  roles?: { list: string; line: number }; // `roles = grants`: the state list of grants (who holds which role)
+  rules: AccessRule[];
+  line: number;
+}
+
+export interface AccessRule {
+  effect: "permit" | "forbid";
+  who: { k: "anyone" } | { k: "caller" } | { k: "roles"; roles: string[] } | { k: "all" }; // all: `no one` (a forbid)
+  on: "call" | "hear";
+  targets: string[] | "every"; // `@a, @b and @c`, or `every endpoint` / `every event`
+  conds: AccessCond[];
+  condText?: string; // the condition as written, after `when`
+  message?: string; // after `:`: the refusal's `{"error": …}`
+  text: string;
+  line: number;
+}
+
+/** A condition, typed whole: one of the forms the harness generates the check for. */
+export type AccessCond =
+  // `that ticket's @assignee is (not) the @caller` (the path may follow references: `that ticket's @project's @owner`),
+  // `the @caller is (not) in that project's @members`; `its body's @assignee is the @caller` about an event's payload.
+  | { k: "caller"; from: "row" | "body"; record?: string; word?: string; path: string[]; in: boolean; not: boolean; text: string }
+  // `that ticket's @status is (not) @Archived` (`field`); the older `that ticket is (not) @Archived` has none
+  | { k: "value"; record?: string; word: string; field?: string; value: string; not: boolean; text: string }
+  // `@amount is at most 100000`, `@amount is at most @approvalLimit`, `@kind is @Refund`
+  | { k: "param"; param: string; op: "eq" | "ne" | "le" | "ge" | "lt" | "gt"; value: Literal | { k: "state"; name: string }; text: string };
 
 export interface EventDecl {
   name: string;
@@ -316,4 +369,7 @@ export interface Facts {
   clockLine?: number; // the line of `clock every …`
   overridden?: string[]; // names a refinement changes (`override …`, `drop …`)
   untypedDerived?: { name: string; where: string }[]; // derived values used where their type matters, with no type known
+  navigations?: import("./fit.ts").Navigation[]; // reads through references (`its @ticket's @subject`)
+  navSpelling?: { line: number; from: string; to: string }[]; // lookups of a reference's own row, and their navigation
+  draws?: import("./draws.ts").DrawFact[]; // the draw phrases (v69), where they are and the types around them
 }

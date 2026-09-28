@@ -117,7 +117,7 @@ on click r {
     stop
   }
   for each @c in @comments {
-    - set @draft to @c's @ticket's @title   # expect: TYPE
+    - set @draft to @c's @ticket's @title   # expect: NOTHING  # expect: HOME
     - set @draft to @c's @body
   }
 }
@@ -133,7 +133,7 @@ on click ops {
   - set @count to the number of @draft   # expect: TYPE
   - set @draft to @count trimmed   # expect: TYPE
   - set @count to @count divided by 2   # expect: TYPE
-  - set @draft to nothing   # expect: TYPE
+  - set @draft to nothing   # expect: NOTHING
   - set @count to the sum of @tickets's @title   # expect: TYPE
   if @tags is empty {
     stop

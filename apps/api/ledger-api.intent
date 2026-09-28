@@ -1,0 +1,154 @@
+app LedgerApi {
+  "A ledger: only deposits and withdrawals change the balance, and a recorded deposit or withdrawal is never removed and never changes."
+  "Once a day a fee of 1.00 is withdrawn, while the balance allows it."
+}
+
+profile api
+
+language v67
+
+examples start at 2026-09-24 09:00
+
+type Amount = Decimal from 0.01 to 10000        # euros with cents
+
+record Deposit {
+  id: Int
+  amount: Decimal
+}
+
+record Withdrawal {
+  id: Int
+  amount: Decimal
+  fee: Bool                                      # the daily fee, not a request
+}
+
+record Balance {
+  amount: Decimal
+}
+
+state {
+  stored balance: Decimal = 0
+  stored deposits: List Deposit = []
+  stored withdrawals: List Withdrawal = []
+}
+
+endpoint deposit POST "/deposits" {
+  body amount: Decimal
+  returns Deposit
+  if @amount is not a valid @Amount {
+    answer 400 "The amount must be between 0.01 and 10000.00"
+  }
+  - add a @Deposit to the end of @deposits with @id = the highest @id in @deposits + 1 (1 when there are none) and the given @amount
+  - increase @balance by @amount
+  answer 201 with the new deposit
+}
+
+endpoint withdraw POST "/withdrawals" {
+  body amount: Decimal
+  returns Withdrawal
+  if @amount is not a valid @Amount {
+    answer 400 "The amount must be between 0.01 and 10000.00"
+  }
+  if @amount is above @balance {
+    answer 409 "Not enough money"
+  }
+  - add a @Withdrawal to the end of @withdrawals with @id = the highest @id in @withdrawals + 1 (1 when there are none), the given @amount and @fee = false
+  - decrease @balance by @amount
+  answer 201 with the new withdrawal
+}
+
+endpoint showBalance GET "/balance" {
+  returns Balance
+  answer 200 with a @Balance with @amount = @balance
+}
+
+endpoint listWithdrawals GET "/withdrawals" {
+  returns List Withdrawal
+  answer 200 with @withdrawals
+}
+
+every 1d {
+  if @balance is below 1 {
+    stop
+  }
+  - add a @Withdrawal to the end of @withdrawals with @id = the highest @id in @withdrawals + 1 (1 when there are none), @amount = 1 and @fee = true
+  - decrease @balance by 1
+}
+
+always {
+  - @balance is at least 0
+  - @balance is @balance before plus the sum of @amount over the new @deposits minus the sum of @amount over the new @withdrawals
+  - a @Deposit is never removed
+  - a @Deposit's @amount never changes
+  - a @Withdrawal is never removed
+  - a @Withdrawal's @amount never changes
+}
+
+example "a deposit adds to the balance" {
+  call deposit with amount = 25.50
+  see deposit.status = 201
+  see deposit.body.id = 1
+  see deposit.body.amount = 25.5
+  call showBalance
+  see showBalance.body.amount = 25.5
+}
+
+example "a withdrawal takes from the balance" {
+  call deposit with amount = 100
+  call withdraw with amount = 40
+  see withdraw.status = 201
+  see withdraw.body.id = 1
+  see withdraw.body.fee = false
+  call showBalance
+  see showBalance.body.amount = 60
+}
+
+example "a withdrawal above the balance is refused" {
+  call deposit with amount = 10
+  call withdraw with amount = 10.01
+  see withdraw.status = 409
+  see withdraw.body.error = "Not enough money"
+  call showBalance
+  see showBalance.body.amount = 10
+}
+
+example "an amount out of range is refused" {
+  call deposit with amount = 0
+  see deposit.status = 400
+  see deposit.body.error = "The amount must be between 0.01 and 10000.00"
+  call deposit with amount = 10000.01
+  see deposit.status = 400
+  call withdraw with amount = -5
+  see withdraw.status = 400
+  see withdraw.body.error = "The amount must be between 0.01 and 10000.00"
+}
+
+example "the daily fee is a withdrawal" {
+  call deposit with amount = 5
+  wait 1d
+  call showBalance
+  see showBalance.body.amount = 4
+  call listWithdrawals
+  see listWithdrawals.body has 1 row
+  see listWithdrawals.body[1].amount = 1
+  see listWithdrawals.body[1].fee = true
+}
+
+example "no fee while the balance is below 1.00" {
+  call deposit with amount = 0.50
+  wait 2d
+  call showBalance
+  see showBalance.body.amount = 0.5
+  call listWithdrawals
+  see listWithdrawals.body has 0 rows
+}
+
+example "the ledger survives a restart" {
+  call deposit with amount = 20
+  call withdraw with amount = 5
+  restart
+  call showBalance
+  see showBalance.body.amount = 15
+  call listWithdrawals
+  see listWithdrawals.body has 1 row
+}

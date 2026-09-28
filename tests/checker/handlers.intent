@@ -1,0 +1,27 @@
+app Handlers {
+  "`on event` and `on answer` without the client's event or endpoint, and a design key an object already has: said plainly (v72)."
+}
+
+design {
+  constructor: sans                   # expect: UNKNOWN_NAME
+}
+
+state {
+  count: Int = 0
+}
+
+screen {
+  text shown = @count
+}
+
+on event tickets {                    # expect: SYNTAX
+  - increase @count by 1
+}
+
+on answer tickets {                   # expect: SYNTAX
+  - increase @count by 1
+}
+
+example "e" {
+  see shown = "0"
+}

@@ -6,6 +6,11 @@ import { LINE_BASE } from "./ast.ts";
 import type { Refinement } from "./refine.ts";
 import { fromBraces } from "./braces.ts";
 import { checkFit } from "./fit.ts";
+import { ALPHABETS, ALPHABET_NAMES } from "./alphabets.ts";
+import { checkDraws } from "./draws.ts";
+import { checkAccess, parseRule } from "./access.ts";
+import { parseString, suggest, typeToString } from "./words.ts";
+export { parseString, suggest, typeToString };
 import { withStdQuality } from "./quality.ts";
 import { declaredNames, refsIn, resolves, sentences, usedByAlias, usesClock } from "./refs.ts";
 import type { ScreenDecl, Stmt, App, Binding, LayerUse, Check, ChoiceDecl, Component, Diagnostic, Element, ElementKind, Endpoint, Example, Field, Handler, Literal, Param, RecordDecl, RefinedDecl, RowRef, Step, Type, Verb } from "./ast.ts";
@@ -62,7 +67,10 @@ interface Ctx {
   clockLine: number;
 }
 
-const QN = `${LOWER}(?:\\.${LOWER}|\\[\\d+\\])*`; // a (possibly qualified) name: pager.next; in api examples a response path: createTicket.body.items[1].id
+const QN = `${LOWER}(?:\\.${LOWER}|\\[\\d+\\])*`;
+/** A declared name, qualified when it is a component instance's (\`pager.page\`): what \`intent expand\`
+ *  prints for an expanded component, so that the expanded spec reads back as it is printed. */
+const DECL = `${LOWER}(?:\\.${LOWER})*`; // a (possibly qualified) name: pager.next; in api examples a response path: createTicket.body.items[1].id
 const BUNDLE_NAME = `${LOWER}(?:\\.${LOWER})*`;
 const HEADER = "[a-z0-9][a-z0-9-]*"; // a header name, lower case: access-control-allow-origin
 
@@ -156,6 +164,29 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       const returns = parseType(m[3]);
       if (!returns) err(node.line, "SYNTAX", `\`${m[3]}\` is not a type`);
       else (app.functions ??= []).push({ name: m[1], params, returns, line: node.line, note: node.note });
+    } else if (app.kind === "layer" && /^acts\s+as\b/.test(t)) {
+      // How a test acts as a caller (\`call x as "Ann"\`): the typed form the harness reads, never built.
+      const am = t.match(/^acts\s+as\s+@caller\s+with\s+header\s+@([a-z]\w*)\s*=\s*the\s+@([a-z]\w*)\s+of\s+the\s+[a-z]\w*\s+in\s+@([a-z]\w*)\s+whose\s+@([a-z]\w*)\s+is\s+@caller$/);
+      if (!am) err(node.line, "SYNTAX", "`acts as @caller with header @keyHeader = the @secret of the key in @keys whose @owner is @caller`: the header a test sends to act as a caller, and the key that is theirs");
+      else if (app.actsAs) err(node.line, "DUPLICATE", "one `acts as` per layer");
+      else app.actsAs = { header: am[1], secret: am[2], list: am[3], owner: am[4], line: node.line };
+    } else if (t === "access") {
+      // Who may call which endpoint and hear which event (v70): \`roles = grants\` and \`- rule\` lines.
+      if (app.access) err(node.line, "DUPLICATE", "one `access` block per app");
+      const block: NonNullable<App["access"]> = { rules: [], line: node.line };
+      for (const c of node.children) {
+        let rm: RegExpMatchArray | null;
+        if ((rm = c.text.match(new RegExp(`^roles\\s*=\\s*(${LOWER})$`)))) {
+          if (block.roles) err(c.line, "DUPLICATE", "one `roles = …` line per `access` block");
+          block.roles = { list: rm[1], line: c.line };
+        } else if (c.text.startsWith("- ")) {
+          const r = parseRule(c.text.slice(2) + flattenChildren(c), c.line);
+          if ("rule" in r) block.rules.push(r.rule);
+          else err(c.line, r.code, r.message, c.indent + 1);
+        } else err(c.line, "SYNTAX", "inside `access`: `roles = <state list of grants>` and `- <who> may call <endpoints> [when …]` rules", c.indent + 1);
+      }
+      if (!block.rules.length) err(node.line, "SYNTAX", "an `access` block holds its rules: `- an @Agent may call @myTickets`");
+      app.access ??= block;
     } else if (app.kind === "layer" && /^examples\s+with$/.test(t)) {
       app.exampleConfig = node.children.map((c) => parseBinding(c, err)).filter((b): b is Binding => !!b);
     } else if ((m = t.match(new RegExp(`^implements\\s+(${BUNDLE_NAME})$`)))) {
@@ -219,13 +250,14 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       // The language version the spec was written for: the checker says when the language moved on.
       language = m[1];
       languageLine = node.line;
+      app.language = m[1];
     } else if (t.startsWith("language")) {
       err(node.line, "SYNTAX", "expected `language v12`");
     } else if (t.startsWith("import")) {
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
       const word = t.split(/\s+/)[0];
-      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example"]);
+      const hint = suggest(word, ["app", "bundle", "contract", "layer", "event", "implements", "uses", "import", "language", "profile", "endpoint", "extends", "override", "add", "drop", "design", "component", "record", "choice", "state", "clock", "derive", "screen", "on", "rules", "always", "example", "access"]);
       err(node.line, "SYNTAX", `unknown block \`${word}\`${hint}`);
     }
   });
@@ -247,10 +279,11 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       for (const s of ex.steps) {
         if (s.do === "call") {
           const f = fns.get(s.endpoint);
-          if (!f) err(s.line, "UNKNOWN_NAME", `no function \`${s.endpoint}\`${suggest(s.endpoint, [...fns.keys()])}`);
+          if (!f) err(s.line, "UNKNOWN_NAME", fns.size ? `no function \`${s.endpoint}\`${suggest(s.endpoint, [...fns.keys()])}` : `no function \`${s.endpoint}\`: the platform declares none (\`function ${s.endpoint}(…): …\`)`);
           else for (const a of s.args) if (!f.params.some((p) => p.name === a.name)) err(s.line, "UNKNOWN_NAME", `\`${s.endpoint}\` has no param \`${a.name}\``);
         } else if (s.do === "see") {
-          if (!fns.has(s.target.split(/[.[]/)[0])) err(s.line, "UNKNOWN_NAME", `\`see ${s.target}\`: see a function's latest result (\`see ${[...fns.keys()][0]} = …\`, \`see ${[...fns.keys()][0]}.field = …\`)`);
+          // With no function declared, the example has nothing to see (the missing `function` line is the error).
+          if (fns.size && !fns.has(s.target.split(/[.[]/)[0])) err(s.line, "UNKNOWN_NAME", `\`see ${s.target}\`: see a function's latest result (\`see ${[...fns.keys()][0]} = …\`, \`see ${[...fns.keys()][0]}.field = …\`)`);
         } else err(s.line, "STEP", "a platform's example calls its functions (`call f with x = …`) and sees their results (`see f = …`)");
       }
   }
@@ -301,6 +334,20 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       } catch {
         err(node.line, "SYNTAX", `\`/${rm[1]}/\` is not a valid pattern`);
       }
+    } else if (base === "Text" && (rm = rule.match(/^of\s+(\d+)\s+(.+)$/))) {
+      // A code: exactly n characters from a closed alphabet, or from the characters given.
+      const n = Number(rm[1]);
+      const words = rm[2].trim().replace(/\s+/g, " ");
+      const from = words.match(/^from\s+("(?:[^"\\]|\\.)*")$/);
+      const chars = from ? parseString(from[1])! : ALPHABETS[words];
+      if (chars === undefined) {
+        err(node.line, "SYNTAX", `\`${words}\` is not an alphabet: a code is \`Text of <n> ${ALPHABET_NAMES.slice().reverse().join(" | ")}\`, or \`Text of <n> from "…"\` (the characters it may use)`);
+        return true;
+      }
+      if (n < 1) err(node.line, "BAD_BINDING", `${name}: a code has at least 1 character, not ${n}`);
+      if (from && new Set([...chars]).size !== [...chars].length) err(node.line, "BAD_BINDING", `${name}: \`from ${from[1]}\` lists a character twice (${[...chars].filter((c, i, a) => a.indexOf(c) !== i).map((c) => JSON.stringify(c)).join(", ")}): each character once, so each is as likely`);
+      else if (from && [...chars].length < 2) err(node.line, "BAD_BINDING", `${name}: \`from ${from[1]}\` has ${[...chars].length === 1 ? "one character" : "no characters"}: a code needs at least two to choose from`);
+      r.code = { n, alphabet: from ? "from" : words, chars };
     } else if (base === "Text" && (rm = rule.match(/^of\s+length\s+(?:(\d+)\s+to\s+(\d+)|at\s+most\s+(\d+)|at\s+least\s+(\d+))$/))) {
       const lo = rm[1] ?? rm[4];
       const hi = rm[2] ?? rm[3];
@@ -311,7 +358,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       if (rm[1]) r.min = Number(rm[1]);
       if (rm[2]) r.max = Number(rm[2]);
     } else {
-      err(node.line, "SYNTAX", base === "Text" ? "a refined text looks like `type Email = Text matching /…/` or `type Title = Text of length 1 to 80`" : `a refined number looks like \`type Age = ${base} from 0 to 150\``);
+      err(node.line, "SYNTAX", base === "Text" ? "a refined text looks like `type Email = Text matching /…/`, `type Title = Text of length 1 to 80` or `type PickupCode = Text of 6 digits`" : `a refined number looks like \`type Age = ${base} from 0 to 150\``);
       return true;
     }
     (app.refined ??= []).push(r);
@@ -336,9 +383,15 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     const values: string[] = [];
     const labels: Record<string, string> = {};
     const wire: Record<string, string> = {};
+    const badValues = new Set<string>();
     const addValue = (raw: string, line: number, col = 1) => {
       const vm = raw.trim().match(new RegExp(`^(${UPPER})(?:\\s+(${STR}))?(?:\\s*=\\s*(${STR}))?$`));
-      if (!vm) return err(line, "SYNTAX", `choice value \`${raw.trim()}\` must be an UpperCamel name, optionally followed by a "label" and \`= "wire name"\``, col);
+      if (!vm) {
+        // Said once per line and text (`Paid | |` has two empty values: one mistake).
+        if (badValues.has(`${line}|${raw.trim()}`)) return;
+        badValues.add(`${line}|${raw.trim()}`);
+        return err(line, "SYNTAX", raw.trim() ? `choice value \`${raw.trim()}\` must be an UpperCamel name, optionally followed by a "label" and \`= "wire name"\`` : "a choice value is empty: remove the extra `|`", col);
+      }
       values.push(vm[1]);
       labels[vm[1]] = vm[2] !== undefined ? parseString(vm[2])! : vm[1];
       if (vm[3] !== undefined) {
@@ -362,7 +415,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if (t === "state") {
     for (const c of node.children) {
       const stored = /^stored\s+/.test(c.text);
-      const f = parseField(stored ? { ...c, text: c.text.replace(/^stored\s+/, "") } : c, err, true);
+      const f = parseField(stored ? { ...c, text: c.text.replace(/^stored\s+/, "") } : c, err, true, true);
       if (f) app.state.push(stored ? { ...f, stored } : f);
     }
   } else if ((m = t.match(/^clock\s+every\s+(\S+)$/))) {
@@ -374,7 +427,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if (t === "derive") {
     for (const c of node.children) {
       // `name = sentence`, or with its type declared: `total: Decimal = the sum of …` (then checked).
-      const dm = c.text.match(new RegExp(`^(${LOWER})\\s*(?::\\s*([^=]+?))?\\s*=\\s*(.+)$`));
+      const dm = c.text.match(new RegExp(`^(${DECL})\\s*(?::\\s*([^=]+?))?\\s*=\\s*(.+)$`));
       if (!dm) err(c.line, "SYNTAX", "a derived value looks like `name = sentence` (or `name: Type = sentence`)", c.indent + 1);
       else {
         const type = dm[2] ? parseType(dm[2].trim()) : undefined;
@@ -384,11 +437,12 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     }
   } else if (t === "screen") {
     if (app.screens?.length) err(node.line, "SYNTAX", "this app has named screens: give this one a name and a path too (`screen <name> \"/path\"`)");
-    app.screen = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
+    app.screen = node.children.map((c) => parseElement(c, err, 0)).filter((e): e is Element => !!e);
   } else if ((m = t.match(new RegExp(`^screen\\s+(${LOWER})\\s+(${STR})$`)))) {
     // One of several screens, with its address; `path x: T` lines are its params.
     const path = parseString(m[2])!;
     if (!path.startsWith("/")) err(node.line, "SYNTAX", "a screen's path starts with `/`");
+    else if (!SAFE_PATH.test(path)) err(node.line, "SYNTAX", `\`${path}\`: a path is \`/\` and then letters, digits, \`. _ ~ - /\` and \`{param}\` holes (\`"/tickets/{id}"\`)`);
     if (app.screen.length && !app.screens?.length) err(node.line, "SYNTAX", "this app has an unnamed `screen`: with several screens, each has a name and a path");
     if (app.screens?.some((s) => s.name === m![1])) err(node.line, "DUPLICATE", `screen \`${m[1]}\` is declared twice`);
     const decl: ScreenDecl = { name: m[1], path, params: [], line: node.line, note: node.note };
@@ -400,7 +454,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
         else decl.params.push({ name: pm[1], type, line: c.line });
         continue;
       }
-      const el = parseElement(c, err, false);
+      const el = parseElement(c, err, 0);
       if (el) app.screen.push({ ...el, screen: m[1] });
     }
     (app.screens ??= []).push(decl);
@@ -452,10 +506,14 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   return true;
 }
 
+/** What a path (an endpoint's or a screen's) may hold: it goes into generated code, comments and URLs as is. */
+const SAFE_PATH = /^\/[A-Za-z0-9._~{}\/-]*$/;
+
 /** `endpoint name METHOD "/path/{id}"` with `path|query|body x: Type`, `returns T` and `- steps`. */
 function parseEndpoint(node: Line, name: string, method: Endpoint["method"], path: string, ctx: Ctx): Endpoint {
   const { err } = ctx;
   const ep: Endpoint = { name, method, path, params: [], steps: [], line: node.line, note: node.note };
+  if (path && !SAFE_PATH.test(path)) err(node.line, "SYNTAX", `\`${path}\`: a path is \`/\` and then letters, digits, \`. _ ~ - /\` and \`{param}\` holes (\`"/tickets/{id}/notes"\`); anything else is a query or body param`);
   const stmts: Line[] = [];
   for (const c of node.children) {
     let m: RegExpMatchArray | null;
@@ -466,7 +524,9 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
     } else if ((m = c.text.match(/^answers\s+([1-5]\d\d)(?:\s+(.+))?$/))) {
       const type = m[2] ? parseType(m[2]) : undefined;
       if (m[2] && !type) err(c.line, "SYNTAX", `\`${m[2]}\` is not a type`, c.indent + 1);
-      (ep.answers ??= []).push({ status: Number(m[1]), type, line: c.line });
+      // One body type per status: a second `answers 201` is a mistake, not another answer.
+      if (ep.answers?.some((a) => a.status === Number(m![1]))) err(c.line, "DUPLICATE", `endpoint ${ep.name} already answers ${m[1]}; give each status one \`answers\` line`, c.indent + 1);
+      else (ep.answers ??= []).push({ status: Number(m[1]), type, line: c.line });
     } else if ((m = c.text.match(new RegExp(`^effect\\s+(\\S+)(?:\\s+of\\s+@(${LOWER}))?$`)))) {
       if (m[1] === "external") ep.effect = { kind: "external", ...(m[2] ? { of: m[2] } : {}), line: c.line };
       else err(c.line, "SYNTAX", `the only effect is \`effect external\` (it reaches outside the system: money, mail, another company's service), optionally \`effect external of @amount\` (the param that says how much). Keys and retries follow from the method, so there is no other kind to declare`, c.indent + 1);
@@ -500,7 +560,7 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
   const t = node.text;
   let m: RegExpMatchArray | null;
   if ((m = t.match(/^override\s+(heading|text|field|button|checkbox|select|list|section|progress|use)\s/))) {
-    const el = parseElement({ ...node, text: t.slice("override ".length) }, err, false);
+    const el = parseElement({ ...node, text: t.slice("override ".length) }, err, 0);
     return el && { op: "override-element", element: el, line: node.line };
   }
   if (t === "override derive") {
@@ -522,7 +582,7 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
     return { op: "override-component", component: parseComponent(node, m[1], m[2], m[3], ctx), line: node.line };
   }
   if ((m = t.match(new RegExp(`^add\\s+to\\s+(${QN})(?:\\s+after\\s+(${QN}))?$`)))) {
-    const elements = node.children.map((c) => parseElement(c, err, false)).filter((e): e is Element => !!e);
+    const elements = node.children.map((c) => parseElement(c, err, 0)).filter((e): e is Element => !!e);
     if (!elements.length) err(node.line, "SYNTAX", "`add to …` needs indented elements");
     return { op: "add-elements", into: m[1], after: m[2], elements, line: node.line };
   }
@@ -595,10 +655,12 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     checkRefs(app, err);
     checkLookups(app, err);
     checkLoops(app, err);
-    checkFit(app, err);
+    checkFit(app, err, new Set(diagnostics.filter((d) => d.code === "SYNTAX").map((d) => d.line)));
+    checkDraws(app, err);
     checkBodies(app, err);
     checkEffects(app, err);
     checkScreens(app, err);
+    checkAccess(app, err, warn);
     // std.quality's hints (compiler/quality): the compiler decides what the spec means, they what makes it good.
     diagnostics.splice(0, diagnostics.length, ...withStdQuality("", app, diagnostics));
   }
@@ -607,7 +669,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
 }
 
 /** Semantic checks on a complete (expanded) app. */
-export function checkApp(app: App, clockLine: number, used = new Set<string>()): Diagnostic[] {
+export function checkApp(app: App, clockLine: number, used = new Set<string>(), syntaxLines = new Set<number>()): Diagnostic[] {
   const diags: Diagnostic[] = [];
   if (app.kind === "platform") return diags; // checked while parsing (its functions and examples)
   const err: Err = (line, code, message, col = 1) => diags.push({ level: "error", code, line, col, message });
@@ -616,10 +678,12 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>()):
   checkRefs(app, err);
   checkLookups(app, err);
   checkLoops(app, err);
-  checkFit(app, err);
+  checkFit(app, err, syntaxLines);
+  checkDraws(app, err);
   checkBodies(app, err);
   checkEffects(app, err);
   checkScreens(app, err);
+  checkAccess(app, err, warn);
   return diags;
 }
 
@@ -814,12 +878,16 @@ function checkBodies(app: App, err: Err) {
  */
 function checkRefs(app: App, err: Err) {
   const names = declaredNames(app);
+  const said = new Set<string>(); // an element's value and its `visible when` are said on one line: a name once
   for (const s of sentences(app)) {
     if (s.line >= LINE_BASE) continue; // from a bundle or contract: checked there
     // `@path.id` / `@query.q` / `@body.room`: a request param, told apart from a field with the same
     // name. Only inside an endpoint's own steps.
     const ep = s.where.startsWith("endpoint ") ? app.endpoints?.find((e) => e.name === s.where.slice("endpoint ".length)) : undefined;
-    for (const r of refsIn(s.text)) {
+    for (const r of new Set(refsIn(s.text))) {
+      // Each name once per sentence (`@missing plus @missing` is one undeclared name), and per line.
+      if (said.has(`${s.line}|${s.where}|${r}`)) continue;
+      said.add(`${s.line}|${s.where}|${r}`);
       const q = r.match(/^(path|query|body)\.([a-z]\w*)$/);
       if (q) {
         const p = ep?.params.find((x) => x.name === q[2]);
@@ -949,11 +1017,6 @@ function parseBullets(node: Line, err: (l: number, c: string, m: string, col?: n
 
 // ---------------------------------------------------------------- pieces
 
-/** A quoted string: `\\n` is a new line and `\\t` a tab; a backslash before anything else keeps that character. */
-export function parseString(s: string): string | undefined {
-  if (!new RegExp(`^${STR}$`).test(s)) return undefined;
-  return s.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === "n" ? "\n" : c === "t" ? "\t" : c));
-}
 
 /** Does an address fit a screen's path (`/tickets/3` fits `/tickets/{id}`)? */
 export const screenMatch = (pattern: string, path: string): boolean => {
@@ -1051,19 +1114,12 @@ function parseType(s: string): Type | undefined {
   if (s === "Text" || s === "Int" || s === "Decimal" || s === "Bool" || s === "Date" || s === "DateTime") return { k: s };
   // `ticket: ref Ticket`: a field that holds the referenced record's key (`@Ticket`'s key field).
   if ((m = s.match(new RegExp(`^ref\\s+(${UPPER})$`)))) return { k: "Ref", name: m[1] };
+  // `ticket: ref Ticket in tickets`: and the state list its row is found in when it is followed.
+  if ((m = s.match(new RegExp(`^ref\\s+(${UPPER})\\s+in\\s+(${LOWER})$`)))) return { k: "Ref", name: m[1], in: m[2] };
   if (new RegExp(`^${UPPER}$`).test(s)) return { k: "Named", name: s };
   return undefined;
 }
 
-export function typeToString(t: Type): string {
-  switch (t.k) {
-    case "List": return `List ${typeToString(t.of)}`;
-    case "Maybe": return `${typeToString(t.of)} or nothing`;
-    case "Named": return t.name;
-    case "Ref": return `ref ${t.name}`;
-    default: return t.k;
-  }
-}
 
 function parseLiteral(s: string): Literal | undefined {
   s = s.trim();
@@ -1079,8 +1135,8 @@ function parseLiteral(s: string): Literal | undefined {
   return undefined;
 }
 
-function parseField(c: Line, err: (l: number, c: string, m: string, col?: number) => void, needDefault: boolean): Field | undefined {
-  const m = c.text.match(new RegExp(`^(${LOWER})\\s*:\\s*([^=]+?)\\s*(?:=\\s*(.+))?$`));
+function parseField(c: Line, err: (l: number, c: string, m: string, col?: number) => void, needDefault: boolean, qualified = false): Field | undefined {
+  const m = c.text.match(new RegExp(`^(${qualified ? DECL : LOWER})\\s*:\\s*([^=]+?)\\s*(?:=\\s*(.+))?$`));
   if (!m) {
     err(c.line, "SYNTAX", "a field looks like `name: Type` or `name: Type = default`", c.indent + 1);
     return;
@@ -1119,10 +1175,11 @@ function parseTable(c: Line, err: (l: number, c: string, m: string, col?: number
       err(r.line, "SYNTAX", `this row has ${cells.length} cells; the header has ${columns.length}`, r.indent + 1);
       continue;
     }
-    const lits = cells.map((cell) => parseLiteral(cell));
+    // A cell holds one value, or a row's inner list: `[{ id = 1, label = "Milk" }, …]` (the literal of call arguments).
+    const lits = cells.map((cell) => (cell.trim().startsWith("[") && cell.trim() !== "[]" ? parseArgValue(cell) : parseLiteral(cell)));
     const bad = lits.findIndex((l) => !l);
     if (bad >= 0)
-      err(r.line, cells[bad].trim().startsWith("[") ? "NOT_YET" : "SYNTAX", cells[bad].trim().startsWith("[") ? `a table cell holds one value; a list in a cell (\`${cells[bad]}\`) is not in the language yet. Put the items in a record of their own with a field that points back to this row (for example \`record Tick { habit: Int  day: Int }\`)` : `\`${cells[bad]}\` is not a literal: use a "text", a number, true/false, nothing or a choice value`, r.indent + 1);
+      err(r.line, "SYNTAX", cells[bad].trim().startsWith("[") ? `\`${cells[bad]}\` is not a list: write the row's inner list as \`[{ id = 1, label = "Milk" }, { … }]\` (records with \`field = value\`), or \`[]\`` : `\`${cells[bad]}\` is not a literal: use a "text", a number, true/false, nothing or a choice value`, r.indent + 1);
     else rows.push(lits as Literal[]);
   }
   return { k: "table", columns, rows };
@@ -1196,7 +1253,7 @@ function parseDesign(node: Line, err: (l: number, c: string, m: string, col?: nu
       if (COLOR_ROLES.includes(key)) {
         if (!PALETTES.includes(value)) err(c.line, "UNKNOWN_NAME", `\`${value}\` is not a palette${suggest(value, PALETTES)} (${PALETTES.join(", ")})`, c.indent + 1);
         d.colors[key] = value;
-      } else if (DESIGN_KEYS[key]) {
+      } else if (Object.hasOwn(DESIGN_KEYS, key)) { // not `constructor`, `toString`: an object's own keys only
         if (!DESIGN_KEYS[key].includes(value)) err(c.line, "UNKNOWN_NAME", `${key} is one of ${DESIGN_KEYS[key].join(", ")}`, c.indent + 1);
         (d as any)[key] = value;
       } else err(c.line, "UNKNOWN_NAME", `unknown design setting \`${key}\`${suggest(key, [...COLOR_ROLES, ...Object.keys(DESIGN_KEYS)])}`, c.indent + 1);
@@ -1205,7 +1262,8 @@ function parseDesign(node: Line, err: (l: number, c: string, m: string, col?: nu
   return d;
 }
 
-function parseElement(c: Line, err: (l: number, c: string, m: string, col?: number) => void, inList: boolean): Element | undefined {
+/** An element; `rows` is how many list rows it is inside (0 at the top, 1 in a row, 2 in a row of a list inside a row). */
+function parseElement(c: Line, err: (l: number, c: string, m: string, col?: number) => void, rows: number): Element | undefined {
   const t = c.text;
   const kw = t.split(/\s+/)[0];
   const col = c.indent + 1;
@@ -1248,7 +1306,7 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     if (s === undefined) err(c.line, "SYNTAX", 'a heading looks like `heading "Text"`', col);
     el.label = s ?? "";
   } else if (kind === "list") {
-    m = rest.match(new RegExp(`^(${LOWER})\\s+of\\s+(${UPPER})(?:\\s*=\\s*(.+))?$`));
+    m = rest.match(new RegExp(`^(${DECL})\\s+of\\s+(${UPPER})(?:\\s*=\\s*(.+))?$`));
     if (!m) {
       err(c.line, "SYNTAX", "a list looks like `list name of Type` or `list name of Type = sentence`", col);
       return;
@@ -1256,12 +1314,12 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
     el.name = m[1];
     el.of = m[2];
     el.expr = m[3];
-  } else if (kind === "select" && (m = rest.match(new RegExp(`^(${LOWER})(?:\\s+(${STR}))?\\s+from\\s+(${LOWER})\\.(${LOWER})$`)))) {
+  } else if (kind === "select" && (m = rest.match(new RegExp(`^(${DECL})(?:\\s+(${STR}))?\\s+from\\s+(${LOWER})\\.(${LOWER})$`)))) {
     el.name = m[1];
     el.label = m[2] !== undefined ? parseString(m[2]) : undefined;
     el.from = { list: m[3], field: m[4] };
   } else {
-    m = rest.match(new RegExp(`^(${LOWER})(?:\\s+(${STR}))?(?:\\s*=\\s*(.+))?$`));
+    m = rest.match(new RegExp(`^(${DECL})(?:\\s+(${STR}))?(?:\\s*=\\s*(.+))?$`));
     if (!m) {
       err(c.line, "SYNTAX", `expected \`${kind} name${kind === "text" ? " [= value]" : ' "Label"'}\``, col);
       return;
@@ -1285,11 +1343,14 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
       if (kind !== "button") err(k.line, "SYNTAX", "`enabled when` is only for buttons", k.indent + 1);
       el.enabledWhen = mm[1] + flattenChildren(k);
     } else if (kind === "list" || kind === "section") {
-      if ((kind === "list" || inList) && k.text.split(/\s+/)[0] === "list") {
-        err(k.line, "NOT_YET", "a list inside a list row is not in the language yet", k.indent + 1);
+      const inner = rows + (kind === "list" ? 1 : 0);
+      // A list inside a row (two levels: a task's items) is in the language; a list inside a row of
+      // that inner list (a third level) is not yet.
+      if (inner >= 2 && k.text.split(/\s+/)[0] === "list") {
+        err(k.line, "NOT_YET", "a list inside a row of a list that is itself inside a row (a third level) is not in the language yet: two levels (a task's items) are; show deeper parts on their own, next to the list, filtered by the chosen row", k.indent + 1);
         continue;
       }
-      const child = parseElement(k, err, inList || kind === "list");
+      const child = parseElement(k, err, inner);
       if (child) el.children.push(child);
     } else {
       err(k.line, "SYNTAX", 'expected `visible when …`, `enabled when …` or `look "…"`', k.indent + 1);
@@ -1304,20 +1365,32 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   const line = c.line;
   const col = c.indent + 1;
   if (c.children.length) err(c.children[0].line, "INDENT", "example steps have no indented lines");
-  const ROW = `(?:\\s+on\\s+row\\s+(\\d+|with\\s+${STR})(?:\\s+of\\s+(${QN}))?)?`;
-  const at = (n?: string, list?: string): RowRef | undefined =>
-    !n ? undefined : n.startsWith("with") ? { row: 0, with: parseString(n.replace(/^with\s+/, "")), list } : { row: Number(n), list };
+  // `on row N [of list]`, once per level of rows, innermost first: `on row 2 on row 1` is row 2 of the
+  // inner list, in row 1 of the outer one. One group captures them all; `at` reads it.
+  const ONE_ROW = `\\s+on\\s+row\\s+(?:\\d+|with\\s+${STR})(?:\\s+of\\s+${QN})?`;
+  const ROW = `((?:${ONE_ROW})*)`;
+  const at = (suffix?: string): RowRef | undefined => {
+    const levels = [...(suffix ?? "").matchAll(new RegExp(`\\s+on\\s+row\\s+(\\d+|with\\s+(${STR}))(?:\\s+of\\s+(${QN}))?`, "g"))].map(
+      (x): RowRef => (x[2] !== undefined ? { row: 0, with: parseString(x[2]), list: x[3] } : { row: Number(x[1]), list: x[3] }),
+    );
+    for (let i = levels.length - 2; i >= 0; i--) levels[i].parent = levels[i + 1];
+    return levels[0];
+  };
   let m: RegExpMatchArray | null;
-  if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${QN})${ROW}$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], at: at(m[3], m[4]), line } };
-  if ((m = t.match(new RegExp(`^(click|toggle)\\s+(${QN})${ROW}$`)))) return { step: { do: m[1] as "click", target: m[2], at: at(m[3], m[4]), line } };
-  if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})${ROW}$`)))) return { step: { do: "choose", value: m[1], target: m[2], at: at(m[3], m[4]), line } };
-  if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})${ROW}$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], at: at(m[3], m[4]), line, quoted: true } };
+  if ((m = t.match(new RegExp(`^type\\s+(${STR})\\s+into\\s+(${QN})${ROW}$`)))) return { step: { do: "type", text: parseString(m[1])!, target: m[2], at: at(m[3]), line } };
+  if ((m = t.match(new RegExp(`^(click|toggle)\\s+(${QN})${ROW}$`)))) return { step: { do: m[1] as "click", target: m[2], at: at(m[3]), line } };
+  if ((m = t.match(new RegExp(`^choose\\s+(${UPPER})\\s+in\\s+(${QN})${ROW}$`)))) return { step: { do: "choose", value: m[1], target: m[2], at: at(m[3]), line } };
+  if ((m = t.match(new RegExp(`^choose\\s+(${STR})\\s+in\\s+(${QN})${ROW}$`)))) return { step: { do: "choose", value: parseString(m[1])!, target: m[2], at: at(m[3]), line, quoted: true } };
   if ((m = t.match(new RegExp(`^snapshot\\s+(${STR})$`)))) return { step: { do: "snapshot", name: parseString(m[1])!, line } };
   // api profile: `call createTicket with subject = "Printer", priority = Urgent`
   // In a screen's examples, \`call tickets.createTicket …\` is another client calling the provider.
-  if ((m = t.match(new RegExp(`^call\\s+(${LOWER}(?:\\.${LOWER})?)(?:\\s+with\\s+(.+))?$`)))) {
+  // \`call solveTicket as "Ann" with id = 4\`: the call is made as that caller, with their key (v70).
+  if ((m = t.match(new RegExp(`^call\\s+(${LOWER}(?:\\.${LOWER})?)(?:\\s+as\\s+(${STR}))?(?:\\s+with\\s+(.+))?$`)))) {
+    const as = m[2] !== undefined ? parseString(m[2]) : undefined;
+    m = [m[0], m[1], m[3]] as unknown as RegExpMatchArray;
     const args: { name: string; value: Literal }[] = [];
     const headers: { name: string; value: Literal }[] = [];
+    const badArgs = new Set<string>(); // `with a = 1, , ,`: each wrong part said once
     for (const part of m[2] ? splitTop(m[2]) : []) {
       const hm = part.match(new RegExp(`^header\\s+(${HEADER})\\s*=\\s*(.+)$`));
       if (hm) {
@@ -1329,10 +1402,13 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
       const am = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
       // `{createTicket.body.id}`: a value from an earlier answer (kept as a text literal holding the reference).
       const lit = am && (/^\{[a-z][\w.[\]]*\}$/i.test(am[2].trim()) ? ({ k: "text", v: am[2].trim() } as Literal) : parseArgValue(am[2]));
-      if (!am || !lit) err(line, "SYNTAX", `\`${part}\` is not \`name = value\` (a value is a literal, a list \`[a, b]\` or a record \`{ field = value, … }\`)`, col);
+      if (!am || !lit) {
+        if (!badArgs.has(part.trim())) err(line, "SYNTAX", part.trim() ? `\`${part}\` is not \`name = value\` (a value is a literal, a list \`[a, b]\` or a record \`{ field = value, … }\`)` : "an empty argument (`, ,`): each argument is `name = value`", col);
+        badArgs.add(part.trim());
+      }
       else args.push({ name: am[1], value: lit });
     }
-    return { step: { do: "call", endpoint: m[1], args, ...(headers.length ? { headers } : {}), line } };
+    return { step: { do: "call", endpoint: m[1], args, ...(headers.length ? { headers } : {}), ...(as !== undefined ? { as } : {}), line } };
   }
   // In a layer's example: `given key = ""` changes a param from here on.
   if ((m = t.match(new RegExp(`^given\\s+(${LOWER})\\s*=\\s*(.+)$`)))) {
@@ -1367,6 +1443,28 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   if (t === "go back") return { step: { do: "back", line } };
   if ((m = t.match(new RegExp(`^see\\s+screen\\s*=\\s*(${LOWER})$`)))) return { step: { do: "see", target: "screen", check: { is: "eq", value: m[1] }, line } };
   if ((m = t.match(new RegExp(`^open\\s+(${STR})$`)))) return { step: { do: "open", path: parseString(m[1])!, line } };
+  // `steer random …`: the next draws take these values (a type's values, a shuffle's order, a pick).
+  if ((m = t.match(/^steer\s+random\s+shuffle\s+(keeps|reverses)\s+order$/))) return { step: { do: "random", what: "shuffle", order: m[1] === "keeps" ? "keep" : "reverse", line } };
+  if ((m = t.match(/^steer\s+random\s+pick\s+(\d+)$/))) {
+    if (Number(m[1]) < 1) err(line, "STEP", "`steer random pick <n>` counts from 1 (the first item)", col);
+    return { step: { do: "random", what: "pick", pick: Number(m[1]), line } };
+  }
+  if ((m = t.match(new RegExp(`^steer\\s+random\\s+(${UPPER})\\s*=\\s*(.+)$`)))) {
+    const values: Literal[] = [];
+    for (const part of splitTop(m[2])) {
+      const lit = parseLiteral(part.trim());
+      if (!lit || !["text", "number", "value", "bool"].includes(lit.k)) {
+        err(line, "SYNTAX", `\`${part.trim()}\` is not a value to steer with: a "text", a number or a choice value`, col);
+        return;
+      }
+      values.push(lit);
+    }
+    return { step: { do: "random", what: m[1], values, line } };
+  }
+  if (/^steer\s+random\b/.test(t)) {
+    err(line, "SYNTAX", "expected `steer random <Type> = <value>, …`, `steer random shuffle keeps order` (or `reverses order`) or `steer random pick <n>`", col);
+    return;
+  }
   if ((m = t.match(/^steer\s+([a-z]\w*)\s+(lose\s+request|lose\s+answer|duplicate|slow|restart\s+after\s+effect|expire\s+keys|fail(?:\s+(\d+))?)$/))) {
     const fault = m[2].startsWith("fail") ? "fail" : (m[2].replace(/\s+/, " ") as "lose request");
     return { step: { do: "steer", api: m[1], fault, times: fault === "fail" ? Number(m[3] ?? 1) : 1, line } };
@@ -1390,9 +1488,11 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "tick", times: 0, ms, line }, waitMs: ms };
   }
   // Inside a component the row count may be a param: `see rows has at most size rows`.
-  if ((m = t.match(new RegExp(`^see\\s+(${QN})\\s+has\\s+(at\\s+most\\s+|at\\s+least\\s+)?(\\d+|${inComponent ? LOWER : "\\d+"})\\s+rows?$`)))) {
-    const n = /^\d+$/.test(m[3]) ? Number(m[3]) : NaN;
-    return { step: { do: "see", target: m[1], check: { is: "rows", count: n, cmp: !m[2] ? undefined : m[2].includes("most") ? "atMost" : "atLeast", countParam: Number.isNaN(n) ? m[3] : undefined }, line } };
+  // `see items on row 1 has 3 rows`: the inner list of one outer row.
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+has\\s+(at\\s+most\\s+|at\\s+least\\s+)?(\\d+|${inComponent ? LOWER : "\\d+"})\\s+rows?$`)))) {
+    const n = /^\d+$/.test(m[4]) ? Number(m[4]) : NaN;
+    const where = at(m[2]);
+    return { step: { do: "see", target: m[1], ...(where ? { at: where } : {}), check: { is: "rows", count: n, cmp: !m[3] ? undefined : m[3].includes("most") ? "atMost" : "atLeast", countParam: Number.isNaN(n) ? m[4] : undefined }, line } };
   }
   // Numbers: `see stock is at least 0`, `see every row of shown: confirmed is at most capacity`.
   const NUMCMP = `(at\\s+least|at\\s+most|above|below)\\s+(-?\\d+(?:\\.\\d+)?|${QN})`;
@@ -1412,17 +1512,19 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return;
   }
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+${NUMCMP}$`))))
-    return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: numCheck(m[4], m[5]), line } };
+    return { step: { do: "see", target: m[1], at: at(m[2]), check: numCheck(m[3], m[4]), line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`))))
-    return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: m[4] as "shown" }, line } };
+    return { step: { do: "see", target: m[1], at: at(m[2]), check: { is: m[3] as "shown" }, line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s*=\\s*(.+)$`)))) {
-    const lit = parseLiteral(m[4]);
+    const lit = parseLiteral(m[3]);
+    // `see x.body.f = nothing`: an answer's (or event's) value that is nothing, written as `null`.
+    if (lit?.k === "nothing" && !m[2] && /(^|\.)body\b/.test(m[1])) return { step: { do: "see", target: m[1], check: { is: "eq", value: "nothing", nothing: true }, line } };
     if (!lit || lit.k === "emptyList" || lit.k === "nothing" || lit.k === "table" || lit.k === "list" || lit.k === "record") {
-      err(line, "SYNTAX", `\`${m[4]}\` is not a value to compare with; use a "string", a number or a choice value`, col);
+      err(line, "SYNTAX", `\`${m[3]}\` is not a value to compare with; use a "string", a number or a choice value${lit?.k === "nothing" ? " (`= nothing` is for a value in an answer or an event: `see x.body.f = nothing`)" : ""}`, col);
       return;
     }
     const value = lit.k === "text" ? lit.v : lit.k === "number" ? lit.raw : lit.k === "bool" ? String(lit.v) : lit.v;
-    return { step: { do: "see", target: m[1], at: at(m[2], m[3]), check: { is: "eq", value }, line } };
+    return { step: { do: "see", target: m[1], at: at(m[2]), check: { is: "eq", value }, line } };
   }
   const word = t.split(/\s+/)[0];
   err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart", "steer", "open", "go back"])}`, col);
@@ -1436,8 +1538,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   const valueOwner = new Map<string, ChoiceDecl>();
   const typeNames = new Set<string>([app.name]);
 
+  const reservedSaid = new Set<string>(); // a job's state is also its screen: one name, one line, said once
   const checkReserved = (name: string, line: number) => {
-    for (const part of name.split(".")) if (RESERVED.has(part)) err(line, "RESERVED", `\`${part}\` is reserved; pick another name`);
+    for (const part of name.split("."))
+      if (RESERVED.has(part) && !reservedSaid.has(`${line}|${part}`)) (reservedSaid.add(`${line}|${part}`), err(line, "RESERVED", `\`${part}\` is reserved; pick another name`));
   };
   // In an api, `@path.x` / `@query.x` / `@body.x` name a request's parts: state and derived values
   // cannot take those names (a record field can: it is read through its row, never as `@body.x`).
@@ -1456,7 +1560,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     checkReserved(c.name, c.line);
   }
   for (const c of app.choices) {
+    const listed = new Set<string>();
     for (const v of c.values) {
+      // A value listed twice in one choice is said once, as that; in another choice, as the clash.
+      if (listed.has(v)) continue;
+      listed.add(v);
+      const times = c.values.filter((x) => x === v).length;
+      if (times > 1) err(c.line, "DUPLICATE", `value \`${v}\` is listed ${times} times in choice ${c.name}; list each value once`);
       if (valueOwner.has(v)) err(c.line, "DUPLICATE", `value \`${v}\` is already used by choice ${valueOwner.get(v)!.name}; choice values must be unique across the app`);
       else if (typeNames.has(v)) err(c.line, "DUPLICATE", `value \`${v}\` clashes with a type name`);
       valueOwner.set(v, c);
@@ -1471,6 +1581,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     checkReserved(r.name, r.line);
     if (r.min !== undefined && r.max !== undefined && r.min > r.max) err(r.line, "BAD_BINDING", `${r.name}: from ${r.min} is above to ${r.max}`);
   }
+  const badKeys = new Set<string>();
   const checkType = (t: Type, line: number): boolean => {
     if (t.k === "List" || t.k === "Maybe") return checkType(t.of, line);
     if (t.k === "Ref") {
@@ -1487,7 +1598,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       const k = key.type.k === "Named" ? REFINED.get(key.type.name)?.base : key.type.k;
       if (k !== "Int" && k !== "Text") {
-        err(key.line, "TYPE", `${t.name}'s key \`${key.name}\` is ${typeToString(key.type)}: a key is an Int or a Text, always there`);
+        if (!badKeys.has(t.name)) err(key.line, "TYPE", key.type.k === "Ref" || (key.type.k === "Maybe" && key.type.of.k === "Ref") ? `${t.name}'s key \`${key.name}\` is ${typeToString(key.type)}: a key is an Int or a Text of its own, never a reference to another row` : `${t.name}'s key \`${key.name}\` is ${typeToString(key.type)}: a key is an Int or a Text, always there`);
+        badKeys.add(t.name); // said once, however many fields refer to the record
         return false;
       }
       t.key = key.type;
@@ -1499,6 +1611,37 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     }
     return true;
   };
+  // A row's inner list in a seed table: `[{ id = 1, label = "Milk" }, …]`. Each record has only the
+  // inner record's fields, with values that fit (omitted fields take their defaults), and no two
+  // share a key within the row: the harness finds an inner row by its key within its parent.
+  const innerList = (cell: Extract<Literal, { k: "list" }>, t: Type, what: string, line: number) => {
+    const inner = t.k === "Maybe" ? t.of : t;
+    if (inner.k !== "List") return err(line, "BAD_BINDING", `${what} is ${typeToString(t)}, not a list`);
+    const rec = inner.of.k === "Named" ? records.get(inner.of.name) : undefined;
+    const keyField = rec?.fields.find((x) => x.name === (rec.key ?? "id"));
+    const keys = new Map<string, number>();
+    cell.items.forEach((item, n) => {
+      if (!rec) {
+        if (!literalFits(item, inner.of, choices)) err(line, "TYPE", `${what}: item ${n + 1} must be ${typeToString(inner.of)}`);
+        return;
+      }
+      if (item.k !== "record") return err(line, "TYPE", `${what}: item ${n + 1} must be a ${rec.name}, written \`{ ${rec.fields.map((x) => `${x.name} = …`).slice(0, 2).join(", ")} }\``);
+      for (const fv of item.fields) {
+        const field = rec.fields.find((x) => x.name === fv.name);
+        if (!field) err(line, "UNKNOWN_NAME", `${what}, item ${n + 1}: ${rec.name} has no field \`${fv.name}\`${suggest(fv.name, rec.fields.map((x) => x.name))}`);
+        else if (fv.value.k === "list" || fv.value.k === "record") err(line, "TYPE", `${what}: \`${fv.name}\` of item ${n + 1} must be ${typeToString(field.type)}`);
+        else if (!literalFits(fv.value, field.type, choices)) err(line, "TYPE", `${what}: \`${fv.name}\` of item ${n + 1} must be ${typeToString(field.type)}`);
+      }
+      for (const rf of rec.fields)
+        if (!item.fields.some((x) => x.name === rf.name) && rf.default === undefined && rf.type.k !== "Maybe") err(line, "BAD_BINDING", `${what}: item ${n + 1} needs \`${rf.name}\` (${rec.name}.${rf.name} has no default)`);
+      const k = keyField && item.fields.find((x) => x.name === keyField.name)?.value;
+      if (k && k.k !== "list" && k.k !== "record") {
+        const v = JSON.stringify("v" in k ? k.v : k.k);
+        if (keys.has(v)) err(line, "DUPLICATE", `${what}: items ${keys.get(v)! + 1} and ${n + 1} have ${keyField!.name} ${v.replace(/^"|"$/g, "")}; an inner row's key is unique within its row`);
+        else keys.set(v, n);
+      }
+    });
+  };
   // The field's type is checked (and reported) once, by the caller: `typeOk` is its result.
   const checkDefault = (f: Field, typeOk: boolean) => {
     if (!f.default || !typeOk) return;
@@ -1506,13 +1649,14 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       const table = f.default;
       const rec = f.type.k === "List" && f.type.of.k === "Named" ? records.get(f.type.of.name) : undefined;
       if (!rec) return err(f.line, "BAD_BINDING", `a table fills a \`List <Record>\`; \`${f.name}\` is ${typeToString(f.type)}`);
-      for (const col of table.columns) if (!rec.fields.some((x) => x.name === col)) err(f.line + 1, "UNKNOWN_NAME", `${rec.name} has no field \`${col}\`${suggest(col, rec.fields.map((x) => x.name))}`);
+      for (const col of new Set(table.columns)) if (!rec.fields.some((x) => x.name === col)) err(f.line + 1, "UNKNOWN_NAME", `${rec.name} has no field \`${col}\`${suggest(col, rec.fields.map((x) => x.name))}`);
       for (const rf of rec.fields)
         if (!table.columns.includes(rf.name) && !rf.default && rf.type.k !== "Maybe") err(f.line + 1, "BAD_BINDING", `the table needs a \`${rf.name}\` column (${rec.name}.${rf.name} has no default)`);
       table.rows.forEach((row, i) =>
         row.forEach((cell, j) => {
           const rf = rec.fields.find((x) => x.name === table.columns[j]);
-          if (rf && !literalFits(cell, rf.type, choices)) err(f.line + 2 + i, "BAD_BINDING", `\`${rf.name}\` must be ${typeToString(rf.type)}`);
+          if (rf && cell.k === "list") innerList(cell, rf.type, `\`${rf.name}\` of row ${i + 1}`, f.line + 2 + i);
+          else if (rf && !literalFits(cell, rf.type, choices)) err(f.line + 2 + i, "BAD_BINDING", `\`${rf.name}\` must be ${typeToString(rf.type)}`);
         }),
       );
       return;
@@ -1520,6 +1664,11 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     if (!literalFits(f.default, f.type, choices)) err(f.line, "BAD_BINDING", `default does not fit type ${typeToString(f.type)}`);
   };
 
+  // A record may hold a list of records (a task's items); that inner record may not hold one itself.
+  const recordList = (t: Type): string | undefined => {
+    const inner = t.k === "Maybe" ? t.of : t;
+    return inner.k === "List" && inner.of.k === "Named" && records.has(inner.of.name) ? inner.of.name : undefined;
+  };
   for (const r of app.records) {
     const seen = new Set<string>();
     for (const f of r.fields) {
@@ -1528,6 +1677,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       checkReserved(f.name, f.line);
       checkDefault(f, checkType(f.type, f.line));
       if (f.type.k === "Named" && f.type.name === r.name) err(f.line, "BAD_BINDING", "a record cannot contain itself");
+      const inner = recordList(f.type);
+      const deeper = inner ? records.get(inner)!.fields.find((x) => recordList(x.type)) : undefined;
+      if (inner && deeper && f.line < LINE_BASE)
+        err(f.line, "NOT_YET", inner === r.name ? `\`${f.name}: ${typeToString(f.type)}\`: a record that holds a list of its own kind (a tree) is not in the language yet` : `\`${f.name}: ${typeToString(f.type)}\`: a ${inner} holds a list of records itself (\`${deeper.name}: ${typeToString(deeper.type)}\`), and lists three levels deep are not in the language yet; keep the deepest part in a list of its own with a \`ref\` back`);
     }
   }
   const state = new Map<string, Field>();
@@ -1553,25 +1706,37 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   if (app.profile === "api") return checkApi(app, err, warn, { records, choices, state, derived, checkType, checkReserved });
   if (app.endpoints?.length) err(app.endpoints[0].line, "SYNTAX", "endpoints belong to the api profile: add `profile api`");
 
-  // Screen: scopes and bindings.
+  // Screen: scopes and bindings. `path` is the lists an element is in, outermost first: a row
+  // element of `tasks` has [tasks]; one of `items` inside a task's row has [tasks, items].
   const lists: Element[] = [];
   const PLAIN = ["Text", "Int", "Decimal", "Bool", "Date", "DateTime"];
-  const all: { el: Element; list?: Element }[] = [];
-  const walk = (els: Element[], list: Element | undefined, scope: Map<string, Element>) => {
+  const all: { el: Element; list?: Element; path: Element[] }[] = [];
+  // A row's scope holds the names of its inner rows too (`inner`: from the rows of that inner list),
+  // so `on click removeItem` names one element; two inner lists of one row are apart, as two lists are.
+  type Named = { el: Element; list?: Element; inner?: Element };
+  const walk = (els: Element[], path: Element[], scope: Map<string, Named>) => {
+    const list = path[path.length - 1];
     for (const el of els) {
       if (el.kind !== "heading") {
-        if (scope.has(el.name)) err(el.line, "DUPLICATE", `element \`${el.name}\` is already on the screen${list ? ` in list ${list.name}` : ""}`);
-        scope.set(el.name, el);
+        const before = scope.get(el.name);
+        const shared = "a row and the rows of its inner lists share one scope, so a handler (`on click …`) names one element; give one of them another name";
+        if (before) err(el.line, "DUPLICATE", before.inner ? `element \`${el.name}\` is already in the rows of list ${before.inner.name}, inside this row of list ${list!.name}: ${shared}` : before.list && list && before.list !== list ? `element \`${el.name}\` is already in this row of list ${before.list.name}, around list ${list.name}: ${shared}` : `element \`${el.name}\` is already on the screen${list ? ` in list ${list.name}` : ""}`);
+        scope.set(el.name, { el, list });
         checkReserved(el.name, el.line);
-        all.push({ el, list });
+        all.push({ el, list, path });
       }
       if (el.kind === "list") {
         lists.push(el);
         // A list of plain values shows each value as a row: it has no row elements to declare.
         if (PLAIN.includes(el.of!)) {
           if (el.children.length) err(el.line, "SYNTAX", `\`list ${el.name} of ${el.of}\` shows each value as a row; it has no row elements to declare`);
-        } else walk(el.children, el, new Map());
-      } else if (el.kind === "section") walk(el.children, list, scope);
+        } else if (!path.length) walk(el.children, [el], new Map());
+        else {
+          const child = new Map([...scope].filter(([, v]) => !v.inner));
+          walk(el.children, [...path, el], child);
+          for (const [n, v] of child) if (!scope.has(n)) scope.set(n, { ...v, inner: el });
+        }
+      } else if (el.kind === "section") walk(el.children, path, scope);
     }
   };
   // A name is unique within a screen (and within a list), but two screens may reuse one: the
@@ -1581,7 +1746,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     const k = el.screen ?? "";
     (byScreen.get(k) ?? byScreen.set(k, []).get(k)!).push(el);
   }
-  for (const els of byScreen.values()) walk(els, undefined, new Map());
+  for (const els of byScreen.values()) walk(els, [], new Map());
   // A reused name is one element on several screens: one handler and one event serve them all, so
   // the kind must agree (a `button back` here and a `field back` there would share nothing sensible).
   const kindOf = new Map<string, Element>();
@@ -1593,9 +1758,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   }
   if (!app.screen.length) err(1, "SYNTAX", "the app has no `screen`");
 
-  for (const { el, list } of all) {
-  }
-  for (const { el, list } of all) {
+  for (const { el, list, path } of all) {
     const rowType = list ? records.get(list.of!) : undefined;
     const rowField = rowType?.fields.find((f) => f.name === el.name);
     const st = state.get(el.name);
@@ -1616,9 +1779,12 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           const f = list ? rowField : st;
           if (!f || f.type.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits \`${el.name}\` in ${where}, which must be Text${list ? ` (add \`${el.name}: Text\` to ${list.of})` : ""}`);
           const src = state.get(el.from.list);
-          const srcRec = src && src.type.k === "List" && src.type.of.k === "Named" ? records.get(src.type.of.name) : undefined;
-          if (!src && !derived.has(el.from.list)) err(el.line, "UNKNOWN_NAME", `no state or derive \`${el.from.list}\``);
-          else if (src && !srcRec) err(el.line, "BAD_BINDING", `\`${el.from.list}\` must be a list of records`);
+          // Inside an inner row the options may also come from a list field of a row it is in (the outer row's).
+          const rowSrc = path.slice(0, -1).map((l) => records.get(l.of!)?.fields.find((x) => x.name === el.from!.list)).find((x) => !!x);
+          const srcType = src?.type ?? rowSrc?.type;
+          const srcRec = srcType && srcType.k === "List" && srcType.of.k === "Named" ? records.get(srcType.of.name) : undefined;
+          if (!src && !rowSrc && !derived.has(el.from.list)) err(el.line, "UNKNOWN_NAME", `no state or derive \`${el.from.list}\`${path.length > 1 ? `, and no field \`${el.from.list}\` of ${path.slice(0, -1).map((l) => l.of).join(" or ")}` : ""}`);
+          else if (srcType && !srcRec) err(el.line, "BAD_BINDING", `\`${el.from.list}\` must be a list of records`);
           else if (srcRec && srcRec.fields.find((x) => x.name === el.from!.field)?.type.k !== "Text") err(el.line, "BAD_BINDING", `${srcRec.name} needs a Text field \`${el.from.field}\``);
         } else {
           const f = list ? rowField : st;
@@ -1637,7 +1803,14 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         break;
       case "list":
         if (!PLAIN.includes(el.of!) && !records.has(el.of!)) err(el.line, "UNKNOWN_NAME", `unknown record or value type \`${el.of}\`${suggest(el.of!, [...records.keys(), ...PLAIN])}`);
-        if (!el.expr) {
+        // A table inside a table's row is an accessibility anti-pattern; a treegrid is its own presentation (later).
+        if (list && el.as === "table" && list.as === "table") err(el.line, "NOT_YET", `\`list ${el.name} … as table\` inside a row of the table ${list.name}: a table inside a table is not in the language yet; without \`as\` the inner list sits in a cell of its own`);
+        if (!el.expr && list) {
+          // A list inside a row shows the row item's field (as `text x` shows the row's field `x`).
+          if (!rowField) err(el.line, "BAD_BINDING", `\`list ${el.name} of ${el.of}\` inside list ${list.name} shows the row's field \`${el.name}\`, which ${list.of} does not have (add \`${el.name}: List ${el.of} = []\` to ${list.of}), or write \`list ${el.name} of ${el.of} = …\``);
+          else if (rowField.type.k !== "List") err(el.line, "BAD_BINDING", `\`${list.of}.${el.name}\` must be \`List ${el.of}\` to be shown as a list (is ${typeToString(rowField.type)})`);
+          else if (typeToString(rowField.type.of) !== el.of) err(el.line, "TYPE", `\`list ${el.name} of ${el.of}\`: ${list.of}.${el.name} is ${typeToString(rowField.type)}, so its rows are ${typeToString(rowField.type.of)}s`);
+        } else if (!el.expr) {
           const f = st;
           if (!f && !derived.has(el.name)) err(el.line, "UNKNOWN_NAME", `\`list ${el.name}\` shows nothing: declare state or derive \`${el.name}\`, or write \`list ${el.name} of ${el.of} = …\``);
           else if (f && !(f.type.k === "List" && typeToString(f.type.of) === el.of))
@@ -1666,7 +1839,20 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   }
 
   // Handlers.
-  const findEl = (name: string): { el: Element; list?: Element }[] => all.filter((a) => a.el.name === name);
+  const findEl = (name: string): { el: Element; list?: Element; path: Element[] }[] => all.filter((a) => a.el.name === name);
+  // A step's rows, innermost first (`on row 2 on row 1`), against the lists an element is in.
+  const levelsOf = (a?: RowRef): RowRef[] => {
+    const out: RowRef[] = [];
+    for (let x = a; x; x = x.parent) out.push(x);
+    return out;
+  };
+  const fitsRows = (c: { path: Element[] }, a?: RowRef) => {
+    const lv = levelsOf(a);
+    const inner = [...c.path].reverse();
+    return lv.length === inner.length && lv.every((x, i) => !x.list || x.list === inner[i].name);
+  };
+  const inWords = (path: Element[]) => [...path].reverse().map((l, i) => `${i ? "inside " : ""}list ${l.name}`).join(", ");
+  const rowsWords = (path: Element[]) => path.map(() => "on row 1").join(" ");
   const verbKind = VERB_KINDS as Record<string, ElementKind>;
   const handled = new Set<string>();
   for (const h of app.handlers) {
@@ -1686,7 +1872,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       // `on event tickets.ticketCreated`: a client alias and an event of its contract.
       const [alias, ev] = h.target.split(".");
       const client = app.clients?.find((c) => c.alias === alias);
-      if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
+      if (ev === undefined) err(h.line, "SYNTAX", `\`on event\` names a client's event: \`on event ${alias}.<event>\``);
+      else if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
       else if (!client.contract.events?.some((e) => e.name === ev)) err(h.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no event \`${ev}\`${suggest(ev ?? "", client.contract.events?.map((e) => e.name) ?? [])}`);
       const key = `event ${h.target}`;
       if (handled.has(key)) err(h.line, "DUPLICATE", `there is already an \`on ${key}\``);
@@ -1697,7 +1884,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       // `on answer tickets.listTickets`: a client alias and an endpoint of its contract.
       const [alias, ep] = h.target.split(".");
       const client = app.clients?.find((c) => c.alias === alias);
-      if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
+      if (ep === undefined) err(h.line, "SYNTAX", `\`on answer\` names a client's endpoint: \`on answer ${alias}.<endpoint>\``);
+      else if (!client) err(h.line, "UNKNOWN_NAME", `no client \`${alias}\`; declare it with \`uses <contract> as ${alias}\``);
       else if (!client.contract.endpoints?.some((e) => e.name === ep)) err(h.line, "UNKNOWN_NAME", `contract ${client.contract.name} has no endpoint \`${ep}\`${suggest(ep ?? "", client.contract.endpoints?.map((e) => e.name) ?? [])}`);
       const key = `answer ${h.target}`;
       if (handled.has(key)) err(h.line, "DUPLICATE", `there is already an \`on ${key}\``);
@@ -1761,6 +1949,9 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   const seen = new Set<string>(); // "list.name" or "name" checked by some `see`
   const exNames = new Set<string>();
   const snapshots = new Set<string>();
+  const navCache = new Map<string, string | undefined>();
+  const clickHandlers = new Map<string, (typeof app.handlers)[number]>();
+  for (const h of app.handlers) if (h.verb === "click" && h.target && !clickHandlers.has(h.target)) clickHandlers.set(h.target, h);
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
     if (ex.line === 0 && !ex.steps.length) continue;
     if (exNames.has(ex.name)) err(ex.line, "DUPLICATE", `example "${ex.name}" declared twice`);
@@ -1776,7 +1967,14 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     // `if` or a loop depends on the state, so after it the screen is unknown (and not checked) until
     // an `open` or a certain move says again.
     const navOf = (button: string): string | "back" | "unknown" | undefined => {
-      const h = app.handlers.find((x) => x.verb === "click" && x.target === button);
+      // Once per button, for all examples: a long example clicks the same buttons many times.
+      if (navCache.has(button)) return navCache.get(button);
+      const found = navOfButton(button);
+      navCache.set(button, found);
+      return found;
+    };
+    const navOfButton = (button: string): string | "back" | "unknown" | undefined => {
+      const h = clickHandlers.get(button);
       const dest = (text: string) => text.match(/\bgo\s+to\s+@?([a-z]\w*)/i)?.[1] ?? (/\bgo\s+back\b/.test(text) ? "back" : undefined);
       const nested = (b: Stmt[]): boolean => b.some((st) => (st.k === "if" ? st.branches.some((br) => nested(br.body) || br.body.some((x) => "text" in x && dest(x.text as string))) : st.k === "for" ? st.body.some((x) => "text" in x && dest(x.text as string)) || nested(st.body) : false));
       if (h?.body && nested(h.body)) return "unknown";
@@ -1818,6 +2016,10 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         else if (s.do === "open") goTo(app.screens.find((sc) => screenMatch(sc.path, s.path))?.name);
         else goBack();
         continue;
+      }
+      if (s.do === "random") {
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
+        continue; // checked against the spec's draws (compiler/draws.ts)
       }
       if (s.do === "steer") {
         const client = app.clients?.find((c) => c.alias === s.api);
@@ -1876,13 +2078,20 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         }
         continue;
       }
-      const cands = findEl(s.target).filter((c) => onScreen(c.el) && (at ? c.list && (!at.list || c.list.name === at.list) : !c.list));
+      const cands = findEl(s.target).filter((c) => onScreen(c.el) && fitsRows(c, at));
       if (!cands.length) {
         const any = findEl(s.target);
         const elsewhere = app.screens?.length && any.find((a) => !onScreen(a.el));
+        const levels = levelsOf(at);
+        const deep = any.find((a) => a.path.length > 1);
         if (elsewhere) err(s.line, "STEP", `\`${s.target}\` is on screen \`${elsewhere.el.screen}\`, not \`${current}\`; \`open\` or \`go to\` it first`);
         else if (any.length && at && any.every((a) => !a.list)) err(s.line, "STEP", `\`${s.target}\` is not inside a list; drop \`on row …\``);
-        else if (any.length && !at) err(s.line, "STEP", `\`${s.target}\` is inside list ${any[0].list!.name}; say which row: \`… on row 1\``);
+        else if (any.length && !at) err(s.line, "STEP", `\`${s.target}\` is inside ${inWords(any[0].path)}; say which row${any[0].path.length > 1 ? "s (one `on row` per level, the innermost first)" : ""}: \`… ${rowsWords(any[0].path)}\``);
+        else if (any.length && any.every((a) => a.path.length !== levels.length)) {
+          const a = any[0];
+          err(s.line, "STEP", `\`${s.target}\` is inside ${inWords(a.path)}: ${a.path.length > levels.length ? `say which rows, one \`on row\` per level, the innermost first: \`… ${rowsWords(a.path)}\`` : `that is ${a.path.length > 1 ? `${a.path.length} levels of rows, so one \`on row\` per level` : "one level of rows, so one `on row`"}: \`… ${rowsWords(a.path)}\``}`);
+        } else if (deep && levels.length === deep.path.length && levels.some((x, i) => x.list && [...deep.path].reverse().some((l, j) => j !== i && l.name === x.list)))
+          err(s.line, "STEP", `\`${s.target}\` is inside ${inWords(deep.path)}: rows are named innermost first: \`… ${[...deep.path].reverse().map((l) => `on row 1 of ${l.name}`).join(" ")}\``);
         else err(s.line, "UNKNOWN_NAME", `no element \`${s.target}\`${at?.list ? ` in list ${at.list}` : ""}${suggest(s.target, all.map((a) => a.el.name))}`);
         continue;
       }
@@ -1891,8 +2100,9 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
         else err(s.line, "STEP", `\`${s.target}\` is ambiguous: it is declared more than once`);
         continue;
       }
-      const { el, list } = cands[0];
-      if (at) at.list = list!.name;
+      const { el, list, path } = cands[0];
+      // Each level of rows names its list (the printed spec says it): innermost first.
+      levelsOf(at).forEach((x, i) => (x.list = path[path.length - 1 - i].name));
       const need = (kinds: ElementKind[], what: string) => {
         if (!kinds.includes(el.kind)) err(s.line, "STEP", `cannot ${what} \`${el.name}\`: it is a ${el.kind}`);
       };
@@ -1955,6 +2165,24 @@ function checkLayer(app: App, err: Err, warn: Err, checkType: (t: Type, line: nu
   for (const p of app.params ?? []) checkType(p.type, p.line);
   for (const p of app.provides ?? []) checkType(p.type, p.line);
   for (const b of app.exampleConfig ?? []) if (!params.has(b.name)) err(b.line, "UNKNOWN_NAME", `the layer has no param \`${b.name}\`${suggest(b.name, [...params.keys()])}`);
+  // \`acts as\`: a Text param names the header, a list param of records holds each key's secret and owner.
+  const acts = app.actsAs;
+  if (acts) {
+    const header = params.get(acts.header);
+    const list = params.get(acts.list);
+    const rec = list?.type.k === "List" && list.type.of.k === "Named" ? app.records.find((r) => r.name === (list.type as { of: { name: string } }).of.name) : undefined;
+    if (!app.provides?.some((p) => p.name === "caller")) err(acts.line, "ACCESS", "`acts as @caller`: this layer does not provide `caller`");
+    if (!header) err(acts.line, "UNKNOWN_NAME", `the layer has no param \`${acts.header}\` (the header's name)${suggest(acts.header, [...params.keys()])}`);
+    else if (header.type.k !== "Text") err(acts.line, "TYPE", `\`@${acts.header}\` names the header, so it is Text, not ${typeToString(header.type)}`);
+    if (!list) err(acts.line, "UNKNOWN_NAME", `the layer has no param \`${acts.list}\` (the keys)${suggest(acts.list, [...params.keys()])}`);
+    else if (!rec) err(acts.line, "TYPE", `\`@${acts.list}\` holds the keys: a list of records, not ${typeToString(list.type)}`);
+    else
+      for (const f of [acts.secret, acts.owner]) {
+        const field = rec.fields.find((x) => x.name === f);
+        if (!field) err(acts.line, "UNKNOWN_NAME", `${rec.name} has no field \`${f}\``);
+        else if (field.type.k !== "Text") err(acts.line, "TYPE", `${rec.name}.${f} is ${typeToString(field.type)}, not Text`);
+      }
+  }
   const bound = new Set((app.exampleConfig ?? []).map((b) => b.name));
   for (const p of app.params ?? []) if (!p.default && !bound.has(p.name)) err(p.line, "BAD_BINDING", `param \`${p.name}\` has no default: give its value for the examples under \`examples with\``);
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }])
@@ -2042,9 +2270,24 @@ function checkApi(
     return cur;
   };
   const checkBodyEq = (target: string, s: Extract<Step, { do: "see" }>, t: Type) => {
+    if (absentOnNothing(target, s, [t]) || nothingOnT(target, s, [t])) return;
     // The value compared with must be one the field can hold: `see x.body.id = "ten"` is a mistake.
     if (s.check.is === "eq" && !(t.k === "Named" && ctx.records.has(t.name) ? (s.check as { value: string }).value.startsWith("{") : valueFits(t, (s.check as { value: string }).value, ctx.choices)))
       err(s.line, "STEP", `\`${target}\` is ${typeToString(t)}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
+  };
+  // Nothing on the wire is `null`, never a missing key: a declared `T or nothing` is always there, so
+  // `is absent` can never hold for it; `= nothing` asks. (`is absent` stays for headers, events and
+  // paths outside the declared type.)
+  const absentOnNothing = (target: string, s: Extract<Step, { do: "see" }>, found: Type[]): boolean => {
+    if (s.check.is !== "hidden" || s.every || !found.some((t) => t.k === "Maybe")) return false;
+    err(s.line, "STEP", `\`is absent\` is written \`= nothing\` here: \`${target}\` is ${typeToString(found.find((t) => t.k === "Maybe")!)}, which is always in the answer (nothing is written as \`null\`, never left out); \`is absent\` is only for headers, events and paths outside the declared type (\`intent fix\` rewrites it)`);
+    return true;
+  };
+  // `= nothing` on a value that is never nothing (a `T`): it can never hold.
+  const nothingOnT = (target: string, s: Extract<Step, { do: "see" }>, found: Type[]): boolean => {
+    if (s.check.is !== "eq" || !s.check.nothing || found.some((t) => t.k === "Maybe")) return false;
+    err(s.line, "STEP", `\`${target}\` is ${typeToString(found[0])}, never nothing: \`= nothing\` can never hold`);
+    return true;
   };
   // Examples: `call` an endpoint with its params; `see <endpoint>.status|body…`; `see <event>.body…` (what the latest call published).
   for (const ex of [...app.examples, { name: "(always)", steps: app.always, line: 0 }]) {
@@ -2069,6 +2312,8 @@ function checkApi(
         continue;
       } else if (s.do === "see" && s.target.startsWith("request.")) {
         if (!RAW_TARGET.test(s.target)) err(s.line, "UNKNOWN_NAME", "a raw answer has `request.status`, `request.header.<name>` and `request.body…`");
+      } else if (s.do === "see" && /^audit\b/.test(s.target)) {
+        continue; // the access audit (compiler/access.ts checks it)
       } else if (s.do === "see" && /^[a-z]\w*\.header\./i.test(s.target)) {
         if (!eps.has(s.target.split(".")[0])) err(s.line, "UNKNOWN_NAME", `\`${s.target.split(".")[0]}\` is not an endpoint`);
       } else if (s.do === "see") {
@@ -2123,6 +2368,7 @@ function checkApi(
             const results = types.map((t) => walk(t, rest, s.check.is === "rows"));
             const found = results.filter((r): r is Type => typeof r !== "string");
             if (!found.length) err(s.line, "UNKNOWN_NAME", `\`${target}${s.every ? `: ${s.target}` : ""}\`: ${results[0]}`);
+            else if (absentOnNothing(target, s, found) || nothingOnT(target, s, found)) continue;
             // The value compared with must be one the field can hold: `see x.body.id = "ten"` is a mistake.
             else if (s.check.is === "eq" && !found.some((t) => (t.k === "Named" && ctx.records.has(t.name) ? (s.check as { value: string }).value.startsWith("{") : valueFits(t, (s.check as { value: string }).value, ctx.choices))))
               err(s.line, "STEP", `\`${target}${s.every ? `: ${s.target}` : ""}\` is ${typeToString(found[0])}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
@@ -2132,7 +2378,9 @@ function checkApi(
         if (!usesClock(app)) err(s.line, "STEP", "`wait` moves the clock on: this api reads no `@now` or `@today`, and has no `every …` work");
       } else if (s.do === "restart") {
         if (!app.state.some((f) => f.stored)) warn(s.line, "STEP", "`restart` starts the api again, but no state is `stored`: everything starts from its default");
-      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\`, \`see\`, \`wait\` and \`restart\`, not \`${s.do}\``);
+      } else if (s.do === "random") {
+        if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks"); // steering is checked against the draws (compiler/draws.ts)
+      } else if (s.do !== "snapshot") err(s.line, "STEP", `an api example uses \`call\`, \`see\`, \`wait\`, \`restart\` and \`steer random\`, not \`${s.do}\``);
     }
   }
 }
@@ -2181,6 +2429,8 @@ function valueFits(t: Type, v: string, choices: Map<string, ChoiceDecl>): boolea
 
 export function satisfies(r: RefinedDecl, v: string | number | undefined): boolean {
   if (v === undefined) return false;
+  // A code: exactly n characters of its alphabet (literals are written in the normal form: capitals for `unambiguous`).
+  if (r.code) return typeof v === "string" && [...v].length === r.code.n && [...v].every((c) => r.code!.chars.includes(c));
   if (r.pattern !== undefined) return typeof v === "string" && new RegExp(`^(?:${r.pattern})$`).test(v);
   if (r.base === "Text") return typeof v === "string" && (r.minLength === undefined || [...v].length >= r.minLength) && (r.maxLength === undefined || [...v].length <= r.maxLength);
   if (typeof v !== "number") return false;
@@ -2189,23 +2439,6 @@ export function satisfies(r: RefinedDecl, v: string | number | undefined): boole
 
 // ---------------------------------------------------------------- hints
 
-function suggest(word: string, candidates: string[]): string {
-  let best = "";
-  let bestD = Infinity;
-  for (const c of candidates) {
-    const d = lev(word.toLowerCase(), c.toLowerCase());
-    if (d < bestD) [best, bestD] = [c, d];
-  }
-  return best && bestD <= Math.max(1, Math.floor(word.length / 3)) && best !== word ? ` (did you mean \`${best}\`?)` : "";
-}
-
-function lev(a: string, b: string): number {
-  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
-  for (let j = 1; j <= b.length; j++) d[0][j] = j;
-  for (let i = 1; i <= a.length; i++)
-    for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-  return d[a.length][b.length];
-}
 
 export function formatDiagnostics(file: string, src: string, diags: Diagnostic[], sources?: { file: string; text: string }[]): string {
   const text = (f: string) => (sources?.find((s) => s.file === f)?.text ?? src).split(/\r?\n/);

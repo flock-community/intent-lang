@@ -12,7 +12,8 @@ export type Node =
   | { k: "list"; n: string; rows: { key: string; c: Node[] }[] }
   | { k: "section"; n: string; label: string; c: Node[] };
 
-export type Wire = { on: string; target: string; key?: string; text?: string; value?: string; answer?: unknown; event?: unknown; clock?: unknown };
+// `key`: the row's key; `keys`: a row inside a row's path of keys, the outer row's first (`key` is the last).
+export type Wire = { on: string; target: string; key?: string; keys?: string[]; text?: string; value?: string; answer?: unknown; event?: unknown; clock?: unknown };
 
 export interface Program<M> {
   init: () => M;
@@ -32,7 +33,7 @@ export function mount<M>(root: HTMLElement, p: Program<M>): (w: Wire) => void {
     const active = document.activeElement as HTMLInputElement | null;
     const focusId = active?.dataset?.id;
     const sel = active && "selectionStart" in active ? [active.selectionStart, active.selectionEnd] : null;
-    root.replaceChildren(el(p.render(model), dispatch, ""));
+    root.replaceChildren(el(p.render(model), dispatch, [], []));
     if (focusId) {
       const again = root.querySelector<HTMLInputElement>(`[data-id="${CSS.escape(focusId)}"]`);
       again?.focus();
@@ -44,18 +45,22 @@ export function mount<M>(root: HTMLElement, p: Program<M>): (w: Wire) => void {
   return dispatch;
 }
 
-function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HTMLElement {
+/** One node. `keys` are the keys of the rows it is in and `lists` their lists, outermost first: a row inside a row has two. */
+function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: string[]): HTMLElement {
   const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text !== undefined) e.textContent = text;
     return e;
   };
-  const target = (n: string) => (list ? `${list}.${n}` : n);
+  const target = (n: string) => [...lists, n].join(".");
+  const key = keys[keys.length - 1] ?? "";
+  // A row inside a row: the event carries the whole path of keys too.
+  const path = keys.length > 1 ? { keys } : {};
   switch (node.k) {
     case "screen": {
       const e = h("main", "screen");
-      e.append(h("h1", "", node.title), ...node.c.map((c) => el(c, dispatch, key, list)));
+      e.append(h("h1", "", node.title), ...node.c.map((c) => el(c, dispatch, keys, lists)));
       return e;
     }
     case "heading":
@@ -69,8 +74,8 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
       const wrap = h("label", "field");
       const input = h("input", "");
       input.value = node.v;
-      input.dataset.id = target(node.n) + key;
-      input.addEventListener("input", () => dispatch({ on: "input", target: target(node.n), key, text: input.value }));
+      input.dataset.id = target(node.n) + keys.join("/");
+      input.addEventListener("input", () => dispatch({ on: "input", target: target(node.n), key, ...path, text: input.value }));
       if (node.label) wrap.append(h("span", "", node.label));
       wrap.append(input);
       return wrap;
@@ -78,8 +83,8 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
     case "button": {
       const b = h("button", "button", node.label);
       b.disabled = !node.enabled;
-      b.dataset.id = target(node.n) + key;
-      b.addEventListener("click", () => dispatch({ on: "click", target: target(node.n), key }));
+      b.dataset.id = target(node.n) + keys.join("/");
+      b.addEventListener("click", () => dispatch({ on: "click", target: target(node.n), key, ...path }));
       return b;
     }
     case "checkbox": {
@@ -87,8 +92,8 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
       const box = h("input", "");
       box.type = "checkbox";
       box.checked = node.checked;
-      box.dataset.id = target(node.n) + key;
-      box.addEventListener("change", () => dispatch({ on: "toggle", target: target(node.n), key }));
+      box.dataset.id = target(node.n) + keys.join("/");
+      box.addEventListener("change", () => dispatch({ on: "toggle", target: target(node.n), key, ...path }));
       wrap.append(box);
       if (node.label) wrap.append(h("span", "", node.label));
       return wrap;
@@ -104,7 +109,7 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
       if (node.label) wrap.append(h("span", "", node.label));
       for (const o of node.options) {
         const b = h("button", o === node.v ? "option chosen" : "option", o);
-        b.addEventListener("click", () => dispatch({ on: "choose", target: target(node.n), key, value: o }));
+        b.addEventListener("click", () => dispatch({ on: "choose", target: target(node.n), key, ...path, value: o }));
         wrap.append(b);
       }
       return wrap;
@@ -113,7 +118,7 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
       const ul = h("ul", "list");
       for (const r of node.rows) {
         const li = h("li", "row");
-        li.append(...r.c.map((c) => el(c, dispatch, r.key, node.n)));
+        li.append(...r.c.map((c) => el(c, dispatch, [...keys, r.key], [...lists, node.n])));
         ul.append(li);
       }
       return ul;
@@ -121,7 +126,7 @@ function el(node: Node, dispatch: (w: Wire) => void, key: string, list = ""): HT
     case "section": {
       const s = h("section", "section");
       if (node.label) s.append(h("h2", "", node.label));
-      s.append(...node.c.map((c) => el(c, dispatch, key, list)));
+      s.append(...node.c.map((c) => el(c, dispatch, keys, lists)));
       return s;
     }
   }
@@ -135,6 +140,6 @@ h1{font-size:1.3rem;margin:0 0 12px}h2{font-size:1rem;margin:16px 0 6px}
 .button,.option{font:inherit;padding:5px 12px;margin:3px 4px 3px 0;border-radius:6px;border:1px solid #bbb;background:#fafafa;cursor:pointer}
 .button:disabled{opacity:.4;cursor:default}.option.chosen{background:#1d1d1b;color:#fff}
 .list{list-style:none;padding:0;margin:8px 0}.row{display:flex;gap:10px;align-items:center;padding:4px 0;border-bottom:1px solid #eee}
-.row .text{margin:0;flex:1}.select{margin:6px 0}.select span{margin-right:8px}
+.row .text{margin:0;flex:1}.row{flex-wrap:wrap}.row>.list{flex-basis:100%;margin:2px 0 2px 20px}.select{margin:6px 0}.select span{margin-right:8px}
 .text{margin:6px 0}.section{border-top:1px solid #eee;margin-top:10px}
 `;

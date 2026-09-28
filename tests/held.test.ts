@@ -4,6 +4,7 @@
 // with its key, and its real answer follows. The build here is a stand-in with the same interface as a
 // compiled one (test.mjs), so the driver's own behaviour is what is tested, without an LLM.
 import assert from "node:assert/strict";
+import { harnessKey } from "../compiler/keys.ts";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,7 +74,7 @@ try {
   // Allow: the permission lets the held call out, with the key it was held with; the real answer follows.
   assert.equal(shown[4].message, "201", "approved: the real answer");
   assert.deepEqual(shown[4].calls, ['pay.charge {"amount":500} → 201 (approved)']);
-  assert.equal(shown[4].heard, "held 0 | rejected 0 | held 0 | 201 pay-2", "held and rejected answers are status 0 and never sent; the approved call keeps its key (the second call's)");
+  assert.equal(shown[4].heard, `held 0 | rejected 0 | held 0 | 201 ${harnessKey("pay-2")}`, "held and rejected answers are status 0 and never sent; the approved call keeps its key (the second call's)");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

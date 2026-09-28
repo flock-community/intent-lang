@@ -25,6 +25,7 @@ component Counter {                                              # expect: UNUSE
 record Habit {
   id: Int
   name: Text
+  days: List Day = []
 }
 
 record Day {
@@ -36,7 +37,7 @@ state {
   habits: List Habit = table {
     id | name
     1  | "Walk"
-    2  | [1, 2]                                                  # expect: NOT_YET
+    2  | [1, 2]                                                  # expect: BAD_BINDING
   }
   days: List Day = []
 }
@@ -44,12 +45,21 @@ state {
 screen {
   list habits of Habit {
     text name
-    list days of Day {                                           # expect: NOT_YET
+    list days of Day {                                           # expect-not: NOT_YET
       text day
+      list more of Day {                                         # expect: NOT_YET
+        text habit
+      }
     }
   }
   list days of Day {                                             # expect-not: NOT_YET
     text day
+  }
+  list sheet of Habit = @habits as table {
+    text habitName = "{name}"
+    list days of Day as table {                                  # expect: NOT_YET
+      text day
+    }
   }
 }
 

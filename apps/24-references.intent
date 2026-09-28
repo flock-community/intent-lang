@@ -1,7 +1,7 @@
 app References {
-  "A comment thread: each comment refers to a ticket by key, and the reference is checked against the ticket's key."
+  "A comment thread: each comment refers to a ticket by key, and the reference is checked against the ticket's key. The open ticket is a reference too: it is followed to show the ticket, and says so when the ticket was removed."
 }
-language v49
+language v66
 design {
   look "A calm, modern admin. White surfaces on a light neutral background, one brand color, muted secondary text."
   brand: indigo
@@ -31,11 +31,10 @@ state {
     1      | "Looking into the reset flow."
     2      | "Corrected and re-sent."
   }
-  chosen: Int or nothing = nothing
+  chosen: ref Ticket or nothing = nothing
 }
 
 derive {
-  current = the ticket whose @id is @chosen, or nothing when there is no @chosen
   thread = the @comments whose @ticket is @chosen, in their order, and none when there is no @chosen
 }
 
@@ -45,12 +44,13 @@ screen {
     list tickets of Ticket as table {
       text subject
       button open "Open"
+      button remove "Remove"
     }
   }
   section detail as card {
     visible when there is a @chosen
-    text title = the @subject of @current
-    text meta = "Ticket #{@id of @current}"
+    text title = @chosen's @subject, or "(removed)" when there is none
+    text meta = "Ticket #{@chosen}"
     list thread of Comment as timeline {
       text body
     }
@@ -62,6 +62,10 @@ screen {
 
 on click open {
   - set @chosen to the @id of that ticket
+}
+
+on click remove {
+  - remove that ticket from @tickets
 }
 
 example "open the first ticket" {
@@ -81,4 +85,24 @@ example "open the second ticket" {
   see title = "Wrong VAT on the invoice"
   see thread has 1 row
   see body on row 1 = "Corrected and re-sent."
+}
+
+example "the open ticket is removed" {
+  click open on row with "Cannot log in"
+  see title = "Cannot log in"
+  click remove on row with "Cannot log in"
+  see tickets has 1 row
+  see detail is shown
+  see title = "(removed)"
+  see meta = "Ticket #1"
+  see thread has 1 row
+  see body on row 1 = "Looking into the reset flow."
+}
+
+example "another ticket is removed" {
+  click open on row with "Wrong VAT on the invoice"
+  click remove on row with "Cannot log in"
+  see title = "Wrong VAT on the invoice"
+  see meta = "Ticket #2"
+  see thread has 1 row
 }

@@ -4,7 +4,7 @@ bundle lockers.lockers {
 
 choice Size: Small | Medium | Large
 
-type PickupCode = Text matching /[0-9]{6}/     # exactly six digits, leading zeros allowed
+type PickupCode = Text of 6 digits             # exactly six digits, leading zeros allowed: 1,000,000 codes
 
 record Locker {
   key number: Int                # the number printed on the locker door

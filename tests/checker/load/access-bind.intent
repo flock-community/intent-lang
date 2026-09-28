@@ -1,0 +1,59 @@
+app AccessBindings {
+  "What an access block binds: the key layer's `public` said once, the grants, the homes a rule follows."
+}
+
+profile api
+
+use auth = std.http.apiKey {
+  keys = table {
+    secret     | owner
+    "k-ann-1"  | "Ann"
+  }
+  public = "/health"                            # expect: ACCESS
+}
+
+choice Role: Agent | Lead
+choice Colour: Red | Blue
+
+record Badge {
+  holder: Text
+  role: Role
+  colour: Colour
+}
+
+record Team {
+  id: Int
+  members: List Text = []
+}
+
+record Ticket {
+  id: Int
+  team: ref Team
+}
+
+state {
+  badges: List Badge = []
+  teams: List Team = []
+  oldTeams: List Team = []
+  tickets: List Ticket = []
+}
+
+access {
+  roles = badges                                # expect: ACCESS
+  - anyone may call @health
+  - an @Agent may call @takeTicket when the @caller is in that ticket's @team's @members   # expect: HOME
+}
+
+endpoint health GET "/health" {
+  answer 200 with "ok"
+}
+
+endpoint takeTicket POST "/tickets/{id}/take" {
+  path id: ref Ticket in tickets
+  answer 204
+}
+
+example "health" {
+  call health
+  see health.status = 200
+}

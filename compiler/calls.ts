@@ -95,12 +95,13 @@ export function eventsByAlias(app: App): Record<string, string[]> {
 /** Method, path and params per callable endpoint: how a call becomes an HTTP request. */
 export function callDescs(app: App): CallDesc[] {
   return clientEndpoints(app).map((c) => {
-    // Types only where a choice has wire names: the runtime translates those at the edge.
+    // Types only where a choice has wire names (the runtime translates those at the edge), and for a
+    // `T or nothing` param (nothing is sent as `null`, never left out).
     // Types resolve in the app (its imports bring the contract's records and choices), else the contract.
     const contract = scope(app, app.clients!.find((x) => x.alias === c.alias)!.contract);
     const wired = (t: Type) => wireType(contract, t);
     const answers = (c.ep.answers ?? []).some((a) => a.type && wired(a.type)) ? Object.fromEntries((c.ep.answers ?? []).map((a) => [a.status, a.type ? typeDescOf(contract, a.type) : null])) : undefined;
-    return { name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name, ...(wired(p.type) ? { type: typeDescOf(contract, p.type) } : {}) })), ...(answers ? { answers } : {}), ...(c.ep.effect ? { external: true } : {}), ...(c.ep.effect?.of ? { amount: c.ep.effect.of } : {}) };
+    return { name: c.name, method: c.ep.method, path: c.ep.path, params: c.ep.params.map((p) => ({ in: p.in, name: p.name, ...(wired(p.type) || p.type.k === "Maybe" ? { type: typeDescOf(contract, p.type) } : {}) })), ...(answers ? { answers } : {}), ...(c.ep.effect ? { external: true } : {}), ...(c.ep.effect?.of ? { amount: c.ep.effect.of } : {}) };
   });
 }
 

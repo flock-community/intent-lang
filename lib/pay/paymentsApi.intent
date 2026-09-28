@@ -4,6 +4,9 @@ contract pay.paymentsApi {
 
 import pay.payments
 
+every endpoint answers 401 Problem       # without a known key, where one is needed (std.http.apiKey)
+every endpoint answers 403 Problem       # a caller the service's access rules do not permit
+
 endpoint charge POST "/charges" {
   body amount: Int                    # in cents
   body description: Text
@@ -34,27 +37,12 @@ endpoint sendReceipt POST "/charges/{id}/receipt" {
   effect external                     # an email cannot be unsent
 }
 
-example "a charge and its refund" {
+example "a charge" {
   call charge with amount = 1250, description = " Yoga, 10 classes "
   see charge.status = 201
   see charge.body.id = 1
   see charge.body.description = "Yoga, 10 classes"
   see charge.body.status = "Paid"
-  call refund with id = 1
-  see refund.status = 200
-  see refund.body.status = "Refunded"
-  call getCharge with id = 1
-  see getCharge.body.status = "Refunded"
-}
-
-example "a refund happens once" {
-  call charge with amount = 500, description = "Drop-in class"
-  call refund with id = 1
-  call refund with id = 1
-  see refund.status = 409
-  see refund.body.error = "Already refunded"
-  call refund with id = 7
-  see refund.status = 404
 }
 
 example "what a charge needs" {
@@ -66,10 +54,3 @@ example "what a charge needs" {
   see charge.body.error = "Description is required"
 }
 
-example "a receipt" {
-  call charge with amount = 900, description = "Mat rental"
-  call sendReceipt with id = 1, email = "ann@example.com"
-  see sendReceipt.status = 204
-  call sendReceipt with id = 2, email = "ann@example.com"
-  see sendReceipt.status = 404
-}

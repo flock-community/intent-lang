@@ -1,0 +1,155 @@
+app NullSafety {
+  "`T or nothing` works like Kotlin's `T?`: it is not a T, and a sentence handles nothing before it uses one."
+}
+
+record Item {
+  id: Int
+  price: Int
+  note: Text or nothing
+}
+
+record Ticket {
+  id: Int
+  title: Text
+  tags: List Text
+}
+
+state {
+  items: List Item = []
+  count: Int = 0
+  draft: Text = ""
+  flag: Bool = false
+  maybeN: Int or nothing = nothing
+  maybeText: Text or nothing = nothing
+  maybeBool: Bool or nothing = nothing
+  picked: Ticket or nothing = nothing
+  kept: Int or nothing = nothing
+}
+
+derive {
+  plain: Int = @maybeN, or 0 when there is none                                   # expect-not: NOTHING
+  cast: Int = @maybeN when there is a @maybeN, otherwise 0                       # expect-not: NOTHING
+  castElse: Int = 0 when there is no @maybeN, otherwise @maybeN                  # expect-not: NOTHING
+  bare: Int = @maybeN                                                            # expect: NOTHING
+  maybeTitle = @picked's @title                                                  # expect-not: NOTHING
+  titleOrNone: Text = @picked's @title, or "" when there is none                 # expect-not: NOTHING
+  shuffled = the letters of @maybeText sorted the way a card player would      # expect: NOTHING
+  shuffledSafe = the letters of @maybeText sorted the way a card player would, or none when there is none   # expect-not: NOTHING
+}
+
+screen {
+  text count
+  text shown = "n = {@maybeN}"                                                   # expect: NOTHING
+  text shownSafe = "n = {@maybeN, or 0 when there is none}"                      # expect-not: NOTHING
+  section some {
+    visible when there is a @maybeN
+    text inside = "n = {@maybeN}"                                                # expect-not: NOTHING
+  }
+  list items of Item {
+    text note = its @note                                                        # expect: NOTHING
+    text noteSafe = its @note, or "" when there is none                          # expect-not: NOTHING
+    text noteShown = its @note {                                                 # expect-not: NOTHING
+      visible when there is a @note
+    }
+  }
+  button uses "Uses"
+  button casts "Casts"
+  button ends "Ends"
+  button elvis "Elvis"
+}
+
+on click uses {
+  - set @count to @count plus @maybeN                                            # expect: NOTHING
+  - set @count to @maybeN                                                        # expect: NOTHING
+  - set @kept to @maybeN                                                         # expect-not: NOTHING
+  - set @kept to @count                                                          # expect-not: NOTHING
+  - set @draft to @picked's @title                                               # expect: NOTHING
+  - set @draft to "n = {@maybeN}"                                                # expect: NOTHING
+  - set @draft to @maybeText trimmed                                             # expect: NOTHING
+  - add an @Item to the end of @items with @id = 1, @price = @maybeN and @note = nothing   # expect: NOTHING
+  - add an @Item to the end of @items with @id = 2, @price = 3 and @note = @maybeText      # expect-not: NOTHING
+  - set @count to the @price of the item whose @id is 1                          # expect: NOTHING
+  - set @count to the highest @id in @items                                      # expect: NOTHING
+  - set @count to the highest @id in @items + 1 (1 when there are none)          # expect-not: NOTHING
+  - set @count to nothing                                                        # expect: NOTHING
+  if @maybeN is above 3 {                                                        # expect: NOTHING
+    stop
+  }
+  if @maybeText contains "a" {                                                   # expect: NOTHING
+    stop
+  }
+  if @maybeText is empty {                                                       # expect: NOTHING
+    stop
+  }
+  if @maybeBool {                                                                # expect: NOTHING
+    stop
+  }
+  if @maybeText is "a" {                                                         # expect-not: NOTHING
+    stop
+  }
+  if @maybeText is not "a" {                                                     # expect-not: NOTHING
+    stop
+  }
+  - spell @maybeText backwards the way a child would                             # expect: NOTHING
+}
+
+on click casts {
+  if there is a @maybeN {
+    - set @count to @maybeN                                                      # expect-not: NOTHING
+  }
+  if @maybeN is not nothing {
+    - set @count to @maybeN                                                      # expect-not: NOTHING
+  }
+  if @maybeN is nothing {
+    - set @draft to "none"
+  } else {
+    - set @count to @maybeN                                                      # expect-not: NOTHING
+  }
+  if there is no @maybeN {
+    - set @draft to "none"
+  } else if @flag {
+    - set @count to @maybeN                                                      # expect-not: NOTHING
+  }
+  if there is a @maybeN and @maybeN is above 3 {                                 # expect-not: NOTHING
+    stop
+  }
+  if there is a @maybeN or @maybeN is above 3 {                                  # expect: NOTHING
+    stop
+  }
+  if @items is empty {
+    stop
+  }
+  - set @count to the highest @id in @items                                      # expect-not: NOTHING
+  if there is no @maybeN {
+    stop
+  }
+  - set @count to @maybeN                                                        # expect-not: NOTHING
+}
+
+on click ends {
+  if there is no @maybeN {
+    stop
+  }
+  - set @count to @maybeN                                                        # expect-not: NOTHING
+  - set @maybeN to nothing
+  - set @count to @maybeN                                                        # expect: NOTHING
+}
+
+on click elvis {
+  if there is no @maybeN {
+    stop
+  }
+  if @flag {
+    - clear @maybeN
+  }
+  - set @count to @maybeN                                                        # expect: NOTHING
+  - set @count to @maybeN, or 0 when there is none                               # expect-not: NOTHING
+  - set @count to @maybeN, or "x" when there is none                             # expect: TYPE
+  - set @count to @maybeN, or nothing when there is none                         # expect: NOTHING
+  - set @kept to @maybeN, or nothing when there is none                          # expect-not: NOTHING
+}
+
+example "counts" {
+  click uses
+  see count = "0"
+}

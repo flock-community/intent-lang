@@ -1,0 +1,36 @@
+app ChangeFix {
+  "Change rules said in other words: `intent fix` writes them the language's way."
+}
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+state {
+  tickets: List Ticket = []
+  count: Int = 0
+  low: Int = 9
+}
+
+screen {
+  text shown = "{@count}"
+  button up "Up"
+}
+
+on click up {
+  - increase @count by 1
+}
+
+always {
+  - @count only goes up
+  - @low can only decrease
+  - a @Ticket's @subject stays the same
+  - a @Ticket is never deleted
+  - @count is at least the previous @count
+}
+
+example "up" {
+  click up
+  see shown = "1"
+}

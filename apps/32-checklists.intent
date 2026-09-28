@@ -1,0 +1,141 @@
+app Checklists {
+  "Tasks, each with its own checklist: add, tick off and remove items inside a task."
+  "Each task says how many of its items are left, and when all are done."
+}
+language v68
+record Item {
+  id: Int
+  label: Text
+  done: Bool = false
+}
+
+record Task {
+  id: Int
+  title: Text
+  items: List Item = []
+  newItem: Text = ""                # what is typed into this task's "New item" field
+}
+
+state {
+  stored tasks: List Task = table {
+    id | title       | items
+    1  | "Groceries" | [{ id = 1, label = "Milk" }, { id = 2, label = "Eggs", done = true }]
+    2  | "Taxes"     | []
+  }
+  toast: Text = ""
+}
+
+screen {
+  heading "Checklists"
+  list tasks of Task as cards {
+    text title
+    list items of Item {
+      checkbox done
+      text label
+      button removeItem "Remove" as icon
+    }
+    field newItem "New item"
+    button addItem "Add"
+    text left = "{the number of its @items whose @done is false} left"
+  }
+  text toast {
+    visible when @toast is not blank
+  }
+}
+
+on click addItem {
+  if that task's @newItem, trimmed, is blank {
+    stop
+  }
+  - add an @Item to the end of that task's @items with @id = the highest @id in that task's @items + 1 (1 when there are none), @label = that task's @newItem, trimmed
+  - clear that task's @newItem
+}
+
+on click removeItem {
+  - remove that item from that task's @items
+}
+
+on toggle done {
+  if every @done in that task's @items is true {
+    - set @toast to "{that task's @title} is complete"
+  } else {
+    - clear @toast
+  }
+}
+
+always {
+  see every row of items: label is shown
+  - every @label in @tasks's @items is not blank
+}
+
+example "a task's items" {
+  see tasks has 2 rows
+  see items on row 1 has 2 rows
+  see label on row 1 on row 1 = "Milk"
+  see done on row 2 on row 1 is checked
+  see left on row 1 = "1 left"
+  see items on row 2 has 0 rows
+  see left on row 2 = "0 left"
+}
+
+example "adding an item to one task" {
+  type "Bread" into newItem on row 1
+  click addItem on row 1
+  see items on row 1 has 3 rows
+  see label on row 3 on row 1 = "Bread"
+  see newItem on row 1 = ""
+  see left on row 1 = "2 left"
+  see items on row 2 has 0 rows
+}
+
+example "a blank item is not added" {
+  type "   " into newItem on row 2
+  click addItem on row 2
+  see items on row 2 has 0 rows
+  type "File the return" into newItem on row 2
+  click addItem on row 2
+  see label on row 1 on row 2 = "File the return"
+  see items on row 1 has 2 rows
+}
+
+example "removing an item by what it shows" {
+  click removeItem on row with "Milk" on row with "Groceries"
+  see items on row 1 has 1 row
+  see label on row 1 on row 1 = "Eggs"
+  see left on row 1 = "0 left"
+}
+
+example "ticking off the last item" {
+  toggle done on row 1 on row 1
+  see done on row 1 on row 1 is checked
+  see left on row 1 = "0 left"
+  see toast = "Groceries is complete"
+  toggle done on row 1 on row 1
+  see left on row 1 = "1 left"
+  see toast is hidden
+}
+
+example "new ids count per task" {
+  type "Receipts" into newItem on row 2
+  click addItem on row 2
+  type "Milk" into newItem on row 1
+  click addItem on row 1
+  see label on row 3 on row 1 = "Milk"
+  see items on row 2 has 1 row
+  click removeItem on row 3 on row 1
+  see items on row 1 has 2 rows
+  see label on row 1 on row 2 = "Receipts"
+  click removeItem on row 1 on row 2
+  see items on row 2 has 0 rows
+  see items on row 1 has 2 rows
+}
+
+example "items survive a restart" {
+  type "Bread" into newItem on row 1
+  click addItem on row 1
+  toggle done on row 1 on row 1
+  restart
+  see items on row 1 has 3 rows
+  see done on row 1 on row 1 is checked
+  see label on row 3 on row 1 = "Bread"
+}

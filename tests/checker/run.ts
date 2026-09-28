@@ -10,12 +10,15 @@ let failures = 0;
 const dir = new URL(".", import.meta.url).pathname;
 // A diagnostic is reported once: the same code and message twice on one line is a checker bug.
 const twice = (ds: { line: number; code: string; message: string; file?: string }[]) => ds.map((d) => `${d.file ?? ""}:${d.line}:${d.code} ${d.message}`).filter((k, i, all) => all.indexOf(k) !== i);
+// A message names what it is about: never `undefined` or `[object Object]` (unless the spec itself says it).
+const unset = (ds: { line: number; code: string; message: string }[], src: string) => ds.filter((d) => (d.message.match(/\bundefined\b|\[object Object\]|\bNaN\b/g) ?? []).some((w) => !src.includes(w))).map((d) => `${d.line}:${d.code} ${d.message}`);
 const marks = (src: string, word: string) => src.split("\n").flatMap((l, i) => [...l.matchAll(new RegExp(`# ${word}: ([A-Z_]+)`, "g"))].map((m) => `${i + 1}:${m[1]}`));
 for (const f of readdirSync(dir).filter((f) => f.endsWith(".intent"))) {
   const src = readFileSync(join(dir, f), "utf8");
   const expected = marks(src, "expect");
   const got = parse(src).diagnostics.map((d) => `${d.line}:${d.code}`);
   for (const k of twice(parse(src).diagnostics)) (failures++, console.log(`${f}: reported twice: ${k}`));
+  for (const k of unset(parse(src).diagnostics, src)) (failures++, console.log(`${f}: a message shows a missing value: ${k}`));
   for (const e of expected) if (!got.includes(e)) (failures++, console.log(`${f}: missing ${e}`));
   for (const e of marks(src, "expect-not")) if (got.includes(e)) (failures++, console.log(`${f}: ${e} is reported, but this line is a near miss that must not raise it`));
   for (const d of parse(src).diagnostics) if (d.level === "error" && !expected.includes(`${d.line}:${d.code}`)) (failures++, console.log(`${f}: unexpected ${d.line}:${d.code} ${d.message}`));
@@ -28,6 +31,7 @@ for (const f of readdirSync(join(dir, "load")).filter((f) => f.endsWith(".intent
   const loaded = load(join(dir, "load", f), { ignoreLock: true });
   const diags = loaded.diagnostics.filter((d) => d.file === loaded.sources[0].file);
   for (const k of twice(loaded.diagnostics)) (failures++, console.log(`load/${f}: reported twice: ${k}`));
+  for (const k of unset(loaded.diagnostics, src)) (failures++, console.log(`load/${f}: a message shows a missing value: ${k}`));
   const got = diags.map((d) => `${d.line}:${d.code}`);
   for (const e of expected) if (!got.includes(e)) (failures++, console.log(`load/${f}: missing ${e}`));
   for (const e of marks(src, "expect-not")) if (got.includes(e)) (failures++, console.log(`load/${f}: ${e} is reported, but this line is a near miss that must not raise it`));

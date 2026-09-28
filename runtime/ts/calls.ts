@@ -1,6 +1,7 @@
 // Calls from a screen to an API, as data: `{ endpoint: "tickets.createTicket", args: {…} }`.
 // The same data goes to `fetch` in the browser and to the provider's test client in tests.
 import { fromWire, toWire, type TypeDesc } from "./api.ts";
+import { sha256 } from "./platform/std.crypto.ts";
 
 export interface CallDesc {
   name: string; // "tickets.createTicket": the alias, then the contract's endpoint
@@ -13,7 +14,7 @@ export interface CallDesc {
 }
 
 /** A call as data. `key`: its idempotency key, made when the call was made; every attempt sends the same one. */
-export type CallOut = { endpoint: string; args: Record<string, unknown>; headers?: Record<string, string>; config?: Record<string, unknown>; key?: string; undo?: boolean };
+export type CallOut = { endpoint: string; args: Record<string, unknown>; headers?: Record<string, string>; config?: Record<string, unknown>; key?: string; undo?: boolean; of?: { endpoint: string; answer: unknown } };
 /** An answer. `unknown`: no answer after the last attempt, for a call that may have had its effect. */
 export type Answer = { endpoint: string; status: number; body?: unknown; error?: string; unknown?: boolean; inProgress?: boolean; retryAfterMs?: number; held?: boolean; rejected?: boolean };
 
@@ -29,13 +30,44 @@ export const MAX_ATTEMPTS = 3;
 export const retryable = (status: number) => status === 0 || status === 429 || status >= 500;
 const safe = (method: string) => ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 
-/** A new idempotency key for a call that is being made (the same one for all its attempts). */
-export const newKey = (): string => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+/**
+ * A new idempotency key for a call that is being made (the same one for all its attempts): 128
+ * random bits from the platform's CSPRNG as 32 hex digits (\`crypto.getRandomValues\`, also on plain
+ * http, where \`randomUUID\` is missing). Never a clock or \`Math.random\`: a guessable key lets
+ * another caller of the same service collide with it, and a service remembers an anonymous caller's
+ * key only when it has 128 bits (once.ts).
+ */
+export const newKey = (): string => {
+  const c = globalThis.crypto;
+  if (!c?.getRandomValues) throw new Error("no cryptographic random source for idempotency keys");
+  return [...c.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
 
-/** The key a call goes out with. An undo's key is what it undoes (`undo pay.refund {"id":7}`), so
- *  undoing twice sends the same key and the service answers the first undo again: an effect that
- *  was already taken back is not taken back twice. Every other call gets a new key. */
-export const keyFor = (c: CallOut): string => (c.undo ? `undo ${c.endpoint} ${JSON.stringify(c.args)}` : newKey());
+/** JSON with sorted keys and without null fields: the same value reads the same from either target. */
+const canonical = (x: unknown): string =>
+  JSON.stringify(x, (_, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().filter((k) => v[k] !== null && v[k] !== undefined).map((k) => [k, v[k]])) : v));
+
+/** Which call got which answer (its key), for the undo of that call: the last 1000 answers. */
+const answeredBy = new Map<string, string>();
+/** Remember the key of a call that was answered (2xx), so an undo of it can name it. */
+export function noteAnswer(c: CallOut, a: Answer) {
+  if (!c.key || c.undo || a.status < 200 || a.status >= 300) return;
+  const k = canonical([c.endpoint, a.body]);
+  answeredBy.delete(k);
+  answeredBy.set(k, c.key);
+  if (answeredBy.size > 1000) answeredBy.delete(answeredBy.keys().next().value!);
+}
+
+/**
+ * The key a call goes out with. An undo's key names what it undoes: `undo-` and the SHA-256 of its
+ * endpoint, its args and the key of the call it takes back (when this page made that call), so
+ * undoing the same call twice sends the same key and the service answers the first undo again (an
+ * effect taken back is not taken back twice), while undoing a later call with the same args is a
+ * new request. Hex: every header can carry it, whatever the args hold, at a fixed length. Every
+ * other call gets a new key.
+ */
+export const keyFor = (c: CallOut): string =>
+  c.undo ? `undo-${sha256(canonical([c.endpoint, c.args, (c.of && answeredBy.get(canonical([c.of.endpoint, c.of.answer]))) ?? null]))}` : newKey();
 
 /**
  * Send a call until it is answered or its attempts run out. `attempt(n)` sends it once (n = 1, 2, 3);
@@ -79,7 +111,12 @@ export function toHttp(eps: { name: string; method: string; path: string; params
   const body: Record<string, unknown> = {};
   let hasBody = false;
   for (const p of ep.params) {
-    if (!(p.name in c.args)) continue;
+    // An argument that is not given is not sent, except a body param that is a `T or nothing`: nothing
+    // is written as `null`, never left out.
+    if (!(p.name in c.args) || c.args[p.name] === undefined) {
+      if (p.in === "body" && p.type?.k === "Maybe") (body[p.name] = null), (hasBody = true);
+      continue;
+    }
     const v = toWire(c.args[p.name], p.type); // a choice goes out by its wire name
     if (p.in === "path") path = path.replace(`{${p.name}}`, encodeURIComponent(String(v)));
     else if (p.in === "query") {
@@ -103,12 +140,29 @@ export function outgoing(eps: CallDesc[], c: CallOut, via?: Via): Outgoing {
 }
 
 /**
- * Where an api lives, in the browser: the \`api.<alias>\` query parameter, else \`api\`, else the
- * page's own origin. Where a service is hosted is deployment, not intent: it is never in the spec.
+ * Where an api lives, in the browser: what the deployment says in the page, one
+ * \`<meta name="intent-api" content="<alias>=https://…">\` per api (\`content="https://…"\` for every
+ * api), else the page's own origin. Never the page's address: a link must not send calls, and the
+ * keys a client layer adds to them, somewhere else. Where a service is hosted is deployment, not
+ * intent: it is never in the spec.
  */
+let bases: Record<string, string> | undefined;
+function deployed(): Record<string, string> {
+  if (bases) return bases;
+  const out: Record<string, string> = {};
+  const metas = typeof document !== "undefined" ? [...document.querySelectorAll('meta[name="intent-api"]')] : [];
+  for (const m of metas) {
+    const c = (m.getAttribute("content") ?? "").trim();
+    const hit = c.match(/^(?:([a-z]\w*)=)?(https?:\/\/[^\s]+|\/[^\s]*)$/);
+    if (hit) out[hit[1] ?? ""] = hit[2];
+  }
+  return (bases = out);
+}
+/** Tests only (a test entry, never the page's own code): where each api lives. */
+export const setApiBases = (b: Record<string, string> | undefined) => void (bases = b);
 export function apiBase(alias = ""): string {
-  const q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
-  return (q.get(`api.${alias}`) ?? q.get("api") ?? "").replace(/\/$/, "");
+  const b = deployed();
+  return (b[alias] ?? b[""] ?? "").replace(/\/$/, "");
 }
 
 /**
@@ -335,7 +389,9 @@ export const inFlight = () => flying;
 export async function fetchCall(eps: CallDesc[], c: CallOut, via?: Via, config?: Record<string, unknown>): Promise<Answer> {
   flying++;
   try {
-    return await fetchCallOnce(eps, c, via, config);
+    const a = await fetchCallOnce(eps, c, via, config);
+    noteAnswer(c, a);
+    return a;
   } finally {
     flying--;
   }

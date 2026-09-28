@@ -5,16 +5,27 @@ import { keyFor, persist, retryAfter, type Answer, type CallDesc } from "../runt
 
 const keys: Keys = {};
 const fp = fingerprint("POST", "/charges", { amount: 5, description: "x" });
-assert.equal(recall(keys, "", "k1", fp, "2026-09-24T09:00"), undefined, "a new key runs");
-remember(keys, "", "k1", { fingerprint: fp, endpoint: "charge", status: 201, body: { id: 1 }, at: "2026-09-24T09:00" });
-assert.deepEqual(recall(keys, "", "k1", fp, "2026-09-24T10:00"), { replay: keys[" k1"] }, "the same key and request: the same answer");
+const slot = (caller: string, key: string) => JSON.stringify([caller, key]);
+assert.equal(recall(keys, "shop", "k1", fp, "2026-09-24T09:00"), undefined, "a new key runs");
+remember(keys, "shop", "k1", { fingerprint: fp, endpoint: "charge", status: 201, body: { id: 1 }, at: "2026-09-24T09:00" });
+assert.deepEqual(recall(keys, "shop", "k1", fp, "2026-09-24T10:00"), { replay: keys[slot("shop", "k1")] }, "the same key and request: the same answer");
 assert.equal(fingerprint("POST", "/charges", { description: "x", amount: 5 }), fp, "the order of fields does not matter");
-assert.ok("conflict" in (recall(keys, "", "k1", fingerprint("POST", "/charges", { amount: 6, description: "x" }), "2026-09-24T10:00") ?? {}), "the same key, another request: a conflict");
+assert.ok("conflict" in (recall(keys, "shop", "k1", fingerprint("POST", "/charges", { amount: 6, description: "x" }), "2026-09-24T10:00") ?? {}), "the same key, another request: a conflict");
 assert.equal(recall(keys, "ann", "k1", fp, "2026-09-24T10:00"), undefined, "keys are per caller");
-assert.equal(recall(keys, "", "k1", fp, "2026-09-25T09:00"), undefined, "after 24 hours a key is forgotten");
-remember(keys, "", "k2", { fingerprint: fp, endpoint: "charge", status: 201, body: { id: 2 }, at: "2026-09-25T09:30" });
-assert.equal(keys[" k1"], undefined, "expired keys are dropped when a new one is kept");
-assert.ok(recall(keys, "", "k2", fp) && "replay" in recall(keys, "", "k2", fp)!, "without a clock, keys do not expire");
+assert.equal(recall(keys, "shop", "k1", fp, "2026-09-25T09:00"), undefined, "after 24 hours a key is forgotten");
+assert.equal(recall(keys, "shop", "k1", fp, "2026-09-25T09:00:30"), undefined, "also with a clock that has seconds");
+remember(keys, "shop", "k2", { fingerprint: fp, endpoint: "charge", status: 201, body: { id: 2 }, at: "2026-09-25T09:30" });
+assert.equal(keys[slot("shop", "k1")], undefined, "expired keys are dropped when a new one is kept");
+assert.ok(recall(keys, "shop", "k2", fp) && "replay" in recall(keys, "shop", "k2", fp)!, "without a clock, keys do not expire");
+// No caller's key can be spelt as another's: "Ann Smith" + "k1" is not "Ann" + "Smith k1".
+remember(keys, "Ann Smith", "k1", { fingerprint: fp, endpoint: "charge", status: 201, body: { code: "SECRET" }, at: "2026-09-24T09:00" });
+assert.equal(recall(keys, "Ann", "Smith k1", fp, "2026-09-24T09:05"), undefined, "callers do not collide");
+// Anonymous callers share one space: only a key that cannot be guessed (128 bits, 32 hex digits) is remembered.
+remember(keys, "", "abc", { fingerprint: fp, endpoint: "charge", status: 201, body: { code: "ANON" }, at: "2026-09-24T09:00" });
+assert.equal(recall(keys, "", "abc", fp, "2026-09-24T09:05"), undefined, "a short anonymous key is not remembered");
+const strong = "0123456789abcdef0123456789abcdef";
+remember(keys, "", strong, { fingerprint: fp, endpoint: "charge", status: 201, body: { id: 3 }, at: "2026-09-24T09:00" });
+assert.ok("replay" in (recall(keys, "", strong, fp, "2026-09-24T09:05") ?? {}), "a 128-bit anonymous key is");
 assert.ok(keyed("POST") && keyed("delete") && !keyed("GET"), "only non-safe methods are keyed");
 // An undo's key is what it undoes: undoing twice sends the same key (the service replays the first).
 const undo = { endpoint: "pay.refund", args: { id: 7 }, undo: true };

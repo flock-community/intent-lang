@@ -6,8 +6,11 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
+import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
+import { codeSize } from "../alphabets.ts";
+import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -24,8 +27,20 @@ export function elmLiteral(l: Literal, t: Type): string {
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
     case "table": return "[]";
-    case "list": case "record": throw new Error("list and record values are only call arguments in examples");
+    case "list": case "record": throw new Error("a list or record value needs its type: elmValue");
   }
+}
+
+/** A literal of a type: a row's inner list in a seed table, each record with its defaults filled in. */
+export function elmValue(app: App, l: Literal, t: Type): string {
+  const inner = t.k === "Maybe" ? t.of : t;
+  const wrap = (v: string) => (t.k === "Maybe" ? `Just (${v})` : v);
+  if (l.k === "list" && inner.k === "List") return wrap(l.items.length ? `[ ${l.items.map((x) => elmValue(app, x, inner.of)).join(", ")} ]` : "[]");
+  if (l.k === "record" && inner.k === "Named") {
+    const rec = app.records.find((r) => r.name === inner.name);
+    if (rec) return wrap(`{ ${rec.fields.map((f) => `${f.name} = ${elmValue(app, l.fields.find((x) => x.name === f.name)?.value ?? f.default ?? { k: "nothing" }, f.type)}`).join(", ")} }`);
+  }
+  return elmLiteral(l, t);
 }
 
 /** The app's data as the checks see it: every state field, typed as in the spec. */
@@ -91,12 +106,18 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}${app.platforms?.some((p) => p.name === "std.crypto") ? "import Crypto\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
+${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}${app.platforms?.some((p) => p.name === "std.crypto") ? "import Crypto\n" : ""}${usesDraws(app) || hasCodes(app) ? "import Draw\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
 `);
   if (app.platforms?.some((p) => p.name === "std.crypto")) out.push(`{-| Platform std.crypto: SHA-256, from the installation's reviewed code (never a home-made version). -}\nsha256 : String -> String\nsha256 =\n    Crypto.sha256\n\n\n`);
   out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. -}\ntype alias Clock =\n    { now : DateTime, today : Date${app.sizes ? ", size : Size" : ""} }\n\n\n`);
   for (const r of app.refined ?? []) {
+    if (r.code) {
+      // A code: exactly n characters of its alphabet, read as the alphabet says (the harness's reader, Draw.readCode).
+      const unamb = r.code.alphabet === "unambiguous letters and digits";
+      out.push(`{-| A code: ${r.code.n} characters from ${doc(q(r.code.chars))} (${codeSize(r.code.n, r.code.chars)}): see is${r.name} and read${r.name}. -}\ntype alias ${r.name} =\n    String\n\n\n{-| Whether a text is a valid ${r.name}${unamb ? " (read forgivingly: lower case, o for 0, i and l for 1, hyphens ignored)" : ""}. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    read${r.name} s /= Nothing\n\n\n{-| The ${r.name} a text is, in its normal form${unamb ? ' (capitals: "k7mq-or1z" is "K7MQ0R1Z")' : ""}, or Nothing when it is not one. Keep this form, never the text as typed. -}\nread${r.name} : String -> Maybe ${r.name}\nread${r.name} =\n    Draw.readCode ${r.code.n} ${q(r.code.chars)} ${unamb ? "True" : "False"}\n\n\n`);
+      continue;
+    }
     // A refined type is its base type plus a generated check: `isEmail : String -> Bool`.
     const lc = lowerFirst(r.name);
     const base = r.base === "Text" ? "String" : r.base === "Int" ? "Int" : "Float";
@@ -112,7 +133,12 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       out.push(`{-| Whether a number is a valid ${r.name}. -}\nis${r.name} : ${base} -> Bool\nis${r.name} n =\n    ${conds || "True"}\n\n`);
     }
   }
-  for (const r of app.records) out.push(elmRecord(r.name, r.fields.map((f) => [f.name, elmType(f.type)])) + "\n");
+  // A record named like a type Elm's Basics always exposes (`Order`) is ambiguous in App.elm unless qualified.
+  for (const r of app.records) out.push((["Order", "Never"].includes(r.name) ? `{-| Elm's Basics also has an \`${r.name}\`: in App.elm write this record's type as \`Spec.${r.name}\`. -}\n` : "") + elmRecord(r.name, r.fields.map((f) => [f.name, elmType(f.type)])) + "\n");
+  // Following a reference: the row is found in its home list when it is read (Nothing: it is gone).
+  const refs = refLookups(app);
+  for (const b of refs.byKey) out.push(`{-| Following a \`ref ${b.record}\`: the ${b.record} in \`${b.list}\` whose \`${b.key}\` is the key, or Nothing when there is none (it was removed). -}\n${b.fn} : List ${b.record} -> ${elmType(b.keyType)} -> Maybe ${b.record}\n${b.fn} rows k =\n    List.head (List.filter (\\r -> r.${b.key} == k) rows)\n\n\n`);
+  for (const f of refs.fields) out.push(`{-| \`its @${f.field}'s …\` on a ${f.holder}: the ${f.record} it points at, in \`${f.list}\`; Nothing when there is none. -}\n${f.fn} : List ${f.record} -> ${f.holder} -> Maybe ${f.record}\n${f.fn} rows row =\n    ${f.optional ? `Maybe.andThen (${f.byKey} rows) row.${f.field}` : `${f.byKey} rows row.${f.field}`}\n\n\n`);
   for (const c of app.choices) {
     const lc = lowerFirst(c.name);
     out.push(`type ${c.name}\n    = ${c.values.join("\n    | ")}\n\n`);
@@ -125,16 +151,20 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   for (const f of app.state)
     if (f.default?.k === "table") {
       const rec = app.records.find((r) => f.type.k === "List" && f.type.of.k === "Named" && r.name === f.type.of.name)!;
-      out.push(`{-| Initial value of state \`${f.name}\` (the table in the spec). -}\n${f.name}Initial : List ${rec.name}\n${f.name}Initial =\n    [ ${f.default.rows.map((row) => `{ ${rec.fields.map((rf) => `${rf.name} = ${elmLiteral(cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" }, rf.type)}`).join(", ")} }`).join("\n    , ")}\n    ]\n\n`);
+      out.push(`{-| Initial value of state \`${f.name}\` (the table in the spec). -}\n${f.name}Initial : List ${rec.name}\n${f.name}Initial =\n    [ ${f.default.rows.map((row) => `{ ${rec.fields.map((rf) => `${rf.name} = ${elmValue(app, cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" }, rf.type)}`).join(", ")} }`).join("\n    , ")}\n    ]\n\n`);
     }
+  out.push(elmNested(app));
+  out.push(elmDraws(app));
 
   // Events
   const evs = events(app);
+  // A row inside a row carries two keys: the outer row's, then its own.
+  const keyArgs = (p?: string) => (p?.startsWith("keys") ? " String String" : p?.startsWith("key") ? " String" : "");
   const msgMembers = [...evs
-    .map((e) => e.tag + (e.payload === "key-text" || e.payload === "key-pick" ? " String String" : e.payload === "key-value" ? ` String ${e.choice}` : e.payload === "key" || e.payload === "text" || e.payload === "pick" ? " String" : e.payload === "value" ? ` ${e.choice}` : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
+    .map((e) => e.tag + keyArgs(e.payload) + (e.payload?.endsWith("value") ? ` ${e.choice}` : e.payload?.endsWith("text") || e.payload?.endsWith("pick") ? " String" : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
   // A screen with nothing to click, type or choose: Elm has no empty type, so one no-op variant.
   out.push(`{-| Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. -}\ntype Msg\n    = ${msgMembers.length ? msgMembers.join("\n    | ") : "NoOp"}\n\n`);
-  out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. -}\n\n`);
+  out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`).${nestedLists(app).length ? " A row inside a row carries its outer row's key first, then its own: find the inner row with the generated `update…` / `removeFrom…` helpers above, never by hand." : ""} Typed events carry the full new text of the field. -}\n\n`);
 
   // Screen types
   out.push(`type alias Button =\n    { enabled : Bool }\n\n`);
@@ -150,7 +180,13 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       case "checkbox": t = "Bool"; break;
       case "progress": t = "Int"; break;
       case "select": t = el.from ? "Pick" : selectChoice(app, el, list); break;
-      case "list": t = `List ${typeName(el.name)}Row`; aliases.push(elmRecord(`${typeName(el.name)}Row`, [["key", "String"], ...rowFields(el.children, el)])); break;
+      case "list": {
+        // A list inside a row: its row type is named after both lists (`TasksItemsRow`).
+        const row = `${list ? typeName(list.name) : ""}${typeName(el.name)}Row`;
+        t = `List ${row}`;
+        aliases.push(elmRecord(row, [["key", "String"], ...rowFields(el.children, el)]));
+        break;
+      }
       case "section": t = `${typeName(el.name)}Section`; aliases.push(elmRecord(`${typeName(el.name)}Section`, rowFields(el.children, list))); break;
       default: t = "";
     }
@@ -228,8 +264,11 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   // fromWire
   const cases = evs.map((e) => {
     const pat = e.on === "tick" ? `( "tick", _ )` : `( ${q(e.on)}, ${q(e.target)} )`;
+    // A row inside a row: the outer row's key is the first of the path of keys.
+    const k = e.payload?.startsWith("keys") ? " (Maybe.withDefault \"\" (List.head w.keys)) w.key" : e.payload?.startsWith("key") ? " w.key" : "";
+    const p = e.payload?.replace(/^keys?-?/, "") ?? "";
     const body =
-      e.payload === "key" ? `Just (${e.tag} w.key)` : e.payload === "key-text" ? `Just (${e.tag} w.key w.text)` : e.payload === "key-pick" ? `Just (${e.tag} w.key w.value)` : e.payload === "key-value" ? `Maybe.map (${e.tag} w.key) (${lowerFirst(e.choice!)}FromString w.value)` : e.payload === "text" ? `Just (${e.tag} w.text)` : e.payload === "pick" ? `Just (${e.tag} w.value)` : e.payload === "value" ? `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)` : `Just ${e.tag}`;
+      p === "text" ? `Just (${e.tag}${k} w.text)` : p === "pick" ? `Just (${e.tag}${k} w.value)` : p === "value" ? (k ? `Maybe.map (${e.tag}${k}) (${lowerFirst(e.choice!)}FromString w.value)` : `Maybe.map ${e.tag} (${lowerFirst(e.choice!)}FromString w.value)`) : k ? `Just (${e.tag}${k})` : `Just ${e.tag}`;
     return `        ${pat} ->\n            ${body}\n`;
   });
   const nav = hasScreens(app) ? `        ( "navigate", path ) ->\n            Just (ScreenOpened (routeFromPath path))\n\n` : "";
@@ -238,6 +277,95 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   if (hasData(app)) out.push(genElmData(app));
   if (hasClients(app)) out.push(`\n\n${genElmCalls(app)}`);
   return out.join("");
+}
+
+/**
+ * Lists inside rows (Elm): the key of each row as \`view\` gives it, and the update of one inner row
+ * found by its outer row's key and its own. The harness owns these; the model never writes the nested update.
+ */
+export function elmNested(app: App): string {
+  const nested = nestedLists(app);
+  if (!nested.length) return "";
+  const out: string[] = [];
+  const lower = (s: string) => s[0].toLowerCase() + s.slice(1);
+  const keyString = (t: Type, v: string): string => {
+    const base = t.k === "Named" ? (app.refined?.find((x) => x.name === t.name)?.base ?? (app.choices.some((c) => c.name === t.name) ? "Choice" : "Text")) : t.k;
+    if (base === "Int") return `String.fromInt ${v}`;
+    if (base === "Decimal") return `String.fromFloat ${v}`;
+    if (base === "Bool") return `(if ${v} then "true" else "false")`;
+    if (base === "Choice") return `${lower((t as { name: string }).name)}ToString ${v}`;
+    return v;
+  };
+  for (const { record: r, key } of rowKeyed(app)) {
+    const lr = lower(r.name);
+    out.push(`{-| The key of ${/^[AEIOU]/.test(r.name) ? "an" : "a"} ${r.name}'s row: ${key ? `its \`${key.name}\`` : "its place in its list"}. Give every row of a list of ${r.name}s this key in \`view\`: row events carry it. -}\n${lr}RowKey : Int -> ${r.name} -> String\n${lr}RowKey ${key ? "_" : "i"} r =\n    ${key ? keyString(key.type, `r.${key.name}`) : "String.fromInt i"}\n\n\n`);
+  }
+  for (const n of nested) {
+    const O = n.outer.name, I = n.inner.name, F = n.field;
+    const Fc = F[0].toUpperCase() + F.slice(1);
+    out.push(`{-| One ${I} of one ${O}'s \`${F}\` changed by \`f\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\` (the keys a row event inside a row carries). Everything else stays as it is. -}\nupdate${O}${Fc} : String -> String -> (${I} -> ${I}) -> List ${O} -> List ${O}\nupdate${O}${Fc} outerKey key f rows =\n    List.indexedMap\n        (\\i r ->\n            if ${lower(O)}RowKey i r == outerKey then\n                { r | ${F} = List.indexedMap (\\j x -> if ${lower(I)}RowKey j x == key then f x else x) r.${F} }\n\n            else\n                r\n        )\n        rows\n\n\n`);
+    out.push(`{-| One ${I} removed from one ${O}'s \`${F}\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\`. -}\nremoveFrom${O}${Fc} : String -> String -> List ${O} -> List ${O}\nremoveFrom${O}${Fc} outerKey key rows =\n    List.indexedMap\n        (\\i r ->\n            if ${lower(O)}RowKey i r == outerKey then\n                { r | ${F} = List.indexedMap Tuple.pair r.${F} |> List.filter (\\( j, x ) -> ${lower(I)}RowKey j x /= key) |> List.map Tuple.second }\n\n            else\n                r\n        )\n        rows\n\n\n`);
+  }
+  return out.join("");
+}
+
+/**
+ * The draws (v69): one function per place a sentence draws a random value (\`roll1\`: the first draw in
+ * \`on click roll\`), from the event's draws (runtime Draw.elm). The app calls the function where its
+ * sentence runs; it never makes randomness (no \`Random\`).
+ */
+export function elmDraws(app: App): string {
+  const sites = buildSites(app);
+  if (!sites.length) return "";
+  const space = (s: DrawSite) => (!s.space ? "(Draw.IntRange 0 0)" : s.space.k === "int" ? `(Draw.IntRange ${s.space.lo < 0 ? `(${s.space.lo})` : s.space.lo} ${s.space.hi < 0 ? `(${s.space.hi})` : s.space.hi})` : s.space.k === "text" ? `(Draw.Chars ${s.space.n} ${q(s.space.chars)})` : `(Draw.Names [ ${s.space.values.map(q).join(", ")} ])`);
+  const lc = (n: string) => lowerFirst(n);
+  // From the canonical text a draw gives to the type, and back (for \`not among\`).
+  const from = (s: DrawSite) => (s.space?.k === "int" ? `(String.toInt >> Maybe.withDefault ${s.space.lo < 0 ? `(${s.space.lo})` : s.space.lo})` : s.space?.k === "names" ? `(${lc(s.type!)}FromString >> Maybe.withDefault ${s.space.values[0]})` : "identity");
+  const toText = (s: DrawSite) => (s.space?.k === "int" ? "String.fromInt" : s.space?.k === "names" ? `${lc(s.type!)}ToString` : "identity");
+  const fromMaybe = (s: DrawSite) => (s.space?.k === "int" ? "String.toInt" : s.space?.k === "names" ? `${lc(s.type!)}FromString` : "Just");
+  const item = (s: DrawSite) => (s.item ? elmAtom(s.item) : "()");
+  const row = (s: DrawSite) => (s.row ? "row" : "0");
+  const args = (s: DrawSite, ...more: string[]) => [...(s.row ? ["row"] : []), ...more];
+  const sig = (s: DrawSite): string => {
+    const r = s.row ? "Int -> " : "";
+    switch (s.form) {
+      case "one": return `${r || "() -> "}${s.type}`;
+      case "many": return `${r}Int -> List ${s.type}`;
+      case "notAmong": return `${r}List ${s.type} -> ${s.maybe ? `Maybe ${s.type}` : s.type}`;
+      case "pick": return `${r}List ${item(s)} -> Maybe ${item(s)}`;
+      case "shuffle": return `${r}List ${item(s)} -> List ${item(s)}`;
+    }
+  };
+  const impl = (s: DrawSite): string => {
+    const a = (more: string[]) => (args(s, ...more).length ? `\\${args(s, ...more).join(" ")} -> ` : "\\_ -> ");
+    const id = q(s.id);
+    switch (s.form) {
+      case "one": return `${a([])}Draw.one src ${id} ${row(s)} 0 ${space(s)} |> ${from(s)}`;
+      case "many": return `${a(["n"])}Draw.many src ${id} ${row(s)} n ${space(s)} |> List.map ${from(s)}`;
+      case "notAmong": return s.maybe ? `${a(["taken"])}Draw.notAmong src ${id} ${row(s)} ${space(s)} (List.map ${toText(s)} taken) |> Maybe.andThen ${fromMaybe(s)}` : `${a(["taken"])}Draw.notAmong src ${id} ${row(s)} ${space(s)} (List.map ${toText(s)} taken) |> Maybe.withDefault "" |> ${from(s)}`;
+      case "pick": return `${a(["xs"])}Draw.pick src ${id} ${row(s)} xs`;
+      case "shuffle": return `${a(["xs"])}Draw.shuffle src ${id} ${row(s)} xs`;
+    }
+  };
+  const drawDoc = (s: DrawSite) => `${s.unit}, line ${s.line % LINE_BASE}: \`${doc(s.phrase)}\`${s.row ? "; the first argument is the index of the loop's row (0 for the first)" : ""}${s.form === "notAmong" ? `; never one of the taken${s.maybe ? ", Nothing when every one is taken" : ""}` : s.form === "pick" ? "; Nothing for an empty list" : s.form === "many" ? "; n values, which may repeat" : ""}`;
+  return `{-| The draws of one event (a random value in the spec): one function per place a sentence draws, named after its handler (or derived value) and its place there. The harness makes the values; call a function exactly where its sentence runs, once per value the sentence needs.
+
+${sites.map((s) => `  - \`${s.id}\`: ${drawDoc(s)}`).join("\n")}
+
+-}
+type alias Draws =
+    { ${sites.map((s) => `${s.id} : ${sig(s)}`).join("\n    , ")}
+    }
+
+
+{-| The draws of an event, from its source (the harness's; the app never calls this). -}
+drawsFrom : Draw.Source -> Draws
+drawsFrom src =
+    { ${sites.map((s) => `${s.id} = ${impl(s)}`).join("\n    , ")}
+    }
+
+
+`;
 }
 
 export function genElmMain(app: App): string {
@@ -264,7 +392,7 @@ main =
                 , Cmd.none
                 )
         , view = \\m -> Ui.render (Spec.toNode (App.view m))
-        , subscriptions = \\_ -> ${app.clockMs ? `Time.every ${app.clockMs} (\\_ -> { on = "tick", target = "", key = "", text = "", value = "" })` : "Sub.none"}
+        , subscriptions = \\_ -> ${app.clockMs ? `Time.every ${app.clockMs} (\\_ -> { on = "tick", target = "", key = "", keys = [], text = "", value = "" })` : "Sub.none"}
         }
 `;
 }
@@ -275,6 +403,7 @@ main =
  * time in (`clockTicks`); glue.js does the JavaScript side.
  */
 function genElmMainPorts(app: App): string {
+  const dw = usesDraws(app);
   const calls = hasClients(app);
   const th = hasThrough(app);
   const c = usesClock(app);
@@ -283,7 +412,11 @@ function genElmMainPorts(app: App): string {
   const first = c ? "(App.init start)" : "App.init";
   // Stored state: what this browser kept comes in with the flags, and the data goes out after every update.
   const init = st ? (calls ? `(Tuple.mapFirst (restoreFrom flags) ${first})` : `(restoreFrom flags ${first})`) : first;
-  const withClock = (fn: string) => (c ? `(${fn} model.clock)` : fn);
+  // Draws: the page's base seed (Web Crypto, in the flags) and a counter give every event its own seed.
+  const withClock = (fn: string) => {
+    const f = c ? `(${fn} model.clock)` : fn;
+    return dw ? `(${f} (Spec.drawsFrom (Draw.fromBase model.seed model.events J.null)))` : f;
+  };
   const send = th
     ? `{-| The calls, each with the config its api's client layer gets from this state; and that config, for the event streams. -}
 send : ( App.Model, List Spec.Call ) -> ( App.Model, Cmd In )
@@ -300,7 +433,7 @@ import Html
 import Json.Decode as D
 import Json.Encode as J
 import Spec
-${app.clockMs ? "import Time\n" : ""}import Ui
+${app.clockMs ? "import Time\n" : ""}import Ui${dw ? "\nimport Draw" : ""}
 ${calls ? `
 
 port request : J.Value -> Cmd msg
@@ -329,7 +462,7 @@ type In
 
 
 type alias Model =
-    { app : App.Model${c ? ", clock : Spec.Clock" : ""} }
+    { app : App.Model${c ? ", clock : Spec.Clock" : ""}${dw ? ", seed : String, events : Int" : ""} }
 
 
 {-| The clock JavaScript sends: { now, today }; the one before when it cannot be read. -}
@@ -360,7 +493,7 @@ main =
             \\flags ->
                 let
                     model =
-                        { app = Tuple.first (send ${init}) ${c ? ", clock = start " : ""}}
+                        { app = Tuple.first (send ${init}) ${c ? ", clock = start " : ""}${dw ? ', seed = Result.withDefault "" (D.decodeValue (D.field "seed" D.string) flags), events = 0 ' : ""}}
 
                     start =
                         decodeClock flags ${elmClockStart(app)}
@@ -370,7 +503,12 @@ main =
             \\i model ->
                 let
                     msg =
-                        case i of
+                        ${dw ? `if String.length model.seed /= 64 || not (String.all Char.isHexDigit model.seed) then
+                            -- No seed from the CSPRNG (the page gives one with the flags): no event runs, so nothing is drawn from a fixed seed.
+                            Nothing
+
+                        else
+                        ` : ""}case i of
                             FromUi w ->
                                 Spec.fromWire w
 ${calls ? `
@@ -397,31 +535,34 @@ ${calls ? `
                             ( a, cmd ) =
                                 send (${withClock("App.update")} e moved.app)
                         in
-                        ( { moved | app = a }, Cmd.batch [ cmd, save (Spec.encodeData (App.data a)) ] )` : `Tuple.mapFirst (\\a -> { moved | app = a }) (send (${withClock("App.update")} e moved.app))`}
+                        ( { moved | app = a${dw ? ", events = moved.events + 1" : ""} }, Cmd.batch [ cmd, save (Spec.encodeData (App.data a)) ] )` : `Tuple.mapFirst (\\a -> { moved | app = a${dw ? ", events = moved.events + 1" : ""} }) (send (${withClock("App.update")} e moved.app))`}
 
                     Nothing ->
                         ( moved, Cmd.none )
         , view = \\model -> Html.map FromUi (Ui.render (Spec.toNode (App.view${clk} model.app)))
-        , subscriptions = \\_ -> Sub.batch [ ${[calls ? "answer FromApi, events FromEvent" : "", c ? "clockTicks NewClock" : "", app.clockMs ? `Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", text = "", value = "" })` : ""].filter(Boolean).join(", ")} ]
+        , subscriptions = \\_ -> Sub.batch [ ${[calls ? "answer FromApi, events FromEvent" : "", c ? "clockTicks NewClock" : "", app.clockMs ? `Time.every ${app.clockMs} (\\_ -> FromUi { on = "tick", target = "", key = "", keys = [], text = "", value = "" })` : ""].filter(Boolean).join(", ")} ]
         }
 `;
 }
 
 /** The test worker of an app that makes calls or reads the clock: the driver sends the clock with every event. */
 const elmWorkerPorts = (app: App) => {
+  const dw = usesDraws(app);
   const calls = hasClients(app);
   const c = usesClock(app);
   const inv = hasData(app);
   const sc = hasScreens(app);
   const st = hasStored(app);
-  const upd = c ? "App.update clock" : "App.update";
+  // Draws: the driver's seed and steering come with every event (\`draw\`).
+  const updWith = (src: string) => `${c ? "App.update clock" : "App.update"}${dw ? ` (Spec.drawsFrom ${src})` : ""}`;
+  const upd = updWith("draws");
   return `port module Worker exposing (main)
 
 import App
 import Json.Decode as D
 import Json.Encode as J
 import Spec
-import Ui
+import Ui${dw ? "\nimport Draw" : ""}
 
 
 port observe : J.Value -> Cmd msg
@@ -460,7 +601,28 @@ main =
 
                     on =
                         Result.withDefault "" (D.decodeValue (D.field "on" D.string) v)
+${dw ? `
+                    drawSeed =
+                        Result.withDefault "" (D.decodeValue (D.at [ "draw", "seed" ] D.string) v)
 
+                    -- Steered values go to the draws in the spec's order, not the order this build
+                    -- evaluates them in: a first run (its result dropped) says which draws the event makes.
+                    probed =
+                        case D.decodeValue (D.at [ "draw", "probe" ] D.value) v of
+                            Ok probe ->
+                                Just ( probe, Maybe.map (\\e -> ${updWith("(Draw.source drawSeed probe)")} e m.app) msg )
+
+                            Err _ ->
+                                Nothing
+
+                    draws =
+                        case probed of
+                            Just ( probe, _ ) ->
+                                Draw.source drawSeed (Result.withDefault J.null (D.decodeValue (D.field "plan" D.value) probe))
+
+                            Nothing ->
+                                Draw.source drawSeed (Result.withDefault J.null (D.decodeValue (D.at [ "draw", "steer" ] D.value) v))
+` : ""}
                     msg =
                         ${calls ? `if on == "answer" then
                             Result.toMaybe (D.decodeValue (D.field "answer" D.value) v) |> Maybe.andThen Spec.fromAnswer
@@ -662,6 +824,8 @@ export function genElmJson(app: App): string {
   const out: string[] = [];
   // JSON for every record and choice: calls send them, answers bring them back.
   out.push(`jsonAndMap : D.Decoder a -> D.Decoder (a -> b) -> D.Decoder b\njsonAndMap =\n    D.map2 (|>)\n\n\n`);
+  // Nothing on the wire: a `T or nothing` field is `null` or missing; a value of another type does not fit.
+  out.push(`{-| A \`T or nothing\` field: missing or null is Nothing; anything else must be a T. -}\njsonOptional : String -> D.Decoder a -> D.Decoder (Maybe a)\njsonOptional name d =\n    D.maybe (D.field name D.value)\n        |> D.andThen\n            (\\v ->\n                case v of\n                    Nothing ->\n                        D.succeed Nothing\n\n                    Just _ ->\n                        D.field name (D.nullable d)\n            )\n\n\n`);
   for (const c of app.choices) {
     const lc = lowerFirst(c.name);
     out.push(`decode${c.name} : D.Decoder ${c.name}\ndecode${c.name} =\n    D.string\n        |> D.andThen\n            (\\s ->\n                case ${lc}FromString s of\n                    Just v ->\n                        D.succeed v\n\n                    Nothing ->\n                        D.fail ("not a ${c.name}: " ++ s)\n            )\n\n\n`);
@@ -670,7 +834,7 @@ export function genElmJson(app: App): string {
   for (const r of app.records) {
     if (!r.fields.length) continue;
     const field = (f: { name: string; type: Type }) =>
-      f.type.k === "Maybe" ? `(D.oneOf [ D.field ${q(f.name)} ${elmDecoder(app, f.type)}, D.succeed Nothing ])` : `(D.field ${q(f.name)} ${elmDecoder(app, f.type)})`;
+      f.type.k === "Maybe" ? `(jsonOptional ${q(f.name)} ${elmDecoder(app, f.type.of)})` : `(D.field ${q(f.name)} ${elmDecoder(app, f.type)})`;
     out.push(`decode${r.name} : D.Decoder ${r.name}\ndecode${r.name} =\n    D.succeed ${r.name}\n${r.fields.map((f) => `        |> jsonAndMap ${field(f)}`).join("\n")}\n\n\n`);
     out.push(`encode${r.name} : ${r.name} -> J.Value\nencode${r.name} r =\n    J.object\n        [ ${r.fields.map((f) => `( ${q(f.name)}, ${elmEncoder(app, f.type, `r.${f.name}`)} )`).join("\n        , ")}\n        ]\n\n\n`);
   }
@@ -689,7 +853,7 @@ export function genElmCalls(app: App): string {
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);
     const unknown = [...(c.ep.effect ? [`${c.tag}Unknown String`] : []), ...(gated(app, c) ? [`${c.tag}Held`, `${c.tag}Rejected`] : [])];
-    out.push(`{-| What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? " Unknown: still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed." : ""}${gated(app, c) ? " Held: the call waits for approval (it has not gone out); its real answer follows once approved, or Rejected." : ""} -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`, ...unknown].join("\n    | ")}\n\n\n`);
+    out.push(`{-| What ${c.ep.method} ${doc(c.ep.path)} answers, per status (the contract). Failed: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? " Unknown: still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed." : ""}${gated(app, c) ? " Held: the call waits for approval (it has not gone out); its real answer follows once approved, or Rejected." : ""} -}\ntype ${c.tag}Answer\n    = ${[...variants, `${c.tag}Failed String`, ...unknown].join("\n    | ")}\n\n\n`);
   }
   const th = throughs(app);
   if (th.length) {
@@ -707,7 +871,7 @@ export function genElmCalls(app: App): string {
         const v = a.from === "answer" ? ["u.answer", ...a.path].join(".") : `u.${a.path[0]}`;
         return `( ${q(a.name)}, ${elmEncoder(app, a.type, v)} )`;
       });
-      return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ), ( "undo", J.bool True ) ]\n`;
+      return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ), ( "undo", J.bool True ), ( "of", J.object [ ( "endpoint", J.string ${q(u.of.name)} ), ( "answer", ${elmEncoder(app, u.answer, "u.answer")} ) ] ) ]\n`;
     }),
   ];
   out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${callCases.join("\n")}\n\n`);
@@ -740,6 +904,7 @@ export function genElmNav(app: App): string {
   const calls = hasClients(app);
   const c = usesClock(app);
   const ck = c ? "clock " : "";
+  const dw = usesDraws(app);
   const exposing = ["Model", "init", "update", "view", "settled", ...(hasData(app) ? ["data"] : []), ...(hasStored(app) ? ["restore"] : []), ...(hasThrough(app) ? ["through"] : [])];
   return `module AppNav exposing (${exposing.join(", ")})
 
@@ -770,8 +935,8 @@ ${calls ? `    let
     ( { inner = m, route = start, go = Nothing }, cs )` : `    { inner = Inner.init ${ck}, route = start, go = Nothing }`}
 
 
-update : ${c ? "Clock -> " : ""}Msg -> Model -> ${calls ? "( Model, List Call )" : "Model"}
-update ${ck}msg m =
+update : ${c ? "Clock -> " : ""}${dw ? "Draws -> " : ""}Msg -> Model -> ${calls ? "( Model, List Call )" : "Model"}
+update ${ck}${dw ? "draws " : ""}msg m =
     let
         route =
             case msg of
@@ -782,7 +947,7 @@ update ${ck}msg m =
                     m.route
 
         ${calls ? "( inner, cs, go )" : "( inner, go )"} =
-            Inner.update ${ck}route msg m.inner
+            Inner.update ${ck}route ${dw ? "draws " : ""}msg m.inner
     in
     ${calls ? "( { inner = inner, route = route, go = address go }, cs )" : "{ inner = inner, route = route, go = address go }"}
 
@@ -835,7 +1000,7 @@ function withScreens(main: string): string {
   };
   let m = one(main, "\nimport App\n", "\nimport AppNav as App\n");
   m = one(m, "\n\ntype In\n    = FromUi Ui.Wire", "\n\nport navigate : (String -> msg) -> Sub msg\n\n\nport goTo : String -> Cmd msg\n\n\ntype In\n    = FromUi Ui.Wire\n    | FromNav String");
-  m = one(m, "                            FromUi w ->\n                                Spec.fromWire w\n", "                            FromUi w ->\n                                Spec.fromWire w\n\n                            FromNav path ->\n                                Spec.fromWire { on = \"navigate\", target = path, key = \"\", text = \"\", value = \"\" }\n");
+  m = one(m, "                            FromUi w ->\n                                Spec.fromWire w\n", "                            FromUi w ->\n                                Spec.fromWire w\n\n                            FromNav path ->\n                                Spec.fromWire { on = \"navigate\", target = path, key = \"\", keys = [], text = \"\", value = \"\" }\n");
   // The update becomes `step`; after it, an address the app asked for goes out.
   const head = "        , update =\n            \\i model ->\n";
   const a = m.indexOf(head);
@@ -868,25 +1033,32 @@ withNav ( model, cmd ) =
 export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, string> = {}): { appFile: string; specSource: string } {
   mkdirSync(join(dir, "src"), { recursive: true });
   copyFileSync(join(ROOT, "runtime/elm/elm.json"), join(dir, "elm.json"));
+  // Randomness is the harness's: an Elm build has no package that makes it (and App.elm may not import one).
+  if (/"elm\/random"/.test(readFileSync(join(dir, "elm.json"), "utf8"))) throw new Error("runtime/elm/elm.json depends on elm/random: randomness is the harness's (Draw.elm)");
   copyFileSync(join(ROOT, "runtime/elm/Ui.elm"), join(dir, "src/Ui.elm"));
   copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
   // Platform functions: the installation's reviewed Elm code, imported by the generated Spec.
   if (app.platforms?.some((p) => p.name === "std.crypto")) copyFileSync(join(ROOT, "runtime/elm/Crypto.elm"), join(dir, "src/Crypto.elm"));
+  // Draws and codes: the harness's Draw module (HMAC-SHA-256 on the reviewed Crypto), never \`Random\`.
+  if (usesDraws(app) || hasCodes(app)) for (const f of ["Crypto.elm", "Draw.elm"]) copyFileSync(join(ROOT, "runtime/elm", f), join(dir, "src", f));
   const spec = genElmSpec(app);
   writeFileSync(join(dir, "src/Spec.elm"), spec);
-  if (!hasClients(app) && !usesClock(app) && !hasStored(app) && !hasScreens(app) && hasInvariants(app)) {
-    // Checks in `always` need the data from the test worker; the browser entry stays plain.
+  const ports = hasClients(app) || usesClock(app) || hasStored(app) || hasScreens(app) || usesDraws(app);
+  if (!ports && (hasInvariants(app) || hasHomes(app))) {
+    // Checks in `always` (and of the keys references find rows by) need the data from the test worker; the browser entry stays plain.
     writeFileSync(join(dir, "src/Main.elm"), genElmMain(app));
     writeFileSync(join(dir, "src/Worker.elm"), elmWorkerPorts(app));
     writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
-  } else if (hasClients(app) || usesClock(app) || hasStored(app) || hasScreens(app)) {
-    writeFileSync(join(dir, "src/Main.elm"), hasScreens(app) ? withScreens(genElmMainPorts(app)) : genElmMainPorts(app));
+  } else if (ports) {
+    // An app whose only reason for this entry is its draws (the seed in the flags) has no ports.
+    const main = genElmMainPorts(app);
+    writeFileSync(join(dir, "src/Main.elm"), hasScreens(app) ? withScreens(main) : /^port [a-z]\w* :/m.test(main) ? main : main.replace("port module Main", "module Main"));
     if (hasScreens(app)) writeFileSync(join(dir, "src/AppNav.elm"), genElmNav(app));
     for (const f of ["store.ts", "api.ts", "fmt.ts"]) copyFileSync(join(ROOT, "runtime/ts", f), join(dir, f));
     writeFileSync(join(dir, "src/Worker.elm"), hasScreens(app) ? elmWorkerPorts(app).replace("\nimport App\n", "\nimport AppNav as App\n") : elmWorkerPorts(app));
-    copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
-    copyFileSync(join(ROOT, "runtime/ts/outbox.ts"), join(dir, "outbox.ts"));
+    copyCallsRuntime(dir);
     copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
+    copyDrawRuntime(app, dir);
     writeThrough(app, dir, layerDirs);
     writeFileSync(
       join(dir, "glue.ts"),
@@ -898,7 +1070,7 @@ import { apply } from "./through.ts";
 import { ${app.sizes ? "hostSize, " : ""}localClock } from "./clock.ts";
 import { load, save } from "./store.ts";
 import type { TypeDesc } from "./api.ts";
-
+${usesDraws(app) ? 'import { freshSeed } from "./draw.ts";\n' : ""}
 const endpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};
 // The clock the app gets${app.sizes ? ", with the size the host shows it at" : ""}.
 const hostClock = () => ${app.sizes ? `({ ...localClock(), size: hostSize(${JSON.stringify(app.sizes)}) })` : "localClock()"};
@@ -907,10 +1079,10 @@ const KEY = ${q(`intent:${app.name}`)};
 const storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };
 const storedDefaults: Record<string, unknown> = { ${storedDefaults(app)} };
 
-// The flags: the local clock, and what this browser kept of the stored state.
-(globalThis as any).intentClock = () => ({ ...hostClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields, storedDefaults) ?? null } : {}) });
+// The flags: the local clock, and what this browser kept of the stored state${usesDraws(app) ? "; the page's base seed for draws (Web Crypto)" : ""}.
+(globalThis as any).intentClock = () => ({ ...hostClock(), ...(Object.keys(storedFields).length ? { saved: load(KEY, storedFields, storedDefaults) ?? null } : {})${usesDraws(app) ? ", seed: freshSeed()" : ""} });
 (globalThis as any).intentConnect = (app: any) => {
-  if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(hostClock()), 15000);${app.sizes ? `\n  // The host shows the app at another size: the app gets the clock with it at once.\n  if (app.ports.clockTicks) window.addEventListener("intentsize", () => app.ports.clockTicks.send(hostClock()));` : ""}
+${usesDraws(app) ? "  if (!app.ports) return; // nothing to connect (an app that only draws gets its seed with the flags)\n" : ""}  if (app.ports.clockTicks) setInterval(() => app.ports.clockTicks.send(hostClock()), 15000);${app.sizes ? `\n  // The host shows the app at another size: the app gets the clock with it at once.\n  if (app.ports.clockTicks) window.addEventListener("intentsize", () => app.ports.clockTicks.send(hostClock()));` : ""}
   if (app.ports.save) app.ports.save.subscribe((data: Record<string, unknown>) => save(KEY, data, storedFields));
 ${hasScreens(app) ? `  // Several screens: the address after # is where the app is; the app's \\\`go to\\\` / \\\`go back\\\` change it.
   const address = () => decodeURI(location.hash.slice(1)) || "/";
@@ -989,6 +1161,36 @@ async function compileStyledElm(dir: string): Promise<string> {
   return m.ok ? "" : clean(m.out);
 }
 
+/**
+ * The driver's steering, for Draw.elm: an object Elm reads through (\`take|site|row|index|n\` gives a
+ * steered value or null; reading \`drawn|site|row|index|value\` tells the driver what was drawn).
+ */
+function steerable(w: object): object {
+  type Steer = { take(k: string, n: number): string | null; drawn(k: string, v: string): void; plan?(asked: [string, number][]): void };
+  const d = (w as { draw?: { seed: string; steer?: Steer } }).draw;
+  if (!d?.steer) return w;
+  const st = d.steer;
+  const through = (s: Steer, plan?: () => unknown) =>
+    new Proxy({}, {
+      has: (_t, k) => typeof k === "string" && (k.startsWith("take|") || k.startsWith("drawn|") || (!!plan && k === "plan")),
+      get: (_t, k) => {
+        if (typeof k !== "string") return undefined;
+        const parts = k.split("|");
+        if (parts[0] === "take") return s.take(parts.slice(1, 4).join("|"), Number(parts[4]));
+        if (parts[0] === "drawn") return s.drawn(parts.slice(1, 4).join("|"), parts.slice(4).join("|")), true;
+        if (k === "plan" && plan) return plan();
+        return undefined;
+      },
+    });
+  const real = through(st);
+  if (!st.plan) return { ...w, draw: { seed: d.seed, steer: real } };
+  // A planned event: the first run reads through \`probe\` (it notes the places asked and gives nothing),
+  // then reading \`plan\` makes the plan and gives the steering for the real run.
+  const asked: [string, number][] = [];
+  const probe = through({ take: (k, n) => (asked.push([k, n]), null), drawn: () => {} }, () => (st.plan!(asked), real));
+  return { ...w, draw: { seed: d.seed, steer: real, probe } };
+}
+
 async function openElm(dir: string, clock?: { now: string; today: string }): Promise<Session> {
   const require = createRequire(import.meta.url);
   const { Elm } = require(join(dir, "worker.cjs"));
@@ -1014,8 +1216,9 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
     waiting?.(v);
   });
   // Elm delivers port messages asynchronously: wait for the observation that answers this event.
-  const deliver = (w: object) =>
-    new Promise<void>((resolve, reject) => {
+  const deliver = (w0: object) => {
+    const w = steerable(w0);
+    return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Elm worker produced no observation within 5s")), 5000);
       waiting = () => {
         clearTimeout(timer);
@@ -1029,6 +1232,7 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
         reject(e);
       }
     });
+  };
   await deliver({ on: "noop" });
   return {
     observe: async () => last,
@@ -1093,10 +1297,11 @@ Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-
 - Every argument of a call is given; an absent optional one is \`Nothing\`.`,
     through: "- `through : Model -> Through` (exposed too): for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
     clock: `Clock (this app reads @now or @today): \`init\`, \`update\` and \`view\` take the clock as their FIRST argument: \`init : Clock -> …\`, \`update : Clock -> Msg -> Model -> …\`, \`view : Clock -> Model -> Screen\`. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,
-    data: "Data (this spec has sentences in `always`): also expose `data : Model -> Data` (the `Data` record in Spec: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
+    data: "Data (this spec has sentences in `always`, stored state, lists a reference points into, or lists inside rows): also expose `data : Model -> Data` (the `Data` record in Spec: every state field, with the value the model holds now). The harness checks the `always` sentences, and that the keys of those lists stay unique, on it after every step; keep it exact, never computed differently from the model.",
     screens: "Screens (this spec has several): `update` and `view` also get where the app is, a `Route` (in Spec: `TicketRoute { id }` for `screen ticket`; `@id` is that field), right before the message or model: `update : Route -> Msg -> Model -> ( Model, Go )` (with calls: `( Model, List Call, Go )`), `view : Route -> Model -> Screen`, which returns the current screen's variant (`TicketScreen { … }`). `Go` is `GoTo (TicketRoute { id = … })` for a `go to` step, `GoBack` for `go back`, or `Stay`. When a screen is shown (a link, an address, going back), the harness sends `ScreenOpened route`: do what `on open <that screen>` says, and nothing for a screen without one. The route is the harness's: never keep a copy in the model. With a clock, it comes first: `update : Clock -> Route -> Msg -> Model -> …`, `view : Clock -> Route -> Model -> Screen`.",
     stored: "Stored state (this spec has `stored` fields): also expose `data : Model -> Data` and `restore : Stored -> Model -> Model`. `restore saved model` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
     platform: "Platform functions (this spec imports one): a sentence that names a function (`the @sha256 of the given @text`) calls exactly that function, from `Spec` (`sha256 : String -> String`). It is the installation's reviewed code: never write your own version of what it does.",
+    draws: `Draws (this spec draws random values): \`update\` takes the event's draws (the \`Draws\` record in Spec) right before the message, after the clock and the route when there are: \`update : Draws -> Msg -> Model -> …\`, \`update : Clock -> Draws -> Msg -> Model -> …\`, \`update : Clock -> Route -> Draws -> Msg -> Model -> …\`. Each place a sentence draws (\`a random @Die\`, \`a random @Code not among …\`, \`3 random @Die\`, \`a random one of @xs\`, \`@xs shuffled\`) is one function of \`Draws\`, named after its handler and its place there (\`draws.roll1 ()\`, \`draws.roll2 ()\`, \`draws.deal1 xs\`): call exactly that function where that sentence runs, once per value the sentence needs, in the order the steps say (write the \`let\` bindings in step order), and nowhere else (not in \`view\`, not ahead of time). Pass what the sentence reads: the list to shuffle or pick from, the values taken, how many; inside a \`for each\`, the row's index first (0 for the first row the loop visits). A value that later steps use again is kept (a \`let\`, the model), never drawn again. There is no \`Random\`: the harness makes every value.`,
   },
   open: openElm,
 };

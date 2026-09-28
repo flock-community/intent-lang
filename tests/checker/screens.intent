@@ -29,7 +29,7 @@ screen help "/help" {
 
 screen ticket "/tickets/{id}" {
   path id: Int
-  text title = the @subject of the ticket whose @id is @id
+  text title = the @subject of the ticket whose @id is @id, or "" when there is none
   text label = "Ticket"
   button back "Back"
 }

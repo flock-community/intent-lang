@@ -1,7 +1,7 @@
 // Differential testing: random user sessions generated from the spec alone (not from any build),
 // replayed on every build; screens are compared step by step.
 import type { App, Element } from "./ast.ts";
-import { describe, steerAction, stepToAction, type Action, type Job } from "./exec.ts";
+import { describe, rowsText, steerAction, stepToAction, type Action, type Job } from "./exec.ts";
 import { usesClock } from "./refs.ts";
 
 function mulberry32(seed: number) {
@@ -53,29 +53,46 @@ export function screenPaths(app: App): string[] {
 /** The apis a screen calls that have a real provider to go wrong with. */
 export const steeredApis = (app: App): string[] => (app.clients ?? []).filter((c) => c.testedWith).map((c) => c.alias);
 
+/** A list element by name, also inside sections and rows. */
+function findList(els: Element[], name: string): Element | undefined {
+  for (const el of els) {
+    if (el.kind === "list" && el.name === name) return el;
+    const inner = findList(el.children, name);
+    if (inner) return inner;
+  }
+}
+
 export function actionTemplates(app: App): { weight: number; make: (rnd: () => number) => Action }[] {
   const typed = new Set<string>();
   for (const ex of app.examples) for (const s of ex.steps) if (s.do === "type") typed.add(s.text);
   const pool = [...typed, ...GENERIC_TEXT, ...NUMERIC_EDGES, ...TRICKY_TEXT];
   const pick = <T,>(rnd: () => number, xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const out: { weight: number; make: (rnd: () => number) => Action }[] = [];
-  const choiceOf = (name: string) => {
-    const t = app.state.find((f) => f.name === name)?.type;
+  const choiceOf = (name: string, lists: string[] = []) => {
+    // Inside a row, the select edits the row item's field: its choice is that field's.
+    const listEl = lists.length ? findList(app.screen, lists[lists.length - 1]) : undefined;
+    const t = listEl ? app.records.find((r) => r.name === listEl.of)?.fields.find((f) => f.name === name)?.type : app.state.find((f) => f.name === name)?.type;
     return app.choices.find((c) => t?.k === "Named" && c.name === t.name)?.values ?? [];
   };
-  const walk = (els: Element[], list?: string) => {
+  // `lists`: the lists around the element, outermost first. An element in a row inside a row picks
+  // an outer row, then an inner row in it.
+  const walk = (els: Element[], lists: string[]) => {
+    const list = lists[lists.length - 1];
     for (const el of els) {
-      const row = (rnd: () => number) => (list ? { list, row: 1 + Math.floor(rnd() * 5) } : {});
-      if (el.kind === "field") out.push({ weight: 3, make: (r) => ({ on: "input", target: el.name, text: pick(r, [...typed, ...typed, ...pool]) }) });
+      const row = (rnd: () => number): Pick<Action, "list" | "row" | "outer"> =>
+        !list ? {} : lists.length > 1 ? { outer: { list: lists[0], row: 1 + Math.floor(rnd() * 5) }, list, row: 1 + Math.floor(rnd() * 5) } : { list, row: 1 + Math.floor(rnd() * 5) };
+      // Fields and selects inside rows act on a row too (the text or value first, so the draws of
+      // top-level elements stay as they were).
+      if (el.kind === "field") out.push({ weight: 3, make: (r) => ({ on: "input", target: el.name, text: pick(r, [...typed, ...typed, ...pool]), ...row(r) }) });
       if (el.kind === "button") out.push({ weight: 3, make: (r) => ({ on: "click", target: el.name, ...row(r) }) });
       if (el.kind === "checkbox") out.push({ weight: 2, make: (r) => ({ on: "toggle", target: el.name, ...row(r) }) });
-      if (el.kind === "select" && el.from) out.push({ weight: 2, make: (r) => ({ on: "choose", target: el.name, pick: Math.floor(r() * 6) }) });
-      else if (el.kind === "select") out.push({ weight: 1, make: (r) => ({ on: "choose", target: el.name, value: pick(r, choiceOf(el.name)) }) });
-      if (el.kind === "list") walk(el.children, el.name);
-      if (el.kind === "section") walk(el.children, list);
+      if (el.kind === "select" && el.from) out.push({ weight: 2, make: (r) => ({ on: "choose", target: el.name, pick: Math.floor(r() * 6), ...row(r) }) });
+      else if (el.kind === "select") out.push({ weight: 1, make: (r) => ({ on: "choose", target: el.name, value: pick(r, choiceOf(el.name, lists)), ...row(r) }) });
+      if (el.kind === "list") walk(el.children, [...lists, el.name]);
+      if (el.kind === "section") walk(el.children, lists);
     }
   };
-  walk(app.screen);
+  walk(app.screen, []);
   // Apps that read the clock (without a tick): time passes, as the examples let it (and a day or two).
   const waits = clockWaits(app);
   if (waits.length) out.push({ weight: 2, make: (r) => ({ on: "tick", target: "", times: 0, ms: pick(r, waits) }) });
@@ -132,7 +149,7 @@ export function orderByDirty(traces: Action[][], dirty: string[]): Action[][] {
     else if (k.startsWith("on ")) { const t = k.split(" ").slice(2).join(" "); if (t) names.add(t); }
   }
   if (!names.size) return traces;
-  const touches = (trace: Action[]) => trace.some((a) => names.has(a.target) || (a.list ? names.has(a.list) : false));
+  const touches = (trace: Action[]) => trace.some((a) => names.has(a.target) || (a.list ? names.has(a.list) : false) || (a.outer ? names.has(a.outer.list) : false));
   return [...traces].sort((x, y) => Number(touches(y)) - Number(touches(x)));
 }
 
@@ -154,19 +171,24 @@ export function makeTraces(app: App, count: number, length: number, seed = 1): A
 }
 
 export function actionText(a: Action): string {
-  const at = a.list ? ` on row ${a.rowWith !== undefined ? `with ${JSON.stringify(a.rowWith)}` : a.row} of ${a.list}` : "";
+  // `on row …` per level, innermost first: a paste-ready example step.
+  const at = rowsText(a);
   switch (a.on) {
-    case "input": return `type ${JSON.stringify(a.text)} into ${a.target}`;
+    case "input": return `type ${JSON.stringify(a.text)} into ${a.target}${at}`;
     case "click": return `click ${a.target}${at}`;
     case "toggle": return `toggle ${a.target}${at}`;
-    case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}` : `choose ${a.value} in ${a.target}`;
+    case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}${at}` : `choose ${a.value} in ${a.target}${at}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
     case "restart": return "restart";
     case "size": return `size ${a.target[0].toLowerCase()}${a.target.slice(1)}`;
     case "open": return `open ${JSON.stringify(a.target)}`;
     case "back": return "go back";
     case "steer": return `steer ${a.target} ${a.value}${a.value === "fail" ? ` ${a.times}` : ""}`;
-    case "other": return `call ${a.call!.endpoint}${Object.keys(a.call!.args).length ? ` with ${Object.entries(a.call!.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ")}` : ""}  # another client`;
+    case "random": return a.target === "shuffle" ? `steer random shuffle ${a.value === "keep" ? "keeps" : "reverses"} order` : a.target === "pick" ? `steer random pick ${a.value}` : `steer random ${a.target} = ${a.value}`;
+    case "other": {
+      const args = [...Object.entries(a.call!.headers ?? {}).map(([k, v]) => `header ${k} = ${JSON.stringify(v)}`), ...Object.entries(a.call!.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`)];
+      return `call ${a.call!.endpoint}${a.call!.as ? ` as ${JSON.stringify(a.call!.as)}` : ""}${args.length ? ` with ${args.join(", ")}` : ""}  # another client`;
+    }
   }
 }
 
@@ -178,7 +200,8 @@ export interface Divergence {
 }
 
 /**
- * Compare the step sequences of every build on every trace. Screen sessions start with the
+ * Compare the step sequences of every build on every trace (a session a build crashed on, \`null\`,
+ * is a disagreement, also when every build crashed on it). Screen sessions start with the
  * initial screen (step 0 is before any action); api and layer sessions do not (step 0 is the
  * answer to the first request): pass \`initial = false\` for those.
  */
@@ -193,8 +216,10 @@ export function compare<A = Action>(traces: A[][], perBuild: Map<string, (string
     const groups = new Map<string, string[]>();
     seqs.forEach((s, i) => groups.set(keyOf(s), [...(groups.get(keyOf(s)) ?? []), builds[i]]));
     const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
-    for (const b of sorted[0][1]) matchMajority.set(b, matchMajority.get(b)! + 1);
-    if (groups.size === 1) {
+    // A crash is never agreement: builds that all crash on a session say nothing about what the spec means.
+    const crashed = seqs.some((x) => !x);
+    if (sorted[0][0] !== "CRASH") for (const b of sorted[0][1]) matchMajority.set(b, matchMajority.get(b)! + 1);
+    if (groups.size === 1 && !crashed) {
       agree++;
       return;
     }
@@ -216,4 +241,27 @@ export function compare<A = Action>(traces: A[][], perBuild: Map<string, (string
     });
   });
   return { agree, total: traces.length, divergences, matchMajority };
+}
+
+/**
+ * A failing session, made short (QuickCheck's shrinking): drop parts of it (halves, then quarters,
+ * …, then single steps) while it still fails, so the example it becomes is small. \`stillFails\` runs
+ * the candidates and returns the index of the first that still fails in the same way, or -1.
+ */
+export async function shrink<A>(actions: A[], stillFails: (tries: A[][]) => Promise<number>, rounds = 25): Promise<A[]> {
+  let cur = actions;
+  for (let r = 0; r < rounds && cur.length > 1; r++) {
+    const tries: A[][] = [];
+    for (let size = Math.max(1, Math.floor(cur.length / 2)); size >= 1; size = size === 1 ? 0 : Math.max(1, Math.floor(size / 2)))
+      for (let i = 0; i + size <= cur.length; i += size) tries.push([...cur.slice(0, i), ...cur.slice(i + size)]);
+    const at = await stillFails(tries);
+    if (at < 0) break;
+    cur = tries[at];
+  }
+  return cur;
+}
+
+/** A session that breaks a rule, as an example to paste into the spec (the steps, and the rule it proves). */
+export function asExample(name: string, steps: string[], rule: string): string {
+  return [`example ${JSON.stringify(name)} {`, ...steps.map((s) => `  ${s}`), `  # after every step, \`always\` ${rule} must hold`, "}"].join("\n");
 }

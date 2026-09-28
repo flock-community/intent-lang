@@ -5,7 +5,7 @@ use cors = std.http.cors {
   origin = "https://desk.example"          # expect: UNKNOWN_NAME
   maxAge = 1, 2                           # expect: BAD_BINDING
 }
-use auth = std.http.apiKey                # expect: BAD_BINDING
+use auth = std.http.apiKey                # expect: BAD_BINDING  # expect: NO_ACCESS (no language line: the current language)
 use nope = std.http.nothing               # expect: UNKNOWN_NAME
 
 state {

@@ -1,0 +1,132 @@
+app AccessChecks {
+  "The access block's checks: names, roles, the typed forms of a condition, rows, contracts."
+}
+
+profile api
+
+use auth = std.http.apiKey {
+  keys = table {
+    secret     | owner
+    "k-ann-1"  | "Ann"
+    "k-lin-2"  | "Lin"
+  }
+}
+
+choice Role: Agent | Lead
+choice Status: Open | Archived
+choice Size: Small | Large
+
+record Grant {
+  who: Text
+  role: Role
+}
+
+record Project {
+  id: Int
+  owner: Text
+  members: List Text = []
+  note: Text = ""
+}
+
+record Ticket {
+  id: Int
+  assignee: Text
+  status: Status = Open
+  project: ref Project
+  size: Size = Small
+}
+
+state {
+  stored grants: List Grant = table {
+    who   | role
+    "Ann" | Agent
+    "Lin" | Lead
+  }
+  tickets: List Ticket = []
+  projects: List Project = []
+  limit: Int = 100
+}
+
+event ticketMoved: Ticket
+
+access {
+  roles = grants
+  - anyone may call @health
+  - an @Agnt may call @listTickets                                                        # expect: UNKNOWN_NAME
+  - an @Agent may call @solveTicket when that ticket's @assignee is the @caller           # expect-not: ACCESS
+  - an @Agent may call @health when the caller looks trustworthy                          # expect: ACCESS
+  - an @Agent may call @listTickets when that ticket's @assignee is the @caller           # expect: NO_ROW
+  - no one may call @deleteTicket                                                         # expect: ACCESS
+  - an @Agent may call @solveTicket when the @caller is in that ticket's @project's @members  # expect-not: HOME
+  - an @Agent may call @moveTicket when that ticket's @project's @note is the @caller    # expect-not: TYPE
+  - an @Agent may call @moveTicket when that ticket's @status is the @caller              # expect: TYPE
+  - an @Agent may call @moveTicket when that ticket is @Archived                          # expect-not: TYPE
+  - an @Agent may call @moveTicket when that ticket is @Large                             # expect-not: TYPE
+  - no one may call @moveTicket when that ticket is @Lead                                 # expect: TYPE
+  - a @Small may call @listTickets                                                        # expect: TYPE
+  - an @Agent may call @moveTicket when @id is at most 3                                  # expect: TYPE
+  - an @Agent may call @moveTicket when @weight is at most @limit                         # expect-not: TYPE
+  - an @Agent may call @moveTicket when @weight is at most "heavy"                        # expect: TYPE
+  - an @Agent may call @moveTicket when @color is at most 3                               # expect: UNKNOWN_NAME
+  - an @Agent may hear @ticketMoved when that ticket's @assignee is the @caller           # expect: NO_ROW
+  - an @Agent may hear @ticketMoved when its body's @assignee is the @caller              # expect-not: ACCESS
+  - an @Agent may call @moveTicket when its body's @assignee is the @caller               # expect: ACCESS
+  - an @Agent may call @ticketMoved                                                       # expect: UNKNOWN_NAME
+  - anyone may call @moveTicket when @weight is at most 3                                 # expect: ACCESS
+  - an @Agent may call every event                                                        # expect: ACCESS
+  - a @Lead may call @listTickets, @solveTicket, @moveTicket, @deleteTicket and @describe
+  - an @Agent may hear @ticketMoved when @weight is at most 3                             # expect: ACCESS
+}
+
+endpoint health GET "/health" {
+  answer 200 with "ok"
+}
+
+endpoint listTickets GET "/tickets" {
+  answer 200 with the @tickets
+}
+
+endpoint solveTicket POST "/tickets/{id}/solve" {
+  path id: ref Ticket
+  if no ticket has that @id {
+    answer 404 "No such ticket"
+  }
+  - set its @status to @Archived
+  answer 200 with the ticket
+}
+
+endpoint moveTicket POST "/tickets/{id}/move" {
+  path id: ref Ticket
+  body weight: Int
+  if no ticket has that @id {
+    answer 404 "No such ticket"
+  }
+  - publish @ticketMoved with the ticket
+  answer 200 with the ticket
+}
+
+endpoint deleteTicket DELETE "/tickets/{id}" {
+  path id: ref Ticket
+  answer 204
+}
+
+endpoint archive POST "/archive" {           # expect: UNGRANTED
+  answer 204
+}
+
+endpoint describe GET "/describe" {         # expect: CONTRACT
+  answers 200 Text
+  answers 401 Problem
+  answer 200 with "tickets"
+}
+
+example "acting as someone" {
+  call listTickets as "Ann"
+  see listTickets.status = 200
+  call listTickets as "Zed"                   # expect: ACCESS
+  call listTickets as "Ann" with header x-api-key = "k-lin-2"   # expect: STEP
+  see audit[1].caller = "Ann"
+  see audit[1].color = "red"                  # expect: UNKNOWN_NAME
+  see audit[1].decision = "maybe"             # expect: STEP
+  see audit has 1 rows
+}

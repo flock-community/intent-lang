@@ -1,0 +1,126 @@
+app Nested {
+  "Lists inside list rows: a task's checklist items. The good forms raise nothing; each mistake is named."
+}
+
+record Item {
+  id: Int
+  label: Text
+  done: Bool = false
+  tag: Text = ""
+  other: Text = ""
+}
+
+record Tag {
+  id: Int
+  name: Text
+}
+
+record Task {
+  id: Int
+  title: Text
+  items: List Item = []
+  tags: List Tag = []
+  newItem: Text = ""
+}
+
+record Part {
+  id: Int
+}
+
+record Line {
+  id: Int
+  parts: List Part = []
+}
+
+record Order {
+  id: Int
+  lines: List Line = []                                          # expect: NOT_YET
+}
+
+record Branch {
+  id: Int
+  children: List Branch = []                                       # expect: NOT_YET
+}
+
+state {
+  stored tasks: List Task = table {
+    id | title      | items
+    1  | "Groceries" | [{ id = 1, label = "Milk" }, { id = 2, label = "Eggs", done = true }]
+    2  | "Taxes"     | []
+    3  | "Garden"    | [{ id = 1, label = "Rake", colour = "red" }]   # expect: UNKNOWN_NAME
+    4  | "Books"     | [{ id = "x", label = "Read" }]              # expect: TYPE
+    5  | "Trip"      | [{ id = 1, label = "Tent" }, { id = 1, label = "Map" }]   # expect: DUPLICATE
+  }
+  toast: Text = ""
+}
+
+screen {
+  list tasks of Task as cards {
+    text title
+    list items of Item {                                         # expect-not: NOT_YET
+      checkbox done
+      text label
+      button removeItem "Remove" as icon
+      button remove "Drop"
+      select tag from tags.name                                  # expect-not: UNKNOWN_NAME
+    }
+    list missing of Item {                                       # expect: BAD_BINDING
+      text id                                                    # expect: SHADOWED
+    }
+    list tags of Item {                                          # expect: TYPE
+      text tagId = "{id}"
+    }
+    list open of Item = its @items whose @done is false {        # expect-not: TYPE
+      text openLabel = "{label}"
+      select other from nowhere.name                             # expect: UNKNOWN_NAME
+    }
+    list wrong of Item = its @tags {                             # expect: TYPE
+      text wrongId = "{id}"
+    }
+    field newItem "New item"
+    button addItem "Add"
+    button remove "Remove task"                                  # expect: DUPLICATE
+    text left = "{the number of its @items whose @done is false} left"
+  }
+  text total = "{the number of @tasks's @items} items"
+}
+
+on click removeItem {
+  - remove that item from that task's @items                    # expect-not: NO_ROW
+}
+
+on click addItem {
+  if that task's @newItem, trimmed, is blank {
+    stop
+  }
+  - add an @Item to the end of that task's @items with @id = the highest @id in that task's @items + 1 (1 when there are none), @label = that task's @newItem, trimmed
+  - clear that task's @newItem
+}
+
+on click remove {
+  - remove that item from that task's @items                    # expect: NO_ROW
+}
+
+on toggle done {
+  if every @done in that task's @items is true {                 # expect-not: NO_ROW
+    - set @toast to "{that task's @title} is complete"
+  }
+}
+
+example "items of a task" {
+  see label on row 1 on row 1 = "Milk"
+  toggle done on row 2 on row 1
+  click removeItem on row with "Milk" on row with "Groceries"
+  see items on row 1 has 1 row
+  type "Bread" into newItem on row 1
+  click addItem on row 1
+  see label on row 2 of items on row 1 of tasks = "Bread"
+  toggle done on row 1                                           # expect: STEP
+  click addItem on row 1 on row 1                                # expect: STEP
+  click removeItem on row 1 of tasks on row 1 of items           # expect: STEP
+  see total = "3 items"
+}
+
+always {
+  see every row of items: label is shown
+}

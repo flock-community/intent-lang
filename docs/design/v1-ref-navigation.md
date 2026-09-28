@@ -308,3 +308,37 @@ Example apps to add or change:
 5. **`exists` next to `there is a`.** Recommend both, each for one thing: `there is a @x` for a
    `T or nothing`, `@x exists` for the row behind a reference. They are different facts (a key is
    always there; its row may not be), and the checker refuses each in the other's place (`TYPE`).
+
+## As built (v66), and where it departs
+
+Built in v66 together with nothing-safety (the user's scope change: `T or nothing` works like
+Kotlin's `T?`, and handling it is checked at compile time). Departures from the text above:
+
+- **Equality with nothing is Kotlin's `==`**, not SQL's "false both ways": `whose @ticket's @status
+  is @Open` leaves out comments whose ticket is gone, but `is not @Closed` keeps them (nothing is not
+  Closed). §9.12 says so. Open question 1 is answered this way by the user.
+- **`UNGUARDED` is gone.** A value read through a reference is a `T or nothing` like any other, and
+  using it where a `T` is needed is the error `NOTHING` (open question 2: an error, for navigation and
+  lookups alike). Sentences the checker cannot type whole are held to the same rule.
+- **`'s` is a safe call everywhere**: a chain that starts from a `T or nothing` (`@chosenBook's
+  @title`) is one too, also without a reference in it (the checker used to read it as a `T`).
+- **Generated lookups live in the one generated module** the compiler reads (Elm `Spec`, TypeScript
+  `spec.ts`), not in a separate `Refs` module: `commentTicket : List Ticket -> Comment -> Maybe
+  Ticket` per `ref` field, and per target record and home a lookup by key named after its list
+  (`ticketInTickets`, not `ticketByKey`: a record may have several homes). TypeScript returns
+  `null` (as every `T or nothing` there), not `undefined`.
+- **`SPELLING`** covers `the @f of the ticket whose @id is <a ref Ticket>` (→ `<ref>'s @f`) and a
+  whole condition `there is a/no ticket whose @id is <ref>` (→ `<ref> exists / does not exist`). A
+  bare row lookup used as a value (`set @current to the ticket whose @id is @x`) has no navigation
+  form and stays a lookup.
+- **Writes**: inside the guard a write through the chain itself (`set that comment's @ticket's
+  @status …`) is allowed as well as through "that ticket". A guard ends at a step that may change the
+  reference or its home list (the conservative Kotlin rule for mutable properties).
+- **The home's key** is checked on the app's data after every step: apps with a reference into a
+  home now hand over `data` (as apps with `always` sentences do), and the build writes `keys.json`.
+- Not built: fuzzer weighting of removals in referenced homes, the planted-bug converge run, reverse
+  navigation (open question 3, as recommended), `ref` lists (`List (ref Tag)`), and `for each` over a
+  chain (`for each @t in @ticket's @tags` is not in the grammar).
+- The example app is `apps/34-ref-navigation.intent`; `apps/24-references.intent` now keeps the open
+  ticket as a `ref Ticket or nothing` and follows it; the books → authors → countries app is not
+  written (the two-hop chain and the filter through a reference are in `tests/checker/refnav.intent`).

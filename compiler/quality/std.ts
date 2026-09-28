@@ -5,6 +5,7 @@ import type { QualityContext, Rule, RuleSet } from "../quality.ts";
 import { LINE_BASE } from "../ast.ts";
 import * as h from "./hints.ts";
 import type { Warn } from "./hints.ts";
+import { accessUnproven } from "../access.ts";
 
 // A hint from hints.ts as a rule: its warnings are the rule's findings.
 const hint = (id: string, about: string, run: (app: QualityContext["app"], warn: Warn) => void): Rule => ({
@@ -21,18 +22,26 @@ const hint = (id: string, about: string, run: (app: QualityContext["app"], warn:
 const rules: Rule[] = [
   hint("UNPROVEN", "every dynamic element is checked by some example, and every endpoint is called in one", h.unproven),
   hint("UNMARKED", "a declared name in a sentence is written with @", h.unmarked),
-  hint("UNGUARDED", "a value that may be nothing, or a lookup that may find nothing, says what happens then", h.unguarded),
   hint("UNCHECKED", "a rule that reads like an invariant is in `always`, where it is checked", h.unchecked),
   hint("UNTYPED", "a derived value that matters has a known or declared type", h.untyped),
   hint("UNANCHORED", "a sentence mentions a declared name", h.unanchored),
   hint("UNSTRUCTURED", "control words are structure (`if`, `stop`, `answer`), not prose", h.unstructured),
-  hint("SPELLING", "a form is written the language's way (`whose`, not `where`)", h.spelling),
+  hint("SPELLING", "a form is written the language's way (`whose`, not `where`; a reference is followed, not looked up; `never goes down`, not `only goes up`; `a random @Token`, not `@newToken`)", (app, warn) => (h.spelling(app, warn), h.changeSpelling(app, warn))),
   hint("PIVOT", "a call that cannot be undone comes after the calls that can", h.pivot),
   hint("NO_EXAMPLES", "the spec has examples", h.noExamples),
   hint("NO_HANDLER", "a button, a call's answer, an undo and a clock are handled", h.noHandler),
   hint("SHADOWED", "a row's field does not share its name with an app-level name", h.shadowed),
   hint("UNUSED", "declared components and `only` entries are used", h.unused),
   hint("OVERRIDES_PROOF", "a refinement does not override what its base proves", h.overridesProof),
+  hint("BREAKS_RULE", "a handler step does not write what a change rule freezes, unless a condition before it can exclude the frozen rows", h.breaksRule),
+  hint("REDRAW", "an endpoint that stores a drawn value answers with that value, not a new draw", h.redraw),
+  hint("UNSTEERED", "an example that compares a drawn value with a literal steers it first (`steer random T = …`)", h.unsteered),
+  hint("GUESSABLE", "a random type accepted as input has 128 bits or more, or an attempt limit", h.guessable),
+  hint("NO_ACCESS", "an api that says who is calling also says what they may do (an `access` block)", h.noAccess),
+  hint("HAND_ACCESS", "with an `access` block, no endpoint refuses by hand on a condition about the caller", h.handAccess),
+  hint("ACCESS_UNPROVEN", "every access rule is proven both ways by the examples: a call it permits and one it refuses", accessUnproven),
+  hint("UNENFORCED", "a screen-only app does not promise who may do what (only a service can keep that promise)", h.unenforced),
+  hint("TRANSITION_UNPROVEN", "every change a transition table allows (`only changes from @A to @B`) is made by some example", h.transitionUnproven),
   {
     id: "NEVER_UNCHECKED",
     level: "warning",
@@ -44,7 +53,7 @@ const rules: Rule[] = [
       if (a.kind === "bundle" || a.kind === "platform" || a.kind === "contract" || a.kind === "layer") return [];
       if (!a.purpose.some((p) => /\b(never|always|at most|at least|no two)\b/i.test(p)) || a.invariants?.length || a.always.length) return [];
       if (a.examples.some((ex) => /\b(never|once|twice|at most|at least|no two|not twice)\b/i.test(ex.name))) return [];
-      return [{ line: 1, message: "the purpose promises something (never / always / at most / no two), but no `always` rule checks it and no example says it proves it", fix: "say it in `always { - … }`, or prove it with an example named after the promise" }];
+      return [{ line: 1, message: `the purpose promises something (never / always / at most / no two), but no \`always\` rule checks it and no example says it proves it${a.purpose.some((p) => h.CHANGE_CLAIM.test(p)) ? h.CHANGE_FORMS : ""}`, fix: "say it in `always { - … }`, or prove it with an example named after the promise" }];
     },
   },
   {

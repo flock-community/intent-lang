@@ -55,7 +55,7 @@ ${regions.map((r) => `- ${r}`).join("\n")}
 `
     : "";
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false, regions: string[] = []): string {
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false, regions: string[] = [], draws = false, access = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const t = targetModule(target);
   const lang = t.fence;
@@ -87,7 +87,7 @@ ${specModule}\`\`\`
 \`\`\`intent
 ${specText}\`\`\`
 
-${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${platforms ? `# Platform functions\n\n${svc.prompt.platform}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}${regionRules(regions, "//")}Write app.ts now.`;
+${clock ? `# Clock\n\n${svc.prompt.clock}\n\n` : ""}${access ? `# Access\n\n${svc.prompt.access}\n\n` : ""}${draws ? `# Draws\n\n${svc.prompt.draws}\n\n` : ""}${platforms ? `# Platform functions\n\n${svc.prompt.platform}\n\n` : ""}${data ? `# Data\n\n${stored ? TARGETS.ts.prompt.stored : TARGETS.ts.prompt.data}\n\n` : ""}${probe ? `# Probe mode\n\n${PROBE_RULES}\n\n` : ""}${regionRules(regions, "//")}Write app.ts now.`;
   return `# Language reference
 
 ${language}
@@ -103,7 +103,7 @@ ${t.prompt.fmt}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}${platforms && t.prompt.platform ? `\n${t.prompt.platform}\n` : ""}
+${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}${draws ? `\n${t.prompt.draws}\n` : ""}${platforms && t.prompt.platform ? `\n${t.prompt.platform}\n` : ""}
 # Generated interface (${t.specFile})
 
 \`\`\`${lang}

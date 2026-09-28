@@ -1,0 +1,97 @@
+app Changes {
+  "Change rules: `always` sentences about the data before a step and after it."
+}
+
+choice Status: Open | Solved | Closed
+choice Priority: Low | Urgent
+choice Decision: Pending | Approved | Rejected
+
+record Ticket {
+  id: Int
+  subject: Text
+  status: Status
+  priority: Priority
+}
+
+record Expense {
+  id: Int
+  amount: Decimal
+  status: Decision
+}
+
+record Note {
+  text: Text
+}
+
+record Deposit {
+  id: Int
+  amount: Decimal
+}
+
+state {
+  tickets: List Ticket = []
+  expenses: List Expense = []
+  notes: List Note = []
+  deposits: List Deposit = []
+  tags: List Text = []
+  balance: Decimal = 0
+  count: Int = 0
+  title: Text = ""
+  lastSync: DateTime = 2026-01-05T09:00
+  lastSeen: DateTime or nothing = nothing
+  done: Bool = false
+  old: Int = 0
+}
+
+derive {
+  gone = the removed @tickets                                    # expect: CHANGE
+}
+
+screen {
+  text shown = "{@count}"
+  text before = "{@count before}"                                # expect: CHANGE
+  button x "X"
+}
+
+on click x {
+  - set @old to @count before                                    # expect: CHANGE
+  - increase @count by 1
+  if @title was "a" {                                            # expect: CHANGE
+    stop
+  }
+}
+
+always {
+  - a @Ticket's @id never changes                                # expect: CHANGE
+  - the @count never goes down                                   # expect-not: TYPE
+  - a @Ticket's @nope never changes                              # expect: UNKNOWN_NAME
+  - a @Note's @text never changes                                # expect: NO_KEY
+  - @title never goes down                                       # expect: TYPE
+  - @lastSync never goes down                                    # expect-not: TYPE
+  - @lastSeen never goes down                                    # expect: NOTHING
+  - @count never goes up                                         # expect-not: TYPE
+  - a @Ticket's @status only changes from @Open to @Urgent        # expect: TYPE
+  - a @Ticket's @status only changes from @Open to @Open          # expect: TYPE
+  - a @Ticket's @status only changes from @Open to @Solved, from @Open to @Solved   # expect: DUPLICATE
+  - a @Ticket's @subject only changes from @Open to @Solved       # expect: TYPE
+  - a @Ticket's @status only changes from @Open to @Solved, from @Solved to @Open or @Closed   # expect-not: TYPE
+  - @done only changes from false to true                        # expect-not: TYPE
+  - an @Expense whose @status was @Approved never changes         # expect-not: TYPE
+  - an @Expense whose @status was @Urgent never changes           # expect: TYPE
+  - an @Expense is never removed                                  # expect-not: HOME
+  - @balance is never removed                                    # expect: TYPE
+  - an @Expense never goes down                                   # expect: TYPE
+  - a @Note is never removed                                      # expect: NO_KEY
+  - @balance is @balance before plus the sum of @amount over the new @deposits   # expect-not: TYPE
+  - @balance is @title before plus 1                             # expect: TYPE
+  - every @status in the new @expenses is @Pending                # expect-not: TYPE
+  - the removed @notes is empty                                 # expect: NO_KEY
+  - every @amount in @deposits is at least @amount before         # expect: NOTHING
+  - @count is at least @count before                             # expect-not: NOTHING
+  - the number of @tags is at least the number of @tags before    # expect-not: TYPE
+}
+
+example "counting" {
+  click x
+  see shown = "1"
+}

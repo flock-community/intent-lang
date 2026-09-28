@@ -163,5 +163,7 @@ export function refine(base: App, child: App, refinements: Refinement[], err: Er
     app.design = { ...d, ...child.design, colors: { ...d.colors, ...child.design.colors } };
   }
   if (child.clockMs) app.clockMs = child.clockMs;
+  // Access (v70): a refinement adds rules to the base's block (permits widen, forbids narrow).
+  if (child.access) app.access = app.access ? { ...app.access, roles: child.access.roles ?? app.access.roles, rules: [...app.access.rules, ...child.access.rules] } : child.access;
   return app;
 }

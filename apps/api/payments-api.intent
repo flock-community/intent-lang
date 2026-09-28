@@ -1,14 +1,43 @@
 app PaymentsApi {
   "A payment service for tests and demos: it keeps charges, refunds them once, and sends receipts."
+  "A customer pays from the shop's page without a key; giving money back, looking a charge up and sending a receipt need the shop's key."
 }
 
 import pay.payments
 
 implements pay.paymentsApi
 
+use auth = std.http.apiKey {
+  keys = table {
+    secret          | owner
+    "k-shop-5e1d"   | "Shop"
+    "k-till-77c2"   | "Till"
+    "k-old-0a9b"    | "Former"
+  }
+}
+
+choice Role: Merchant | Cashier
+
+record Grant {
+  who: Text
+  role: Role
+}
+
 state {
+  stored grants: List Grant = table {
+    who    | role
+    "Shop" | Merchant
+    "Till" | Cashier
+  }
   stored charges: List Charge = []
   stored receipts: List Int = []     # the ids of the charges a receipt was sent for
+}
+
+access {
+  roles = grants
+  - anyone may call @charge                                  # the customer's card allows a payment: a checkout page needs no key
+  - a @Merchant may call @getCharge, @refund and @sendReceipt
+  - a @Cashier may call @getCharge and @sendReceipt          # at the till: look a payment up, send its receipt, never give money back
 }
 
 endpoint charge {
@@ -51,14 +80,65 @@ endpoint sendReceipt {
 example "kept after a restart" {
   call charge with amount = 1250, description = "Yoga"
   restart
-  call getCharge with id = 1
+  call getCharge as "Shop" with id = 1
   see getCharge.status = 200
   call charge with amount = 300, description = "Tea"
   see charge.body.id = 2
 }
 
 example "no such charge to look at" {
-  call getCharge with id = 7
+  call getCharge as "Shop" with id = 7
   see getCharge.status = 404
   see getCharge.body.error = "No such charge"
+}
+
+example "the shop refunds a charge, once" {
+  call charge with amount = 500, description = "Drop-in class"
+  call refund as "Shop" with id = 1
+  see refund.status = 200
+  see refund.body.status = "Refunded"
+  call getCharge as "Shop" with id = 1
+  see getCharge.body.status = "Refunded"
+  call refund as "Shop" with id = 1
+  see refund.status = 409
+  see refund.body.error = "Already refunded"
+  call refund as "Shop" with id = 7
+  see refund.status = 404
+}
+
+example "a receipt, from the shop or the till" {
+  call charge with amount = 900, description = "Mat rental"
+  call sendReceipt as "Till" with id = 1, email = "ann@example.com"
+  see sendReceipt.status = 204
+  call sendReceipt as "Shop" with id = 2, email = "ann@example.com"
+  see sendReceipt.status = 404
+}
+
+example "the till never gives money back" {
+  call charge with amount = 900, description = "Mat rental"
+  call getCharge as "Till" with id = 1
+  see getCharge.status = 200
+  call refund as "Till" with id = 1
+  see refund.status = 403
+  see refund.body.error = "Not allowed"
+  see audit[1].caller = ""
+  see audit[1].endpoint = "charge"
+  see audit[2].caller = "Till"
+  see audit[2].decision = "refused"
+  call getCharge as "Shop" with id = 1
+  see getCharge.body.status = "Paid"
+}
+
+example "without a key a customer only pays" {
+  call charge with amount = 400, description = "Tea"
+  see charge.status = 201
+  call refund with id = 1
+  see refund.status = 401
+  see refund.body.error = "Missing API key"
+  call getCharge with id = 1
+  see getCharge.status = 401
+  call refund as "Former" with id = 1
+  see refund.status = 403
+  call sendReceipt as "Former" with id = 1, email = "eve@example.com"
+  see sendReceipt.status = 403
 }

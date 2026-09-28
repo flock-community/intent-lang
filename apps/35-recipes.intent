@@ -1,0 +1,70 @@
+app Recipes {
+  "Recipes from the recipe service, each shown with its ingredients inside it, and a search by name."
+}
+language v68
+import kitchen.recipes
+
+uses kitchen.recipesApi as kitchen {
+  tested with "apps/api/recipes-api.intent"
+}
+
+state {
+  recipes: List Recipe = []
+  search: Text = ""
+}
+
+screen {
+  heading "Recipes"
+  field search "Search"
+  button find "Find"
+  list recipes of Recipe as cards {
+    text name
+    text serves = "Serves {serves}"
+    list ingredients of Ingredient {
+      text qty = "{qty as decimal}"
+      text unit
+      text what
+    }
+  }
+}
+
+on start {
+  - call @kitchen.listRecipes
+}
+
+on click find {
+  if @search, trimmed, is blank {
+    - call @kitchen.listRecipes
+  } else {
+    - call @kitchen.listRecipes with @search = @search, trimmed
+  }
+}
+
+on answer kitchen.listRecipes {
+  if its status is 200 {
+    - set @recipes to its body
+  }
+}
+
+example "recipes with their ingredients" {
+  see recipes has 2 rows
+  see name on row 1 = "Pancakes"
+  see serves on row 1 = "Serves 4"
+  see ingredients on row 1 has 3 rows
+  see what on row 3 on row 1 = "milk"
+  see qty on row 3 on row 1 = "0.5"
+  see unit on row 3 on row 1 = "l"
+  see qty on row 1 on row 1 = "250"
+  see ingredients on row 2 has 1 row
+  see what on row 1 on row 2 = "black tea"
+}
+
+example "searching by name" {
+  type "Tea" into search
+  click find
+  see recipes has 1 row
+  see what on row 1 on row 1 = "black tea"
+  type "  " into search
+  click find
+  see recipes has 2 rows
+}

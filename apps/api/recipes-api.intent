@@ -1,0 +1,39 @@
+app RecipesApi {
+  "A small recipe service for tests and demos: recipes with their ingredients inside them, read-only."
+}
+
+import kitchen.recipes
+
+implements kitchen.recipesApi
+
+state {
+  recipes: List Recipe = table {
+    id | name       | serves | ingredients
+    1  | "Pancakes" | 4      | [{ id = 1, qty = 250, unit = "g", what = "flour" }, { id = 2, qty = 2, unit = "", what = "eggs" }, { id = 3, qty = 0.5, unit = "l", what = "milk" }]
+    2  | "Tea"      | 1      | [{ id = 1, qty = 1, unit = "bag", what = "black tea" }]
+  }
+}
+
+endpoint listRecipes {
+  if there is a @search {
+    answer 200 with the @recipes whose @name contains @query.search
+  }
+  answer 200 with @recipes
+}
+
+example "recipes come with their ingredients" {
+  call listRecipes
+  see listRecipes.body has 2 rows
+  see listRecipes.body[1].name = "Pancakes"
+  see listRecipes.body[1].ingredients has 3 rows
+  see listRecipes.body[1].ingredients[2].what = "eggs"
+  see listRecipes.body[2].ingredients[1].unit = "bag"
+}
+
+example "searching by name" {
+  call listRecipes with search = "Tea"
+  see listRecipes.body has 1 row
+  see listRecipes.body[1].ingredients[1].what = "black tea"
+  call listRecipes with search = "Soup"
+  see listRecipes.body has 0 rows
+}

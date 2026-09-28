@@ -1,4 +1,4 @@
-# Intent — language reference (v65)
+# Intent — language reference (v71)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -62,7 +62,7 @@ derivative that must be rebuildable at any moment and behave the same every time
   | `set @x to @y` / `set @x to @Value` | `@y` is a value `@x` can hold (an Int fits a Decimal, a T fits a `T or nothing`) |
   | `increase` / `decrease @x by …` | `@x` is a number |
   | `@x is @Value`, `whose @field is @Value` | the value belongs to `@x`'s choice |
-  | `@a's @b`, `the @b of the ticket`, `its body's @b` | `b` is a field of that record (of the answer's or event's body) |
+  | `@a's @b`, `the @b of the ticket`, `its body's @b` | `b` is a field of that record (of the answer's or event's body; of the row a `ref` points at) |
   | `add @y to (the end of) @xs` | `@y` fits the items of `@xs` |
   | `add a @Ticket … with @f = @y, @g @Value, the given @h` | each is a field of Ticket, and each value fits it; the list holds Tickets |
   | `call @api.endpoint with @p = @y` | `p` is a param of the endpoint, and `@y` fits it |
@@ -70,10 +70,10 @@ derivative that must be rebuildable at any moment and behave the same every time
   | `the ticket whose @f is @y` / `the @tickets whose …` | `f` is a field of Ticket, and `@y` fits it |
 
   **Relations are checked as relations.** A `ref Ticket` holds a Ticket's key and fits nothing
-  else: it is compared with a Ticket's key (`the ticket whose @id is @ticket`), never with another
-  record's key or another record's reference; it is not read like a record (`@comment's @ticket's
-  @subject` is an error that shows the lookup to write); and a seeded row's reference must point at
-  a seeded row (`comments` row 2 holding ticket 9 when no ticket 9 is seeded is an error).
+  else: it is compared with a Ticket's key (`@comment's @ticket is @id`), never with another
+  record's key or another record's reference; it is followed to the row it points at
+  (`@comment's @ticket's @subject`, §3), which may be gone; and a seeded row's reference must point
+  at a seeded row (`comments` row 2 holding ticket 9 when no ticket 9 is seeded is an error).
 
   **The common operators have types.** A value built with them is typed whole, and a wrong operand
   is an error before any build:
@@ -88,22 +88,62 @@ derivative that must be rebuildable at any moment and behave the same every time
   | `@x as money / a date / a clock` | a number or a moment | text (money: two decimals, no currency sign; write `"€ {@x as money}"`) |
   | `the number of @xs`, `there are 3 @xs` | a list | an Int / a condition |
   | `the sum of @xs's @f`, `the sum of @f over @xs`, `the sum of the @f of @xs` | a list of records with a number field | that number |
-  | `the highest / lowest @f in @xs` | a list of records | the field's type |
+  | `the sum of @qty times @price over @xs` | a list of records; a number computed in each row | that number |
+  | `@xs's @ys` (a list field of each row) | a list of records | one list: every row's items, in order (a join) |
+  | `the highest / lowest @f in @xs` | a list of records | the field's type, or nothing (the list may be empty) |
   | `@x is empty / blank`, `@x contains @y` | text or a list | a condition |
+  | `@x exists`, `@x does not exist` | a reference (`@comment's @ticket`) | a condition: whether the row it points at is there |
   | `@x is a valid @Email` | the refined type's base | a condition |
-  | `A when C; B when D`, `A when C, otherwise B`, `A, or B when there is none` | values of one type (in a template: anything shown) | that type |
+  | `A when C; B when D`, `A when C, otherwise B` | values of one type (in a template: anything shown) | that type |
+  | `A, or B when there is none`, `A (B when there are none)` | A of type `T` or `T or nothing`, B a `T` | a `T` (a `T or nothing` when B is nothing) |
+  | `a random @T` | `T` lists its values: a choice, an `Int from a to b`, a code (`Text of 6 digits`, §3a) | a `T`, drawn (§3c) |
+  | `a random @T not among @xs` | as above, and a list of `T` (`the @code of @waiting`) | a `T or nothing` (a `T` when `T` has 2^64 values or more) |
+  | `3 random @T`, `@n random @T` | a whole number | a `List T` (the values may repeat) |
+  | `a random one of @xs` | a list | an item, or nothing (the list may be empty) |
+  | `@xs shuffled` | a list | the same items in a random order |
+  | `the first 5 of @xs` | a list | a list of at most that many (`the first 5 of @deck shuffled`: five of the shuffled deck) |
   | `its body`, `its body's @f`, `the error`, `its @f`, `the @f of that ticket` | an answer, an event, a row | its type |
 
   Everything else between references is English, left to judgement (and to the examples that prove
   it). `intent check --typed <files>` reports, per spec, how many sentences with references are
   typed whole, and lists the rest: the places where judgement lives.
 
-  Inside `if there is a @x { … }`, and after `if there is no @x { stop }`, a `T or nothing` counts
-  as a `T`. A derived value has the type its form gives (`the number of …` is an Int, `the @tickets
-  whose …` a list of tickets, `the ticket whose …` a ticket or nothing) or the one it declares
-  (`total: Decimal = …`, checked against its form); when neither is known and it is used where its
-  type matters, the checker hints (`UNTYPED`) to declare it. A reference followed by more words that
-  compute (`@count plus 1`, `@draft, trimmed`) is left alone: this check never guesses.
+  A derived value has the type its form gives (`the number of …` is an Int, `the @tickets whose …` a
+  list of tickets, `the ticket whose …` a ticket or nothing) or the one it declares (`total: Decimal
+  = …`, checked against its form); when neither is known and it is used where its type matters, the
+  checker hints (`UNTYPED`) to declare it. A reference followed by more words that compute
+  (`@count plus 1`, `@draft, trimmed`) is left alone: this check never guesses — except about
+  nothing, below.
+
+  **Nothing is handled before it is used** (Kotlin's null safety). A `T or nothing` is not a `T`.
+  It comes from a field or state declared so, a lookup (`the ticket whose …`), `the highest / lowest
+  …` of a list, and a read through a reference (`@comment's @ticket's @subject`, §3). Where a `T` is
+  needed — a number to add, an order (`is above`), text to trim or show (a template's hole, an
+  element's value), a list to count or walk, a field or state of type `T`, `increase … by` — a value
+  that may be nothing is an error (`NOTHING`), until the sentence handles it, in one of these ways
+  only (there is no forced unwrap):
+
+  - **the elvis**: `…, or B when there is none` (or `(B when there are none)` at the end): B is what
+    the value is then, and must be a `T`; under it, nothing propagates through the whole value before
+    it (`@a plus @b's @n, or 0 when there is none`). `…, or nothing when there is none` keeps it a
+    `T or nothing`, which fits only a `T or nothing`.
+  - **a smart cast**: a condition that asks makes it a `T` where it holds — inside `if there is a @x
+    { … }` (or `if @x is not nothing`, `is set`), after `if there is no @x { stop }` (or `answer`),
+    in the `else` of `if there is no @x` / `if @x is nothing`, in the rest of `there is a @x and …`,
+    in the other alternatives of `…, or B when there is no @x` and of `A when there is a @x,
+    otherwise B`, and in an element (and the elements inside it) that is `visible when there is a
+    @x` — it is only shown then. `@x exists` / `does not exist` do the same for the row a reference
+    points at, which is then "that ticket" (§3); `if there is no locker in @empty whose … { stop }`
+    does it for `the lowest … of the @empty whose …`. A smart cast ends at the first step that may
+    change what it is about (`set @x`, `clear @x`, `add`/`remove` on its list, any step for a list
+    asked about): the value may be nothing again.
+  - **assigning** it to a `T or nothing` (`set @chosen to the ticket whose …`).
+
+  Equality needs none of this: `@x is "a"` is false when `@x` is nothing, `@x is not "a"` is true,
+  and `@x is nothing` asks. A derived value may itself be a `T or nothing`; it is handled where it is
+  used. A sentence the checker cannot type whole is held to the same rule: when it reads a value that
+  may be nothing, a lookup or a reference's row, and neither says what then nor sits under a smart
+  cast, it is a `NOTHING` error.
 - `#` starts a comment (outside strings). Blank lines are ignored.
 - Names: element, field and state names are `lowerCamel`; app, record and choice names and
   choice values are `UpperCamel`.
@@ -132,19 +172,20 @@ screen { … }                # what the user sees, top to bottom (§4)
 screen name "/path" { … }   # or several screens, each with its address (§4i)
 on <verb> <element> { … }   # what happens (§5): `- sentence` lines
 rules { … }                 # guidance in words: `- sentence` lines; `rules by ai { … }` for rules an LLM wrote
-always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data)
+always { … }                # what must always hold, checked after every step: `see` steps (the screen) and `- sentence` lines (the data, also before and after a step)
 example "name" { … }        # proof (§6): steps
 ```
 
 Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `T or nothing`, a
 record name, a choice name, and `ref X` — a field holding record `X`'s key (see the next
-paragraph). `T or nothing` is a value that may be absent: say so instead of
-using a stand-in such as `0` or `""` (`selected: Int or nothing = nothing`, then
-`visible when there is a @selected` and `set @selected to nothing`). `Maybe T` still reads.
-There is no null and no stand-in: wherever a sentence uses such a value, it says what happens
-when there is none, in the sentence ("…, or nothing when there is no @selected") or around it
-(`if there is a @selected { … }`, or an early `if there is no @selected { stop }`). The checker
-warns (`UNGUARDED`) when it does not. Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
+paragraph). `T or nothing` is a value that may be absent, and works like Kotlin's `T?`: nothing
+is what other languages call null or none. Say so instead of using a stand-in such as `0` or `""`
+(`selected: Int or nothing = nothing`, then `visible when there is a @selected` and `set @selected
+to nothing`). `Maybe T` still reads. A `T or nothing` is not a `T`: wherever a sentence needs a
+`T`, it says what happens when there is none, in the sentence ("…, or 0 when there is none") or
+around it (`if there is a @selected { … }`, or an early `if there is no @selected { stop }`), and
+the checker refuses it otherwise (`NOTHING`; the rules are in §2). In JSON, nothing is `null`.
+Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time). In JSON a Date is `"2026-09-24"` and a
 DateTime `"2026-09-24T09:00"`; an example compares them as written in the spec
 (`see deposit.body.expiresAt = 2026-09-27 09:00`).
@@ -167,11 +208,37 @@ record Comment {
 }
 ```
 
-The field is the key, not the row: a sentence that reads the row looks it up (`the ticket whose
-@id is @ticket`) and says what happens when it finds none (else `UNGUARDED`), because the row may
-have been removed since. Removing a row does not remove the rows that refer to it (§9.12). A
-lookup's `@` names the list or derived value it looks in, and the checker requires it (a typo is
-`UNKNOWN_NAME`).
+The field holds the key, not the row. **Following it** reads the row it points at, in the record's
+**home list**: the one state field of type `List Ticket` (not a derived value, not a component's).
+When the app has none or several, the field names it — `ticket: ref Ticket in tickets` — else
+following it is an error (`HOME`); holding and comparing the key needs no home. The home's key is
+unique: the checker checks the seeded rows (`DUPLICATE`), the harness every step.
+
+- `@comment's @ticket` is the key (compared with a Ticket's key, stored as it is); a following
+  `'s @field` reads the row: `@comment's @ticket's @subject`, `its @ticket's @subject`,
+  `that comment's @ticket's @status`, `the @subject of @comment's @ticket`, several hops
+  (`@book's @author's @country's @name`). Each `'s` is a safe call (Kotlin's `?.`): the row may
+  have been removed since (§9.12), so the value is a `T or nothing`, and one `…, or X when there
+  is none` at the end covers every hop: `its @ticket's @subject, or "(removed)" when there is none`.
+  A chain that starts from a `T or nothing` (`@chosen's @subject`) is one too.
+- In a condition it is compared as any `T or nothing` (§9.12): `the @comments whose @ticket's
+  @status is @Open` leaves out the comments whose ticket is gone.
+- `@x exists` / `@x does not exist` asks whether the row behind a reference is there (a reference is
+  never nothing; its row may be). Inside `if that comment's @ticket exists { … }`, and after
+  `if that comment's @ticket does not exist { stop }`, the row is there: "that ticket" names it, and
+  reads through it need no fallback. `there is a @x` is for a `T or nothing`; each is refused in
+  the other's place (`TYPE`).
+- A write through a reference (`set`, `increase`, `add … to`, `remove … from`) needs the row: only
+  where it is known to be there, else `NAV_WRITE`: `if that comment's @ticket does not exist { stop }`,
+  then `- set the @status of that ticket to @Closed`.
+- Through a list, a chain flattens and drops the missing: `@comments's @ticket's @subject` is the
+  subjects of the tickets the comments point at that are there, in the comments' order.
+
+Reading a reference's own row is following it: `the @subject of the ticket whose @id is
+@c's @ticket` is written `@c's @ticket's @subject` (`SPELLING`; `intent fix` rewrites it). A lookup
+stays the form for everything else (by another field, in another list). Removing a row does not
+remove the rows that refer to it (§9.12). A lookup's `@` names the list or derived value it looks
+in, and the checker requires it (a typo is `UNKNOWN_NAME`).
 Every `state` field needs a default. Literals: `"text"`, numbers, `true`/`false`, `[]`,
 `nothing`, choice values.
 
@@ -208,8 +275,47 @@ state {
 }
 ```
 
-A cell holds one value. A list in a cell (`[1, 2]`) is `NOT_YET`: put the items in a record of their
-own with a field that points back to the row (`record Tick { habit: ref Habit  day: Int }`).
+A cell holds one value, or the row's inner list (below): `[{ id = 1, label = "Milk" }, …]`, each
+record with the inner record's fields (omitted ones take their defaults), `[]` for none, and no two
+with one key in a row (`DUPLICATE`).
+
+**A list inside a record: parts a row owns.** A record may hold a list of another record: a task's
+checklist items, an order's lines, a recipe's ingredients. Use it for parts that are **owned**:
+created, shown and removed only through their row, and gone when it is removed. Things that live on
+their own or are shared (a ticket's comments, a book's author) are a list of their own with a `ref`
+back. An inner record's key is unique **within its row** (two orders may both have line 1): a row
+inside a row is named by the path of keys, its row's and its own. The inner record may hold a list
+of plain values (`tags: List Text`) but not a list of records again (a third level is `NOT_YET`),
+and a record never holds a list of its own kind (a tree).
+
+```
+record Item {
+  id: Int
+  label: Text
+  done: Bool = false
+}
+
+record Task {
+  id: Int
+  title: Text
+  items: List Item = []
+  newItem: Text = ""        # what is typed into this task's "New item" field
+}
+
+state {
+  stored tasks: List Task = table {
+    id | title       | items
+    1  | "Groceries" | [{ id = 1, label = "Milk" }, { id = 2, label = "Eggs", done = true }]
+    2  | "Taxes"     | []
+  }
+}
+```
+
+A chain through two lists **flattens**, as a join does: `@tasks's @items` is every item of every
+task, in order (a `List Item`, not a list of lists), so `the number of @tasks's @items whose @done is
+false` is a number. A sentence that wants one row's items says `its @items` in that row, or `that
+task's @items`. Removing a row removes the rows inside it; a draft that belongs to one row (a text
+typed into a field in that row) is a field of the row's record, as above.
 
 ## 3a. Refined types
 
@@ -221,6 +327,7 @@ type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/    # the whole text must m
 type Age = Int from 0 to 150                              # inclusive
 type Price = Decimal from 0
 type Title = Text of length 1 to 80                       # characters; also `at most 80`, `at least 1`
+type PickupCode = Text of 6 digits                        # a code: exactly 6 characters of an alphabet
 ```
 
 - Use it like any type: `mail: Email`, `body email: Email`, `List Email`.
@@ -230,7 +337,29 @@ type Title = Text of length 1 to 80                       # characters; also `at
 - The checker checks seed data, defaults and literals against the rule before any build.
 - An api answers a value that breaks the rule with `400 {"error": "<name> must be a valid Email"}`.
   A contract that answers a refined type is checked against it too.
-- Common ones are in bundles: `import std.text` gives `Email`.
+- Common ones are in bundles: `import std.text` gives `Email`, and `Token` (`Text of 32 hex digits`,
+  a secret of 128 bits).
+
+**Codes.** `Text of <n> <alphabet>` is a text of exactly n characters from an alphabet. Its values
+are listed, so a value can be drawn from it (§3c). The alphabets are a closed set:
+
+| Alphabet | Characters | Bits per character |
+|---|---|---|
+| `digits` | `0`–`9` | 3.32 |
+| `hex digits` | `0`–`9`, `a`–`f` | 4 |
+| `capitals and digits` | `A`–`Z`, `0`–`9` | 5.17 |
+| `letters and digits` | `A`–`Z`, `a`–`z`, `0`–`9` | 5.95 |
+| `unambiguous letters and digits` | 32: `0`–`9` and `A`–`Z` without `I`, `L`, `O`, `U` (Crockford's) | 5 |
+| `from "…"` | the characters given, each once, at least two | log2 of how many |
+
+A code of n characters from k has k^n values: `Text of 6 digits` has 1,000,000 (19.9 bits), `Text
+of 8 unambiguous letters and digits` 32^8 (40 bits). An `unambiguous` code is made in capitals and
+read forgivingly as input (a request's param, a field checked with `is a valid`): lower case is
+accepted, `o` and `O` are read as `0`, `i`, `I`, `l` and `L` as `1`, and hyphens are ignored, so
+`"k7mq-or1z"` typed by a person is the code `"K7MQ0R1Z"`. Every other alphabet is read exactly.
+The value an app keeps is the normal form: the interface has `readPickupCode` (the code a text is,
+or nothing) next to `isPickupCode`. Literals (seed data, defaults, examples) are written in the
+normal form.
 
 ## 3b. Time
 
@@ -275,6 +404,69 @@ list notes of Note {
 `@now`. On the server it runs on a timer; in tests, whenever a `wait` moves the clock past its
 next time (counted from the start), in order, before the next step.
 
+## 3c. Chance
+
+A random value is drawn from a **type that lists its values**: a choice, an `Int from a to b`
+(both bounds, at most 2^32 values), or a code (`Text of 6 digits`, §3a). The type is the space, and
+every draw is uniform over it:
+
+```
+type Die = Int from 1 to 6
+type PickupCode = Text of 6 digits
+
+on click roll {
+  - set @first to a random @Die
+  - set @second to a random @Die          # two draws: two values
+}
+
+on click deal {
+  - set @hand to the first 5 of @deck shuffled
+}
+```
+
+| Form | Gives |
+|---|---|
+| `a random @T` | a `T` |
+| `a random @T not among @xs` | a `T` that is not in the list; a `T or nothing` when `T` has fewer than 2^64 values (it can run out), so the sentence says what then |
+| `3 random @T` | a `List T` of independent values (they may repeat); drawing without repeats is a shuffle: `the first 6 of @balls shuffled` |
+| `a random one of @xs` | an item, or nothing for an empty list |
+| `@xs shuffled` | the same items in a random order |
+
+- **Each draw is one value.** A draw in a step gives a new value each time the step runs (each row,
+  in a `for each`). To use a value twice, keep it and refer to it: `add an @ApiKey … with @secret =
+  a random @Token`, then `answer 201 with … the @secret of the new api key`. A derived value that
+  draws (an api's `freeCode = a random @PickupCode not among the @code of @waiting`) has one value
+  per request wherever it is read, as long as what it excludes has not changed.
+- **Uniqueness is asked for, never assumed.** `not among` excludes the values given. A record's key
+  filled from a draw says `not among` unless its type has 128 bits or more:
+
+  ```
+  derive {
+    freeCode = a random @PickupCode not among the @code of @waiting
+  }
+
+  endpoint deposit {
+    if there is no @freeCode {
+      answer 409 "No pickup code is free"
+    }
+    - add a @Parcel to the end of @parcels with @code = @freeCode, …
+  }
+  ```
+- **Where draws are.** In handlers, endpoints, recurring work and an api's derived values. The
+  screen shows state: a draw in an element, a screen's derived value, an `always` rule or `on
+  start` is refused. A draw inside a loop inside a loop is not in the language yet.
+- **Secure by default, the only kind.** In the browser and on the server every draw comes from the
+  platform's cryptographic generator, keyed per event. A screen's draws are secret from other
+  people but not from the user of that browser: a code that protects something from other users (an
+  invitation, a pickup code) is drawn by a service. Weights, decimals and other distributions are
+  not in the language yet.
+- **In tests the chance is the harness's.** An example steers the values it needs (`steer random
+  Die = 6, 6`, §6). A draw nothing steered comes from a seed made from the example's name: the same
+  in every run and every build, and changed by no other example. Random sessions draw from their
+  own seed, lean toward the edges (a range's bounds, an alphabet's first and last character, a value
+  already taken, an order kept or reversed), and write a failing session down with `steer random`
+  steps to paste.
+
 ## 4. Screen elements
 
 | Element | Form | Shows | User can |
@@ -293,7 +485,9 @@ next time (counted from the start), in order, before the next step.
 
 Modifiers, in the element's block:
 
-- `visible when <sentence>` — the element (or section) is absent from the screen otherwise.
+- `visible when <sentence>` — the element (or section) is absent from the screen otherwise. Its value (and
+  the values inside a section) is only read while it is visible: `visible when there is a @x`
+  makes `@x` a value there, not a `T or nothing` (§2).
 - `enabled when <sentence>` — buttons only; a disabled button cannot be clicked.
 - `look "<sentence>"` — how this element looks, in words (§4a).
 
@@ -322,11 +516,35 @@ Binding (checked by the compiler):
 - `list x of Record { … }` shows the rows of that record (the row's elements are declared inside
   the block). `list x of Text` (or Int, Decimal, Bool, Date, DateTime) shows each value as a row:
   it has no row elements, so `see x has N rows` is how an example checks it.
-- A list row cannot hold a list of its own (`NOT_YET`): show the sub-items in a list of their own
-  next to it, filtered by the selected row.
+- **A list inside a row.** Inside a list row, `list x of R` without `=` shows the row item's field
+  `x`, which must be a `List R` (as `text x` shows the row's field `x`; `BAD_BINDING` without it,
+  `TYPE` for a list of another record). With `= expr` it shows that value, computed per row
+  (`list open of Item = its @items whose @done is false`). Its block holds the inner row's
+  elements; they act on that inner row ("that item"), in that outer row ("that task"). Rows go two
+  levels deep: a list inside a row of an inner list is `NOT_YET`. Without `as`, the inner list is a
+  list inside the row; inside a `table` row it sits in a cell of its own, as a plain stacked list
+  (a `table` inside a `table` is `NOT_YET`).
+
+  ```
+  list tasks of Task as cards {
+    text title
+    list items of Item {
+      checkbox done
+      text label
+      button removeItem "Remove" as icon
+    }
+    field newItem "New item"
+    button addItem "Add"
+    text left = "{the number of its @items whose @done is false} left"
+  }
+  ```
 - Element names are unique within a screen, and two screens may reuse one (`back` on both, §4i):
   the handler (`on click back`) belongs to the name, so both screens share its behaviour. Inside a
-  list, row elements have their own scope. Sections do not create a scope.
+  list, row elements have their own scope. A row and the rows of a list inside it share one scope,
+  so `on click removeItem` names one element (a name in both is `DUPLICATE`). Sections do not create
+  a scope.
+- `select x from items.name` inside an inner row may also take its options from a list field of
+  the row around it (`items` is state, a derived value, or a field of the outer row).
 - A section title and a field label are fixed text. To show a changing title, use
   `text x = … as title` as the section's first element.
 - `select x from items.name` with `x` = `""`, or a text that is not among the options,
@@ -588,7 +806,8 @@ was locked fails the check until someone reviews it and runs `intent lock <app>`
 pick up a library change silently.
 
 **Version.** A spec may say which language version it was written for, on a line of its own:
-`language v12`. The checker warns when the language has moved on since.
+`language v12`. The checker warns when the language has moved on since. A spec without the line is
+read as written for the current version.
 
 **Notes.** A comment at the end of a line (`remaining: Int = 1500  # seconds left`) is a note:
 the compiler reads it too. A comment on a line of its own is only for people.
@@ -712,6 +931,8 @@ example "creating a ticket" {
 }
 ```
 
+- A path is `/` and then letters, digits, `. _ ~ - /` and `{x}` holes (`"/tickets/{id}/solve"`);
+  anything else is a query or body param (`SYNTAX`). The same holds for a screen's path.
 - `path x: T` (appears in the path as `{x}`), `query x: T` and `body x: T` are the input;
   `returns T` is the answer's body. Steps are sentences, as in handlers: "answer 200 with …",
   `answer 404 "…"` (which ends the endpoint), inside `if <condition> { … }` where it applies.
@@ -728,9 +949,12 @@ example "creating a ticket" {
   A value is a literal, a list `[a, b]`, or a record `{ bundle = "std.list", minimum = "1.0" }`
   (`needs = [{ bundle = "std.list", minimum = "1.0" }]`); the checker matches records' fields
   with the param's type.
-- `@newToken` is a fresh random secret for the request (32 hex characters), the same wherever
-  one endpoint uses it: an API key at sign-up, an invitation code, a reset link. In tests it is
-  `token-1`, `token-2`, … in the order requests reach endpoints, so examples can use it.
+- A fresh secret is a draw (§3c): `a random @Token` (`import std.text`: 32 hex characters, 128
+  bits), drawn once and referred to after. `@newToken`, one secret per request (`token-1`,
+  `token-2`, … in tests), still reads, and is a `SPELLING` hint for `a random @Token`.
+- A code in a request (a path, query or body param of a code type, §3a) is read as its alphabet
+  says, and the endpoint sees its normal form; one that is not a code is answered `400 {"error":
+  "<name> must be a valid <Type>"}`. In JSON a code is a string.
 - A build is a Node server (`node server.mjs`, `PORT`) plus the same pure handler under test.
   With `INTENT_TRACE=1`, every answer carries `x-intent-source`: the spec line that gave it (the
   step that answers that status, the endpoint, or the layer that refused). Leave it off in
@@ -743,6 +967,106 @@ example "creating a ticket" {
 - A raw request, for what is not an endpoint (a preflight, an unknown path):
   `request OPTIONS "/tickets" with header origin = "…", query status = Open, body text = "…"`,
   then `see request.status`, `see request.header.<name>`, `see request.body…`.
+
+**Access: who may do what.** Who is calling is a layer's to say (`std.http.apiKey` provides
+`@caller`, §4h); what they may do is the api's `access` block. Its rules are declared once, checked
+before any build, and enforced by the harness on the server before the endpoint runs: an endpoint
+never checks who calls, and no build writes an access check of its own.
+
+```
+choice Role: Agent | Lead
+
+record Grant {
+  who: Text                   # a caller, as the key layer names them
+  role: Role
+}
+
+state {
+  stored grants: List Grant = table {
+    who   | role
+    "Ann" | Agent
+    "Lin" | Lead
+  }
+}
+
+access {
+  roles = grants
+  - anyone may call @health
+  - any caller may call @me
+  - an @Agent may call @myTickets, @takeTicket and @addComment
+  - an @Agent may call @solveTicket when that ticket's @assignee is the @caller: "Only the assignee can solve this ticket"
+  - a @Lead may call every endpoint
+  - no one may call @reopenTicket when that ticket is @Archived: "Archived tickets stay closed"
+  - an @Agent may hear @ticketAssigned when its body's @assignee is the @caller
+  - a @Lead may hear every event
+}
+```
+
+- **Roles are data.** `roles = grants` names a state list of records with `who: Text` and exactly
+  one field whose type is a choice (the roles). A caller holds the role of every grant whose `who`
+  is the caller; a person with several roles has several grants. Grants are read on every request,
+  so a role an endpoint grants or revokes counts from the next request on. Separation of duty is an
+  `always` sentence over them (`- no two @grants have the same @who with one @Clerk and the other
+  @Approver`).
+- **Permits:** `anyone may call …` (no key needed; no condition), `any caller may call …` (any known
+  key), `a @Role may call …` (`a @Clerk or an @Approver`, `a @Clerk, an @Approver or a @Lead`). The
+  endpoints are `@a`, `@a and @b`, `@a, @b and @c`, or `every endpoint`. Events are heard: `may hear
+  @event`, `may hear every event`.
+- **Forbids:** `no one may call <endpoints> when <condition>`. A forbid that holds refuses, whatever
+  permits. A forbid always has a condition.
+- **Default deny.** In an api with an `access` block, a request no rule permits is refused (also to
+  an endpoint added later), and an event no rule lets a caller hear reaches no stream of theirs.
+- **The refusal.** A known caller gets `403 {"error": …}` with the message after the rule's `:` — the
+  forbid's that holds, or else that of a permit that covers the caller but whose condition does not
+  hold — and `"Not allowed"` otherwise. A request without a key gets the key layer's `401`, except
+  where `anyone may` call. The contract declares both: `every endpoint answers 401 Problem` and
+  `every endpoint answers 403 Problem`.
+- **The order:** the layers (the key), the route and its input (404, 405, 400), access, then a
+  remembered answer (`idempotency-key`, §4f) and the endpoint. A refused request changes nothing:
+  no state, no events, no calls. A caller whose role was revoked does not get a remembered answer
+  back.
+
+**A condition is typed whole**, so the harness can enforce it: one of these forms, joined with
+`and` (for "or", write a second rule).
+
+| Form | Example |
+|---|---|
+| a field of the row is (not) the caller | `that ticket's @assignee is the @caller`, `that expense's @submitter is not the @caller` |
+| the caller is (not) in a list field of the row | `the @caller is in that project's @members` |
+| the row has a choice value | `that ticket is @Archived`, `that payout is not @Requested` |
+| a param compared with a literal or a state field | `@amount is at most 100000`, `@amount is at most @approvalLimit`, `@kind is @Refund` |
+| a field of an event's payload is the caller | `its body's @assignee is the @caller`, `the @caller is in its body's @watchers` |
+
+- **The row.** "that ticket" is the row the endpoint names with a `ref` param: `path id: ref Ticket`
+  (on the wire the Ticket's key, as before). A path through the row may follow references (`that
+  ticket's @project's @owner`), each looked up in its record's home list (§3).
+- **Nothing to protect.** When the `ref` param's key finds no row, the row's conditions do not
+  refuse (a permit's hold, a forbid's do not), and the endpoint answers for the missing row itself.
+  The role part still applies. A request let through only that way whose endpoint then answers 2xx
+  with that row there (it made it, or found it) is refused (403), and nothing it did is kept.
+- **A condition that cannot be decided refuses.** When a reference on the way points at a row that
+  is gone (the ticket's project was removed), or a param it compares is absent, a permit does not
+  hold and a forbid does (fail securely).
+- **The caller is a key's owner.** A request without a key has no caller: it equals no field and is
+  in no list.
+
+**The audit.** The harness logs every refusal (the key layer's 401s too, with no caller and the
+layer's line as the rule) and every permitted request with a method that changes something: `at` (the clock), `caller`, `endpoint`, `decision` (`allowed` or `refused`),
+`rules` (the rules that decided, as `file:line`), `status`, and the idempotency key when there is
+one; never a key's secret. On the server it is appended to `INTENT_AUDIT` (default `audit.jsonl`)
+together with the stored state of the same request; no endpoint reads or changes it. Examples read
+it: `see audit has 2 rows`, `see audit[1].caller = "Ann"`, `see audit[2].decision = "refused"`
+(entries count from 1).
+
+**Events, per listener.** On `GET /events` each event goes only to the streams whose caller may hear
+it. With an `access` block the stream itself needs no rule. Before every event a stream passes the
+layers again with the request that opened it: a stream whose key was revoked since is closed.
+
+**Acting as someone.** `call solveTicket as "Ann" with id = 4` makes the call with Ann's key (the key
+layer says how: `acts as`, §4h). A call without `as` and without a key header is anonymous, and `with
+header x-api-key = "…"` still sends a key of the example's own (a wrong one, say). Random sessions
+call as each caller the examples act as, as every key's owner (a key without a grant too) and
+anonymously, and check after every call that a refused one changed nothing.
 
 ## 4k. Jobs: an app without a screen
 
@@ -890,8 +1214,11 @@ endpoint sendReceipt POST "/charges/{id}/receipt" {
   and an `idempotency-key` header that it answered before gets the same answer again (with
   `idempotent-replayed: true`), and the endpoint does not run twice. The same key with a different
   request is refused (422); an `effect external` endpoint refuses a request without a key (400).
-  Keys are kept per caller for 24 hours, with the stored state. Screens send a key with every call
-  (the same for every attempt). "Exactly once" is not promised: no system can over a network; this
+  Keys are kept per caller for 24 hours, with the stored state. A caller without a key layer's
+  caller (anonymous) shares one space with every other anonymous caller, so an anonymous key is
+  kept only when it cannot be guessed: 32 or more hex digits (128 random bits); a shorter one is no
+  key (an `effect external` endpoint refuses it, 400). Screens send a key with every call (the same
+  for every attempt; 128 random bits). "Exactly once" is not promised: no system can over a network; this
   is delivered at least once, and recognised when repeated.
 - A screen takes an effect back with `undo @alias.endpoint` (§4g); agreement before an external
   call is `through std.actions` (§4g).
@@ -949,9 +1276,10 @@ on answer tickets.createTicket {
   **unknown** (`if its status is unknown { … }`), not a failure. Say what the screen shows then;
   don't offer to do it again as if it failed.
 - `on start` runs once when the app starts.
-- Where a service is hosted is not in the spec: in the browser, calls to `<alias>` go to the
-  `api.<alias>` query parameter, else `api`, else the page's own origin
-  (`index.html?api.desk=https://desk.example/api`).
+- Where a service is hosted is not in the spec: it is the deployment's. In the browser, calls to
+  `<alias>` go where the page says, `<meta name="intent-api" content="desk=https://desk.example/api">`
+  (`content="https://…"` for every api), else to the page's own origin. Never where the page's
+  address says: a link cannot send calls, and the keys a client layer adds, elsewhere.
 - `on event <alias>.<event>` handles an event of the contract, whoever caused it: this screen,
   or another client. "its body" is the payload. Events the screen does not handle are ignored.
   In the browser, the screen listens to the service's `/events` stream.
@@ -966,7 +1294,9 @@ answer, in the order published, before the calls that answer made.
 
 **Other clients.** In a screen's example, `call tickets.createTicket with subject = "…", …` is
 another client calling the provider: the screen does not see the answer, only the events it
-publishes. That is how an example proves that the screen follows changes made elsewhere:
+publishes (the ones its own caller may hear, when the provider has an `access` block).
+`call desk.solveTicket as "Lin" with id = 4` is another client acting as Lin, with Lin's key in the
+provider (§4e). That is how an example proves that the screen follows changes made elsewhere:
 
 ```
 example "another agent adds a ticket" {
@@ -1029,14 +1359,20 @@ use auth = std.http.apiKey {  # who calls; provides `caller`
     secret       | owner
     "k-ann-7f3a" | "Ann"
   }
-  public = "/health"
+}
+
+access {                              # what each caller may do (§4e)
+  - anyone may call @health
+  - any caller may call @solveTicket when that ticket's @assignee is the @caller: "Only the assignee can solve this ticket"
 }
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
-  path id: Int
-  if that ticket's @assignee is not the @caller {
-    answer 403 "Only the assignee can solve this ticket"
+  path id: ref Ticket
+  if no ticket has that @id {
+    answer 404 "No such ticket"
   }
+  - set its @status to @Solved
+  answer 200 with the ticket
 }
 ```
 
@@ -1052,11 +1388,14 @@ endpoint solveTicket POST "/tickets/{id}/solve" {
   owner of the key. Endpoint steps use it by name ("the caller").
 - A layer's answers are not the app's: the contract of an endpoint (§4f) covers what the app
   answers, not a 401 from `auth`.
+- In an api with an `access` block (§4e), what needs no key is said once, as `anyone may call …`
+  in the block: the harness binds the key layer's `public` from those rules (binding `public` by
+  hand there is an `ACCESS` error), and the key layer checks a key wherever one is sent.
 
 Available layers: `std.http.secure` (x-content-type-options, x-frame-options, referrer-policy,
 cache-control, content-security-policy), `std.http.cors` (`origins`, `headers`, `maxAge`),
 `std.http.apiKey` (`keys`, `keyHeader`, `public`; provides `caller`; secrets compared in
-constant time). A `public` entry is a path (`"/health"`), every path under a prefix
+constant time; `acts as` a caller in examples). A `public` entry is a path (`"/health"`), every path under a prefix
 (`"/bundles/*"`), or either for one method only (`"GET /bundles/*"`, `"POST /signup"`).
 
 **Writing a layer** (`layer std.http.cors`): `param name: Type [= default]`, `provides name:
@@ -1066,7 +1405,9 @@ runs for every answer, including the harness's 404 and 400). Examples send raw r
 check the answer with `see status = 204`, `see header vary = "origin"`, `see body.error = "…"`.
 They run the layer around a stub app that answers `200 { "reached": true, … }` with what the
 layer provided (`see body.caller = "Sam"`). `examples with` binds the params the examples use;
-`given key = ""` changes one from that step on.
+`given key = ""` changes one from that step on. A layer that provides `caller` says how a test acts
+as a caller (`call x as "Ann"`, §4e), in one typed line the harness reads: `acts as @caller with
+header @keyHeader = the @secret of the key in @keys whose @owner is @caller`.
 
 **A client's layer** wraps the calls a screen makes instead of a service: it has only
 `before every call`, which changes each call as it leaves (usually: adds a header). It also
@@ -1135,9 +1476,12 @@ uses pay.paymentsApi as pay {
 }
 ```
 
-The gate runs in the screen, so it protects against the app's own mistakes and an agent acting too
-fast, not against someone who controls the browser: a service that must refuse unapproved calls
-checks the approval itself.
+The gate runs in the screen: it is a brake, not access control. It protects against the app's own
+mistakes and an agent acting too fast (the host is trusted there, the agent is not), not against a
+person, who controls the browser. Who may do what is the service's `access` block (§4e): an approval
+that must hold against the user is a state change on the service by a second person, refused by a
+forbid when it is the same person (`no one may call @approveExpense when that expense's @submitter
+is the @caller`). A spec that needs both writes both.
 
 **What every endpoint may answer.** A service behind layers answers things its endpoints do not
 (a 401 from `std.http.apiKey`). The contract says so once, and every endpoint's answers include
@@ -1204,9 +1548,33 @@ Idioms the compiler reads the same way every time:
   has, and `in @xs` must be a list (the checker says so).
 - A step written as prose control ("- if …, … and stop", "- otherwise …") still reads, but the
   checker hints (`UNSTRUCTURED`) to write it as structure.
-- **The row's item:** in a handler for a button inside a list, "that <item>" (e.g. "that
-  ticket") is the item of the clicked row. In an expression inside a row, "its" and "this
-  <item>" refer to the row's item: `text left = its @capacity minus its number of sign-ups`.
+- **The row's item:** in a handler for a button (or checkbox, field or select) inside a list, "that
+  <item>" (e.g. "that ticket") is the item of the clicked row. In an expression inside a row, "its"
+  and "this <item>" refer to the row's item: `text left = its @capacity minus its number of sign-ups`.
+- **A row inside a row:** in a handler of an element in an inner row, two rows are there: the inner
+  row by its record ("that item") and the row around it ("that task"); "its" is the inner one.
+  An element of the outer row has no inner row (`NO_ROW` for "that item"). The inner list is the
+  row's field: `add … to the end of that task's @items`, `remove that item from that task's @items`,
+  `set that item's @done to …`, `clear that task's @newItem`.
+
+  ```
+  on click addItem {
+    if that task's @newItem, trimmed, is blank {
+      stop
+    }
+    - add an @Item to the end of that task's @items with @id = the highest @id in that task's @items + 1 (1 when there are none), @label = that task's @newItem, trimmed
+    - clear that task's @newItem
+  }
+
+  on click removeItem {
+    - remove that item from that task's @items
+  }
+  ```
+
+  An inner key is unique only within its row, so a selection of an inner row keeps both keys
+  (`chosenOrder` and `chosenLine`), and a handler finds the row in two steps: `if there is no order
+  in @orders whose @id is @chosenOrder { stop }`, then `if there is no line in that order's @lines
+  whose @id is @chosenLine { stop }`, then `increase the @qty of that line by 1`.
 - **Adding a record:** `- add a @Ticket to the end of @tickets with @subject = @draft, trimmed,
   and @status @Open`. New ids: `@id = the highest @id in @tickets + 1` (1 when there are none).
 - **Messages in handlers** refer to the clicked row's fields by name: `set @toast.message to
@@ -1240,7 +1608,23 @@ steer pay lose answer       # the next call to the api `pay` is done, but its an
 steer pay slow              # a retry arrives while the first attempt still runs: the same key, sent again
 steer pay restart after effect  # the service restarts after the effect, its keys kept
 steer pay expire keys       # a late retry after the keys expired: the same key is treated as new
+steer random Die = 6, 6     # the next two Dies drawn are 6 and 6 (§3c)
+steer random shuffle keeps order   # the next shuffle leaves the list as it is (or: reverses order)
+steer random pick 3         # the next `a random one of` takes the third item
 ```
+
+An api's examples (§4e) `call` its endpoints, as a caller (`call solveTicket as "Ann" with id = 4`)
+or anonymously, and read the access audit (`see audit has 2 rows`, `see audit[1].decision =
+"refused"`).
+
+`steer random <Type> = <value>, …` queues values for the next draws of that type, in the order
+written, in the step that follows or later; a value that `not among` excludes is skipped, as a
+drawn one would be (steer the taken value first, then a free one, to prove the collision path).
+The values are checked against the type (`TYPE`), and the type must be drawn somewhere (`STEP`). A
+steered value still queued when the example ends fails it: the draw did not happen where the
+example expected. Draws happen in the order the steps say. An example may carry an unsteered value
+forward (`code = {deposit.body.code}`), but a `see` that compares one with a literal gets
+`UNSTEERED`: that value changes when the spec's draws change.
 
 `steer <api> lose request | lose answer | duplicate | slow | restart after effect | expire keys | fail <n>`
 makes the way to an api go wrong for its next attempts: the request never arrives; it is done but
@@ -1303,6 +1687,63 @@ and the data at that moment. `rules` stays for guidance the compiler reads but n
 something is done, what a word means); a rule that reads like an invariant gets an `UNCHECKED`
 hint to move it to `always`.
 
+**Change rules: before and after a step.** Some promises are about what a step may do, not about
+one moment: an approved expense never changes, a balance only moves with deposits and
+withdrawals, an id is never reused. A `- sentence` in `always` that uses one of these forms is
+a change rule. The named forms need no judgement; the harness checks them itself:
+
+| Form | Means |
+|---|---|
+| `<subject> never changes` | after every step, the subject is what it was before |
+| `<subject> never goes down` / `never goes up` | a number or a moment: after ≥ before / after ≤ before |
+| `<subject> only changes from @A to @B [or @C][, from @D to @E …]` | a choice (or yes/no) field: every change is one of the listed pairs; a value with no `from` never changes once reached (`nothing` is a value too, for a `T or nothing`) |
+| `<rows> is never removed` | every such row that was there before the step is still there |
+
+The subject is a state field (`@currency`, `@settings's @version`), a field of every row of a
+record (`a @Ticket's @id`), or the rows of a record (`an @Expense`, narrowed with a condition on
+one row: `an @Expense whose @status was @Approved`). A record's rows are read in its home list,
+the one state list of that record, as a `ref` is followed; with several, name it: `an @Expense in
+@archive never changes`. Rows are matched by their key before and after, so the record needs one.
+`never changes` on rows means each row is still there with every field equal (removing it changes
+it); on a field (`a @Ticket's @subject never changes`) it compares only rows that are there before
+and after. `whose … was …` picks the rows by the state before the step, `whose … is …` by the
+state after.
+
+```
+always {
+  - no two @expenses have the same @id
+  - an @Expense whose @status was @Approved never changes
+  - an @Expense's @status only changes from @Pending to @Approved or @Rejected
+  - every @status in the new @expenses is @Pending
+  - an @Expense is never removed
+  - @nextId never goes down
+}
+```
+
+For what the named forms cannot say, a sentence may read the state before the step: `@x before`
+is `@x`'s value before it (of `@x`'s type; for a field of a row that was not there before, it is
+nothing, and the sentence says what then); `was` is `is` in the state before (`@phase was
+@Done`); `the new @xs` are the rows of `@xs` whose key was not there before, `the removed @xs`
+the rows that were there and are not now, both in list order (a list of plain values compares as
+a multiset). A reference without `before` is its value after the step; there is no other word for
+it. These sentences are compiled like the one-moment ones, with the second reading:
+
+```
+always {
+  - @balance is @balance before plus the sum of @amount over the new @deposits minus the sum of @amount over the new @withdrawals
+}
+```
+
+A change rule is about one update, so it is checked on every event the app handles: a click, each
+answer and event that arrives, each tick and each run of recurring work, each request to an api,
+each `on open`. A step that changes nothing passes every change rule (stuttering), and a restart
+is not a step (stored state comes back as it was). The forms read two states, so they belong in
+`always` only: a handler, a derived value or the screen reads one state (`CHANGE`); a handler that
+needs the old value names it first (`set @previous to @x`). A broken change rule fails the build
+like any `always` rule, with the event that broke it, the rows that changed, and the session,
+shortened, as an example to paste into the spec. Components and bundles may have change rules;
+they are renamed with the component's names like its other sentences.
+
 **Who wrote a rule.** `rules { … }` are the person's; `rules by ai { … }` are rules an LLM added
 while writing or refining the spec. The compiler reads both the same way; the difference is who may
 change them: an LLM revises its own rules, and a person's only when the person asks. The source map
@@ -1315,6 +1756,22 @@ row. A list hidden by `visible when` counts as not on the screen: check it with
 Rows are counted from 1, in screen order. `of <list>` is needed only if the element name
 exists in more than one list.
 
+**A row inside a row** is named by one `on row …` per level, **innermost first** ("item 2 on task
+1"), each by position or by what the row shows, each with an optional `of <list>`:
+
+```
+toggle done on row 2 on row 1                          # item 2 of task 1
+click removeItem on row with "Milk" on row with "Groceries"
+see label on row 3 of items on row 1 of tasks = "Bread"
+type "Bread" into newItem on row 1                     # a field of the outer row: one level
+see items on row 1 has 3 rows                          # the inner list of task 1
+see items on row 2 is hidden
+see every row of items: label is shown                 # every item of every task
+```
+
+A step names as many rows as the element is deep (`STEP` otherwise, with the rows it needs). `on
+row with "…"` at the outer level matches what the outer row's own elements show, not its inner
+rows'. `see every row of items: …` checks every inner row of every outer row.
 ## 7. Checker (`intent check`)
 
 The checker runs before any compile. Errors stop the build; warnings are the backlog of
@@ -1341,9 +1798,9 @@ line, a message and optionally a fix. A quality error fails `intent check` (and 
 only enforces the compiler's checks. The compiler's errors cannot be switched off.
 `examples/quality/team.ts` is a small rule set to start from.
 
-`std.quality` holds the hints in the table below (`UNPROVEN`, `UNMARKED`, `UNGUARDED`,
+`std.quality` holds the hints in the table below (`UNPROVEN`, `UNMARKED`,
 `UNCHECKED`, `UNTYPED`, `UNANCHORED`, `UNSTRUCTURED`, `SPELLING`, `PIVOT`, `NO_EXAMPLES`,
-`NO_HANDLER`, `SHADOWED`, `UNUSED`, `OVERRIDES_PROOF`): the compiler only records what it worked
+`NO_HANDLER`, `SHADOWED`, `UNUSED`, `OVERRIDES_PROOF`, `BREAKS_RULE`, `TRANSITION_UNPROVEN`, `HAND_ACCESS`): the compiler only records what it worked
 out (which elements the examples check, which components are used, what a refinement changes), and
 the rules judge it. Every `intent check`, build and `intent fix` applies std.quality at the
 project's levels; `intent check` also runs the project's own rule sets. It adds these rules:
@@ -1353,11 +1810,21 @@ project's levels; `intent check` also runs the project's own rule sets. It adds 
 | `NEVER_UNCHECKED` | warning | a promise in the purpose (never, always, at most, no two) is an `always` rule |
 | `STATUS_UNPROVEN` | warning | every status an endpoint answers is seen in some example (a contract is proven by its implementation) |
 | `LONG_SENTENCE` | warning | a sentence stays under 40 words; name its parts in `derive` |
+| `REDRAW` | warning | an endpoint that stores a drawn value answers with it, not with a new draw of the same type (keep it and refer to it) |
+| `UNSTEERED` | warning | an example that compares a drawn value with a literal steers it first (`steer random T = …`), or carries it forward |
+| `GUESSABLE` | warning | a drawn type taken as input (a path, query or body param) has 128 bits or more; a short code can be guessed without an attempt limit |
+| `NO_ACCESS` | warning | an api with a layer that says who calls also says what they may do: without an `access` block every key holder may call every endpoint (for a spec that declares `language v70` or later, or no `language` line, an error of the compiler's) |
+| `ACCESS_UNPROVEN` | warning | every access rule is proven both ways by the examples: one call it permits (as a caller it covers, answered neither 401 nor 403) and one it refuses (a forbid's with its message) |
+| `UNENFORCED` | warning | a screen-only app or a job (it calls no service) does not promise who may do what ("only the owner", "a manager approves", "cannot approve their own"): nothing can keep that promise without a service |
 | `JUDGEMENT` | off | each sentence left untyped is listed, so it is judgement on purpose |
 
 `intent fix <file>` applies the fixes that need no judgement: an old `Maybe T` type becomes
-`T or nothing`, an unmarked declared name gets its `@` (`UNMARKED`), a missing `import` is added
-(`IMPORT`), and a `language vN` line is written. It checks the result and only writes when it
+`T or nothing`, an unmarked declared name gets its `@` (`UNMARKED`), a lookup's other spelling
+becomes the language's (`SPELLING`: `where` → `whose`, a lookup of a reference's own row →
+following the reference, and a change rule's other words: `only goes up` → `never goes down`,
+`stays the same` → `never changes`, `is never deleted` → `is never removed`, `the previous @x` →
+`@x before`), a missing `import` is added (`IMPORT`), and a `language vN` line is
+written. It never writes what happens when there is none: that is the author's. It checks the result and only writes when it
 has not added an error; everything else is left for the author. `intent fmt <file>` lays the file
 out in the canonical form.
 
@@ -1367,14 +1834,14 @@ out in the canonical form.
 | `INDENT` | error | a block under a line that takes none (a state field, a binding, an example step); in a file without braces also tabs, odd indentation, or a line indented more than one step |
 | `SYNTAX` | error | also: a `}` without its `{`, or a `{` that is never closed |
 | `UNKNOWN_NAME` | error | a reference to an undeclared element, field, type or value |
-| `NO_ROW` | error | "that ticket", "this habit", "the new charge" or "its @f" with no such row before it (the clicked row, a loop row, a lookup, a new record) |
-| `NO_KEY` | error | a `ref X` where `X` has no key: no field marked `key` and none named `id` |
-| `BAD_BINDING` | error | e.g. `field x` where state `x` is not Text |
-| `TYPE` | error | a reference that does not fit where a phrase puts it (`increase @draft` on a Text, `set @count to @draft`, `@status is @Urgent` for another choice); a type that cannot hold what is declared |
-| `DUPLICATE` | error | a name declared twice in one scope |
-| `RESERVED` | error | a name that clashes with target keywords or generated names (see below) |
-| `STEP` | error | an example step that does not match the element (click a text, …) |
-| `NOT_YET` | error | a construct the language does not have yet: examples inside a component, a list in a table cell, a list inside a list row, a base that extends another spec, a path param that is not an Int, Text, Date or DateTime (the changelog lists the candidates for the next version) |
+| `NO_ROW` | error | "that ticket", "this habit", "the new charge" or "its @f" with no such row before it (the clicked row, a loop row, a lookup, a new record); in an access rule, "that ticket" for an endpoint without a `ref Ticket` param (or with two), or in a rule about an event |
+| `NO_KEY` | error | a `ref X` where `X` has no key: no field marked `key` and none named `id`; also a change rule about the rows of such a record (`a @Note is never removed`, `the new @notes`): rows are matched by key before and after a step |
+| `BAD_BINDING` | error | e.g. `field x` where state `x` is not Text; a code `Text of n from "…"` with a character twice or fewer than two, or fewer than 1 character |
+| `TYPE` | error | a reference that does not fit where a phrase puts it (`increase @draft` on a Text, `set @count to @draft`, `@status is @Urgent` for another choice); a type that cannot hold what is declared; a steered value that is not of its type (`steer random PickupCode = "12345"`); `ref X in xs` where `xs` is not a state list of X; `@x exists` where `@x` is not a reference, `there is a @x` where it is one; a change rule its subject does not fit (`never goes down` on a Text or a row, `only changes from` on a Text, a value that is not the field's choice, `from @A to @A`, `is never removed` on a value); in an access rule, a role that is a value of another choice, a comparison a param cannot make (`@amount is at most "x"`, an order on a text), a field compared with the caller that is not text |
+| `DUPLICATE` | error | a name declared twice in one scope (a row and the rows of a list inside it are one scope); two seeded rows with one key in a list a reference points into; two items with one key in a seeded row's inner list; a pair listed twice in `only changes from … to …` |
+| `RESERVED` | error | a name that clashes with target keywords or generated names (see below); `random` as an api's alias (it is what `steer random` steers) |
+| `STEP` | error | an example step that does not match the element (click a text, …), or names another number of rows than the element is deep (one `on row` per level, innermost first); `steer random T` where no sentence draws a `T`, `steer random shuffle` / `pick` with nothing shuffled / picked |
+| `NOT_YET` | error | a construct the language does not have yet: examples inside a component, a list inside a row of a list that is itself inside a row (a third level), a record field `List R` where `R` holds a list of records itself (or of its own kind: a tree), a `table` inside a `table` row, a base that extends another spec, a path param that is not an Int, Text, Date or DateTime (the changelog lists the candidates for the next version) |
 | `NO_HANDLER` | warning | a button without `on click` |
 | `UNPROVEN` | warning | a dynamic element never checked by any `see` |
 | `UNANCHORED` | warning | a rule or handler sentence that mentions no declared name |
@@ -1387,20 +1854,30 @@ out in the canonical form.
 | `UNSTRUCTURED` | warning | control words written as prose ("and stop", "otherwise"): write `if … { } else { }`, `answer`, `stop` |
 | `EFFECT` | error | an `effect` or `undone by` that cannot hold: a GET with an effect, an undo endpoint that does not exist, is not bound completely, or has an undo of its own; `undo @alias.endpoint` in a handler names an endpoint that cannot be undone; `its status is held` or `rejected` in the answer handler of a call that is not `effect external` through `std.actions` |
 | `PIVOT` | warning | in one handler, a call that cannot be undone comes before one that can |
-| `UNGUARDED` | warning | a sentence uses a `T or nothing` value, or a lookup (`the ticket whose …`), without saying what happens when there is none |
-| `SPELLING` | warning | a form written with another word than the language's: a lookup `the ticket where …` is `the ticket whose …` (`intent fix` rewrites it) |
-| `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked |
+| `NOTHING` | error | a value that may be nothing (a `T or nothing`, a lookup, `the highest …`, a read through a reference) where a `T` is needed, with no `…, or X when there is none` and no smart cast (§2); also a sentence the checker cannot type whole that reads one without saying what then |
+| `HOME` | error | a sentence follows a `ref Ticket` (`@c's @ticket's @subject`), or a change rule reads `a @Ticket`, and the app has no state list of Tickets, or several: name it on the field (`ticket: ref Ticket in tickets`), or in the rule (`a @Ticket in @tickets`). A record whose rows live only inside the rows of one state list (a list inside a row) is a change rule's subject there, matched by its row's key and its own; a reference cannot find such a row (its key is unique within its row only) |
+| `CHANGE` | error | a change form outside `always` (`@x before` in a handler, `was` in a condition, `the removed @xs` in a derived value): a handler, a derived value and the screen read one state; name the old value first (`set @previous to @x`). Also a named rule on a record's key (`a @Ticket's @id never changes`): rows are matched by their key, so a new key is another row; say `a @Ticket is never removed` |
+| `BREAKS_RULE` | warning | a handler step writes what a change rule freezes (or removes what it keeps) with no condition before it on the field the rule picks its rows by: `set the @amount of that expense …` while `an @Expense whose @status was @Approved never changes`, without `if that expense's @status is @Approved { stop }` |
+| `TRANSITION_UNPROVEN` | warning | a pair of `only changes from … to …` that no example makes (a step sets the field to the second value after it was the first) |
+| `RANDOM` | error | a draw that cannot be made: `a random @T` where `T` does not list its values (a `Text matching …`, a `Text of length …`, an `Int` with one bound or more than 2^32 values, a `Decimal`, a record), `not among` with a list of another type, `a random one of` or `shuffled` on what is not a list (or a list whose type is not known), `2.5 random`; or a draw where nothing may draw: an element, a screen's derived value, `always`, `on start`; or `random` / `shuffled` outside the five forms (`a random number from 1 to 6`, `pick one at random`): a draw is one of the forms, with a type that lists its values |
+| `COLLISION` | error | a record's key filled from a draw without `not among` while its type has fewer than 2^128 values (the message says after how many a repeat is likely) |
+| `NAV_WRITE` | error | a step writes through a reference (`set @c's @ticket's @status …`) where its row may be gone: ask first (`if … does not exist { stop }`) and write to that ticket |
+| `SPELLING` | warning | a form written with another word than the language's: a lookup `the ticket where …` is `the ticket whose …`; a lookup of a reference's own row (`the @subject of the ticket whose @id is @c's @ticket`) is following it (`@c's @ticket's @subject`); a change rule's `only goes up` is `never goes down`, `stays the same` / `is immutable` is `never changes`, `is never deleted` is `is never removed`, `used to be` is `was`, `the previous @x` is `@x before`; `@newToken` is `a random @Token`; `intent fix` rewrites them (`@newToken` only where its endpoint uses it once) |
+| `UNCHECKED` | warning | a `rules` sentence reads like an invariant: move it to `always { - … }` so it is checked (one about before and after a step, "never changes", "only goes up", "is never deleted", as a change rule) |
 | `UNMARKED` | warning | a sentence uses a declared name without `@` (mark it, or reword if it is English) |
 | `UNTYPED` | warning | a derived value is used where its type matters, but its type is neither declared nor known from its form: declare it (`total: Decimal = …`) |
 | `UNUSED` | warning | a declared component is never used, or `only` lists a name the app never uses |
 | `UNDECLARED` | error | the app calls, undoes through or handles an endpoint or event its `uses … only` does not list |
-| `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint or event, a different method or path, params written again, undeclared status) |
+| `CONTRACT` | error | an implementation does not match its contract (missing or extra endpoint or event, a different method or path, params written again, undeclared status); with an `access` block, an endpoint that can be refused whose contract does not declare 403 (or 401, where a key is needed) |
 | `PROVIDER` | error | the provider named in `tested with` has errors, or does not implement the contract it is tested for |
 | `PROFILE` | error | a profile file (`profile ui { element … }`) is not well formed: a line that is no profile line, no name, or no `element` |
-| `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name |
+| `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name; inside a row of a list inside a row, a field of both rows' records (it shows the inner row's) |
 | `LANGUAGE` | warning | the spec was written for an older language version |
 | `OVERRIDES_PROOF` | warning | a base example or `always` check is about something this spec overrides |
 | `BASE_CHANGED` | warning | the base changed a part this spec overrides (see §4c) |
+| `ACCESS` | error | an `access` block that cannot be enforced: in a screen (`ui`) or a job, a contract or a bundle; no layer provides `caller` (or two do); `roles =` names a list whose record lacks `who: Text` or exactly one choice field; a rule names a role without `roles =`; a condition that is not one of the typed forms (§4e); a forbid without a condition; `anyone may` with a condition, or with a key layer that has no `public`; `public` bound by hand in an app with an `access` block; `may call every event`; a param or `its body` where the rule has none; `as "Zed"` for a caller no key belongs to (or a key layer without `acts as`) |
+| `UNGRANTED` | warning | with an `access` block, an endpoint or event no rule permits: nobody can call or hear it |
+| `HAND_ACCESS` | warning | in an api with an `access` block, an endpoint answers 401 or 403 on a condition about the caller: say it in the block, where it is enforced before the endpoint runs and audited |
 
 Reserved names: the keywords of Elm and TypeScript (`if`, `then`, `else`, `case`, `of`, `let`,
 `in`, `type`, `module`, `import`, `class`, `const`, `function`, `new`, `return`, `this`,
@@ -1418,7 +1895,18 @@ For every target the harness generates, deterministically from the spec:
 - the domain types (records, choices),
 - `Screen` — a typed record with one field per dynamic element (`Maybe` when it has
   `visible when`, a list of row records for lists),
-- `Msg` — one variant per possible user action,
+- per reference, a lookup of the row it points at, in its home list (`commentTicket tickets
+  comment`, and `ticketInTickets tickets key` by key): nothing (`Nothing`, `null`) when the row is
+  gone. A chain through references uses them hop by hop (`Maybe.andThen`, `?.`) and the sentence's
+  fallback once at the end,
+- `Msg` — one variant per possible user action; an element in a row inside a row carries both
+  keys, the outer row's and its own (`TasksItemsRemoveItemClicked outerKey key`),
+- for a list inside a row, the key each row gets (`taskRowKey`, `itemRowKey`) and the update of one
+  inner row found by the two keys (`updateTaskItems`, `removeFromTaskItems`), so the app module
+  never writes the nested update,
+- per place a sentence draws (§3c), a function in `Draws` (`roll1`, `deposit1`), made from the
+  event's seed by the harness; `update` (an endpoint's handler, recurring work) gets the event's
+  draws,
 - rendering, the event wiring and the test driver.
 
 The LLM writes only the app module: `Model`, `init`, `update : Msg → Model → Model`
@@ -1428,8 +1916,13 @@ it type-checks and passes every example.
 An app that calls APIs (§4g) also gets a `Call` type (one variant per endpoint), an answer type
 per endpoint (one variant per declared status, plus a failure) and one `…Answered` message per
 endpoint. Its `init` and `update` return the calls to make next to the model. In the browser the
-runtime sends them with `fetch` to the page's origin, or to the `api` query parameter
-(`index.html?api=http://localhost:3000`).
+runtime sends them with `fetch` to the page's origin, or where the page's `intent-api` meta tags say
+(§4g).
+
+An api with an `access` block (§4e) also hands over its data (`data(model)`, every state field):
+the harness reads the grants and the rows the rules are about from it, and decides every request
+and every event itself, before the handler runs. The handler only ever sees requests the block
+permits, and never checks who is calling.
 
 ## 9. Defaults when the spec is silent
 
@@ -1460,11 +1953,13 @@ something when it wants different behaviour.
    button does nothing.
 7. **Fields and selections.** Typing only changes the field's value unless an `on type` handler
    says more: the state field of a top-level field, or — for a field inside a list row — that
-   item's field (the row's key names the item). Choosing a value in a select likewise changes the
-   select's value: the state field of a top-level select, or that item's field for a select inside
-   a list row. Nothing is cleared unless a sentence says "clear".
-8. **Time.** In tests only `clock` ticks and `wait` move time, from `examples start at` (§3b).
-   Time has no randomness; the server's `@newToken` is the one random value (§4e).
+   item's field (the row's key names the item; in a row inside a row, the two keys name the inner
+   item). Choosing a value in a select likewise changes the select's value: the state field of a
+   top-level select, or that item's field for a select inside a list row. Nothing is cleared unless
+   a sentence says "clear".
+8. **Time and chance.** In tests only `clock` ticks and `wait` move time, from `examples start at`
+   (§3b). Time and chance have no randomness in tests: both come from the harness (a draw from the
+   example's seed, or steered, §3c).
 9. **Durations** shown as time use `Fmt.clock` (`m:ss`, or `h:mm:ss` from one hour up).
    **Rounding words** map to fixed helpers: "rounded" is `Fmt.roundTo` (half away from
    zero), "rounded up" is `Fmt.roundUpTo`, and "rounded down" is `Fmt.roundDownTo`. Money in
@@ -1474,10 +1969,42 @@ something when it wants different behaviour.
     field or select inside a row acts on the item with that key ("that ticket", §9.7), also when
     the list on screen is filtered or derived from a state list. A row that shows a value with no
     item in any state list (computed on the fly) cannot be edited: its fields and selects change
-    nothing (§9.11). The key itself is never shown and never appears in examples, which name rows
-    by position (`on row 2`) or by what they show (`on row with "Milk"`).
+    nothing (§9.11). A row inside a row (a list inside a row) has the inner record's key, else its
+    place in its row's list; that key is unique within its row only, so the inner row is named by
+    the path of keys, its row's and its own. The keys of a list inside a row stay unique within
+    each row, and the keys of the list around it stay unique: a step that makes two the same fails.
+    Removing a row removes the rows inside it. The key itself is never shown and never appears in
+    examples, which name rows by position (`on row 2`) or by what they show (`on row with "Milk"`),
+    one `on row` per level.
 11. **Impossible or ignored actions** leave the state unchanged.
-12. **References.** Removing a row leaves the `ref` fields that held its key as they are: nothing
-    cascades. A lookup of such a key finds none, and the sentence that reads it says what then.
+12. **References and nothing.** Removing a row leaves the `ref` fields that held its key as they
+    are: nothing cascades. A lookup of such a key finds none, and following the reference gives
+    nothing; the sentence that reads it says what then. Comparing with nothing is Kotlin's `==`:
+    `@x is "a"` (and `whose @ticket's @status is @Open`) does not hold when `@x` is nothing (or the
+    ticket is gone), `@x is not "a"` holds, and `@x is nothing` asks. Two rows of a list a reference
+    points into never share a key: a step that makes them fails.
 13. **Loops** visit the rows a list had when the loop began, in its order. Changing the list inside
     the loop changes the list, not the visit.
+14. **Change rules** are checked on every event the app handles, one update at a time, on the
+    data before and after it. A step that changes nothing passes them; a restart is not a step.
+    Rows are matched by their key, never by position. A row that was not there before the step
+    has no value before it: its `@f before` is nothing, `whose @f was @X` does not hold for it and
+    `was not @X` does. A field rule (`a @Ticket's @subject never changes`) and a transition table
+    compare the rows that are there before and after; a new row's first value is what a sentence
+    about `the new @xs` says.
+15. **Access** (an api with an `access` block): a request or an event no rule permits is refused
+    (default deny); a forbid that holds wins over every permit; a condition that cannot be decided
+    (a reference on the way finds no row, a compared param is absent) makes a permit not hold and a
+    forbid hold; when the request's own row is missing, its row conditions do not refuse; a request
+    without a key has no caller, which equals nothing. The refusal is `403 {"error": …}` with the
+    deciding rule's message, else `"Not allowed"`; the key layer answers 401 where a key is needed.
+    Grants are read on every request. Every refusal (the key layer's too) and every permitted request
+    with a method that changes something is audited; permitted reads are not. An api without a
+    `language` line is written for the current language: with a key layer it needs an `access` block.
+16. **Requests.** A request body is at most 1 MiB (`INTENT_MAX_BODY` on the server); a larger one is
+    answered `413 {"error": …}` and not read. An anonymous caller's idempotency key is kept only when
+    it has 32 or more hex digits (§4f). An open event stream passes the layers again before every event.
+17. **Examples read what is there.** `see every … = …` in an example fails when the list is not on
+    the screen (or not in the answer), or when a row lacks the element or field (in `always` those
+    are skipped: the rule holds on every screen). A number on the screen is read as the harness
+    writes numbers: a `.` for decimals and no thousands separator; `1,250` is read two ways and fails.

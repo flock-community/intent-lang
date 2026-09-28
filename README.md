@@ -83,7 +83,8 @@ reference on purpose: whoever changes the language updates the skill in the same
 ## Quick start
 
 ```sh
-npm install
+npm ci                                              # Node 22+; the compiler's tools (elm, esbuild, tsc, playwright)
+npx playwright install chromium                     # the browser the examples and browser tests run in
 node compiler/cli.ts doctor                         # is this machine and project ready to build?
 node compiler/cli.ts check apps/*.intent            # syntax + consistency checker (add --json for editors)
 node compiler/cli.ts fix apps/03-tipsplit.intent     # the checker's mechanical fixes (adds `language v39`)
@@ -97,6 +98,12 @@ npm test                                            # checker regression + Elm/T
 ```
 
 Open any build's `index.html` directly in a browser.
+
+A fresh machine needs Node 22 or later, `npm ci` and Playwright's Chromium (above). Elm's packages
+(`elm/core` and the rest of `runtime/elm/elm.json`) are fetched into `~/.elm` by the first Elm build
+or `npm test`, which needs the network once; `intent doctor` says which of these are missing. Building
+with an LLM needs a provider: `claude` in the PATH (the default), or a key in the environment
+(`intent config`).
 
 `npm link` puts the same commands behind `intent` (the package's `bin` entry); `intent doctor`
 says whether this machine and project are ready.
@@ -578,7 +585,7 @@ targets. `apps/16-desk-ui.intent` signs in to the desk API, shows the agent's ti
 follows changes made in another tab. Before signing in, the provider's key layer refuses the
 screen's event stream, in tests as in the browser. The contract declares
 `every endpoint answers 401 Problem`, so a wrong key shows the service's message. Each api
-has its own address in the browser (`?api.desk=…`), because hosting is deployment, not intent.
+has its own address in the browser (the page's `<meta name="intent-api" content="desk=…">`, never the page's URL), because hosting is deployment, not intent.
 
 **Layers** (v21) are the parts of an HTTP service nobody wants to think through again:
 `std.http.secure` (safe headers), `std.http.cors` (which web pages may call) and
@@ -629,6 +636,8 @@ compiler/
   api.ts              api profile: the test driver (examples, random requests, restarts)
   calls.ts            screens that call APIs: endpoints, events, client layers (targets write the types)
   layer.ts            layers: binding params, the driver around a stub app, random requests
+  access.ts           an api's `access` block: the rule grammar, its checks, the plan the harness enforces
+  mutate.ts           `intent mutate`: each access rule dropped, on existing builds; which ones no example misses
   registry.ts         `intent install` / `intent publish`
 lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets
 runtime/{elm,ts}      Ui (renderer, node model) and Fmt, identical per target

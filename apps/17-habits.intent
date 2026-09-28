@@ -45,7 +45,7 @@ screen {
 }
 
 on click add {
-  - add a @Habit to the end of @habits with @id = the highest @id in @habits + 1 and @name = @draft trimmed
+  - add a @Habit to the end of @habits with @id = the highest @id in @habits + 1 (1 when there are none) and @name = @draft trimmed
   - clear @draft
 }
 

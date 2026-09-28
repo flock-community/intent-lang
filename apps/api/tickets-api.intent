@@ -43,7 +43,7 @@ endpoint createTicket {
   if @customer, trimmed, is blank {
     answer 400 "Customer is required"
   }
-  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, @subject and @customer trimmed, the given @priority, @status @Open and @assignee ""
+  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1 (1 when there are none), @subject and @customer trimmed, the given @priority, @status @Open and @assignee ""
   - publish @ticketCreated with the new ticket
   answer 201 with the new ticket
 }

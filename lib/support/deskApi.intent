@@ -9,6 +9,7 @@ record Health {
 }
 
 every endpoint answers 401 Problem       # without a known key (std.http.apiKey)
+every endpoint answers 403 Problem       # a caller the desk's access rules do not permit
 
 event ticketAssigned: Ticket             # a ticket got an assignee
 event ticketSolved: Ticket               # a ticket was solved
@@ -22,22 +23,21 @@ endpoint myTickets GET "/tickets/mine" {
 }
 
 endpoint takeTicket POST "/tickets/{id}/take" {
-  path id: Int
+  path id: ref Ticket                    # a ticket's id, as before
   answers 200 Ticket
   answers 404 Problem
   answers 409 Problem                    # someone else has it
 }
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
-  path id: Int
+  path id: ref Ticket
   answers 200 Ticket
-  answers 403 Problem                    # only the assignee solves
   answers 404 Problem
   answers 409 Problem                    # already solved
 }
 
 endpoint addComment POST "/tickets/{id}/comments" {
-  path id: Int
+  path id: ref Ticket
   body text: Text
   answers 201 Comment
   answers 400 Problem

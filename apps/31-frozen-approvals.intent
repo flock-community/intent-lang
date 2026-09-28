@@ -1,0 +1,221 @@
+app FrozenApprovals {
+  "An approver approves or rejects expenses. A decided expense never changes and is never removed: only a pending one can be edited."
+}
+
+language v67
+
+choice Status: Pending | Approved | Rejected
+
+record Expense {
+  id: Int
+  description: Text
+  amount: Decimal                  # euros with cents
+  status: Status
+}
+
+state {
+  expenses: List Expense = table {
+    id | description        | amount | status
+    1  | "Train to Utrecht" | 120.50 | Pending
+    2  | "Team lunch"       | 45.00  | Approved
+    3  | "Standing desk"    | 899.99 | Rejected
+  }
+  descriptionDraft: Text = ""
+  amountDraft: Text = ""
+  editing: Int or nothing = nothing  # the id of the expense whose amount is being edited
+  editDraft: Text = ""
+}
+
+derive {
+  amountValue: Decimal = @amountDraft read as a decimal
+  editValue: Decimal = @editDraft read as a decimal
+}
+
+screen {
+  heading "Expenses"
+
+  section submitForm "New expense" {
+    field descriptionDraft "Description"
+    field amountDraft "Amount (EUR)"
+    button submit "Submit"
+  }
+
+  list expenses of Expense {
+    text description
+    text amountShown = "€ {amount as money}"
+    text status
+    button approve "Approve" {
+      enabled when its @status is @Pending
+    }
+    button reject "Reject" {
+      enabled when its @status is @Pending
+    }
+    button edit "Edit" {
+      enabled when its @status is @Pending
+    }
+  }
+
+  section editForm "Edit the amount" {
+    visible when there is an @editing
+    field editDraft "New amount (EUR)"
+    button save "Save"
+    button cancel "Cancel"
+  }
+}
+
+on click submit {
+  if @descriptionDraft is blank {
+    stop
+  }
+  if @amountDraft does not read as a decimal above 0 {
+    stop
+  }
+  - add an @Expense to the end of @expenses with @id = the highest @id in @expenses + 1 (1 when there are none), @description = @descriptionDraft trimmed, @amount = @amountValue, @status @Pending
+  - clear @descriptionDraft and @amountDraft
+}
+
+on click approve {
+  if that expense's @status is not @Pending {
+    stop
+  }
+  - set the @status of that expense to @Approved
+}
+
+on click reject {
+  if that expense's @status is not @Pending {
+    stop
+  }
+  - set the @status of that expense to @Rejected
+}
+
+on click edit {
+  if that expense's @status is not @Pending {
+    stop
+  }
+  - set @editing to that expense's @id
+  - set @editDraft to ""
+}
+
+on click save {
+  if there is no @editing {
+    stop
+  }
+  if @editDraft does not read as a decimal above 0 {
+    stop
+  }
+  # The expense may have been decided since Edit was clicked: then the edit is dropped.
+  if there is no expense whose @id is @editing and whose @status is @Pending {
+    - clear @editing and @editDraft
+    stop
+  }
+  - set the @amount of that expense to @editValue
+  - clear @editing and @editDraft
+}
+
+on click cancel {
+  - clear @editing and @editDraft
+}
+
+always {
+  - no two @expenses have the same @id
+  - an @Expense whose @status was @Approved never changes
+  - an @Expense whose @status was @Rejected never changes
+  - an @Expense's @status only changes from @Pending to @Approved or @Rejected
+  - every @status in the new @expenses is @Pending
+  - an @Expense is never removed
+}
+
+example "the expenses, and what can be done to each" {
+  see expenses has 3 rows
+  see description on row 1 = "Train to Utrecht"
+  see amountShown on row 1 = "€ 120.50"
+  see status on row 1 = "Pending"
+  see status on row 2 = "Approved"
+  see status on row 3 = "Rejected"
+  see approve on row 1 is enabled
+  see edit on row 1 is enabled
+  see approve on row 2 is disabled
+  see reject on row 2 is disabled
+  see edit on row 2 is disabled
+  see edit on row 3 is disabled
+  see editForm is hidden
+}
+
+example "a pending expense is approved" {
+  click approve on row 1
+  see status on row 1 = "Approved"
+  see approve on row 1 is disabled
+  see edit on row 1 is disabled
+}
+
+example "a pending expense is rejected" {
+  click reject on row 1
+  see status on row 1 = "Rejected"
+  see reject on row 1 is disabled
+  see edit on row 1 is disabled
+}
+
+example "a new expense is pending" {
+  type "  Taxi  " into descriptionDraft
+  type "38,50" into amountDraft
+  click submit
+  see expenses has 4 rows
+  see description on row 4 = "Taxi"
+  see amountShown on row 4 = "€ 38.50"
+  see status on row 4 = "Pending"
+  see descriptionDraft = ""
+  see amountDraft = ""
+}
+
+example "an expense without a description or amount is refused" {
+  type "12" into amountDraft
+  click submit
+  type "Lunch" into descriptionDraft
+  type "0" into amountDraft
+  click submit
+  see expenses has 3 rows
+}
+
+example "a new expense can be approved" {
+  type "Taxi" into descriptionDraft
+  type "20" into amountDraft
+  click submit
+  click approve on row 4
+  see status on row 4 = "Approved"
+}
+
+example "a pending expense's amount is edited" {
+  click edit on row 1
+  see editForm is shown
+  type "99.90" into editDraft
+  click save
+  see amountShown on row 1 = "€ 99.90"
+  see status on row 1 = "Pending"
+  see editForm is hidden
+}
+
+example "an edit is cancelled" {
+  click edit on row 1
+  type "5" into editDraft
+  click cancel
+  see editForm is hidden
+  see amountShown on row 1 = "€ 120.50"
+}
+
+example "an edit of an expense approved in the meantime is dropped" {
+  click edit on row 1
+  type "99" into editDraft
+  click approve on row 1
+  click save
+  see amountShown on row 1 = "€ 120.50"
+  see status on row 1 = "Approved"
+  see editForm is hidden
+}
+
+example "an amount that is not a positive number is not saved" {
+  click edit on row 1
+  type "zero" into editDraft
+  click save
+  see editForm is shown
+  see amountShown on row 1 = "€ 120.50"
+}

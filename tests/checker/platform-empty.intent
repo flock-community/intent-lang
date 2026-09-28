@@ -1,0 +1,8 @@
+platform my.hash {                             # expect: SYNTAX
+  "A platform whose function line was removed: the example's call is unknown, and nothing says `undefined` (v72)."
+}
+
+example "a vector" {
+  call sha256 with text = ""                   # expect: UNKNOWN_NAME
+  see sha256 = "x"
+}

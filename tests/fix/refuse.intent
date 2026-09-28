@@ -1,0 +1,45 @@
+app Refuse {
+  "One mark that would add an error, others that are safe, and an old Maybe."
+}
+
+choice Status: Open | Solved
+
+record Ticket {
+  id: Int
+  subject: Text
+  status: Status
+}
+
+state {
+  tickets: List Ticket = []
+  selected: Int = 0
+  count: Int = 0
+  note: Maybe Text = nothing
+}
+
+derive {
+  current = the ticket whose @id is @selected, or nothing when there is none
+  chosen: Int or nothing = the @id of the ticket whose @id is @selected, or nothing when there is none
+}
+
+screen {
+  text shown = @count
+  text next = chosen plus 1
+  button solve "Solve" {
+    enabled when current is not Solved
+  }
+  button add "Add"
+}
+
+on click add {
+  - increase count by 1
+}
+
+on click solve {
+  - set @count to 0
+}
+
+example "adding" {
+  click add
+  see shown = "1"
+}

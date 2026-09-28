@@ -1,0 +1,126 @@
+app RefNavigation {
+  "A comment feed: each comment follows its reference to the ticket it is about, and still reads well when that ticket is removed."
+}
+language v66
+design {
+  look "A calm, modern admin. White surfaces on a light neutral background, one brand color, muted secondary text."
+  brand: indigo
+  neutral: slate
+  font: sans
+  radius: large
+}
+
+choice Status: Open | Closed
+
+record Ticket {
+  id: Int
+  subject: Text
+  status: Status
+}
+
+record Comment {
+  id: Int
+  ticket: ref Ticket
+  body: Text
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject                    | status
+    1  | "Cannot log in"            | Open
+    2  | "Wrong VAT on the invoice" | Open
+  }
+  comments: List Comment = table {
+    id | ticket | body
+    1  | 1      | "Looking into the reset flow."
+    2  | 2      | "Corrected and re-sent."
+    3  | 1      | "The reset link works again."
+  }
+  chosen: ref Ticket or nothing = nothing
+}
+
+derive {
+  onOpen = the @comments whose @ticket's @status is @Open
+}
+
+screen {
+  section board as card {
+    heading "Tickets"
+    list tickets of Ticket as table {
+      text subject
+      text status
+      button removeTicket "Remove"
+    }
+  }
+  section feed as card {
+    heading "Comments"
+    text openCount = "{the number of @onOpen} on open tickets"
+    list comments of Comment as timeline {
+      text body
+      text about = "on {its @ticket's @subject, or "a removed ticket" when there is none}"
+      button openTicket "Open ticket" {
+        enabled when its @ticket exists
+      }
+      button closeTicket "Close ticket" {
+        enabled when its @ticket exists
+      }
+    }
+  }
+  section detail as card {
+    visible when there is a @chosen
+    text chosenSubject = @chosen's @subject, or "(removed)" when there is none
+  }
+}
+
+on click openTicket {
+  - set @chosen to that comment's @ticket
+}
+
+on click closeTicket {
+  if that comment's @ticket does not exist {
+    stop
+  }
+  - set the @status of that ticket to @Closed
+}
+
+on click removeTicket {
+  - remove that ticket from @tickets
+}
+
+example "comments show their ticket" {
+  see comments has 3 rows
+  see subject on row 1 = "Cannot log in"
+  see body on row 1 = "Looking into the reset flow."
+  see about on row 1 = "on Cannot log in"
+  see about on row 2 = "on Wrong VAT on the invoice"
+  see openCount = "3 on open tickets"
+  see openTicket on row 1 is enabled
+  see detail is hidden
+}
+
+example "closing a ticket from a comment" {
+  click closeTicket on row 2
+  see status on row 2 of tickets = "Closed"
+  see openCount = "2 on open tickets"
+  see about on row 2 = "on Wrong VAT on the invoice"
+}
+
+example "a comment on a removed ticket" {
+  click removeTicket on row with "Cannot log in"
+  see tickets has 1 row
+  see comments has 3 rows
+  see about on row 1 = "on a removed ticket"
+  see about on row 3 = "on a removed ticket"
+  see openTicket on row 1 is disabled
+  see closeTicket on row 1 is disabled
+  see openTicket on row 2 is enabled
+  see openCount = "1 on open tickets"
+}
+
+example "the open ticket is removed" {
+  click openTicket on row 3
+  see chosenSubject = "Cannot log in"
+  click removeTicket on row with "Cannot log in"
+  see detail is shown
+  see chosenSubject = "(removed)"
+}

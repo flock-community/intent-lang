@@ -1,0 +1,42 @@
+contract expenses.expensesApi {
+  "Team expenses over HTTP: employees submit, a manager who did not submit an expense decides on it. Every call carries a key (std.http.sendKey)."
+}
+
+import expenses.expenses
+
+every endpoint answers 401 Problem       # without a known key (std.http.apiKey)
+every endpoint answers 403 Problem       # a caller the access rules do not permit
+
+event expenseDecided: Expense            # an expense was approved or rejected
+
+endpoint me GET "/me" {
+  answers 200 Me
+}
+
+endpoint submitExpense POST "/expenses" {
+  body description: Text
+  body amount: Decimal
+  body category: Category
+  answers 201 Expense
+  answers 400 Problem
+}
+
+endpoint myExpenses GET "/expenses/mine" {
+  answers 200 List Expense
+}
+
+endpoint pendingExpenses GET "/expenses/pending" {
+  answers 200 List Expense
+}
+
+endpoint approveExpense POST "/expenses/{id}/approve" {
+  path id: ref Expense
+  answers 200 Expense
+  answers 404 Problem
+}
+
+endpoint rejectExpense POST "/expenses/{id}/reject" {
+  path id: ref Expense
+  answers 200 Expense
+  answers 404 Problem
+}

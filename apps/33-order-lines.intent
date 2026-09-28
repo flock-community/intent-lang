@@ -1,0 +1,156 @@
+app OrderLines {
+  "Orders with their lines. Each order shows its total; a line is chosen into a drawer to change its quantity."
+  "A line's id is unique only within its order, so the chosen line is the chosen order's line with the chosen id."
+  "Removing an order removes its lines with it."
+}
+language v68
+record Line {
+  id: Int
+  product: Text
+  qty: Int
+  price: Decimal
+}
+
+record Order {
+  id: Int
+  customer: Text
+  lines: List Line = []
+}
+
+state {
+  stored orders: List Order = table {
+    id | customer | lines
+    1  | "Ann"    | [{ id = 1, product = "Tea", qty = 3, price = 3.50 }, { id = 2, product = "Mug", qty = 1, price = 8.00 }]
+    2  | "Bob"    | [{ id = 1, product = "Coffee", qty = 1, price = 6.25 }]
+  }
+  chosenOrder: Int or nothing = nothing
+  chosenLine: Int or nothing = nothing
+}
+
+derive {
+  chosenOrderRow = the order in @orders whose @id is @chosenOrder
+  chosenLineRow = the line in @chosenOrderRow's @lines whose @id is @chosenLine
+}
+
+screen {
+  heading "Orders"
+  list orders of Order as cards {
+    text customer
+    text total = "€ {the sum of @qty times @price over its @lines as money}"
+    list lines of Line as menu {
+      text product
+      text qty
+      button pick "Edit"
+    }
+    button removeOrder "Remove order"
+  }
+  text lineCount = "Lines: {the number of @orders's @lines}"
+  section editor "Edit line" as drawer {
+    visible when there is a @chosenLineRow
+    text editing = "{@chosenLineRow's @product} × {@chosenLineRow's @qty}"
+    button less "−1" {
+      enabled when @chosenLineRow's @qty is above 1
+    }
+    button more "+1"
+    button close "Done"
+  }
+}
+
+on click pick {
+  - set @chosenOrder to the @id of that order
+  - set @chosenLine to the @id of that line
+}
+
+on click more {
+  if there is no order in @orders whose @id is @chosenOrder {
+    stop
+  }
+  if there is no line in that order's @lines whose @id is @chosenLine {
+    stop
+  }
+  - increase the @qty of that line by 1
+}
+
+on click less {
+  if there is no order in @orders whose @id is @chosenOrder {
+    stop
+  }
+  if there is no line in that order's @lines whose @id is @chosenLine {
+    stop
+  }
+  if the @qty of that line is above 1 {
+    - decrease the @qty of that line by 1
+  }
+}
+
+on click close {
+  - set @chosenOrder to nothing
+  - set @chosenLine to nothing
+}
+
+on click removeOrder {
+  if @chosenOrder is the @id of that order {
+    - set @chosenOrder to nothing
+    - set @chosenLine to nothing
+  }
+  - remove that order from @orders
+}
+
+always {
+  see every row of lines: qty is at least 1
+  - a @Line's @price never changes
+}
+
+example "totals per order" {
+  see orders has 2 rows
+  see lines on row 1 has 2 rows
+  see product on row 2 on row 1 = "Mug"
+  see total on row 1 = "€ 18.50"
+  see total on row 2 = "€ 6.25"
+  see lineCount = "Lines: 3"
+  see editor is hidden
+}
+
+example "changing the quantity of a chosen line" {
+  click pick on row 2 on row 1
+  see editing = "Mug × 1"
+  see less is disabled
+  click more
+  see editing = "Mug × 2"
+  see qty on row 2 on row 1 = "2"
+  see total on row 1 = "€ 26.50"
+  see less is enabled
+  click less
+  see qty on row 2 on row 1 = "1"
+}
+
+example "the chosen line is the chosen order's line" {
+  click pick on row with "Coffee" on row with "Bob"
+  see editing = "Coffee × 1"
+  click more
+  see qty on row 1 on row 2 = "2"
+  see qty on row 1 on row 1 = "3"
+  see total on row 2 = "€ 12.50"
+  see total on row 1 = "€ 18.50"
+  click close
+  see editor is hidden
+}
+
+example "removing an order removes its lines" {
+  click pick on row 1 on row 1
+  see editing = "Tea × 3"
+  click removeOrder on row 1
+  see orders has 1 row
+  see customer on row 1 = "Bob"
+  see lines on row 1 has 1 row
+  see lineCount = "Lines: 1"
+  see editor is hidden
+}
+
+example "removing another order keeps the chosen line" {
+  click pick on row 1 on row 2
+  click removeOrder on row 1
+  see editing = "Coffee × 1"
+  click more
+  see qty on row 1 on row 1 = "2"
+}

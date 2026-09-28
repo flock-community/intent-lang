@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // intent CLI: check | build | converge
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { formatDiagnostics } from "./parse.ts";
 import { compilerPins, load as loadSpec, readCompilerLock, sha, writeLock } from "./load.ts";
 import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, statSync, writeFileSync } from "node:fs";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
 import { fixFile } from "./fix.ts";
@@ -41,11 +42,24 @@ try {
   process.exit(1);
 }
 
-function load(file: string) {
+// The spec files a command reads must be there and be files: a missing file or a directory is said
+// plainly (on stderr), never a stack trace.
+const FILE_COMMANDS = new Set(["check", "install", "lock", "publish", "client", "fmt", "fix", "expand", "review", "build", "converge", "reanalyse", "mutate"]);
+if (FILE_COMMANDS.has(cmd)) {
+  const bad = args.flatMap((f) => (!existsSync(resolve(f)) ? [`${f}: no such file`] : statSync(resolve(f)).isDirectory() ? [`${f}: is a directory; name the .intent files in it (${f.replace(/\/$/, "")}/*.intent)`] : []));
+  if (bad.length) {
+    for (const b of bad) console.error(b);
+    process.exit(2);
+  }
+}
+const readable = (f: string) => existsSync(resolve(f)) && !statSync(resolve(f)).isDirectory();
+
+/** Load and report. `say`: where the report goes (stderr when stdout is the spec itself, `intent expand`). */
+function load(file: string, say: (s: string) => void = console.log) {
   const { app, diagnostics, sources } = loadSpec(resolve(file));
   const errors = diagnostics.filter((d) => d.level === "error").length;
-  if (diagnostics.length) console.log(formatDiagnostics(file, sources[0].text, diagnostics, sources));
-  console.log(`${file}: ${errors ? "FAIL" : "ok"} — ${errors} error(s), ${diagnostics.length - errors} warning(s)`);
+  if (diagnostics.length) say(formatDiagnostics(file, sources[0].text, diagnostics, sources));
+  say(`${file}: ${errors ? "FAIL" : "ok"} — ${errors} error(s), ${diagnostics.length - errors} warning(s)`);
   // The compiler reads the canonical, expanded form of the spec.
   return { app, src: app ? printApp(app) : "" };
 }
@@ -176,22 +190,34 @@ switch (cmd) {
   }
   case "fix": {
     // Apply the mechanical fixes the checker names: `Maybe T` → `T or nothing`, `UNMARKED`
-    // (`@name`), a missing `import`, and the `language vN` line. `--check` only reports.
+    // (`@name`), a lookup's other spelling, a missing `import`, and the `language vN` line.
+    // `--check` only reports. Nothing is refused silently: what was not fixed says why.
     let changed = 0;
     for (const f of args) {
-      const { out, fixes, left } = fixFile(resolve(f));
-      if (!fixes.length) {
+      if (!readable(f)) continue;
+      const { out, fixes, refused, judgements, bundle } = fixFile(resolve(f));
+      if (!fixes.length && !refused.length && !judgements.length) {
         console.log(`${f}: nothing to fix`);
         continue;
       }
-      changed++;
+      if (fixes.length) changed++;
       for (const x of fixes) console.log(`${f}:${x.line}: ${x.what}`);
+      for (const x of refused) console.log(`${f}:${x.line || 1}: not fixed — ${x.what}: it would add ${x.why.length === 1 ? "an error" : `${x.why.length} errors`} (${x.why.join("; ")})`);
+      for (const x of judgements) console.log(`${f}:${x.line || 1}: needs you — ${x.what}`);
       if (flags.check) continue;
-      writeFileSync(f, out);
-      const errors = left.filter((d) => d.level === "error").length;
-      if (errors) console.log(`${f}: ${errors} error(s) still need your attention`);
+      if (fixes.length) writeFileSync(f, out);
+      // What is left, as `intent check` sees the file where it is (with intent.lock): every error, each on its line.
+      const now = loadSpec(resolve(f)).diagnostics.filter((d) => d.level === "error");
+      if (now.length) {
+        console.log(`${f}: ${now.length} error(s) left${fixes.length ? " after fixing" : ""}:`);
+        for (const d of now) console.log(`  ${d.file ?? f}:${d.line}: ${d.code}: ${d.message}`);
+      }
+      if (bundle && fixes.length) console.log(`${f} is a bundle and it changed: run \`intent lock\` on the specs that import it`);
+      else if (now.some((d) => d.code === "LOCK")) console.log(`${f}: a pinned bundle or base changed: review it, then run \`intent lock ${f}\``);
     }
-    process.exit(flags.check && changed ? 1 : 0);
+    // Exit once everything is written: a long report piped elsewhere is otherwise cut short.
+    process.stdout.write("", () => process.exit(flags.check && changed ? 1 : 0));
+    break;
   }
   case "doctor": {
     // Is this machine and project ready to build? Nothing is guessed: each line says what was found.
@@ -210,6 +236,20 @@ switch (cmd) {
     line("language", !lock.language || pins.language === lock.language, lock.language && pins.language !== lock.language ? `${pins.languageVersion} (intent.lock is older: run \`intent lock\`)` : `${pins.languageVersion}`);
     line("model", !lock.model || pins.model === lock.model, lock.model && pins.model !== lock.model ? `${pins.model} (intent.lock pins ${lock.model})` : pins.model);
     for (const t of ["elm", "esbuild"]) line(t, existsSync(bin(t)), existsSync(bin(t)) ? bin(t) : "not installed (npm install)");
+    // Chromium runs the examples of a styled build and the browser tests (Playwright's own copy).
+    const { chromium } = await import("playwright");
+    const chrome = (() => {
+      try {
+        return chromium.executablePath();
+      } catch {
+        return "";
+      }
+    })();
+    line("chromium", !!chrome && existsSync(chrome), chrome && existsSync(chrome) ? chrome : "not installed (npx playwright install chromium)");
+    // Elm's packages are fetched once, on the first Elm build (it needs the network then).
+    const elmHome = process.env.ELM_HOME ?? join(homedir(), ".elm");
+    const elmCore = existsSync(elmHome) && readdirSync(elmHome).some((v) => existsSync(join(elmHome, v, "packages", "elm", "core")));
+    console.log(`${elmCore ? "ok  " : "note"} ${"elm pkgs".padEnd(9)} ${elmCore ? elmHome : `none yet in ${elmHome}: the first Elm build fetches them (it needs the network once)`}`);
     const c = config();
     const needsKey: Record<string, string> = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
     const found = c.llm === "claude-cli" ? spawnSync("which", ["claude"], { encoding: "utf8" }).status === 0 : needsKey[c.llm] ? !!process.env[needsKey[c.llm]] : true;
@@ -224,7 +264,9 @@ switch (cmd) {
     process.exit(0);
   }
   case "expand": {
-    const { app, src } = load(args[0]);
+    // stdout is the spec (`intent expand x > y`); the check's report goes to stderr.
+    if (args.length !== 1) (console.error("usage: intent expand <file.intent>"), process.exit(2));
+    const { app, src } = load(args[0], console.error);
     if (!app) process.exit(1);
     // Exit once the text is written: exiting at once cuts a long spec short when piped.
     process.stdout.write(src + "\n", () => process.exit(0));
@@ -293,6 +335,29 @@ switch (cmd) {
     console.log(`full report: ${report}`);
     process.exit(reports.every((r) => r.builds.every((b) => b.ok)) ? 0 : 1);
   }
+  case "mutate": {
+    // Rule mutation (v70): does some example catch each access rule dropped (or its condition)? On
+    // existing verified builds, no LLM calls. \`--build\` is the api's build (\`intent build\` writes it to
+    // <out>/ts); \`--screen <spec>=<dir>\` (comma-separated) adds screens tested with the api.
+    const file = args[0];
+    const { app } = load(file);
+    if (!app || !app.access || !flags.build) {
+      console.log(!app ? "" : !app.access ? `${file} has no \`access\` block: there are no rules to mutate` : "usage: intent mutate <api.intent> --build <dir> [--screen <screen.intent>=<dir>[,…]]");
+      process.exit(2);
+    }
+    const { mutateAccess } = await import("./mutate.ts");
+    const screens = (flags.screen ?? "").split(",").filter(Boolean).map((pair) => {
+      const [spec, dir] = pair.split("=");
+      const s = loadSpec(resolve(spec)).app;
+      const client = s?.clients?.find((c) => c.testedWith && resolve(c.testedWith) === resolve(file));
+      if (!s || !client) throw new Error(`${spec} does not load, or is not tested with ${file}`);
+      return { name: basename(spec, ".intent"), app: s, dir: resolve(dir), target: existsSync(join(resolve(dir), "elm.json")) ? "elm" : "ts", alias: client.alias };
+    });
+    const results = await mutateAccess(app, resolve(flags.build), screens, (m) => console.log(m));
+    const survivors = results.filter((r) => !r.caughtBy.length);
+    console.log(`${results.length} mutants, ${results.length - survivors.length} caught, ${survivors.length} surviving${survivors.length ? `:\n${survivors.map((s) => `  ${s.source}  ${s.what}`).join("\n")}\n(each is a rule no example proves: add an example that one call permits and another refuses, or that a screen hears)` : ""}`);
+    process.exit(survivors.length ? 1 : 0);
+  }
   case "config": {
     // The compiler's options for this project, and where each came from.
     const { config: c, from } = configWithSources();
@@ -319,6 +384,7 @@ switch (cmd) {
                                            stop when the two compilers disagree
   intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N] [--out dir] [--tag name]
   intent reanalyse <file.intent>... --out <earlier run dir>   re-test existing builds
+  intent mutate <api.intent> --build <dir> [--screen <screen.intent>=<dir>,…]   do the examples prove each access rule? (no LLM)
   intent doctor                            is this machine ready to build?
   intent config                            the compiler's options and where each comes from
 

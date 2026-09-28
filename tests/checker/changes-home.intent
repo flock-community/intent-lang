@@ -1,0 +1,29 @@
+app ChangesHome {
+  "A change rule's `a @Ticket` reads the rows of the one state list of Tickets."
+}
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+state {
+  tickets: List Ticket = []
+  archive: List Ticket = []
+  count: Int = 0
+}
+
+screen {
+  text shown = "{@count}"
+}
+
+always {
+  - a @Ticket is never removed                  # expect: HOME
+  - a @Ticket in @tickets is never removed      # expect-not: HOME
+  - a @Ticket's @subject in @archive never changes   # expect-not: HOME
+  - a @Ticket in @count is never removed        # expect: TYPE
+}
+
+example "shown" {
+  see shown = "0"
+}

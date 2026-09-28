@@ -1,0 +1,18 @@
+contract kitchen.recipesApi {
+  "Reading recipes with their ingredients, over HTTP: each recipe comes with its ingredients inside it."
+}
+
+import kitchen.recipes
+
+endpoint listRecipes GET "/recipes" {
+  query search: Text or nothing        # only recipes whose name contains it; every recipe when absent
+  answers 200 List Recipe
+}
+
+example "every recipe, with its ingredients" {
+  call listRecipes
+  see listRecipes.status = 200
+  see listRecipes.body has 2 rows
+  see listRecipes.body[1].ingredients has 3 rows
+  see listRecipes.body[1].ingredients[3].what = "milk"
+}

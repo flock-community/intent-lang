@@ -7,10 +7,12 @@ import { join } from "node:path";
 import type { App, Endpoint, Type } from "../ast.ts";
 import { LINE_BASE } from "../ast.ts";
 import { usesClock, usesToken } from "../refs.ts";
+import { usesDraws } from "../draws.ts";
+import { accessPlan } from "../access.ts";
 import { layerConfig } from "../layer.ts";
-import { dataField, hasData, ROOT } from "./shared.ts";
-import { tsData, tsDomain, tsStoredFields, tsType } from "./ts.ts";
-import { bin, clean, run } from "../tools.ts";
+import { copyDrawRuntime, dataField, doc, hasData, ROOT } from "./shared.ts";
+import { tsData, tsDomain, tsDraws, tsStoredFields, tsType } from "./ts.ts";
+import { bin, clean, run, NODE_TYPES } from "../tools.ts";
 import type { ServiceModule } from "./target.ts";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
@@ -32,6 +34,7 @@ export function typeDescOf(app: App, t: Type): TypeDescValue {
     case "Ref": return typeDescOf(app, t.key ?? { k: "Int" });
     case "Named": {
       const rf = app.refined?.find((x) => x.name === t.name);
+      if (rf?.code) return { k: "Refined", name: rf.name, base: { k: "Text" }, code: { n: rf.code.n, chars: rf.code.chars, ...(rf.code.alphabet === "unambiguous letters and digits" ? { unambiguous: true } : {}) } };
       if (rf) return { k: "Refined", name: rf.name, base: { k: rf.base }, ...(rf.pattern !== undefined ? { pattern: `^(?:${rf.pattern})$` } : {}), ...(rf.min !== undefined ? { min: rf.min } : {}), ...(rf.max !== undefined ? { max: rf.max } : {}), ...(rf.minLength !== undefined ? { minLength: rf.minLength } : {}), ...(rf.maxLength !== undefined ? { maxLength: rf.maxLength } : {}) };
       const c = app.choices.find((x) => x.name === t.name);
       if (c) return { k: "Choice", name: c.name, values: c.values, ...(c.wire ? { wire: c.values.map((v) => c.wire![v]) } : {}) };
@@ -75,13 +78,13 @@ export function genApiSpec(app: App): string {
 import type { EndpointDesc, Response, TypeDesc } from "./api.ts";
 export type { Response } from "./api.ts";
 ${(app.platforms ?? []).map((p) => `/** Platform ${p.name}: ${p.functions.map((f) => f.name).join(", ")}. Exact, reviewed code from the Intent installation: use these, never write your own. */\nexport { ${p.functions.map((f) => f.name).join(", ")} } from "./platform/${p.name}.js";\n`).join("")}
-${tsDomain(app)}${hasData(app) ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${p.note})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
+${tsDomain(app)}${tsDraws(app)}${hasData(app) ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${doc(p.note)})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
 ${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
 
 ${eps
   .map(
-    (e) => `/** ${e.method} ${e.path} */
+    (e) => `/** ${e.method} ${doc(e.path)} */
 export type ${typeName(e)}Request = Extract<Request, { endpoint: ${q(e.name)} }>;
 /** What ${e.name} may answer${e.answers?.length ? " (its contract)" : ""}. */
 export type ${typeName(e)}Response = ${respType(e)};`,
@@ -90,10 +93,10 @@ export type ${typeName(e)}Response = ${respType(e)};`,
 
 ${(app.events ?? []).length ? `/** An event this api announces (\\\`publish x\\\` in a step): the name and its payload. */\nexport type Published =\n${(app.events ?? []).map((ev) => `  | { event: ${q(ev.name)}; body: ${tsType(ev.type)} }`).join("\n")};\n\n/** The payload type of every event, checked on every publish in tests. */\nexport const eventTypes: Record<string, TypeDesc> = { ${(app.events ?? []).map((ev) => `${ev.name}: ${typeDesc(app, ev.type)}`).join(", ")} };\n\n` : `export type Published = never;\nexport const eventTypes: Record<string, TypeDesc> = {};\n\n`}/** One handler per endpoint: the request and the model in; the new model, the answer, and the events it publishes (in step order) out. */
 export type Handlers<M> = {
-${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M) => { model: M; response: ${typeName(e)}Response; publish?: Published[] };`).join("\n")}
+${eps.map((e) => `  ${e.name}: (req: ${typeName(e)}Request, model: M${usesDraws(app) ? ", draws: Draws" : ""}) => { model: M; response: ${typeName(e)}Response; publish?: Published[] };`).join("\n")}
 };
 
-${jobs.length ? `/** Recurring work (\\\`every …\\\` in the spec): the model and the clock at its time in; the new model and the events it publishes out. */\nexport type Jobs<M> = {\n${jobs.map((j) => `  ${j.name}: (model: M, clock: Clock) => { model: M; publish?: Published[] };`).join("\n")}\n};\n\n` : ""}/** Recurring work and how often it runs (ms). */
+${jobs.length ? `/** Recurring work (\\\`every …\\\` in the spec): the model and the clock at its time in; the new model and the events it publishes out. */\nexport type Jobs<M> = {\n${jobs.map((j) => `  ${j.name}: (model: M, clock: Clock${usesDraws(app) ? ", draws: Draws" : ""}) => { model: M; publish?: Published[] };`).join("\n")}\n};\n\n` : ""}/** Recurring work and how often it runs (ms). */
 export const jobList: { name: string; every: number }[] = ${JSON.stringify(jobs.map((j) => ({ name: j.name, every: j.every })))};
 ${tsStoredFields(app)}/** Endpoints with \\\`effect external\\\`: a request without an idempotency key is refused (400). */
 export const externalEndpoints: string[] = ${JSON.stringify((app.endpoints ?? []).filter((e) => e.effect).map((e) => e.name))};
@@ -146,7 +149,7 @@ import { normalize, type HttpRequest, type HttpResponse } from "./http.ts";
 import type { Clock } from "./clock.ts";
 import { answers, answerSources, endpoints, eventTypes, externalEndpoints, sources, usesToken } from "./spec.ts";
 import { layers } from "./layers.ts";
-import { fingerprint, keyed, KEY_HEADER, recall, remember, type Keys } from "./once.ts";
+import { fingerprint, keyed, KEY_HEADER, recall, remember, remembers, WEAK_KEY, type Keys } from "./once.ts";
 
 const copy = <T,>(x: T): T => JSON.parse(JSON.stringify(x ?? null));
 // Choice values leave the service by their wire names (\`Info = "info"\`); requests are read back by route().
@@ -194,8 +197,10 @@ export function pipeline(token?: () => string) {
     if (!res) {
       const r = route(endpoints, req.method, req.path, req.query, req.body === undefined ? undefined : copy(req.body));
       // Effectively once: a request with a key the service answered before gets that answer again.
-      const key = keyed(req.method) ? req.headers[KEY_HEADER] : undefined;
       const caller = typeof provided.caller === "string" ? provided.caller : "";
+      // An anonymous caller's key is taken only when it cannot be guessed (once.ts): else it is no key.
+      const given = keyed(req.method) ? req.headers[KEY_HEADER] : undefined;
+      const key = given !== undefined && remembers(caller, given) ? given : undefined;
       const fp = fingerprint(req.method, req.path, req.body);
       const earlier = key ? recall(keys, caller, key, fp, clock?.now) : undefined;
       if ("response" in r) res = { ...r.response, headers: {} };
@@ -208,7 +213,7 @@ export function pipeline(token?: () => string) {
         res = { status: earlier.replay.status, headers: { "idempotent-replayed": "true" }, body: copy(earlier.replay.body) };
         source = \`the answer to the idempotency key \${JSON.stringify(key)}, replayed (endpoint \${endpoint})\`;
       } else if (!key && externalEndpoints.includes(r.request.endpoint as string)) {
-        res = { status: 400, headers: {}, body: { error: "An idempotency-key header is required" } };
+        res = { status: 400, headers: {}, body: { error: given !== undefined ? WEAK_KEY : "An idempotency-key header is required" } };
         source = \`\${sources[r.request.endpoint as string]} (endpoint \${r.request.endpoint}: effect external)\`;
       } else {
         endpoint = r.request.endpoint as string;
@@ -230,15 +235,106 @@ export function pipeline(token?: () => string) {
   };
   /** The app's data, for the checks in \`always\` and to keep what is stored. */
   const data = () => ((App as any).data ? copy((App as any).data(model)) : undefined);
-  /** Stored state: the api starts again with the stored fields of its data (a restart, or the data file on the server). */
+  /** Stored state: the api starts again with the stored fields of its data (a restart, or the data file on the server). An api that stores nothing starts from its defaults. */
   const restore = (saved: unknown) => {
-    model = (App as any).restore(copy(saved), App.init());
+    model = (App as any).restore ? (App as any).restore(copy(saved), App.init()) : App.init();
   };
   /** The remembered answers, for the data file on the server. */
   const remembered = { get: () => copy(keys), set: (k: Keys) => (keys = copy(k ?? {})) };
   return Object.assign(handle, { runJob, data, restore, remembered });
 }
 `;
+
+/** An entry with draws: each pair is a piece of the entry and what it becomes (the entry must have each piece once). */
+function withDraws(src: string, pairs: [string, string][]): string {
+  for (const [from, to] of pairs) {
+    if (src.split(from).length !== 2) throw new Error(`draws: the entry has no single ${JSON.stringify(from.slice(0, 50))}`);
+    src = src.replace(from, to);
+  }
+  return src;
+}
+
+/** Draws in the pipeline: each request (and each run of recurring work) gets its draws; on the server a fresh seed, in tests the driver's. */
+const PIPELINE_DRAWS: [string, string][] = [
+  ['import { layers } from "./layers.ts";', 'import { layers } from "./layers.ts";\nimport { drawsFrom } from "./spec.ts";\nimport { isSeed, withPlan, type Source } from "./draw.ts";'],
+  ["export function pipeline(token?: () => string) {", "export function pipeline(token?: () => string, seed?: () => string) {\n  /** The draws of one request: the driver's (tests), else a fresh seed (the server's CSPRNG). */\n  const sourceOf = (draw?: Source): Source => {\n    if (draw) return draw;\n    // The server's seed, from its CSPRNG; never a fixed one (a test entry, which has no seed, always passes the driver's draws).\n    const s = seed?.();\n    if (!isSeed(s)) throw new Error(\"draws need a 32-byte seed from the operating system's CSPRNG\");\n    return { seed: s };\n  };"],
+  ["const runJob = (name: string, clock: Clock): { event: string; body: unknown }[] => {", "const runJob = (name: string, clock: Clock, draw?: Source): { event: string; body: unknown }[] => {"],
+  ["const out = job(copy(model), clock);", "const out = withPlan(sourceOf(draw), (src) => job(copy(model), clock, drawsFrom(src)));"],
+  ["const handle = (req: HttpRequest, clock?: Clock): Handled => {", "const handle = (req: HttpRequest, clock?: Clock, draw?: Source): Handled => {"],
+  [
+    "const out = (App.handlers as any)[endpoint]({ ...r.request, ...provided, ...(clock ? { now: clock.now, today: clock.today } : {}), ...(usesToken ? { newToken: newToken() } : {}) }, model);",
+    "const input = { ...r.request, ...provided, ...(clock ? { now: clock.now, today: clock.today } : {}), ...(usesToken ? { newToken: newToken() } : {}) };\n        // With steered draws, a first run (on a copy, its result dropped) says which draws the request makes.\n        const handler = (App.handlers as any)[endpoint];\n        const out = withPlan(sourceOf(draw), (src, first) => handler(first ? copy(input) : input, first ? copy(model) : model, drawsFrom(src)));",
+  ],
+];
+const SERVER_DRAWS: [string, string][] = [["const handle = pipeline(() => randomBytes(16).toString(\"hex\"));", "// Draws: 32 random bytes per request from the operating system (HMAC-SHA-256 keyed with them, draw.ts).\nconst handle = pipeline(() => randomBytes(16).toString(\"hex\"), () => randomBytes(32).toString(\"hex\"));"]];
+const TEST_DRAWS: [string, string][] = [
+  ['import type { Clock } from "./clock.ts";', 'import type { Clock } from "./clock.ts";\nimport type { Source } from "./draw.ts";'],
+  ["runJob(name: string, clock: Clock) {\n      return handle.runJob(name, clock);", "runJob(name: string, clock: Clock, draw?: Source) {\n      return handle.runJob(name, clock, draw);"],
+  ["headers: Record<string, string> = {}, clock?: Clock) {\n      const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) }, clock);", "headers: Record<string, string> = {}, clock?: Clock, draw?: Source) {\n      const out = handle({ method, path, query, headers, body: body === undefined ? undefined : JSON.parse(JSON.stringify(body)) }, clock, draw);"],
+];
+
+/**
+ * Access (v70), in an api with an \`access\` block: the decision runs in the pipeline, after the layers
+ * and the input checks and before a remembered answer or the endpoint (runtime/ts/access.ts); the
+ * layer that says who calls runs without \`public\`, and a request without a key gets through only to
+ * what \`anyone may\` call or hear. Every refusal and every permitted non-safe request is audited.
+ */
+const PIPELINE_ACCESS: [string, string][] = [
+  [
+    'import { fingerprint, keyed, KEY_HEADER, recall, remember, remembers, WEAK_KEY, type Keys } from "./once.ts";',
+    'import { fingerprint, keyed, KEY_HEADER, recall, remember, remembers, WEAK_KEY, type Keys } from "./once.ts";\nimport { anyoneMay, decide, decisionSource, rowThere, type AuditEntry, type Decision, type Plan } from "./access.ts";\nimport { plan as accessPlan } from "./accessPlan.ts";\n\n// The plan the access block compiles to; a test may run a mutant of it (a rule dropped), for rule mutation.\nlet plan: Plan = accessPlan;\nexport const usePlan = (p?: Plan) => void (plan = p ?? accessPlan);\n// Access reads the data of the app on every request: the module must hand it over (a build without data(model) does not compile).\nconst handsOver: (m: App.Model) => unknown = App.data;\nvoid handsOver;\n// The endpoint a request is for, by its method and the shape of its path (for the audit of a refusal before routing).\nconst endpointOf = (method: string, path: string, stream: boolean) => {\n  if (stream) return \"events\";\n  const parts = path.split(\"/\").filter(Boolean);\n  return endpoints.find((e) => e.method === method && e.path.split(\"/\").filter(Boolean).length === parts.length && e.path.split(\"/\").filter(Boolean).every((s, i) => /^\\{\\w+\\}$/.test(s) || s === parts[i]))?.name ?? `${method} ${path}`;\n};',
+  ],
+  ['import { route, toWire } from "./api.ts";', 'import { fromWire, route, toWire } from "./api.ts";'],
+  [
+    "export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[]; source?: string };",
+    'export type Handled = HttpResponse & { endpoint?: string; appAnswer?: { status: number; body: unknown }; events: { event: string; body: unknown }[]; source?: string; caller?: string; access?: { decision: "allowed" | "refused"; rules: string[] } };',
+  ],
+  ["  let keys: Keys = {};", "  let keys: Keys = {};\n  /** The audit: outside the app's state, which no endpoint reads or changes (Clark–Wilson); kept across a restart. */\n  let audit: AuditEntry[] = [];"],
+  [
+    "    const configOf = (l: (typeof layers)[number]) => (l.state ? { ...(l.config as object), ...Object.fromEntries(Object.entries(l.state).map(([p, f]) => [p, (data() as Record<string, unknown>)[f]])) } : l.config);",
+    "    const configOf = (l: (typeof layers)[number]) => (l.state ? { ...(l.config as object), ...Object.fromEntries(Object.entries(l.state).map(([p, f]) => [p, (data() as Record<string, unknown>)[f]])) } : l.config);\n    // The layer that says who calls runs without `public`; a request no key opens gets through without one\n    // only to what `anyone may` call or hear (the harness binds `public` from those rules).\n    let firstRefusal: HttpResponse | undefined;\n    const gate = (l: (typeof layers)[number]) => {\n      const config = configOf(l) as Record<string, unknown>;\n      if (l.name !== plan.auth) return l.before(copy(req), copy(config));\n      const first = l.before(copy(req), copy({ ...config, public: [] }));\n      if (!(\"answer\" in first) || !anyoneMay(plan, endpoints, req.method, req.path, !!(req as { stream?: boolean }).stream)) return first;\n      const open = l.before(copy(req), copy({ ...config, public: [`${req.method} ${req.path}`] }));\n      if (\"answer\" in open) return first;\n      firstRefusal = first.answer;\n      return open;\n    };\n    let decided: { d: Decision; endpoint: string; caller: string; key?: string } | undefined;\n    let keyRefusal: string | undefined;",
+  ],
+  ["      const b = l.before(copy(req), copy(configOf(l)));", "      const b = gate(l);\n      // The key layer's own refusal (no key, an unknown key) is a refusal too: it is audited, without the key.\n      if (\"answer\" in b && l.name === plan.auth) keyRefusal = l.source;"],
+  [
+    "      const earlier = key ? recall(keys, caller, key, fp, clock?.now) : undefined;\n      if (\"response\" in r) res = { ...r.response, headers: {} };",
+    "      // Access, before a remembered answer and before the endpoint: a refused request changes nothing.\n      const routed = \"request\" in r ? r.request : undefined;\n      const decision = routed ? decide(plan, { kind: \"call\", endpoint: routed.endpoint as string, caller, request: routed, data: data() }) : undefined;\n      if (routed && decision) decided = { d: decision, endpoint: routed.endpoint as string, caller, ...(key ? { key } : {}) };\n      const earlier = key && decision?.allowed !== false ? recall(keys, caller, key, fp, clock?.now) : undefined;\n      if (\"response\" in r) res = { ...r.response, headers: {} };\n      else if (decision && !decision.allowed) {\n        // Anonymous, and no rule permits it: the key layer's own refusal (a 401), as without an access block.\n        res = decision.status === 401 && !decision.forbid && firstRefusal ? normalize(firstRefusal) : { status: decision.status ?? 403, headers: {}, body: { error: decision.message ?? \"Not allowed\" } };\n        source = decisionSource(plan, decision);\n      }",
+  ],
+  [
+    "    if (endpoint && res) res = { ...res, body: toWire(res.body, answers[endpoint]?.[res.status]) };",
+    "    // The audit: every refusal, and every permitted request with a non-safe method. Never a key's secret.\n    if (!decided && keyRefusal && res) audit.push({ at: clock?.now ?? \"\", caller: \"\", endpoint: endpointOf(req.method, req.path, !!(req as { stream?: boolean }).stream), decision: \"refused\", rules: [keyRefusal], status: res.status });\n    if (decided && res && (!decided.d.allowed || keyed(req.method))) audit.push({ at: clock?.now ?? \"\", caller: decided.caller, endpoint: decided.endpoint, decision: decided.d.allowed ? \"allowed\" : \"refused\", rules: decided.d.rules, status: res.status, ...(decided.key ? { key: decided.key } : {}) });\n    if (endpoint && res) res = { ...res, body: toWire(res.body, answers[endpoint]?.[res.status]) };",
+  ],
+  [
+    "    return { ...normalize(res), endpoint, appAnswer, events: wireEvents(events), source };",
+    "    return { ...normalize(res), endpoint, appAnswer, events: wireEvents(events), source, caller: typeof provided.caller === \"string\" ? provided.caller : \"\", ...(decided ? { access: { decision: decided.d.allowed ? \"allowed\" as const : \"refused\" as const, rules: decided.d.rules } } : {}) };",
+  ],
+  [
+    "  return Object.assign(handle, { runJob, data, restore, remembered });",
+    "  /** May a stream whose caller this is hear this event (as it goes out, by its wire names)? Decided per event, per listener. */\n  const mayHear = (caller: string, ev: { event: string; body: unknown }) => decide(plan, { kind: \"hear\", event: ev.event, caller, body: fromWire(ev.body, eventTypes[ev.event]), data: data() }).allowed;\n  /** The audit so far (tests), or the entries since the last drain (the server appends them to its file). */\n  const audited = { all: () => copy(audit), drain: () => { const out = audit; audit = []; return out; } };\n  return Object.assign(handle, { runJob, data, restore, remembered, mayHear, audit: audited });",
+  ],
+  [
+    "        res = { status: out.response.status, headers: {}, body: out.response.body };",
+    "        res = { status: out.response.status, headers: {}, body: out.response.body };\n        // Allowed only because the request's own row was not there: an answer that succeeds on that row after all\n        // (the handler made it, or found it) was never decided for it. Refused, and nothing it did is kept.\n        if (decision?.missing?.length && out.response.status < 300 && decision.missing.some((m) => rowThere(data(), m))) {\n          model = modelBefore;\n          events = [];\n          appAnswer = { status: 403, body: { error: \"Not allowed\" } };\n          res = { status: 403, headers: {}, body: { error: \"Not allowed\" } };\n          decided = { ...decided!, d: { allowed: false, status: 403, message: \"Not allowed\", rules: decision.rules } };\n          source = `the access rules at ${decision.rules.join(\", \")} held only because the row was not there, and the endpoint answered ${out.response.status} on it (harness)`;\n        }",
+  ],
+  ["        endpoint = r.request.endpoint as string;\n        source = `${sources[endpoint]} (endpoint ${endpoint})`;", "        endpoint = r.request.endpoint as string;\n        source = `${sources[endpoint]} (endpoint ${endpoint})`;\n        const modelBefore = model;"],
+];
+const SERVER_ACCESS: [string, string][] = [
+  [
+    "const keep = () => {\n  if (stored.length) writeFileSync(DATA_FILE, JSON.stringify({ ...pick(handle.data()), idempotencyKeys: handle.remembered.get() }));\n};",
+    "// The audit (every refusal, every permitted non-safe request): appended to INTENT_AUDIT (default audit.jsonl),\n// with the stored-state write of the same request. No endpoint reads or writes it.\nconst AUDIT_FILE = process.env.INTENT_AUDIT ?? \"audit.jsonl\";\nconst keep = () => {\n  if (stored.length) writeFileSync(DATA_FILE, JSON.stringify({ ...pick(handle.data()), idempotencyKeys: handle.remembered.get() }));\n  const entries = handle.audit.drain();\n  if (entries.length) appendFileSync(AUDIT_FILE, entries.map((e) => JSON.stringify(e) + \"\\n\").join(\"\"));\n};",
+  ],
+  ['import { existsSync, readFileSync, writeFileSync } from "node:fs";', 'import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";'],
+  // A stream hears an event only when its caller, as the layers name it now, may hear it.
+  ["      s.write(`data: ${JSON.stringify(ev)}\\n\\n`);", "      if (handle.mayHear(gate.caller ?? \"\", ev)) s.write(`data: ${JSON.stringify(ev)}\\n\\n`);"],
+];
+const TEST_ACCESS: [string, string][] = [
+  ['import { pipeline } from "./pipeline.ts";', 'import { pipeline, usePlan } from "./pipeline.ts";\nimport type { Plan } from "./access.ts";'],
+  ["export function start() {\n  const handle = pipeline();", "export function start(plan?: Plan) {\n  // A mutant of the access plan (a rule dropped), for rule mutation; the build's own plan otherwise.\n  usePlan(plan);\n  const handle = pipeline();"],
+  [
+    "    remembered: handle.remembered,",
+    "    remembered: handle.remembered,\n    /** The access audit so far (`see audit[1].caller`). */\n    audit() {\n      return handle.audit.all();\n    },\n    /** Would a stream with these headers get this event (its layers let it open, and its caller may hear it)? */\n    hear(headers: Record<string, string>, query: Record<string, string>, ev: { event: string; body: unknown }) {\n      const gate = handle({ method: \"GET\", path: \"/events\", query, headers, body: undefined, stream: true } as any);\n      return gate.status === 200 && handle.mayHear(gate.caller ?? \"\", ev);\n    },",
+  ],
+  ["      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events, source: out.source, spec };", "      const response = { status: out.status, body: out.body, headers: out.headers, events: out.events, source: out.source, spec, access: out.access };"],
+];
 
 const SERVER = `import { createServer } from "node:http";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -274,7 +370,23 @@ const keep = () => {
   if (stored.length) writeFileSync(DATA_FILE, JSON.stringify({ ...pick(handle.data()), idempotencyKeys: handle.remembered.get() }));
 };
 // Events go to every open \`GET /events\` stream (Server-Sent Events), as \`{ "event": name, "body": payload }\`.
-const streams = new Set<import("node:http").ServerResponse>();
+// Each stream keeps the request that opened it: before every event it passes the layers again, so a
+// key revoked since then closes the stream instead of hearing on.
+const streams = new Map<import("node:http").ServerResponse, { headers: Record<string, string>; query: Record<string, string> }>();
+const broadcast = (events: { event: string; body: unknown }[]) => {
+  for (const ev of events)
+    for (const [s, opened] of streams) {
+      const gate = handle({ method: "GET", path: "/events", query: opened.query, headers: opened.headers, body: undefined, stream: true } as any);
+      if (gate.status !== 200) {
+        streams.delete(s);
+        s.end();
+        continue;
+      }
+      s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
+    }
+};
+// A request body is at most INTENT_MAX_BODY bytes (default 1 MiB): a larger one is answered 413 and not read on.
+const MAX_BODY = Number(process.env.INTENT_MAX_BODY ?? 1024 * 1024);
 createServer((req, res) => {
   if (req.method === "GET" && (req.url ?? "").split("?")[0] === "/events") {
     // The stream passes the layers like any request (a key, an origin); only then does it open.
@@ -289,13 +401,27 @@ createServer((req, res) => {
     }
     res.writeHead(200, { ...gate.headers, "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
     res.write(": open\\n\\n");
-    streams.add(res);
+    streams.set(res, { headers, query: Object.fromEntries(url.searchParams) });
     req.on("close", () => streams.delete(res));
     return;
   }
   let raw = "";
-  req.on("data", (c) => (raw += c));
+  let size = 0;
+  let tooLarge = false;
+  req.on("data", (c) => {
+    if (tooLarge) return;
+    size += c.length;
+    if (size > MAX_BODY) {
+      tooLarge = true;
+      res.writeHead(413, { "content-type": "application/json", connection: "close" });
+      res.end(JSON.stringify({ error: \`The request body is larger than \${MAX_BODY} bytes\` }));
+      req.destroy();
+      return;
+    }
+    raw += c;
+  });
   req.on("end", () => {
+    if (tooLarge) return;
     const url = new URL(req.url ?? "/", "http://localhost");
     let body: unknown = undefined;
     try {
@@ -307,7 +433,7 @@ createServer((req, res) => {
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers[k.toLowerCase()] = v;
     const out = handle({ method: req.method ?? "GET", path: url.pathname, query: Object.fromEntries(url.searchParams), headers, body }, localClock());
     keep();
-    for (const ev of out.events) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
+    broadcast(out.events);
     const noBody = out.status === 204 || out.status === 304 || req.method === "HEAD";
     // INTENT_TRACE=1: every answer says which spec line gave it (never on in production: it names files).
     const trace = process.env.INTENT_TRACE === "1" && out.source ? { "x-intent-source": out.source } : {};
@@ -317,7 +443,7 @@ createServer((req, res) => {
 }).listen(Number(process.env.PORT ?? 3000), () => console.log("listening on " + (process.env.PORT ?? 3000)));
 // Recurring work on timers; what it publishes goes to the open event streams.
 for (const j of jobList) setInterval(() => {
-  for (const ev of handle.runJob(j.name, localClock())) for (const s of streams) s.write(\`data: \${JSON.stringify(ev)}\\n\\n\`);
+  broadcast(handle.runJob(j.name, localClock()));
   keep();
 }, j.every);
 `;
@@ -373,6 +499,7 @@ export function scaffoldApi(app: App, dir: string, layerDirs: Record<string, str
   copyFileSync(join(ROOT, "runtime/ts/http.ts"), join(dir, "http.ts"));
   copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
   copyFileSync(join(ROOT, "runtime/ts/once.ts"), join(dir, "once.ts"));
+  copyDrawRuntime(app, dir);
   // Each layer's verified module, as built once for that layer spec, and the composition with the bound config.
   for (const l of app.layers ?? []) {
     mkdirSync(join(dir, "layers", l.alias), { recursive: true });
@@ -391,7 +518,16 @@ ${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(a
 ];
 `,
   );
-  writeFileSync(join(dir, "pipeline.ts"), PIPELINE);
+  // Access (v70): the decision (the runtime's, the same for every build) and the plan the block compiles to.
+  const plan = accessPlan(app);
+  if (plan) {
+    copyFileSync(join(ROOT, "runtime/ts/access.ts"), join(dir, "access.ts"));
+    // How a test acts as a caller (the keys, with their secrets) is the drivers' (access.json, acting.json), never in the server's plan.
+    const { actsAs: _tests, ...shipped } = plan;
+    writeFileSync(join(dir, "accessPlan.ts"), `// Generated from the access block of ${app.name} — do not edit. The harness enforces it before any endpoint runs.\nimport type { Plan } from "./access.ts";\n\nexport const plan: Plan = ${JSON.stringify(shipped, null, 2)};\n`);
+  }
+  const withAccess = (src: string, pairs: [string, string][]) => (plan ? withDraws(src, pairs) : src);
+  writeFileSync(join(dir, "pipeline.ts"), withAccess(usesDraws(app) ? withDraws(PIPELINE, PIPELINE_DRAWS) : PIPELINE, PIPELINE_ACCESS));
   copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
   const spec = genApiSpec(app);
   writeFileSync(join(dir, "spec.ts"), spec);
@@ -400,11 +536,13 @@ ${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(a
     mkdirSync(join(dir, "platform"), { recursive: true });
     for (const p of app.platforms) writeFileSync(join(dir, "platform", `${p.name}.d.ts`), platformDeclarations(p));
   }
-  writeFileSync(join(dir, "server.ts"), SERVER);
-  writeFileSync(join(dir, "test-entry.ts"), TEST_ENTRY);
+  writeFileSync(join(dir, "server.ts"), withAccess(usesDraws(app) ? withDraws(SERVER, SERVER_DRAWS) : SERVER, SERVER_ACCESS));
+  // Tests: the app's own randomness throws (runtime/ts/norandom.ts, imported before the app module).
+  copyFileSync(join(ROOT, "runtime/ts/norandom.ts"), join(dir, "norandom.ts"));
+  writeFileSync(join(dir, "test-entry.ts"), `import "./norandom.ts";\n${withAccess(usesDraws(app) ? withDraws(TEST_ENTRY, TEST_DRAWS) : TEST_ENTRY, TEST_ACCESS)}`);
   writeFileSync(
     join(dir, "tsconfig.json"),
-    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022"], types: ["node"], typeRoots: [join(ROOT, "node_modules/@types")], skipLibCheck: true }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
+    JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, lib: ["es2022"], types: ["node"], skipLibCheck: true }, include: ["*.ts", "layers/*/*.ts"] }, null, 2),
   );
   writeFileSync(join(dir, "README.md"), `# ${app.name}\n\nRun: \`node server.mjs\` (PORT, default 3000).\n\n${(app.endpoints ?? []).map((e) => `- ${e.method} ${e.path}`).join("\n")}\n`);
   return { appFile: join(dir, "app.ts"), specSource: spec };
@@ -428,7 +566,7 @@ export function genClient(contract: App): string {
   const respType = (e: Endpoint) => (e.answers?.length ? e.answers.map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`).join(" | ") : "{ status: number; body: unknown }");
   return `// Generated from contract ${contract.name} — do not edit. A typed client: provider and consumer share this contract.
 ${tsDomain(contract).replace(/\/\*\* Initial value[\s\S]*?\n\];\n\n/g, "")}
-${eps.map((e) => `/** ${e.method} ${e.path} */\nexport type ${cap(e.name)}Response = ${respType(e)};`).join("\n\n")}
+${eps.map((e) => `/** ${e.method} ${doc(e.path)} */\nexport type ${cap(e.name)}Response = ${respType(e)};`).join("\n\n")}
 
 export function client(baseUrl: string, fetchFn: typeof fetch = fetch) {
   const call = async (method: string, path: string, query: Record<string, unknown>, body: Record<string, unknown> | undefined) => {
@@ -441,9 +579,13 @@ export function client(baseUrl: string, fetchFn: typeof fetch = fetch) {
 ${eps
   .map((e) => {
     const params = e.params.map((p) => `${p.name}${p.type.k === "Maybe" ? "?" : ""}: ${tsType(p.type)}`).join("; ");
-    const path = e.path.replace(/\{(\w+)\}/g, (_, n) => `\${encodeURIComponent(String(args.${n}))}`);
+    // Inside a template literal: the path's own text is escaped (the checker keeps paths safe; this keeps the template so).
+    const path = e.path
+      .split(/(\{\w+\})/)
+      .map((part) => (/^\{\w+\}$/.test(part) ? `\${encodeURIComponent(String(args.${part.slice(1, -1)}))}` : part.replace(/[\\`$]/g, (c) => "\\" + c)))
+      .join("");
     const query = e.params.filter((p) => p.in === "query").map((p) => `${p.name}: args.${p.name}`).join(", ");
-    const body = e.params.some((p) => p.in === "body") ? `{ ${e.params.filter((p) => p.in === "body").map((p) => `${p.name}: args.${p.name}`).join(", ")} }` : "undefined";
+    const body = e.params.some((p) => p.in === "body") ? `{ ${e.params.filter((p) => p.in === "body").map((p) => `${p.name}: args.${p.name}${p.type.k === "Maybe" ? " ?? null" : ""}`).join(", ")} }` : "undefined";
     return `    ${e.name}: (args: { ${params} }${e.params.length ? "" : " = {}"}) => call(${q(e.method)}, \`${path}\`, { ${query} }, ${body}) as Promise<${cap(e.name)}Response>,`;
   })
   .join("\n")}
@@ -573,6 +715,12 @@ export const API_CODING_RULES = `Rules that keep every build identical:
 5. Every example in the spec must pass. Walk through each one step by step before you answer.
 6. All rounding goes through Fmt. For every refined type the interface has a check (\`isEmail\`); "is a valid Email" means that check. Write plain, straightforward code. No comments needed.`;
 
+/** Apis that draw random values (v69). */
+export const API_DRAWS_RULE = `This api draws random values: every handler gets the request's draws (\`Draws\` from spec.ts) as its third argument, \`(req, model, draws)\`, and recurring work gets them after the clock, \`(model, clock, draws)\`. Each place a sentence draws (\`a random @Token\`, \`a random @PickupCode not among the @code of @waiting\`, \`3 random @Die\`, \`a random one of @xs\`, \`@xs shuffled\`) is one function of \`Draws\`, named after its endpoint (or derived value, or recurring work) and its place there (\`draws.invite1(taken)\`, \`draws.freeCode1(taken)\`): call exactly that function where that sentence runs, once per value the sentence needs, and nowhere else. Pass what the sentence reads: the values taken, the list, how many; inside a \`for each\`, the row's index first (0 for the first row). A derived value that draws is drawn once per request (or run of recurring work): the harness keeps its first value and gives it to every later call in that request, also after what it excludes changed, so call its function wherever the sentence reads the derived value. A value a later step uses again (the new row's code in the answer) is kept and referred to, never drawn again. Never make randomness yourself (no Math.random, no crypto): a module that does is rejected.`;
+
+/** Apis with an \`access\` block (v70). */
+export const API_ACCESS_RULE = `This api has an \`access\` block: the harness enforces it before your handler runs, reading the app's data (\`data(model)\`: every state field as in the spec, the grants too). A handler only ever sees requests the block permits: never check who is calling, their roles or the rules yourself, and never answer 401 or 403 for access. The caller (\`caller\`) is still there for what the steps say (who submitted, who is assigned).`;
+
 /** Apis that read the clock or run recurring work. */
 export const API_CLOCK_RULE = `This api reads the clock: every request carries \`now\` (@now, a DateTime) and \`today\` (@today, a Date); never read the time any other way.
 Each \`every <interval> { … }\` block is recurring work: export \`jobs\` typed \`Jobs<Model>\` from spec.ts, one function per block (\`every15m\` for \`every 15m\`), taking the model and the clock at its time and returning \`{ model, publish }\`. The module then exports Model, init, handlers and jobs.`;
@@ -586,7 +734,9 @@ async function compileApi(dir: string): Promise<string> {
     const b = await run(bin("esbuild"), [join(ROOT, "runtime/ts/platform", `${name}.ts`), "--bundle", "--format=esm", "--platform=node", `--outfile=${join(platformDir, `${name}.js`)}`, `--define:INTENT_UI_PROFILE=${JSON.stringify(readFileSync(join(ROOT, "lib/profile/ui.intent"), "utf8"))}`, "--log-level=error"], dir);
     if (!b.ok) return clean(b.out);
   }
-  const t = await run(bin("tsc"), ["-p", "."], dir);
+  // Node's types come from the installation, named on the command line: the build's own tsconfig.json
+  // says nothing about where the installation is (a build is the same bytes on every machine).
+  const t = await run(bin("tsc"), ["-p", ".", ...NODE_TYPES], dir);
   if (!t.ok) return clean(t.out);
   for (const [entry, out] of [["test-entry.ts", "test.mjs"], ["server.ts", "server.mjs"]]) {
     const b = await run(bin("esbuild"), [entry, "--bundle", "--format=esm", "--platform=node", `--outfile=${out}`, "--log-level=error"], dir);
@@ -607,7 +757,7 @@ async function compileLayer(dir: string): Promise<string> {
 function platformDeclarations(p: NonNullable<App["platforms"]>[number]): string {
   return `// Generated from platform ${p.name} — do not edit. Implemented by the Intent installation (runtime/ts/platform/${p.name}.ts).
 ${p.records.map((r) => `export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n`).join("")}
-${p.functions.map((f) => `/**${f.note ? ` ${f.note}` : ""} */\nexport declare function ${f.name}(${f.params.map((x) => `${x.name}: ${tsType(x.type)}`).join(", ")}): ${tsType(f.returns)};\n`).join("\n")}`;
+${p.functions.map((f) => `/**${f.note ? ` ${doc(f.note)}` : ""} */\nexport declare function ${f.name}(${f.params.map((x) => `${x.name}: ${tsType(x.type)}`).join(", ")}): ${tsType(f.returns)};\n`).join("\n")}`;
 }
 
 // ---------------------------------------------------------------- the service module
@@ -618,6 +768,6 @@ export const tsService: ServiceModule = {
   scaffoldLayer,
   compileLayer,
   layerFiles: LAYER_FILES,
-  prompt: { rules: API_TARGET_RULES, skeleton: API_APP_SKELETON, coding: API_CODING_RULES, clock: API_CLOCK_RULE, platform: "This api imports platform functions (their names are in spec.ts, from `./platform/…`): a sentence that names one (`the @sha256 of the given @source`) calls exactly that function, imported from `./spec.ts`. They are the installation's reviewed code: never write your own version of what they do." },
+  prompt: { rules: API_TARGET_RULES, skeleton: API_APP_SKELETON, coding: API_CODING_RULES, clock: API_CLOCK_RULE, draws: API_DRAWS_RULE, access: API_ACCESS_RULE, platform: "This api imports platform functions (their names are in spec.ts, from `./platform/…`): a sentence that names one (`the @sha256 of the given @source`) calls exactly that function, imported from `./spec.ts`. They are the installation's reviewed code: never write your own version of what they do." },
   layerPrompt: { rules: LAYER_RULES, skeleton: LAYER_SKELETON, clientRules: CLIENT_LAYER_RULES, clientSkeleton: CLIENT_LAYER_SKELETON },
 };

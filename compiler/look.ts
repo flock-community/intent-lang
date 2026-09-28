@@ -21,7 +21,7 @@ export const DOM_CONTRACT = `The harness finds and drives every element through 
 5. checkbox: data-el on an <input type="checkbox">, or on an element with role="switch" and aria-checked="true"/"false". Toggling (a click) sends the Toggled event.
 6. select: either data-el on a native <select> whose option values are the choice values (option text = labels), or data-el on a container holding one element per option with data-option="<Value>" (the value name, not the label) and aria-selected="true" (tabs, chips), aria-pressed="true" (segmented) or aria-current="page" (nav) on the chosen one. Clicking an option sends the Chosen event. Options appear in the order of the choice.
 7. progress: data-el on a <progress max="100" value="…"> or on an element with role="progressbar" and aria-valuenow.
-8. list: data-el on the list container; each row is one element with data-row (rows are never nested). Row elements go inside their row.
+8. list: data-el on the list container; each row is one element with data-row. Row elements go inside their row. A row may hold an inner list (a list inside a row, its own data-el) whose rows are data-row elements inside it: an element belongs to its nearest data-row, so the inner rows must be inside their outer row. An inner row's events carry the outer row's key and its own (TypeScript: \`outerKey\` and \`key\`; Elm: the outer key first). Inside a table row, the inner list goes in a cell of its own as a plain stacked list.
 9. section: data-el on the section's container; its elements are inside it. A section with nothing visible in it may be left out. A section title (\`section x "Title"\`) and field labels are shown as written.
 10. Nothing else may carry data-el, data-row or data-option.`;
 

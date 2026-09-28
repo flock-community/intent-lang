@@ -1,6 +1,9 @@
 // Loading a spec with its imports: resolve bundles from lib/, verify them against intent.lock,
 // merge their declarations, expand `use` of behaviour components, then check the whole app.
 // Lines of imported files are encoded as fileIndex * LINE_BASE + line (see App.sources).
+import { parseChange } from "./changes.ts";
+import { accessSources, keyOwners, rulesByTarget } from "./access.ts";
+import { drawMap } from "./draws.ts";
 import { bareWords, refsIn, sentences } from "./refs.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,6 +28,7 @@ export interface Loaded {
   sources: { file: string; text: string }[];
   bundles: { name: string; file: string; sha: string }[];
   base?: App; // the published app this spec extends
+  read?: App; // the app as read, with its errors (\`intent fix\` asks it what a name is); never built
 }
 
 /**
@@ -86,6 +90,13 @@ export function readCompilerLock(): { language?: string; model?: string } {
 }
 
 /** Add every node's line offset for an imported file. */
+/** The same declaration, wherever it was written: equal but for lines, notes and origin. An expanded
+ *  spec (\`intent expand\`) declares what its imports declare; read back, the two are one. */
+function sameDecl(a: object, b: object): boolean {
+  const plain = (x: object) => JSON.stringify(x, (k, v) => (k === "line" || k === "note" || k === "from" || k === "stepLines" ? undefined : v));
+  return plain(a) === plain(b);
+}
+
 function offsetLines(v: any, base: number) {
   if (Array.isArray(v)) v.forEach((x) => offsetLines(x, base));
   else if (v && typeof v === "object")
@@ -244,13 +255,20 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
       else if (locked !== digest) err(u.line, "LOCK", `the contract \`${u.contract}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
     }
     let providerDigest: string | undefined;
+    let providerCallers: string[] | undefined;
+    let providerAccess: Record<string, string[]> | undefined;
     if (u.testedWith && !existsSync(join(PROJECT_ROOT, u.testedWith))) err(u.line, "UNKNOWN_NAME", `no provider spec at ${u.testedWith}`);
     else if (u.testedWith) {
       // The provider the examples run against: it must implement this contract, and build.
       const p = load(join(PROJECT_ROOT, u.testedWith), opts);
       if (!p.app) err(u.line, "PROVIDER", `the provider ${u.testedWith} has errors; run \`intent check ${u.testedWith}\``);
       else if (p.app.implements?.name !== u.contract) err(u.line, "PROVIDER", `${u.testedWith} does not implement \`${u.contract}\``);
-      else providerDigest = sha(printApp(p.app)).slice(0, 12);
+      else {
+        providerDigest = sha(printApp(p.app)).slice(0, 12);
+        // Whom a test may act as against it (its key owners), and its access rules per endpoint (the source map's).
+        providerCallers = keyOwners(p.app).owners;
+        if (p.app.access) providerAccess = rulesByTarget(p.app);
+      }
     }
     app.imports = [...(parsed.app.imports ?? []), ...(app.imports ?? [])];
     for (const r of parsed.app.refined ?? []) (app.refined ??= []).push(r);
@@ -277,7 +295,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
         // The app cannot declare one of its own with the same name: the layer reads its own.
         for (const t of [...(loaded.app.records ?? []), ...(loaded.app.choices ?? [])]) {
           const mine = [...declared].find((x) => x.name === t.name);
-          if (mine)
+          if (mine && !sameDecl(mine, t))
             err(mine.line, "DUPLICATE", `\`${t.name}\` comes from the layer ${l.layer}: the app cannot declare its own (use the layer's, or give yours another name)`);
         }
         for (const r of loaded.app.records ?? []) if (!app.records.some((x) => x.name === r.name)) app.records.push(r);
@@ -294,7 +312,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
         for (const p of params.values()) if (p.default === undefined && !l.bindings.some((b) => b.name === p.name)) err(l.line, "BAD_BINDING", `layer ${l.layer} needs \`${p.name}\`: bind it in an indented line (\`${p.name} = <state or literal>\`)`);
       }
     }
-    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through, ...(u.only ? { only: u.only } : {}), line: u.line });
+    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through, ...(u.only ? { only: u.only } : {}), line: u.line, ...(providerCallers ? { providerCallers } : {}), ...(providerAccess ? { providerAccess } : {}) });
   }
 
   // Load bundles depth-first; every bundle once.
@@ -369,22 +387,26 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     const m = aliases.get(name);
     for (const r of b.records) {
       const rec: RecordDecl = m ? { ...r, name: m.get(r.name) ?? r.name, fields: r.fields.map((f) => ({ ...f, type: renameType(f.type, m) })) } : r;
+      if (app.records.some((x) => sameDecl(x, rec))) continue; // this file says it as the bundle does (an expanded spec): one declaration
       claim(rec.name, name, renamedAt.get(`${name}.${r.name}`) ?? r.line);
       app.records.push(rec);
     }
     for (const c of b.choices) {
       const ch: ChoiceDecl = m ? { ...c, name: m.get(c.name) ?? c.name } : c;
+      if (app.choices.some((x) => sameDecl(x, ch))) continue;
       claim(ch.name, name, renamedAt.get(`${name}.${c.name}`) ?? c.line);
       app.choices.push(ch);
     }
     for (const r of b.refined ?? []) {
       const rf: RefinedDecl = m ? { ...r, name: m.get(r.name) ?? r.name } : r;
+      if ((app.refined ?? []).some((x) => sameDecl(x, rf))) continue;
       claim(rf.name, name, renamedAt.get(`${name}.${r.name}`) ?? r.line);
       (app.refined ??= []).push(rf);
     }
     for (const c of b.components) {
       const alias = m?.get(c.name);
       const comp: Component = { ...c, name: alias ?? c.name, from: name };
+      if (app.components.some((x) => sameDecl(x, comp))) continue;
       claim(comp.name, name, renamedAt.get(`${name}.${c.name}`) ?? c.line);
       app.components.push(comp);
     }
@@ -400,6 +422,16 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     app.design = merged;
   }
 
+  // A contract's \`ref\` params (\`path id: ref Ticket\`) hold the record's key: its type, from the app's records.
+  for (const c of app.clients ?? [])
+    for (const ep of c.contract.endpoints ?? [])
+      for (const p of ep.params) {
+        const t = p.type.k === "Maybe" ? p.type.of : p.type;
+        if (t.k !== "Ref" || t.key) continue;
+        const rec = [...app.records, ...c.contract.records].find((r) => r.name === t.name);
+        const key = rec?.fields.find((f) => f.name === (rec.key ?? "id"));
+        if (key) t.key = key.type;
+      }
   // `Problem` is the body of every refusal: { "error": "…" }. Built in for services and contracts.
   if ((app.profile === "api" || app.kind === "contract" || app.clients?.length) && !app.records.some((r) => r.name === "Problem"))
     app.records.push({ name: "Problem", fields: [{ name: "error", type: { k: "Text" }, line: 0 }], line: 0 });
@@ -409,7 +441,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
   app.sources = sources;
   if (app.name && app.kind !== "bundle") {
     // (a contract is checked as an api without behaviour)
-    diagnostics.push(...checkApp(app, main.clockLine, used));
+    diagnostics.push(...checkApp(app, main.clockLine, used, new Set(diagnostics.filter((d) => d.code === "SYNTAX").map((d) => d.line))));
     checkDirectImports(app, sources, bundles, ownImports, err);
   }
   // The compiler's checks, then std.quality's hints at the project's levels (`intent check` adds the
@@ -418,7 +450,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     diagnostics.splice(0, diagnostics.length, ...(opts.quality ? applyQuality(file, app, diagnostics, opts.quality.sets, opts.quality.config) : withStdQuality(file, app, diagnostics, readProject()?.quality?.levels)));
   const out = diagnostics.map((d) => ({ ...d, ...at(d.line) }));
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
-  return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp };
+  return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp, read: app };
 }
 
 /**
@@ -577,6 +609,11 @@ export interface SourceEntry {
   bundle?: string;
   path?: string; // a screen's address
   origin?: "ai"; // a rule an LLM wrote (`rules by ai`)
+  follows?: string[]; // the references the sentence reads through (`Comment.ticket in tickets`)
+  form?: string; // a change rule's named form (frozen, order, transitions, kept); a draw's (one, notAmong, many, pick, shuffle)
+  draw?: { site: string; type?: string; values?: string; bits?: number }; // a draw (v69): its place in its unit, what it draws from
+  covers?: string[]; // an access rule (v70): the endpoints and events it covers
+  access?: string[]; // an endpoint's or event's access rules (file:line); a handler's: the provider's rules per endpoint it calls
 }
 
 /**
@@ -597,7 +634,8 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
       if (comp) instances.set(el.name, { component: comp.name, bundle: comp.from });
       const key = `${on ? `${on}/` : ""}${list ? `${list}[].${el.name}` : el.name}`;
       map[key] = { kind: el.kind, ...where(app, el.line) };
-      walk(el.children, el.kind === "list" ? el.name : list, on);
+      // A list inside a row: its elements' keys carry both lists (`tasks[].items[].removeItem`).
+      walk(el.children, el.kind === "list" ? (list ? `${list}[].${el.name}` : el.name) : list, on);
     }
   };
   walk(app.screen);
@@ -610,7 +648,12 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
       const ep = app.clients?.find((c) => c.alias === m[1])?.contract.endpoints?.find((e) => e.name === m[2]);
       return ep?.effect ? [`${m[1]}.${m[2]}: external${ep.undoneBy ? `, undone by ${m[1]}.${ep.undoneBy.endpoint}` : ", cannot be undone"}`] : [];
     });
-    map[key] = { kind: "handler", ...where(app, h.line), ...(effects.length ? { effects } : {}) };
+    // The provider's access rules for each endpoint the handler calls (from the \`tested with\` provider).
+    const access = [...new Set(h.steps.flatMap((st) => [...st.matchAll(/\b(?:call|undo)\s+@?([a-z]\w*)\.([a-z]\w*)/gi)]).map((m) => `${m[1]}.${m[2]}`))].flatMap((n) => {
+      const rules = app.clients?.find((c) => c.alias === n.split(".")[0])?.providerAccess?.[`endpoint ${n.split(".")[1]}`];
+      return rules?.length ? [`${n}: ${rules.join(", ")}`] : [];
+    });
+    map[key] = { kind: "handler", ...where(app, h.line), ...(effects.length ? { effects } : {}), ...(access.length ? { access } : {}) };
     h.stepLines?.forEach((l, i) => (map[`${key} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
   }
   // Services: every endpoint and its steps, the events, and the layers it runs behind.
@@ -619,6 +662,12 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
     ep.stepLines?.forEach((l, i) => (map[`endpoint ${ep.name} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
   }
   for (const e of app.events ?? []) map[`event ${e.name}`] = { kind: "event", ...where(app, e.line) };
+  // Access (v70): each rule, what it covers, and per endpoint and event the rules that govern it.
+  if (app.access) {
+    map["access"] = { kind: "access", ...where(app, app.access.line) };
+    for (const r of accessSources(app)) map[r.key] = { kind: "access", ...where(app, r.line), covers: r.covers, form: r.effect };
+    for (const [key, rules] of Object.entries(rulesByTarget(app))) if (map[key]) map[key].access = rules;
+  }
   for (const j of app.jobs ?? []) {
     map[`every ${j.name.slice(5)}`] = { kind: "job", ...where(app, j.line) };
     j.stepLines?.forEach((l, i) => (map[`every ${j.name.slice(5)} step ${i + 1}`] = { kind: "step", ...where(app, l) }));
@@ -627,6 +676,34 @@ export function sourceMap(app: App): Record<string, SourceEntry> {
   for (const c of app.clients ?? []) if (c.through) map[`through ${c.alias}`] = { kind: "layer", ...where(app, c.through.line) };
   app.rules.forEach((_, i) => app.ruleLines?.[i] && (map[`rule ${i + 1}`] = { kind: "rule", ...where(app, app.ruleLines[i]), ...(app.ruleBy?.[i] === "ai" ? { origin: "ai" } : {}) }));
   for (const ex of app.examples) map[`example ${ex.name}`] = { kind: "example", ...where(app, ex.line) };
+  // The sentences in `always`: a broken one (a one-moment rule, or a change rule about before and
+  // after a step) is reported with its line, and leads back here.
+  for (const inv of app.invariants ?? []) {
+    const w = where(app, inv.line);
+    const c = parseChange(inv.text);
+    map[`always ${w.file}:${w.line}`] = { kind: c ? "change" : "always", ...w, ...(c && "named" in c && c.named ? { form: c.named.form } : {}) };
+  }
+  // Every draw (\`draw roll1\`: the function the build calls): where it is, and what it draws from.
+  for (const [id, d] of Object.entries(drawMap(app))) map[`draw ${id}`] = { kind: "draw", ...where(app, d.line), form: d.form, draw: { site: d.unit, ...(d.type ? { type: d.type } : {}), ...(d.values ? { values: d.values, bits: d.bits } : {}) } };
+  // The references each sentence reads through: a wrong value on screen leads to the relation it read.
+  const follows = (line: number) => [...new Set((app.facts?.navigations ?? []).filter((n) => n.line === line).flatMap((n) => n.follows))];
+  const lineOf = new Map<string, number>();
+  const walkLines = (els: App["screen"], list?: string, screen?: string) => {
+    for (const el of els) {
+      if (el.kind === "heading") continue;
+      const on = el.screen ?? screen;
+      lineOf.set(`${on ? `${on}/` : ""}${list ? `${list}[].${el.name}` : el.name}`, el.line);
+      walkLines(el.children, el.kind === "list" ? (list ? `${list}[].${el.name}` : el.name) : list, on);
+    }
+  };
+  walkLines(app.screen);
+  for (const d of app.derive) lineOf.set(`derive ${d.name}`, d.line);
+  for (const h of app.handlers) h.stepLines?.forEach((l, i) => lineOf.set(`on ${h.verb}${h.target ? " " + h.target : ""} step ${i + 1}`, l));
+  for (const ep of app.endpoints ?? []) ep.stepLines?.forEach((l, i) => lineOf.set(`endpoint ${ep.name} step ${i + 1}`, l));
+  for (const [key, line] of lineOf) {
+    const f = map[key] && follows(line);
+    if (f?.length) map[key].follows = f;
+  }
   // Tag everything that belongs to a component instance.
   for (const [key, entry] of Object.entries(map)) {
     const name = key.replace(/^(state|derive|on \w+) /, "").replace(/^\w+\//, "");

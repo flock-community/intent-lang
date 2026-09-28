@@ -2,6 +2,7 @@ layer std.actions {
   "External calls go out only when a standing permission covers them; with none the call waits for approval, and while the emergency stop is on, none goes out."
   "A rejection is about the calls waiting when it is given: they are dropped, and a later call waits for approval again."
   "The harness gates the calls with the bound permissions (docs/design/effects.md); this layer only carries them."
+  "It is a brake in the screen, not access control: it holds an agent's calls until a person agrees, and cannot hold back a person, who controls the browser. Who may do what is decided by the service's access block."
 }
 
 record Permission {

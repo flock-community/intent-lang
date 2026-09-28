@@ -2,8 +2,9 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App } from "./ast.ts";
-import { runJobsIsolated, type ExampleResult, type ExploreResult } from "./exec.ts";
-import { actionText, exploreJobs } from "./fuzz.ts";
+import { runJobsIsolated, type Action, type ExampleResult, type ExploreResult, type TraceResult } from "./exec.ts";
+import { actionText, asExample, exploreJobs, shrink } from "./fuzz.ts";
+import { changePlan, hasChangeRules } from "./changes.ts";
 import { ROOT, scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
 import { buildPrompt, incrementalPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
@@ -18,9 +19,13 @@ import { loadIncremental, planIncremental, saveIncremental } from "./incremental
 import { typeDescOf } from "./targets/ts-service.ts";
 import { callDescs, eventWireTypes, hasClients, hasThrough, manifest, wireType } from "./calls.ts";
 import { usesClock } from "./refs.ts";
-import { prepareInvariants } from "./invariants.ts";
-import { dataField, hasData, hasInvariants, hasStored } from "./gen.ts";
+import { prepareInvariants, stageSentences } from "./invariants.ts";
+import { dataField, hasData, hasHomes, hasInvariants, hasStored } from "./gen.ts";
+import { keyedLists } from "./homes.ts";
+import { ownRandomness, usesDraws } from "./draws.ts";
+import { drawTable, loadDrawTable, simplerDraws } from "./drawer.ts";
 import { readLayerConfig } from "./layer.ts";
+import { accessPlan, actsAsOf } from "./access.ts";
 
 export interface BuildResult {
   target: Target;
@@ -110,10 +115,22 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   // Several screens: their addresses, for the test driver (which keeps the history).
   if (app.screens?.length) writeFileSync(join(dir, "screens.json"), JSON.stringify(app.screens.map((s) => ({ name: s.name, path: s.path }))));
   // Stored state: which fields of the data a restart keeps (the driver saves them, restarts, and checks they came back).
+  // Lists a reference points into: their keys stay unique (the driver checks the data after every step).
+  // Lists inside rows too: an inner row's key stays unique within its outer row (the path of keys finds one row).
+  if (hasHomes(app) && !layer) writeFileSync(join(dir, "keys.json"), JSON.stringify(keyedLists(app).map((h) => ({ field: dataField(h.list), list: h.list, key: h.key, record: h.record, line: app.state.find((f) => f.name === h.list)?.line ?? 0, ...(h.inner ? { inner: h.inner } : {}) }))));
   if (hasStored(app) && !layer) writeFileSync(join(dir, "stored.json"), JSON.stringify(app.state.filter((f) => f.stored).map((f) => ({ field: dataField(f.name), line: f.line }))));
+  // Change rules: the named forms the harness checks itself, and the sentences the stage compiles (their lines).
+  if (hasChangeRules(app) && !layer) writeFileSync(join(dir, "changes.json"), JSON.stringify(changePlan(app), null, 2));
+  // Draws: every place a sentence draws, and what it draws from (the driver steers and seeds them).
+  if (usesDraws(app) && !layer) writeFileSync(join(dir, "draws.json"), JSON.stringify(drawTable(app), null, 2));
+  // Access (v70): the plan the harness enforces (the drivers read it for rule mutation), and how a test acts as a caller.
+  if (api && app.access) writeFileSync(join(dir, "access.json"), JSON.stringify(accessPlan(app), null, 2));
+  if (api && actsAsOf(app)) writeFileSync(join(dir, "acting.json"), JSON.stringify(actsAsOf(app), null, 2));
   mkdirSync(join(dir, "log"), { recursive: true });
-  // Sentences in `always` over the data: their checks are compiled once per spec, apart from the app.
-  if (hasInvariants(app) && !layer) {
+  // Sentences in `always` over the data: their checks are compiled once per spec, apart from the app
+  // (the change rules the harness reads itself need no stage).
+  const stage = stageSentences(app);
+  if (hasInvariants(app) && !layer && (stage.invariants.length || stage.changes.length)) {
     const inv = await prepareInvariants(app, specText, dir, log);
     res.costUsd += inv.costUsd;
     if (inv.error) {
@@ -123,7 +140,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     }
   }
   const regions = opts.incremental && !layer && !api && !opts.styled ? regionUnits(app) : [];
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length, regions);
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length, regions, usesDraws(app), !!app.access);
 
   let code = "";
   let problems = "";
@@ -183,6 +200,14 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
       }
     }
 
+    // Randomness is the harness's: a module that makes its own is rejected before anything runs.
+    const own = layer ? undefined : ownRandomness(readFileSync(appFile, "utf8"), target);
+    if (own) {
+      problems = `The module makes its own randomness (${own}). Draws come from the harness: use the \`Draws\` functions of the generated interface where a sentence draws, and nothing else random.`;
+      res.attempts.push({ stage: "compile", detail: `rejected: the module makes its own randomness (${own})` });
+      log(`attempt ${attempt}: rejected, the module makes its own randomness (${own})`);
+      continue;
+    }
     const errors = layer ? await svc!.compileLayer(dir) : api ? await svc!.compileApi(dir) : await tm.compile(dir);
     if (errors) {
       problems = `The module does not compile:\n\n\`\`\`\n${errors}\n\`\`\``;
@@ -201,18 +226,29 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     const exs = results as ExampleResult[];
     const failed = exs.filter((e) => !e.pass);
     res.examples.passed = exs.length - failed.length;
-    if (!failed.length && app.always.length) {
+    // An api with an access block is hunted too: every session checks that a refusal changes nothing.
+    if (!failed.length && (app.always.length || hasChangeRules(app) || (api && app.access))) {
       // Examples pass; now hunt for a session that breaks an `always` rule.
       const ex = api
         ? await runJobsIsolated(dir, target, apiTraces(app, 40, 25, 11).map((calls) => ({ kind: "api-trace" as const, calls, always: app.always })), 300_000)
         : await runJobsIsolated(dir, target, exploreJobs(app, 40, 25, 11), 300_000);
-      const v = "error" in ex ? undefined : (ex as ExploreResult[]).find((e) => e.violation)?.violation;
+      // A batch that could not run, or a session that crashed, proves nothing: it is a failure too.
+      const broke = sessionsBroke(ex);
+      if (broke) {
+        problems = `All examples pass, but ${broke.problem}`;
+        res.attempts.push({ stage: "always", detail: broke.detail });
+        log(`attempt ${attempt}: ${broke.detail.slice(0, 160)}`);
+        continue;
+      }
+      let v = (ex as ExploreResult[]).find((e) => e.violation)?.violation;
+      if (v && !v.ambiguous) v = await shortest(dir, target, app, api, v);
       if (v) {
         const w = where(app, v.line);
         const head = v.ambiguous
           ? `The sentence in \`always\` at ${w.file}:${w.line} (\`${w.text}\`) is read two ways`
           : `All examples pass, but this session breaks the rule at ${w.file}:${w.line} (\`${w.text}\`)`;
-        problems = `${head}: ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${v.actions.map((a) => ("endpoint" in a ? callText(a as unknown as Call) : actionText(a))).join("\n")}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
+        const steps = v.actions.map((a) => ("endpoint" in a ? callText(a as unknown as Call) : actionText(a)));
+        problems = `${head}: ${v.message}\n\nThe session, from the initial screen:\n\`\`\`\n${steps.join("\n")}\n\`\`\`\n\nAs an example (it fails until the app keeps the rule):\n\`\`\`intent\n${asExample(w.text.replace(/^- /, ""), steps, `(${w.file}:${w.line})`)}\n\`\`\`\n\nScreen after the last step:\n\`\`\`\n${v.screen}\n\`\`\``;
         res.attempts.push({ stage: "always", detail: `line ${v.line}: ${v.message}` });
         log(`attempt ${attempt}: ${v.ambiguous ? "always is read two ways" : "breaks always"} (line ${v.line})`);
         continue;
@@ -248,4 +284,43 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   res.ms = Date.now() - t0;
   writeFileSync(join(dir, "build.json"), JSON.stringify(res, null, 2));
   return res;
+}
+
+/**
+ * The random sessions that hunt for a broken rule: when the batch could not run, or a session crashed
+ * and none broke a rule, what to tell the compiler (a crashed session is never a clean one).
+ */
+export function sessionsBroke(ex: unknown): { problem: string; detail: string } | undefined {
+  if (ex && typeof ex === "object" && "error" in ex) return { problem: `the random sessions that check the rules could not run: ${(ex as { error: string }).error}`, detail: `sessions failed: ${(ex as { error: string }).error}` };
+  const all = ex as { violation?: unknown; error?: string; actions?: unknown[] }[];
+  if (all.some((e) => e.violation)) return undefined;
+  const crashed = all.filter((e) => e.error);
+  if (!crashed.length) return undefined;
+  const steps = (crashed[0].actions ?? []).map((a) => (a && typeof a === "object" && "endpoint" in a ? callText(a as unknown as Call) : actionText(a as Action)));
+  return {
+    problem: `${crashed.length} of ${all.length} random sessions crashed: ${crashed[0].error}${steps.length ? `\n\nThe first of them, from the initial screen:\n\`\`\`\n${steps.join("\n")}\n\`\`\`` : ""}`,
+    detail: `${crashed.length} session(s) crashed: ${crashed[0].error}`,
+  };
+}
+
+/**
+ * A session that breaks an \`always\` rule, shrunk to the fewest steps that still break it (the same
+ * rule), so the example it becomes is short. Best-effort: the original session when shrinking fails.
+ */
+export async function shortest<V extends { line: number; actions: unknown[] }>(dir: string, target: Target, app: App, api: boolean, v: V): Promise<V> {
+  let last: V | undefined;
+  const stillFails = async (tries: unknown[][]) => {
+    const r = api
+      ? await runJobsIsolated(dir, target, tries.map((calls) => ({ kind: "api-trace" as const, calls: calls as Call[], always: app.always })), 300_000)
+      : await runJobsIsolated(dir, target, tries.map((actions) => ({ kind: "trace" as const, actions: actions as Action[], always: app.always })), 300_000);
+    if ("error" in r) return -1;
+    const at = (r as TraceResult[]).findIndex((t) => t.violation?.line === v.line && !t.violation.ambiguous);
+    if (at >= 0) last = (r as TraceResult[])[at].violation as unknown as V;
+    return at;
+  };
+  await shrink(v.actions, stillFails);
+  // Then the draws: every steered value at its simplest, kept when the session still fails the same way.
+  const simpler = simplerDraws((last ?? v).actions, loadDrawTable(dir));
+  if (simpler) await stillFails([simpler]);
+  return last ? { ...v, ...last } : v;
 }

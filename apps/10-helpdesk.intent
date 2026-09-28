@@ -184,7 +184,7 @@ screen {
     }
   }
   section detail as drawer {
-    visible when there is a @selected
+    visible when there is a @current
     text detailSubject = the @subject of @current as title
     text detailMeta = "#{@id of @current} · {@customer of @current}" as caption
     text detailPriority = the @priority of @current as PriorityBadge
@@ -267,6 +267,9 @@ on click send {
 }
 
 on click solve {
+  if there is no @current {
+    stop
+  }
   - set the @status of @current to @Solved
   - set @toast to "Ticket #<id of current> solved"
 }

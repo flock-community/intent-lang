@@ -1,0 +1,178 @@
+app ExpensesApi {
+  "Employees submit expenses; a manager who did not submit an expense approves or rejects it, while it is pending."
+  "The service keeps that promise itself: no one approves their own expense, whatever their screen does."
+}
+
+language v70
+
+import expenses.expenses
+
+implements expenses.expensesApi
+
+use secure = std.http.secure
+use auth = std.http.apiKey {
+  keys = table {
+    secret       | owner
+    "k-ann-11"   | "Ann"
+    "k-mo-22"    | "Mo"
+    "k-kim-33"   | "Kim"
+  }
+}
+
+record Grant {
+  who: Text
+  role: Role
+}
+
+derive {
+  nextId: Int = the highest @id in @expenses + 1 (1 when there are none)
+}
+
+state {
+  stored grants: List Grant = table {
+    who   | role
+    "Ann" | Employee
+    "Mo"  | Employee
+    "Mo"  | Manager
+    "Kim" | Manager
+  }
+  stored expenses: List Expense = []
+}
+
+access {
+  roles = grants
+  - any caller may call @me
+  - an @Employee may call @submitExpense and @myExpenses
+  - a @Manager may call @pendingExpenses, @approveExpense and @rejectExpense
+  - no one may call @approveExpense and @rejectExpense when that expense's @submitter is the @caller: "Someone else must decide on your own expense"
+  - no one may call @approveExpense and @rejectExpense when that expense is not @Pending: "This expense has been decided"
+  - an @Employee may hear @expenseDecided when its body's @submitter is the @caller
+  - a @Manager may hear every event
+}
+
+endpoint me {
+  answer 200 with a @Me with @name = the @caller and @roles = the @role of every grant in @grants whose @who is the @caller, in the order of @grants
+}
+
+endpoint submitExpense {
+  if @description, trimmed, is blank {
+    answer 400 "Description is required"
+  }
+  if @amount is at most 0 {
+    answer 400 "Amount must be above 0"
+  }
+  - add an @Expense to the end of @expenses with @id = @nextId, @description = @description trimmed, the given @amount and @category, @status @Pending, @submitter = the @caller and @approver = nothing
+  answer 201 with the new expense
+}
+
+endpoint myExpenses {
+  answer 200 with the @expenses whose @submitter is the @caller, highest @id first
+}
+
+endpoint pendingExpenses {
+  answer 200 with the @expenses whose @status is @Pending, highest @id first
+}
+
+endpoint approveExpense {
+  if no expense has that @id {
+    answer 404 "No such expense"
+  }
+  - set its @status to @Approved
+  - set its @approver to the @caller
+  - publish @expenseDecided with the expense
+  answer 200 with the expense
+}
+
+endpoint rejectExpense {
+  if no expense has that @id {
+    answer 404 "No such expense"
+  }
+  - set its @status to @Rejected
+  - set its @approver to the @caller
+  - publish @expenseDecided with the expense
+  answer 200 with the expense
+}
+
+always {
+  - every @Expense in @expenses whose @approver is not nothing has an @approver that is not its @submitter
+  - an @Expense whose @status was @Approved never changes
+  - an @Expense's @status only changes from @Pending to @Approved or @Rejected
+}
+
+example "who am I" {
+  call me as "Kim"
+  see me.status = 200
+  see me.body.roles has 1 rows
+  call me as "Mo"
+  see me.body.name = "Mo"
+  see me.body.roles has 2 rows
+  see me.body.roles[2] = "Manager"
+  call me as "Ann"
+  see me.body.roles has 1 rows
+  call me
+  see me.status = 401
+}
+
+example "a manager cannot approve their own expense, another manager can" {
+  call submitExpense as "Mo" with description = "Hotel", amount = 120.50, category = Travel
+  see submitExpense.status = 201
+  see submitExpense.body.submitter = "Mo"
+  see submitExpense.body.status = "Pending"
+  call approveExpense as "Mo" with id = 1
+  see approveExpense.status = 403
+  see approveExpense.body.error = "Someone else must decide on your own expense"
+  call approveExpense as "Kim" with id = 1
+  see approveExpense.status = 200
+  see approveExpense.body.approver = "Kim"
+  see expenseDecided.body.status = "Approved"
+}
+
+example "an employee cannot approve at all" {
+  call submitExpense as "Mo" with description = "Taxi", amount = 20, category = Travel
+  call approveExpense as "Ann" with id = 1
+  see approveExpense.status = 403
+  see approveExpense.body.error = "Not allowed"
+  call pendingExpenses as "Ann"
+  see pendingExpenses.status = 403
+  call pendingExpenses as "Kim"
+  see pendingExpenses.body has 1 rows
+}
+
+example "a decided expense stays decided" {
+  call submitExpense as "Ann" with description = "Lunch", amount = 15, category = Meals
+  call rejectExpense as "Kim" with id = 1
+  see rejectExpense.status = 200
+  see rejectExpense.body.status = "Rejected"
+  call approveExpense as "Mo" with id = 1
+  see approveExpense.status = 403
+  see approveExpense.body.error = "This expense has been decided"
+  see audit[2].caller = "Kim"
+  see audit[3].caller = "Mo"
+  see audit[3].decision = "refused"
+}
+
+example "each employee sees their own expenses" {
+  call submitExpense as "Ann" with description = "Train", amount = 42.10, category = Travel
+  call submitExpense as "Mo" with description = "Keyboard", amount = 89, category = Equipment
+  call myExpenses as "Ann"
+  see myExpenses.body has 1 rows
+  see myExpenses.body[1].description = "Train"
+  call myExpenses as "Kim"
+  see myExpenses.status = 403
+}
+
+example "what an expense needs" {
+  call submitExpense as "Ann" with description = "  ", amount = 10, category = Other
+  see submitExpense.status = 400
+  see submitExpense.body.error = "Description is required"
+  call submitExpense as "Ann" with description = "Pens", amount = 0, category = Other
+  see submitExpense.status = 400
+  see submitExpense.body.error = "Amount must be above 0"
+}
+
+example "no such expense" {
+  call approveExpense as "Kim" with id = 9
+  see approveExpense.status = 404
+  call rejectExpense as "Kim" with id = 9
+  see rejectExpense.status = 404
+}

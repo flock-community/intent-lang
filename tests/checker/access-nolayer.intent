@@ -1,0 +1,30 @@
+app AccessWithoutACaller {
+  "An access block decides on a caller, so a layer must say who is calling."
+}
+
+profile api
+
+access {                                        # expect: ACCESS
+  - any caller may call @health
+  - any caller may call @health when that ticket is @Open   # expect: NO_ROW
+}
+
+choice Status: Open | Closed
+
+record Ticket {
+  id: Int
+  status: Status
+}
+
+state {
+  tickets: List Ticket = []
+}
+
+endpoint health GET "/health" {
+  answer 200 with "ok"
+}
+
+example "health" {
+  call health as "Ann"                          # expect: ACCESS
+  see health.status = 200
+}

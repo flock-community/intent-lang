@@ -1,0 +1,24 @@
+app Whoami {
+  "Callers with a key can see who they are."
+}
+language v69
+
+profile api
+
+use auth = std.http.apiKey {
+  keys = table {
+    secret   | owner
+    "k-ann"  | "Ann"
+  }
+}
+
+endpoint me GET "/me" {
+  returns Text
+  answer 200 with @caller
+}
+
+example "a key says who calls" {
+  call me as "Ann"
+  see me.status = 200
+  see me.body = "Ann"
+}

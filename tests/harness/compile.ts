@@ -13,6 +13,7 @@ const R = join(ROOT, "compiler") + "/";
 const { load } = await import(R + "load.ts");
 const gen = await import(R + "gen.ts");
 const { scaffoldApi } = await import(R + "api.ts");
+const { NODE_TYPES } = await import(R + "tools.ts");
 
 const specs: string[] = [];
 const walk = (d: string) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith(".intent")) specs.push(p); } };
@@ -51,7 +52,9 @@ const check = async (j: Job) => {
   if (j.ts.length) {
     // The build's own tsconfig (DOM or not, strictness), limited to the files that stand alone.
     writeFileSync(join(j.dir, "tsconfig.harness.json"), JSON.stringify({ extends: "./tsconfig.json", include: [], files: j.ts }));
-    const r = existsSync(join(j.dir, "tsconfig.json")) ? await run(tsc, ["--noEmit", "-p", "tsconfig.harness.json"], j.dir) : { ok: true, out: "" };
+    // A service's tsconfig names Node's types; the harness says where they are (compiler/tools.ts).
+    const node = existsSync(join(j.dir, "tsconfig.json")) && /"node"/.test(readFileSync(join(j.dir, "tsconfig.json"), "utf8")) ? NODE_TYPES : [];
+    const r = existsSync(join(j.dir, "tsconfig.json")) ? await run(tsc, ["--noEmit", "-p", "tsconfig.harness.json", ...node], j.dir) : { ok: true, out: "" };
     if (!r.ok) (failures++, console.log(`${j.spec} ${j.target}: harness TypeScript does not compile\n${r.out.split("\n").slice(0, 8).join("\n")}`));
   }
   if (j.elm) {

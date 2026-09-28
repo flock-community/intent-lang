@@ -1,0 +1,72 @@
+app RandomApiChecks {
+  "Draws in an api: a secret is kept and answered once; a short code taken as input can be guessed."
+}
+
+profile api
+
+type Pin = Text of 6 digits
+type Token = Text of 32 hex digits
+type Nonce = Text of 22 letters and digits
+
+record Key {
+  key secret: Token
+  owner: Text
+}
+
+record Parcel {
+  key id: Int
+  pin: Pin
+}
+
+state {
+  keys: List Key = []
+  parcels: List Parcel = []
+}
+
+endpoint signup POST "/signup" {
+  body owner: Text
+  returns Key
+  - add a @Key to the end of @keys with @secret = a random @Token and @owner = @owner
+  answer 201 with a @Key with @secret = a random @Token and @owner = @owner            # expect: REDRAW
+}
+
+endpoint keep POST "/keep" {
+  body owner: Text
+  returns Key
+  - add a @Key to the end of @keys with @secret = a random @Token and @owner = @owner
+  answer 201 with the new key                                                          # expect-not: REDRAW
+}
+
+endpoint deposit POST "/parcels" {
+  returns Parcel
+  - add a @Parcel to the end of @parcels with @id = the number of @parcels plus 1 and @pin = a random @Pin
+  answer 201 with the new parcel
+}
+
+endpoint pickup POST "/parcels/{id}/pickup" {
+  path id: Int
+  body pin: Pin                                                                         # expect: GUESSABLE
+  body nonce: Nonce                                                                     # expect-not: GUESSABLE
+  answer 204
+}
+
+every 1h {
+  for each @outer in @parcels {
+    - add a @Key to the end of @keys with @secret = a random @Token and @owner = "outer"         # expect-not: NOT_YET
+    for each @inner in @parcels {
+      - add a @Key to the end of @keys with @secret = a random @Token and @owner = "inner"       # expect: NOT_YET
+    }
+  }
+}
+
+example "a key" {
+  steer random Token = "0123456789abcdef0123456789abcdef"
+  call signup with owner = "Ann"
+  see signup.status = 201
+  call keep with owner = "Bob"
+  see keep.body.secret = "0123456789abcdef0123456789abcdef"
+  call deposit
+  see deposit.body.pin = "123456"                                                       # expect: UNSTEERED
+  call pickup with id = 1, pin = "123456", nonce = "abcdefghijklmnopqrstuv"
+  see pickup.status = 204
+}

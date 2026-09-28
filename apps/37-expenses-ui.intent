@@ -1,0 +1,240 @@
+app ExpensesUi {
+  "Team expenses after signing in with an API key: submit an expense, follow your own, and, as a manager, decide on the pending ones."
+  "Who may decide is the expense service's to say: this screen shows what the service answers. It leaves out the pending list for someone who is not a manager, as a convenience: the service is what protects."
+}
+
+language v70
+
+import expenses.expenses
+
+uses expenses.expensesApi as exp {
+  tested with "apps/api/expenses-api.intent"
+  through std.http.sendKey {
+    key = apiKey
+  }
+}
+
+state {
+  apiKey: Text = ""                # the key the user signed in with
+  name: Text = ""                  # who the service says is signed in
+  employee: Bool = false
+  manager: Bool = false
+  mine: List Expense = []
+  pending: List Expense = []
+  decisions: List Expense = []     # the decisions this user heard about since signing in, oldest first
+  newDescription: Text = ""
+  newAmount: Text = ""
+  newCategory: Category = Travel
+  problem: Text = ""
+}
+
+screen {
+  field apiKey "API key"
+  button signIn "Sign in" {
+    enabled when @apiKey is not blank
+  }
+  text problem {
+    visible when @problem is not empty
+  }
+  section signedIn {
+    visible when @name is not empty
+    text greeting = "Signed in as {name}"
+    section form {
+      visible when @employee
+      field newDescription "Description"
+      field newAmount "Amount"
+      select newCategory
+      button submit "Submit" {
+        enabled when @newDescription is not blank
+      }
+    }
+    list mine of Expense {
+      visible when @employee
+      text description
+      text status
+    }
+    list pending of Expense {
+      visible when @manager
+      text description
+      text submitter
+      button approve "Approve"
+      button reject "Reject"
+    }
+    list decisions of Expense {
+      text description
+      text status
+    }
+  }
+}
+
+on click signIn {
+  - clear @name, @problem, @mine, @pending and @decisions
+  - set @employee to false
+  - set @manager to false
+  - call @exp.me
+}
+
+on answer exp.me {
+  if its status is 200 {
+    - set @name to its body's @name
+    if its body's @roles contains @Employee {
+      - set @employee to true
+      - call @exp.myExpenses
+    }
+    if its body's @roles contains @Manager {
+      - set @manager to true
+      - call @exp.pendingExpenses
+    }
+  } else {
+    - set @problem to the error in its body
+  }
+}
+
+on answer exp.myExpenses {
+  if its status is 200 {
+    - set @mine to its body
+  }
+}
+
+on answer exp.pendingExpenses {
+  if its status is 200 {
+    - set @pending to its body
+  }
+}
+
+on click submit {
+  if @newAmount does not read as a decimal above 0 {
+    - set @problem to "The amount is a number above 0"
+    stop
+  }
+  - call @exp.submitExpense with @description = @newDescription, @amount = @newAmount read as a decimal and @category = @newCategory
+}
+
+on answer exp.submitExpense {
+  if its status is 201 {
+    - clear @newDescription, @newAmount and @problem
+    - call @exp.myExpenses
+    if @manager {
+      - call @exp.pendingExpenses
+    }
+  } else {
+    - set @problem to the error in its body
+  }
+}
+
+on click approve {
+  - call @exp.approveExpense with @id = the @id of that expense
+}
+
+on click reject {
+  - call @exp.rejectExpense with @id = the @id of that expense
+}
+
+on answer exp.approveExpense {
+  if its status is 200 {
+    - clear @problem
+  } else {
+    - set @problem to the error in its body
+  }
+  - call @exp.pendingExpenses
+}
+
+on answer exp.rejectExpense {
+  if its status is 200 {
+    - clear @problem
+  } else {
+    - set @problem to the error in its body
+  }
+  - call @exp.pendingExpenses
+}
+
+on event exp.expenseDecided {
+  - add its body to the end of @decisions
+  if @employee {
+    - call @exp.myExpenses
+  }
+  if @manager {
+    - call @exp.pendingExpenses
+  }
+}
+
+example "Mo cannot decide on his own expense: the service refuses, and the screen says why" {
+  type "k-mo-22" into apiKey
+  click signIn
+  see greeting = "Signed in as Mo"
+  see submit is disabled
+  type "Hotel" into newDescription
+  type "120.50" into newAmount
+  click submit
+  see mine has 1 row
+  see description on row 1 of mine = "Hotel"
+  see status on row 1 of mine = "Pending"
+  see pending has 1 row
+  see description on row 1 of pending = "Hotel"
+  click approve on row 1
+  see problem = "Someone else must decide on your own expense"
+  see status on row 1 of mine = "Pending"
+  see decisions has 0 rows
+}
+
+example "another manager decides, and Mo's screen follows" {
+  type "k-mo-22" into apiKey
+  click signIn
+  type "Taxi" into newDescription
+  type "20" into newAmount
+  click submit
+  call exp.approveExpense as "Kim" with id = 1
+  see status on row 1 of mine = "Approved"
+  see pending has 0 rows
+  see decisions has 1 row
+  see status on row 1 of decisions = "Approved"
+}
+
+example "an employee hears only about their own expenses" {
+  type "k-ann-11" into apiKey
+  click signIn
+  see pending is hidden
+  call exp.submitExpense as "Mo" with description = "Keyboard", amount = 89, category = Equipment
+  call exp.approveExpense as "Kim" with id = 1
+  see decisions has 0 rows
+  see mine has 0 rows
+  type "Train" into newDescription
+  type "42.10" into newAmount
+  click submit
+  call exp.rejectExpense as "Kim" with id = 2
+  see decisions has 1 row
+  see description on row 1 of decisions = "Train"
+  see status on row 1 of mine = "Rejected"
+}
+
+example "a manager decides on someone else's expense" {
+  call exp.submitExpense as "Ann" with description = "Lunch", amount = 15, category = Meals
+  type "k-kim-33" into apiKey
+  click signIn
+  see mine is hidden
+  see newDescription is hidden
+  see pending has 1 row
+  see submitter on row 1 = "Ann"
+  click reject on row 1
+  see pending has 0 rows
+  see problem is hidden
+  see decisions has 1 row
+}
+
+example "an amount must be a number" {
+  type "k-ann-11" into apiKey
+  click signIn
+  type "Pens" into newDescription
+  type "a few" into newAmount
+  click submit
+  see problem = "The amount is a number above 0"
+  see mine has 0 rows
+}
+
+example "a wrong key" {
+  see signIn is disabled
+  type "k-bob-00" into apiKey
+  click signIn
+  see problem = "Unknown API key"
+  see signedIn is hidden
+}

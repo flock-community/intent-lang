@@ -5,7 +5,6 @@ app LockersApi {
 profile api
 implements lockers.lockersApi
 import lockers.lockers
-import std.crypto
 
 examples start at 2026-09-24 09:00
 
@@ -16,7 +15,13 @@ use auth = std.http.apiKey {
     "k-courier-a1" | "Courier A"
     "k-courier-b2" | "Courier B"
   }
-  public = "GET /lockers/free", "POST /lockers/*"
+}
+
+# Who may do what: a courier (any known key) deposits; the recipient picks up with the number and the
+# code (no key: the code is the secret); anyone may see how many lockers are free.
+access {
+  - any caller may call @deposit
+  - anyone may call @pickup and @freeLockers
 }
 
 record Parcel {
@@ -43,15 +48,18 @@ derive {
   waiting: List Parcel = the @parcels whose @expiresAt is after @now      # not yet expired
   empty: List Locker = the @lockers that hold no parcel of @waiting
   freeCounts: List FreeCount = one @FreeCount for each value of @Size in declared order (@Small, @Medium, @Large): @size is that value, and @free is the number of @empty with that @size
+  freeCode = a random @PickupCode not among the @code of @waiting      # a code no waiting parcel has
 }
 
 endpoint deposit {
+  - remove from @parcels every parcel whose @expiresAt is at or before @now
   if there is no locker in @empty whose @size is @body.size {
     answer 409 "No {size} locker is free"
   }
-  - remove from @parcels every parcel whose @expiresAt is at or before @now
-  - add a @Parcel to the end of @parcels with @locker = the lowest @number of the @empty whose @size is @body.size, @depositedAt = @now and @expiresAt = 72 hours after @now
-  - set the new parcel's @code to the first 6 digits (0 to 9) in the @sha256 of @newToken, padded with 0 at the end when it has fewer
+  if there is no @freeCode {
+    answer 409 "No pickup code is free"
+  }
+  - add a @Parcel to the end of @parcels with @locker = the lowest @number of the @empty whose @size is @body.size, @code = @freeCode, @depositedAt = @now and @expiresAt = 72 hours after @now
   answer 201 with a @Deposit with @locker, @code and @expiresAt of the new parcel
 }
 
@@ -81,6 +89,7 @@ every 1m {
 
 always {
   - no two @parcels have the same @locker
+  - no two @waiting have the same @code
   - every @Parcel's @locker is the @number of a locker in @lockers
   - every @Parcel's @expiresAt is exactly 72 hours after its @depositedAt
 }
@@ -98,6 +107,7 @@ example "all lockers are free at first" {
 }
 
 example "a courier deposits into the lowest free locker of that size" {
+  steer random PickupCode = "308122"
   call deposit with header x-api-key = "k-courier-a1", size = Medium
   see deposit.status = 201
   see deposit.body.locker = 4
@@ -139,6 +149,7 @@ example "the recipient picks up with the right code, and the locker is free agai
 }
 
 example "a wrong code is refused and the parcel stays" {
+  steer random PickupCode = "308122"
   call deposit with header x-api-key = "k-courier-a1", size = Small
   see deposit.body.code = "308122"
   call pickup with number = 1, code = "308123"
@@ -151,6 +162,25 @@ example "a wrong code is refused and the parcel stays" {
   see freeLockers.body[1].free = 2
   call pickup with number = 1, code = "308122"
   see pickup.status = 200
+}
+
+example "two waiting parcels never share a code" {
+  steer random PickupCode = "308122", "308122", "555001"
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  see deposit.body.code = "308122"
+  call deposit with header x-api-key = "k-courier-b2", size = Small
+  see deposit.body.code = "555001"
+  call pickup with number = 2, code = "555001"
+  see pickup.status = 200
+}
+
+example "a code is free again once its parcel is picked up" {
+  steer random PickupCode = "000042", "000042"
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  call pickup with number = 1, code = "000042"
+  see pickup.status = 200
+  call deposit with header x-api-key = "k-courier-a1", size = Small
+  see deposit.body.code = "000042"
 }
 
 example "a locker that does not exist, and a code that is not six digits" {

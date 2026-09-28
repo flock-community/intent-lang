@@ -121,6 +121,8 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
     }
     app.always.push(step);
   }
+  // `- sentence` lines (one-moment rules and change rules): the component's names renamed, as in its steps.
+  for (const inv of body.invariants ?? []) (app.invariants ??= []).push({ text: rwAll(inv.text)!, line: inv.line });
 
   const renameEls = (els: Element[], inRow: boolean): Element[] =>
     els.map((el) => ({

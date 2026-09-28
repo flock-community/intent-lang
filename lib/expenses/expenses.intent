@@ -1,0 +1,22 @@
+bundle expenses.expenses {
+  "Team expenses: what an employee spent, and who decided on it."
+}
+
+choice Category: Travel | Meals | Equipment | Other
+choice ExpenseStatus: Pending | Approved | Rejected
+choice Role: Employee | Manager
+
+record Expense {
+  id: Int
+  description: Text
+  amount: Decimal
+  category: Category
+  status: ExpenseStatus
+  submitter: Text                 # who submitted it (the caller, as the key layer names them)
+  approver: Text or nothing       # who decided on it; nothing while it is pending
+}
+
+record Me {
+  name: Text                      # the caller
+  roles: List Role                # the roles the caller holds now
+}

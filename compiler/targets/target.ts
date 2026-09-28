@@ -38,6 +38,7 @@ export interface TargetModule {
     calls: string; // apps that call apis
     through: string; // apis with a client layer
     clock: string; // apps that read the clock
+    draws: string; // apps that draw random values
     data: string; // apps with sentences in `always`
     stored: string; // apps with stored state
     platform?: string; // apps that use platform functions (a target without it cannot build them)
@@ -59,6 +60,6 @@ export interface ServiceModule {
   compileLayer(dir: string): Promise<string>;
   /** The files an api build copies from a verified layer build. */
   layerFiles: string[];
-  prompt: { rules: string; skeleton: string; coding: string; clock: string; platform: string };
+  prompt: { rules: string; skeleton: string; coding: string; clock: string; platform: string; draws: string; access: string };
   layerPrompt: { rules: string; skeleton: string; clientRules: string; clientSkeleton: string };
 }

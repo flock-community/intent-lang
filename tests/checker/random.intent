@@ -1,0 +1,131 @@
+app RandomChecks {
+  "Random values: drawn from a type that lists its values, unique only when asked, steered in examples."
+}
+
+type Code = Text of 6 digits
+type Invite = Text of 8 unambiguous letters and digits
+type Token = Text of 32 letters and digits
+type Bad = Text of 3 from "aab"                              # expect: BAD_BINDING
+type Single = Text of 2 from "x"                             # expect: BAD_BINDING
+type Email = Text matching /[^@]+@[^@]+/
+type Title = Text of length 1 to 20
+type Open = Int from 0
+type Die = Int from 1 to 6
+type Price = Decimal from 0 to 10
+
+choice Suit: Hearts | Diamonds | Clubs | Spades
+
+record Parcel {
+  key code: Code
+  note: Text = ""
+}
+
+record Card {
+  name: Text
+  suit: Suit
+}
+
+record Key {
+  key secret: Token
+}
+
+state {
+  parcels: List Parcel = []
+  keys: List Key = []
+  pin: Code = "000000"
+  mail: Text = ""
+  n: Int = 0
+  die: Die = 1
+  dice: List Die = []
+  used: List Code = []
+  deck: List Card = table {
+    name            | suit
+    "Ace of Hearts" | Hearts
+    "Two of Clubs"  | Clubs
+  }
+  hand: List Card = []
+  chosen: Card or nothing = nothing
+  suit: Suit = Hearts
+  titles: List Text = []
+  count: Decimal = 1.5
+  ok: Code = "12345"                                         # expect: BAD_BINDING
+}
+
+derive {
+  lucky = a random @Die                                      # expect: RANDOM
+}
+
+screen {
+  button roll "Roll"
+  button deal "Deal"
+  button bad "Bad"
+  button codes "Codes"
+  text pin = "{pin}"
+  text shown = "{a random @Die}"                             # expect: RANDOM
+  list hand of Card {
+    text name
+  }
+}
+
+on click roll {
+  - set @die to a random @Die                                # expect-not: RANDOM
+  - set @dice to 3 random @Die                               # expect-not: TYPE
+  - set @suit to a random @Suit                              # expect-not: TYPE
+  - set @pin to a random @Code                               # expect-not: COLLISION
+}
+
+on click deal {
+  - set @hand to the first 2 of @deck shuffled               # expect-not: TYPE
+  - set @chosen to a random one of @deck                     # expect-not: NOTHING
+  - set @hand to a random one of @deck                       # expect: TYPE
+}
+
+on click bad {
+  - set @mail to a random @Email                             # expect: RANDOM
+  - set @n to a random @Open                                 # expect: RANDOM
+  - set @count to a random @Price                            # expect: RANDOM
+  - set @mail to a random @Title                             # expect: RANDOM
+  - set @n to a random @Missing                              # expect: UNKNOWN_NAME
+  - set @pin to a random @Code not among @dice, or "000000" when there is none   # expect: RANDOM
+  - set @pin to a random @Code not among @titles, or "000000" when there is none   # expect-not: RANDOM
+  - set @hand to @suit shuffled                              # expect: RANDOM
+  - set @dice to 2.5 random @Die                             # expect: RANDOM
+  - set @die to a random number from 1 to 6                  # expect: RANDOM
+  - set @chosen to one of @deck at random                    # expect: RANDOM
+  - set @hand to the first 2 of @deck shuffled.              # expect-not: RANDOM
+  - set @chosen to a random one of the @deck                 # expect-not: RANDOM
+}
+
+on click codes {
+  - add a @Parcel to the end of @parcels with @code = a random @Code        # expect: COLLISION
+  - add a @Parcel to the end of @parcels whose @code is a random @Code      # expect: COLLISION
+  - set @pin to a random @Code not among @used                              # expect: NOTHING
+  - set @pin to a random @Code not among @used, or "000000" when there is none   # expect-not: NOTHING
+  - add a @Key to the end of @keys with @secret = a random @Token           # expect-not: COLLISION
+  if there is no @chosen {
+    stop
+  }
+  - set @mail to the @name of @chosen
+}
+
+always {
+  - no two @parcels have the same @code
+}
+
+example "a double six" {
+  steer random Die = 6, 6                                    # expect-not: STEP
+  click roll
+  see pin = "000000"
+}
+
+example "steering is checked" {
+  steer random Code = "12345"                                # expect: TYPE
+  steer random Die = 7                                       # expect: TYPE
+  steer random Suit = Spades                                 # expect-not: STEP
+  steer random Invite = "K7MQ0R1Z"                           # expect: STEP
+  steer random Nope = 1                                      # expect: UNKNOWN_NAME
+  steer random shuffle keeps order                           # expect-not: STEP
+  steer random pick 2                                        # expect-not: STEP
+  click deal
+  see pin = "000000"
+}

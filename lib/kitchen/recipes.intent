@@ -1,0 +1,17 @@
+bundle kitchen.recipes {
+  "Recipes and their ingredients. A recipe owns its ingredients: they are a list inside each recipe, and an ingredient's id is unique within its recipe."
+}
+
+record Ingredient {
+  id: Int
+  qty: Decimal
+  unit: Text
+  what: Text
+}
+
+record Recipe {
+  id: Int
+  name: Text
+  serves: Int
+  ingredients: List Ingredient = []
+}

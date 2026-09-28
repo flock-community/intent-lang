@@ -3,7 +3,7 @@ app ExpenseApprovals {
   "The screen shows the pending expenses, newest first, and per category the total of the approved ones."
 }
 
-language v63
+language v67
 
 import std.feedback
 import ui.admin
@@ -105,7 +105,7 @@ on click submit {
     - set @toast.message to "The amount must be more than 0.00 and at most 5000.00 euros."
     stop
   }
-  - add an @Expense to the end of @expenses with @id = the highest @id in @expenses + 1, @description = @descriptionDraft trimmed, @amount = @amountValue, @category = @categoryDraft, @status @Pending
+  - add an @Expense to the end of @expenses with @id = the highest @id in @expenses + 1 (1 when there are none), @description = @descriptionDraft trimmed, @amount = @amountValue, @category = @categoryDraft, @status @Pending
   - clear @descriptionDraft and @amountDraft
   - set @toast.message to ""
 }
@@ -125,7 +125,6 @@ on click reject {
 }
 
 rules {
-  - An approved or rejected @Expense can no longer change: its @description, @amount, @category and @status stay as they are.
   - The @categoryDraft stays as chosen after a submission, so several of one category can be entered in a row.
 }
 
@@ -139,6 +138,11 @@ always {
   - every @amount in @expenses is a valid @Amount
   - no @Expense in @expenses has a blank @description
   - no two @expenses have the same @id
+  - an @Expense whose @status was @Approved never changes
+  - an @Expense whose @status was @Rejected never changes
+  - an @Expense's @status only changes from @Pending to @Approved or @Rejected
+  - every @status in the new @expenses is @Pending
+  - an @Expense is never removed
 }
 
 example "the pending expenses, newest first, and the approved totals" {

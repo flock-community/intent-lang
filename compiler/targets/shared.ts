@@ -3,10 +3,12 @@
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { App, Element, Literal } from "../ast.ts";
+import type { App, Element, Literal, RecordDecl, Type } from "../ast.ts";
+import { homeOf, keyedLists } from "../homes.ts";
 import { STYLE } from "../../runtime/ts/ui.ts";
 import { literalJson, typeDesc } from "../api.ts";
 import { throughs } from "../calls.ts";
+import { usesDraws } from "../draws.ts";
 
 export type Target = "elm" | "ts";
 
@@ -28,9 +30,36 @@ export const PROJECT_ROOT = (() => {
 
 export const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
+/** Does the app declare a code type (`Text of 6 digits`)? Its checks use the harness's reader. */
+export const hasCodes = (app: App) => (app.refined ?? []).some((r) => r.code);
+
+/** Words a generated identifier cannot be: the keywords of the targets (Elm, TypeScript and
+ *  JavaScript, and Kotlin for the targets to come) and the names the harness generates. A spec may
+ *  use them as names (only Intent's own words are reserved): the harness writes such a name with a
+ *  trailing `_` wherever it is an identifier (`type` → `type_`, a record `Model` → `Model_`), and as
+ *  itself wherever it is data (JSON keys, `data-el`, the source map, examples). A spec name never has
+ *  an `_`, so a mangled name meets no other. Every other name is written as it is. */
+export const TARGET_WORDS = new Set([
+  // Elm
+  "if", "then", "else", "case", "of", "let", "in", "type", "module", "where", "import", "exposing", "as", "port", "alias", "infix", "effect",
+  // TypeScript / JavaScript
+  "break", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "enum", "export", "extends", "finally",
+  "for", "function", "instanceof", "new", "null", "return", "super", "switch", "this", "throw", "try", "typeof", "var", "void",
+  "while", "with", "yield", "static", "implements", "interface", "package", "private", "protected", "public", "await", "async",
+  "undefined", "arguments", "eval",
+  // Kotlin
+  "fun", "val", "when", "is", "object", "typealias",
+  // generated types, and the modules and types a generated file names
+  "Model", "Msg", "Screen", "Button", "LabeledButton", "Pick", "Node", "Wire", "Ui", "Fmt", "Spec", "App", "Main", "Worker",
+  "String", "Float", "Just", "Nothing", "True", "False", "Tick", "Ok", "Err", "Result",
+  "Html", "Sub", "Cmd", "Json", "Dict", "Set", "Array", "Char", "Basics", "Debug", "Platform", "Time", "Browser",
+]);
+/** A spec name as a generated identifier (see TARGET_WORDS). */
+export const mangle = (name: string) => (TARGET_WORDS.has(name) ? `${name}_` : name);
+
 // Names of component instances are qualified (`pager.next`): a record field uses the last part,
 // a type or event tag joins all parts (`PagerNext`).
-export const ident = (name: string) => name.slice(name.lastIndexOf(".") + 1);
+export const ident = (name: string) => mangle(name.slice(name.lastIndexOf(".") + 1));
 
 export const typeName = (name: string) => name.split(".").map(cap).join("");
 
@@ -38,35 +67,62 @@ export const lowerFirst = (s: string) => s[0].toLowerCase() + s.slice(1);
 
 export const q = (s: string) => JSON.stringify(s);
 
+/**
+ * An Elm string literal. JSON's escapes are Elm's except for control characters: Elm writes
+ * `\u{0001}` where JSON writes `\u0001`, and has no `\b` or `\f`.
+ */
+export const elmQ = (s: string) => JSON.stringify(s).replace(/\\\\|\\u([0-9a-fA-F]{4})|\\b|\\f/g, (m, h?: string) => (m === "\\\\" ? m : h ? `\\u{${h}}` : m === "\\b" ? "\\u{0008}" : "\\u{000C}"));
+
+/**
+ * Spec text inside a generated comment (TypeScript \`/** … *\/\` and \`//\`, Elm \`{-| … -}\` and \`--\`):
+ * nothing in it may end the comment, open a nested one (Elm's nest), or start a new line (a line
+ * comment ends there; U+2028 and U+2029 end a line in JavaScript too). Every template uses it for
+ * every piece of spec text it puts in a comment.
+ */
+export const doc = (s: string) =>
+  s
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(/\*\//g, "* /")
+    .replace(/\/\*/g, "/ *")
+    .replace(/-\}/g, "- }")
+    .replace(/\{-/g, "{ -");
+
+/** Text in HTML. */
+export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 export interface EventDef {
   tag: string;
   on: "click" | "toggle" | "input" | "choose" | "tick";
-  target: string; // wire target, "list.name" inside rows
-  payload?: "key" | "text" | "value" | "pick" | "key-text" | "key-value" | "key-pick";
+  target: string; // wire target: "list.name" inside rows, "list.inner.name" inside a row of a list inside a row
+  // key: the row's key; keys: a row inside a row, with the outer row's key too (outerKey, then key)
+  payload?: "key" | "text" | "value" | "pick" | "key-text" | "key-value" | "key-pick" | "keys" | "keys-text" | "keys-value" | "keys-pick";
   choice?: string;
 }
 
 export function events(app: App): EventDef[] {
   const out: EventDef[] = [];
   const stateType = (n: string) => app.state.find((f) => f.name === n)?.type;
-  const walk = (els: Element[], list?: Element) => {
+  // `lists`: the lists around the element, outermost first (a row inside a row has two).
+  const walk = (els: Element[], lists: Element[]) => {
+    const list = lists[lists.length - 1];
+    const k = lists.length > 1 ? "keys" : lists.length ? "key" : "";
     for (const el of els) {
       if (el.kind === "heading") continue;
-      const prefix = list ? typeName(list.name) + typeName(el.name) : typeName(el.name);
-      const target = list ? `${list.name}.${el.name}` : el.name;
-      if (el.kind === "button") out.push({ tag: prefix + "Clicked", on: "click", target, payload: list ? "key" : undefined });
-      if (el.kind === "checkbox") out.push({ tag: prefix + "Toggled", on: "toggle", target, payload: list ? "key" : undefined });
-      if (el.kind === "field") out.push({ tag: prefix + "Typed", on: "input", target, payload: list ? "key-text" : "text" });
-      if (el.kind === "select" && el.from) out.push({ tag: prefix + "Chosen", on: "choose", target, payload: list ? "key-pick" : "pick" });
+      const prefix = [...lists, el].map((x) => typeName(x.name)).join("");
+      const target = [...lists, el].map((x) => x.name).join(".");
+      if (el.kind === "button") out.push({ tag: prefix + "Clicked", on: "click", target, payload: k ? (k as "key") : undefined });
+      if (el.kind === "checkbox") out.push({ tag: prefix + "Toggled", on: "toggle", target, payload: k ? (k as "key") : undefined });
+      if (el.kind === "field") out.push({ tag: prefix + "Typed", on: "input", target, payload: k ? (`${k}-text` as "key-text") : "text" });
+      if (el.kind === "select" && el.from) out.push({ tag: prefix + "Chosen", on: "choose", target, payload: k ? (`${k}-pick` as "key-pick") : "pick" });
       else if (el.kind === "select") {
         const t = list ? app.records.find((r) => r.name === list.of)?.fields.find((f) => f.name === el.name)?.type : stateType(el.name);
-        out.push({ tag: prefix + "Chosen", on: "choose", target, payload: list ? "key-value" : "value", choice: t?.k === "Named" ? t.name : "" });
+        out.push({ tag: prefix + "Chosen", on: "choose", target, payload: k ? (`${k}-value` as "key-value") : "value", choice: t?.k === "Named" ? t.name : "" });
       }
-      if (el.kind === "list") walk(el.children, el);
-      if (el.kind === "section") walk(el.children, list);
+      if (el.kind === "list") walk(el.children, [...lists, el]);
+      if (el.kind === "section") walk(el.children, lists);
     }
   };
-  walk(app.screen);
+  walk(app.screen, []);
   if (app.clockMs) out.push({ tag: "Tick", on: "tick", target: "" });
   // Two screens may reuse an element name (`back` on both): the handler belongs to the name, so one
   // event covers both.
@@ -91,8 +147,78 @@ export const hasScreens = (app: App) => !!app.screens?.length;
 /** State that survives a restart (`stored name: T = …`). */
 export const hasStored = (app: App) => app.state.some((f) => f.stored);
 
-/** The app hands over its data: for the checks in `always`, and to save its stored state. */
-export const hasData = (app: App) => hasInvariants(app) || hasStored(app) || (app.layers ?? []).some((l) => l.bindings.some((b) => b.state));
+/** Lists a reference points into, and lists inside rows: the harness checks that their keys stay unique (on the app's data). */
+export const hasHomes = (app: App) => keyedLists(app).length > 0;
+
+/**
+ * Lists inside rows (a record with a field `List R` of another record, whose rows live in a state
+ * list): the harness generates the update of one inner row (found by the outer row's key and its
+ * own), so the model never writes the nested update. One per record and field.
+ */
+export function nestedLists(app: App): { outer: RecordDecl; field: string; inner: RecordDecl }[] {
+  const out: { outer: RecordDecl; field: string; inner: RecordDecl }[] = [];
+  for (const f of app.state) {
+    if (f.name.includes(".") || f.type.k !== "List" || f.type.of.k !== "Named") continue;
+    const outer = app.records.find((r) => r.name === (f.type as { of: { name: string } }).of.name);
+    for (const g of outer?.fields ?? []) {
+      const inner = g.type.k === "List" && g.type.of.k === "Named" ? app.records.find((r) => r.name === (g.type as { of: { name: string } }).of.name) : undefined;
+      if (outer && inner && !out.some((x) => x.outer === outer && x.field === g.name)) out.push({ outer, field: g.name, inner });
+    }
+  }
+  return out;
+}
+
+/** The records whose rows the nested helpers find by key: every outer and inner record of `nestedLists`. */
+export function rowKeyed(app: App): { record: RecordDecl; key?: { name: string; type: Type } }[] {
+  const seen = new Set<string>();
+  const out: { record: RecordDecl; key?: { name: string; type: Type } }[] = [];
+  for (const n of nestedLists(app))
+    for (const r of [n.outer, n.inner])
+      if (!seen.has(r.name)) {
+        seen.add(r.name);
+        const k = r.fields.find((f) => f.name === (r.key ?? "id"));
+        out.push({ record: r, ...(k ? { key: { name: k.name, type: k.type } } : {}) });
+      }
+  return out;
+}
+
+/** The app hands over its data: for the checks in `always`, to save its stored state, and to check the keys references find rows by. */
+// An api with an \`access\` block hands it over too: the harness reads the grants and the rows the rules are about.
+export const hasData = (app: App) => hasInvariants(app) || hasStored(app) || hasHomes(app) || (app.layers ?? []).some((l) => l.bindings.some((b) => b.state)) || !!app.access;
+
+/**
+ * Following a reference, as the harness generates it for every target: per record a reference
+ * points at, a lookup by key in its home list (`ticketByKey`), and per `ref` field of a record a
+ * lookup of the row it points at (`commentTicket`). Nothing is copied: the row is found when it is read.
+ */
+export function refLookups(app: App): { byKey: { fn: string; record: string; list: string; key: string; keyType: Type }[]; fields: { fn: string; holder: string; field: string; record: string; list: string; optional: boolean; byKey: string }[] } {
+  const byKey = new Map<string, { fn: string; record: string; list: string; key: string; keyType: Type }>();
+  const fields: { fn: string; holder: string; field: string; record: string; list: string; optional: boolean; byKey: string }[] = [];
+  const lower = (s: string) => s[0].toLowerCase() + s.slice(1);
+  for (const r of app.records)
+    for (const f of r.fields) {
+      const t = f.type.k === "Maybe" ? f.type.of : f.type;
+      if (t.k !== "Ref") continue;
+      const list = homeOf(app, t.name, t.in).list;
+      const target = app.records.find((x) => x.name === t.name);
+      const key = target?.fields.find((x) => x.name === (target.key ?? "id"));
+      if (!list || !target || !key) continue;
+      const fn = `${lower(t.name)}In${list[0].toUpperCase()}${list.slice(1)}`;
+      if (!byKey.has(fn)) byKey.set(fn, { fn, record: t.name, list, key: key.name, keyType: key.type });
+      fields.push({ fn: `${lower(r.name)}${f.name[0].toUpperCase()}${f.name.slice(1)}`, holder: r.name, field: f.name, record: t.name, list, optional: f.type.k === "Maybe", byKey: fn });
+    }
+  // A state field that holds a reference (`chosen: ref Ticket or nothing`) is followed with the lookup by key.
+  for (const s of app.state) {
+    const t = s.type.k === "Maybe" ? s.type.of : s.type;
+    if (t.k !== "Ref" || s.name.includes(".")) continue;
+    const list = homeOf(app, t.name, t.in).list;
+    const target = app.records.find((x) => x.name === t.name);
+    const key = target?.fields.find((x) => x.name === (target.key ?? "id"));
+    const fn = list ? `${lower(t.name)}In${list[0].toUpperCase()}${list.slice(1)}` : "";
+    if (list && target && key && !byKey.has(fn)) byKey.set(fn, { fn, record: t.name, list, key: key.name, keyType: key.type });
+  }
+  return { byKey: [...byKey.values()], fields };
+}
 
 /** A state field's name in the data: `pager.page` → `pagerPage`. */
 export const dataField = (name: string) => name.replace(/\.([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -136,5 +262,25 @@ export function writeThrough(app: App, dir: string, layerDirs: Record<string, st
 
 export function html(title: string, scripts: string, elm: boolean): string {
   const style = elm ? `<style>${STYLE}</style>` : "";
-  return `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${style}</head>\n<body><div id="app"></div>${scripts}</body></html>\n`;
+  return `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>${style}</head>\n<body><div id="app"></div>${scripts}</body></html>\n`;
+}
+
+/** Apps that call apis: the calls runtime, its outbox, and the reviewed SHA-256 an undo's key is made with. */
+export function copyCallsRuntime(dir: string) {
+  copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
+  copyFileSync(join(ROOT, "runtime/ts/outbox.ts"), join(dir, "outbox.ts"));
+  mkdirSync(join(dir, "platform"), { recursive: true });
+  copyFileSync(join(ROOT, "runtime/ts/platform/std.crypto.ts"), join(dir, "platform/std.crypto.ts"));
+}
+
+/**
+ * Draws (v69): the draw runtime and the reviewed SHA-256 it keys with (std.crypto's code, never a
+ * home-made hash).
+ */
+export function copyDrawRuntime(app: App, dir: string) {
+  if (usesDraws(app)) {
+    copyFileSync(join(ROOT, "runtime/ts/draw.ts"), join(dir, "draw.ts"));
+    mkdirSync(join(dir, "platform"), { recursive: true });
+    copyFileSync(join(ROOT, "runtime/ts/platform/std.crypto.ts"), join(dir, "platform", "std.crypto.ts"));
+  }
 }

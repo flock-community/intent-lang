@@ -1,0 +1,15 @@
+app Marks {
+  "An element that shows a derived value of the same name, written before names were marked."
+}
+state {
+  price: Decimal = 2.50
+}
+derive {
+  total = @price times 2
+}
+screen {
+  text total = total as money
+}
+example "e" {
+  see total = "5.00"
+}

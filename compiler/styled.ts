@@ -3,8 +3,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { App } from "./ast.ts";
-import { ROOT, type Target } from "./gen.ts";
+import type { Target } from "./gen.ts";
 import { kitElm, kitTs } from "./kit.ts";
+import { escapeHtml } from "./targets/shared.ts";
+import { usesDraws } from "./draws.ts";
 
 const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
 const RADIUS: Record<string, [string, string]> = {
@@ -148,13 +150,15 @@ export function render(screen: Screen, send: (msg: Msg) => void): VNode {
 /** Add the styled entry points to a build directory that already holds the logic build. */
 export function scaffoldStyled(app: App, target: Target, dir: string, useKit = false): { lookFile: string } {
   if (app.clockMs) throw new Error("`clock` in styled apps is not in the harness yet");
+  // A styled page has no seed for draws yet: rather than draw from a fixed one, it is not built.
+  if (usesDraws(app)) throw new Error("styled builds of apps that draw random values are not in the harness yet");
   if (target === "elm") {
     writeFileSync(join(dir, "src/Main.elm"), ELM_STYLED_MAIN(app));
     if (useKit) writeFileSync(join(dir, "src/Kit.elm"), kitElm(app));
     writeFileSync(join(dir, "theme.css"), useKit ? themeCss(app, "./src/Look.elm", "./src/Kit.elm") : themeCss(app, "./src/Look.elm"));
     writeFileSync(
       join(dir, "index.html"),
-      `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${app.name}</title><link rel="stylesheet" href="style.css"></head>\n<body><div id="app"></div><script src="main.js"></script><script>window.__n = 0; var app = Elm.Main.init({ node: document.getElementById("app") }); app.ports.observe.subscribe(function (v) { window.__screen = v; window.__n++; });</script></body></html>\n`,
+      `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(app.name)}</title><link rel="stylesheet" href="style.css"></head>\n<body><div id="app"></div><script src="main.js"></script><script>window.__n = 0; var app = Elm.Main.init({ node: document.getElementById("app") }); app.ports.observe.subscribe(function (v) { window.__screen = v; window.__n++; });</script></body></html>\n`,
     );
     return { lookFile: join(dir, "src/Look.elm") };
   }
@@ -166,7 +170,7 @@ export function scaffoldStyled(app: App, target: Target, dir: string, useKit = f
     join(dir, "tsconfig.json"),
     JSON.stringify(
       {
-        compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, jsx: "react-jsx", jsxImportSource: "preact", lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, types: [], paths: { "*": [join(ROOT, "node_modules/*")] } },
+        compilerOptions: { strict: true, noEmit: true, target: "es2022", module: "esnext", moduleResolution: "bundler", allowImportingTsExtensions: true, jsx: "react-jsx", jsxImportSource: "preact", lib: ["es2022", "dom", "dom.iterable"], skipLibCheck: true, types: [] },
         include: ["*.ts", "*.tsx"],
       },
       null,
@@ -175,7 +179,7 @@ export function scaffoldStyled(app: App, target: Target, dir: string, useKit = f
   );
   writeFileSync(
     join(dir, "index.html"),
-    `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${app.name}</title><link rel="stylesheet" href="style.css"></head>\n<body><div id="app"></div><script src="main.js"></script></body></html>\n`,
+    `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(app.name)}</title><link rel="stylesheet" href="style.css"></head>\n<body><div id="app"></div><script src="main.js"></script></body></html>\n`,
   );
   return { lookFile: join(dir, "look.tsx") };
 }

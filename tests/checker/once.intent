@@ -1,0 +1,48 @@
+app Once {
+  "Each mistake is said once, however often it is repeated on its line (v72)."
+}
+
+choice Status: Open | Closed | Open | Open    # expect: DUPLICATE
+choice Size: Small | |                         # expect: SYNTAX
+
+record Item {
+  id: Int
+}
+
+record Task {
+  id: Int
+  note: Text = ""
+  items: List Item = []
+}
+
+state {
+  count: Int = 0
+  draft: Text = ""
+  status: Status = Open
+  tasks: List Task = table {
+    id | items
+    1  | [{ id = 1, label = "Milk" }, { id = 2, label = "Eggs" }]    # expect: UNKNOWN_NAME
+  }
+}
+
+screen {
+  text shown = @count
+  text card = "{@missingToo}" {                # expect: UNKNOWN_NAME
+    visible when there is a @missingToo
+  }
+  button add "Add"
+  button copy "Copy"
+}
+
+on click add {
+  - set @count to @missing plus @missing       # expect: UNKNOWN_NAME
+}
+
+on click copy {
+  - set @draft to that task's @note and that task's @note    # expect: NO_ROW
+}
+
+example "adding" {
+  click add
+  see shown = "0"
+}

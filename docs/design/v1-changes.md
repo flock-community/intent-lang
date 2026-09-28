@@ -1,6 +1,6 @@
 # Design: invariants over changes
 
-Status: proposed for v1. Today `always` sees one moment: every `- sentence` is compiled to
+Status: built in v67 (see "As built" at the end); proposed for v1. Before v67, `always` saw one moment: every `- sentence` is compiled to
 `holds(data, clock)` (`compiler/invariants.ts`) and run on the data after every observation
 (`compiler/exec.ts` `openSession`, `compiler/api.ts` `runApiJobs`). A rule about before and after
 ("an approved expense never changes") can only be a guard in the handlers plus an example, and the
@@ -331,3 +331,74 @@ Example apps to add:
 6. **Liveness** ("a pending expense is eventually decided")? Recommend **not in v1**. It needs
    fairness and unbounded runs (TLA+ `WF`/`SF`, Alloy's `eventually`); random bounded sessions cannot
    check it honestly. It stays a candidate in the changelog.
+
+## As built (v67), and where it departs
+
+Built in v67 on top of v66's nothing-safety and following a reference (the home list rule is
+`compiler/homes.ts`'s `homeOf`, shared with `ref`). The open questions are answered as recommended:
+a frozen row may not be removed (1), checks run per event (2), `was` and `before` both, with the
+other words as `SPELLING` (3), no static proof beyond `BREAKS_RULE` (4), change rules in components
+from the start (5), no liveness (6). Departures and details:
+
+- **The named checks are data, not generated code.** `changePlan(app)` (`compiler/changes.ts`)
+  writes `changes.json` (the typed forms: list, key, field, values as JSON, the transition table),
+  and the harness interprets it (`checkStep`). One implementation for both targets, tested once
+  (`tests/changes.test.ts`), instead of a `changes.mjs` per build. `sourcemap.json` lists every
+  `always` sentence as `always <file>:<line>` (kind `change` with its form, or `always`).
+- **What the harness reads itself**: a subject that is a state field (or a field of a record
+  through it), `a @R's @f`, or rows, with a condition of `@f was/is [not] <value>` parts joined by
+  `and`. Anything else, a derived subject, or a condition in other words, goes to the stage whole,
+  as a general sentence. `whose … is …` with `is never removed` reads the state before the step (a
+  removed row has no state after it).
+- **Nothing-safety.** `@x before` has `@x`'s type for a state field or derived value; for a row's
+  field (`its @amount before`, a loop's `@amount before`) it is `T or nothing`, since the row may be
+  new, and an order on it is `NOTHING` until the sentence says what then. `never goes down/up` on a
+  `T or nothing` subject is `NOTHING` (an order needs a value before and after). A transition table
+  on a `T or nothing` field may list `nothing` as a value; without it, a value never becomes or
+  leaves nothing. `whose @f was @X` does not hold for a new row (§9.14), like Kotlin's `==`.
+- **Where the subject's rows live**: `a @R in @xs`, `a @R's @f in @xs` and `a @R in @xs's @f` all
+  name the list; `in @xs` that is not a state list of R is `TYPE`.
+- **`CHANGE`** covers `@x before`, `@x was` and `the new/removed @xs` in handler steps and
+  conditions, derived values, element values and conditions, endpoints and recurring work; not in
+  `rules` (guidance in words). `before` counts as the operator only where a value ends (`@due before
+  @today` is still an order).
+- **Per event.** The screen driver wraps the target's raw session below the provider's settling
+  (`watching` in `compiler/exec.ts`): data before and after every wire, the user's event, each
+  answer and event, each tick (a `wait` is a noop event), each `navigate` (`on open`). A job
+  (`profile job`) is driven by the same screen driver, so its event and every answer it awaits are
+  steps there; there is no separate job driver. The api driver takes a step per request (also a raw
+  `request`) and per run of recurring work. A violation names the event (`at the event click
+  expenses.reject (row 1)`, `at every 1d`).
+- **The example to paste** has the (shrunk) steps and a comment naming the rule; it has no `see`
+  line, since the harness does not know what the screen should show at that point. Shrinking is
+  QuickCheck-style delta debugging (halves, quarters, …, single steps; at most 25 rounds): a
+  1-minimal session, not always the shortest one (dropping an earlier step can make a later step
+  unavailable). It runs in the build's hunt and in converge.
+- **The fuzzer.** Reach-then-poke weighs actions (×6) in rows whose key on the screen is a key the
+  frozen or kept rows have now (`coveredKeys`); a list whose row keys are not the record's keys
+  gets no poke. Fields and selects inside rows now carry their row (before, random sessions typed
+  into them without one, and the action was unavailable). Converge reports declared transitions
+  no session made (`transitions at line …`), from the pairs the watch records.
+- **The build's hunt** now also runs for apps with change rules (it ran only for `see` checks in
+  `always`); an app with one-moment sentences only is still hunted in converge, not in the build
+  (unchanged).
+- **`TRANSITION_UNPROVEN` is static**: an example makes A → B when one of its steps triggers a
+  handler (or calls an endpoint) that sets the field to B, after the field was A (its default, a
+  seeded row, or an earlier step's handler). An approximation, like `STATUS_UNPROVEN`.
+- **`BREAKS_RULE`**: a write to a frozen field (any write), to a frozen row or a removal of a kept
+  row with no condition before or around it on the field that picks the rows (its polarity is not
+  checked), and `decrease` / `reset` / `clear` of a state that never goes down (`increase` for up).
+- **`SPELLING`** also rewrites `the previous @x` / `the old @x` / `@x previously` to `@x before`, and
+  `can only increase` / `can only decrease`.
+- **Components**: a component's `- sentence` lines in `always` are now expanded into the app,
+  renamed; before v67 they were dropped (one-moment ones too).
+- **The stage.** Only when there are general change sentences does the prompt get the second
+  export and the rules for `before`, and the stage's Fmt the two helpers; for every other spec the
+  invariants prompt and its cache key are as before.
+- **Apps.** `apps/31-frozen-approvals.intent` (Approve, Reject, Edit per row; Edit disabled once
+  decided; an edit whose expense was approved in the meantime is dropped), `apps/api/ledger-api.intent`
+  (deposits, withdrawals, a daily fee recorded as a withdrawal with `fee = true`, only while the
+  balance allows it), and `apps/held-out-3/approvals.intent`'s `rules` sentence became its change rules.
+- **Not built**: the planted-bug *converge* run recorded in `runs/history.jsonl` (the planted
+  violations were shown with the drivers on copies of verified builds instead), and converge
+  before and after for `apps/held-out-3/approvals.intent`.

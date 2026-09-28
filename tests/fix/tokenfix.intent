@@ -1,0 +1,35 @@
+app Codes {
+  "Sign up for a key, or share one."
+}
+
+profile api
+
+record Key {
+  secret: Text
+  owner: Text
+}
+
+state {
+  keys: List Key = []
+}
+
+endpoint signup POST "/signup" {
+  body owner: Text
+  returns Text
+  - add a @Key to the end of @keys with @secret = @newToken and @owner = @owner
+  answer 201 with @owner
+}
+
+endpoint share POST "/share" {
+  body owner: Text
+  returns Key
+  - add a @Key to the end of @keys with @secret = @newToken and @owner = @owner
+  answer 201 with a @Key with @secret = @newToken and @owner = @owner
+}
+
+example "signing up and sharing" {
+  call signup with owner = "Ann"
+  see signup.status = 201
+  call share with owner = "Bob"
+  see share.status = 201
+}

@@ -1,0 +1,31 @@
+app Removals {
+  "Removing a note answers which id was asked for."
+}
+
+profile api
+
+record Note {
+  key id: Int
+  text: Text
+}
+
+record Removed {
+  id: Int
+}
+
+state {
+  notes: List Note = []
+}
+
+endpoint removeNote DELETE "/notes/{id}" {
+  path id: Int
+  returns Removed
+  - remove every note in notes whose id is id
+  - answer 200 with a Removed whose id is id
+}
+
+example "removing a note that is not there" {
+  call removeNote with id = 7
+  see removeNote.status = 200
+  see removeNote.body.id = 7
+}

@@ -21,6 +21,6 @@ screen {
 }
 
 on click pick {
-  - set @picked to the @name of the item where @price is above 3          # expect: SPELLING  # expect: UNGUARDED
-  - set @picked to the @name of the item whose @price is above 3, or "" when there is none   # expect-not: SPELLING  # expect-not: UNGUARDED
+  - set @picked to the @name of the item where @price is above 3          # expect: SPELLING  # expect-not: NOTHING  (a T or nothing fits @picked)
+  - set @picked to the @name of the item whose @price is above 3, or "" when there is none   # expect-not: SPELLING  # expect-not: NOTHING
 }

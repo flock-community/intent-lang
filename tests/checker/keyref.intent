@@ -1,0 +1,45 @@
+app KeyRefs {
+  "A key that refers to its own record, and two records whose keys refer to each other: an error each, never an endless check (v72)."
+}
+
+record Item {
+  key id: ref Item                    # expect: TYPE
+}
+
+record Left {
+  key id: ref Right                   # expect: TYPE
+}
+
+record Right {
+  key id: ref Left                    # expect: TYPE
+}
+
+record Note {
+  key code: Decimal                   # expect: TYPE
+  about: Text
+}
+
+record Link {
+  note: ref Note
+  other: ref Note
+  item: ref Item
+}
+
+state {
+  items: List Item = []
+  links: List Link = []
+}
+
+screen {
+  text shown = the number of @items
+  button add "Add"
+}
+
+on click add {
+  - add an @Item with @id = 1 to the end of @items
+}
+
+example "adding" {
+  click add
+  see shown = "1"
+}

@@ -1,0 +1,113 @@
+app InvitesApi {
+  "A team owner invites people with a code they can read over the phone. A code works once, and no two invitations share one."
+}
+language v69
+
+profile api
+
+# 8 of Crockford's 32 (no I, L, O or U): 40 bits. People type it back forgivingly (lower case, o for 0).
+type InviteCode = Text of 8 unambiguous letters and digits
+
+record Invite {
+  key code: InviteCode
+  email: Text
+  used: Bool = false
+}
+
+state {
+  stored invites: List Invite = []
+}
+
+derive {
+  freeCode = a random @InviteCode not among the @code of @invites
+}
+
+endpoint invite POST "/invites" {
+  body email: Text
+  returns Invite
+  if @email, trimmed, is blank {
+    answer 400 "An email is required"
+  }
+  if there is no @freeCode {
+    answer 503 "No invitation code is free"
+  }
+  - add an @Invite to the end of @invites with @code = @freeCode and @email = @email trimmed
+  answer 201 with the new invite
+}
+
+endpoint accept POST "/invites/{code}/accept" {
+  path code: InviteCode
+  returns Invite
+  if there is no invite in @invites whose @code is @path.code {
+    answer 404 "No such invitation"
+  }
+  if that invite's @used is true {
+    answer 409 "This invitation was used already"
+  }
+  - set the @used of that invite to true
+  answer 200 with that invite
+}
+
+always {
+  - no two @invites have the same @code
+  - an @Invite's @used only changes from false to true
+  - an @Invite is never removed
+}
+
+example "a code is read forgivingly" {
+  steer random InviteCode = "K7MQ0R1Z"
+  call invite with email = "ann@example.com"
+  see invite.status = 201
+  see invite.body.code = "K7MQ0R1Z"
+  see invite.body.used = false
+  call accept with code = "k7mq-or1z"
+  see accept.status = 200
+  see accept.body.email = "ann@example.com"
+  see accept.body.used = true
+}
+
+example "a code works once" {
+  steer random InviteCode = "K7MQ0R1Z"
+  call invite with email = " ann@example.com "
+  see invite.body.email = "ann@example.com"
+  call accept with code = "K7MQ0R1Z"
+  see accept.status = 200
+  call accept with code = "K7MQ0R1Z"
+  see accept.status = 409
+  see accept.body.error = "This invitation was used already"
+}
+
+example "two invitations never share a code" {
+  steer random InviteCode = "K7MQ0R1Z", "K7MQ0R1Z", "AB12CD34"
+  call invite with email = "ann@example.com"
+  see invite.body.code = "K7MQ0R1Z"
+  call invite with email = "bob@example.com"
+  see invite.body.code = "AB12CD34"
+}
+
+example "an unknown code, and a text that is no code" {
+  call accept with code = "ZZZZZZZZ"
+  see accept.status = 404
+  see accept.body.error = "No such invitation"
+  call accept with code = "UUUUUUUU"
+  see accept.status = 400
+  see accept.body.error = "code must be a valid InviteCode"
+  call invite with email = "  "
+  see invite.status = 400
+  see invite.body.error = "An email is required"
+}
+
+example "a drawn code works without steering" {
+  call invite with email = "ann@example.com"
+  see invite.status = 201
+  call accept with code = {invite.body.code}
+  see accept.status = 200
+}
+
+example "invitations survive a restart" {
+  steer random InviteCode = "AB12CD34"
+  call invite with email = "ann@example.com"
+  restart
+  call accept with code = "ab12cd34"
+  see accept.status = 200
+}

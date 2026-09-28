@@ -1,6 +1,6 @@
 app DeskApi {
   "The support desk's API for agents, called from the desk's web pages."
-  "Every request carries an agent's API key; what an agent may do depends on who they are."
+  "Every request carries an agent's API key; what an agent may do depends on who they are: an agent works on their own tickets, a lead on every ticket."
 }
 
 import support.tickets
@@ -18,11 +18,25 @@ use auth = std.http.apiKey {
     secret         | owner
     "k-ann-7f3a"   | "Ann"
     "k-sam-91bc"   | "Sam"
+    "k-lin-44d0"   | "Lin"
+    "k-eve-0b1e"   | "Eve"
   }
-  public = "/health"
+}
+
+choice Role: Agent | Lead
+
+record Grant {
+  who: Text                             # a caller, as the key layer names them
+  role: Role
 }
 
 state {
+  stored grants: List Grant = table {
+    who   | role
+    "Ann" | Agent
+    "Sam" | Agent
+    "Lin" | Lead
+  }
   tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
@@ -32,6 +46,16 @@ state {
     5  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Solved  | "Ann"
   }
   comments: List Comment = []
+}
+
+access {
+  roles = grants
+  - anyone, without a key, may call @health
+  - an @Agent may call @myTickets, @takeTicket and @addComment
+  - an @Agent may call @solveTicket when that ticket's @assignee is the @caller: "Only the assignee can solve this ticket"
+  - a @Lead may call every endpoint
+  - an @Agent may hear @ticketAssigned and @ticketSolved when its body's @assignee is the @caller
+  - a @Lead may hear every event
 }
 
 endpoint health {
@@ -57,9 +81,6 @@ endpoint takeTicket {
 endpoint solveTicket {
   if no ticket has that @id {
     answer 404 "No such ticket"
-  }
-  if that ticket's @assignee is not the @caller {
-    answer 403 "Only the assignee can solve this ticket"
   }
   if that ticket is @Solved {
     answer 409 "Already solved"
@@ -103,43 +124,77 @@ example "without a key nothing else answers, and the refusal is safe too" {
 }
 
 example "each agent sees their own tickets" {
-  call myTickets with header x-api-key = "k-ann-7f3a"
+  call myTickets as "Ann"
   see myTickets.status = 200
   see myTickets.body has 2 rows
   see myTickets.body[1].id = 5
-  call myTickets with header x-api-key = "k-sam-91bc"
+  call myTickets as "Sam"
   see myTickets.body has 2 rows
   see myTickets.body[1].subject = "Feature request: dark mode"
 }
 
-example "taking and solving: only the assignee solves" {
-  call takeTicket with header x-api-key = "k-sam-91bc", id = 4
+example "taking and solving: only the assignee solves; a lead solves any ticket" {
+  call takeTicket as "Sam" with id = 4
   see takeTicket.status = 200
   see takeTicket.body.assignee = "Sam"
   see ticketAssigned.body.id = 4
-  call solveTicket with header x-api-key = "k-ann-7f3a", id = 4
+  call solveTicket as "Ann" with id = 4
   see solveTicket.status = 403
   see solveTicket.body.error = "Only the assignee can solve this ticket"
-  call takeTicket with header x-api-key = "k-ann-7f3a", id = 1
+  see audit[1].caller = "Sam"
+  see audit[1].decision = "allowed"
+  see audit[2].caller = "Ann"
+  see audit[2].decision = "refused"
+  see audit[2].status = 403
+  call takeTicket as "Ann" with id = 1
   see takeTicket.status = 409
   see takeTicket.body.error = "Already taken by Sam"
-  call solveTicket with header x-api-key = "k-sam-91bc", id = 4
+  call solveTicket as "Sam" with id = 4
   see solveTicket.status = 200
   see solveTicket.body.status = "Solved"
-  call solveTicket with header x-api-key = "k-sam-91bc", id = 4
+  call solveTicket as "Sam" with id = 4
   see solveTicket.status = 409
-  call myTickets with header x-api-key = "k-sam-91bc"
+  call myTickets as "Sam"
   see myTickets.body has 3 rows
+  call solveTicket as "Lin" with id = 2
+  see solveTicket.status = 200
+  see solveTicket.body.assignee = "Ann"
+}
+
+example "a key without a role reaches nothing but health" {
+  call myTickets as "Eve"
+  see myTickets.status = 403
+  see myTickets.body.error = "Not allowed"
+  see audit[1].caller = "Eve"
+  see audit[1].decision = "refused"
+  call takeTicket as "Eve" with id = 4
+  see takeTicket.status = 403
+  see audit has 2 rows
+  call health
+  see health.status = 200
+  call health as "Eve"
+  see health.status = 200
+}
+
+example "a refusal changes nothing" {
+  call addComment as "Eve" with id = 1, text = "Let me in"
+  see addComment.status = 403
+  call takeTicket as "Eve" with id = 4
+  see takeTicket.status = 403
+  see ticketAssigned is absent
+  call takeTicket as "Ann" with id = 4
+  see takeTicket.status = 200
+  see takeTicket.body.assignee = "Ann"
 }
 
 example "a comment is by whoever calls" {
-  call addComment with header x-api-key = "k-ann-7f3a", id = 1, text = "  I can take this one. "
+  call addComment as "Ann" with id = 1, text = "  I can take this one. "
   see addComment.status = 201
   see addComment.body.author = "Ann"
   see addComment.body.body = "I can take this one."
-  call addComment with header x-api-key = "k-ann-7f3a", id = 1, text = " "
+  call addComment as "Ann" with id = 1, text = " "
   see addComment.status = 400
-  call addComment with header x-api-key = "k-ann-7f3a", id = 99, text = "Hello"
+  call addComment as "Ann" with id = 99, text = "Hello"
   see addComment.status = 404
 }
 
@@ -158,10 +213,10 @@ example "the desk's web pages may call; other pages may not read the answers" {
 }
 
 example "no such ticket to take or solve" {
-  call takeTicket with header x-api-key = "k-sam-91bc", id = 99
+  call takeTicket as "Sam" with id = 99
   see takeTicket.status = 404
   see takeTicket.body.error = "No such ticket"
-  call solveTicket with header x-api-key = "k-sam-91bc", id = 99
+  call solveTicket as "Sam" with id = 99
   see solveTicket.status = 404
   see solveTicket.body.error = "No such ticket"
 }

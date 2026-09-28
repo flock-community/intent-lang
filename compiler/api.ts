@@ -13,6 +13,13 @@ import { toHttp } from "../runtime/ts/calls.ts";
 import { LAYER_FILES, layerConfig, requestOf } from "./layer.ts";
 import { addMinutes } from "../runtime/ts/fmt.ts";
 import { clockAt } from "../runtime/ts/clock.ts";
+import { duplicateKey, harnessKey } from "./keys.ts";
+import { loadChanges, type ChangeBroken } from "./changes.ts";
+import { canonicalValues, drawer, literalOf, loadDrawTable, splitLiterals, steerSteps, type Drawer } from "./drawer.ts";
+import { buildSites } from "./draws.ts";
+import { sha256 } from "../runtime/ts/platform/std.crypto.ts";
+import { actingAs, type ActsAs, type Plan } from "../runtime/ts/access.ts";
+import { actsAsOf } from "./access.ts";
 
 export { genApiSpec, genClient, scaffoldApi, specLine, typeDesc, API_APP_SKELETON, API_TARGET_RULES } from "./targets/ts-service.ts";
 
@@ -23,6 +30,7 @@ export interface Call {
   endpoint: string;
   args: Record<string, unknown>;
   headers?: Record<string, string>;
+  as?: string; // made as this caller, with their key (\`call x as "Ann"\`); "" is anonymous
 }
 
 export type ApiJob = { kind: "api-example"; example: Example; always?: Step[] } | { kind: "api-trace"; calls: Call[]; always?: Step[] };
@@ -64,7 +72,8 @@ function atPath(responses: Responses, target: string): { found: boolean; value?:
   const parts = target.match(/[a-z]\w*|\[\d+\]/gi) ?? [];
   const r = parts.length ? responses.get(parts[0] as string) : undefined;
   if (!r) return { found: false };
-  let v: unknown = r;
+  // The access audit (\`see audit[1].caller\`) is a list, not an answer.
+  let v: unknown = parts[0] === "audit" && r.status === -1 ? r.body : r;
   for (const p of parts.slice(1)) {
     if (v === null || v === undefined) return { found: false };
     const idx = p.match(/^\[(\d+)\]$/);
@@ -79,7 +88,8 @@ const shown = (v: unknown) => (typeof v === "string" ? v : v === null ? "nothing
 
 function checkValue(v: unknown, c: Check, what: string): string | undefined {
   switch (c.is) {
-    case "eq": return shown(v) === c.value ? undefined : `expected ${what} = ${JSON.stringify(c.value)}, got ${JSON.stringify(shown(v))}`;
+    // `= nothing` asks for null; any other value is never nothing (a text "nothing" is not null).
+    case "eq": return (c.nothing ? v === null : v !== null && shown(v) === c.value) ? undefined : `expected ${what} = ${c.nothing ? "nothing" : JSON.stringify(c.value)}, got ${v === null ? "nothing" : JSON.stringify(shown(v))}`;
     case "rows": {
       if (!Array.isArray(v)) return `${what} is not a list`;
       const ok = c.cmp === "atMost" ? v.length <= c.count : c.cmp === "atLeast" ? v.length >= c.count : v.length === c.count;
@@ -103,7 +113,11 @@ export function checkSeeApi(responses: Responses, s: Extract<Step, { do: "see" }
     if (!list.found || !Array.isArray(list.value)) return invariant ? undefined : `${s.every} is not a list`;
     for (const [i, row] of list.value.entries()) {
       const v = (row as Record<string, unknown>)?.[s.target];
-      if (v === undefined) continue;
+      // A row without the field: skipped in \`always\`, a failure in an example (a check of nothing proves nothing).
+      if (v === undefined) {
+        if (invariant || s.check.is === "hidden") continue;
+        return `${s.target} of row ${i + 1} of ${s.every}: the row has no \`${s.target}\``;
+      }
       const msg = checkValue(v, s.check, `${s.target} of row ${i + 1} of ${s.every}`);
       if (msg) return msg;
     }
@@ -115,8 +129,11 @@ export function checkSeeApi(responses: Responses, s: Extract<Step, { do: "see" }
   return checkValue(r.value, s.check, s.target);
 }
 
-export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]> {
+/** \`plan\`: a mutant of the access plan to run instead of the build's own (rule mutation, access.ts). */
+export async function runApiJobs(dir: string, jobs: ApiJob[], opts: { plan?: Plan } = {}): Promise<unknown[]> {
   const mod = await import(pathToFileURL(join(dir, "test.mjs")).href + `?t=${Date.now()}`);
+  // How a test acts as a caller (\`call x as "Ann"\`): the key layer's header and the key that is theirs.
+  const acting: ActsAs | undefined = existsSync(join(dir, "acting.json")) ? JSON.parse(readFileSync(join(dir, "acting.json"), "utf8")) : undefined;
   const eps: EpDesc[] = JSON.parse(readFileSync(join(dir, "endpoints.json"), "utf8"));
   // Apis that read the clock: it starts at `examples start at` and moves with `wait`; recurring work
   // runs at start + k × its interval, in time order (ties: declaration order), when a wait passes it.
@@ -126,9 +143,29 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
     : undefined;
   // Stored state: a restart keeps these fields of the data, and they must come back unchanged.
   const stored: { field: string; line: number }[] = existsSync(join(dir, "stored.json")) ? JSON.parse(readFileSync(join(dir, "stored.json"), "utf8")) : [];
+  // The lists a reference points into: their keys stay unique after every call.
+  const keys = existsSync(join(dir, "keys.json")) ? JSON.parse(readFileSync(join(dir, "keys.json"), "utf8")) : [];
+  // Change rules: each request is one step (its handler is pure over the data), and so is each run
+  // of recurring work. A restart is not a step (stored state comes back as it was).
+  const changes = await loadChanges(dir);
+  // Draws: each request gets its seed from the run (an example's name, the session's calls) and its
+  // number; \`steer random …\` queues values per type (drawer.ts).
+  const sites = loadDrawTable(dir);
   const out: unknown[] = [];
   for (const job of jobs) {
-    const client = mod.start();
+    const client = mod.start(opts.plan);
+    const draws: Drawer | undefined = Object.keys(sites).length ? drawer(sites, job.kind === "api-example" ? job.example.name : `trace:${sha256(JSON.stringify(job.calls))}`) : undefined;
+    const draw = () => draws?.next();
+    changes?.made.clear();
+    let changeBroken: (ChangeBroken & { event: string }) | undefined;
+    const stepped = <T,>(event: string, clock: unknown, run: () => T): T => {
+      if (!changes || changeBroken || !client.data) return run();
+      const before = client.data();
+      const r = run();
+      const b = changes.step(before, client.data(), clock);
+      if (b) changeBroken = { ...b, event };
+      return r;
+    };
     const restart = (): { line: number; message: string } | undefined => {
       const pick = (d: any) => Object.fromEntries(stored.map((s) => [s.field, d?.[s.field]]));
       const saved = pick(client.data?.());
@@ -146,7 +183,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
       });
       fires.sort((a, b) => a.at - b.at || a.order - b.order);
       const published: { event: string; body: unknown }[] = [];
-      for (const f of fires) published.push(...client.runJob(f.name, clockAtMs(f.at)));
+      for (const f of fires) published.push(...stepped(`every ${f.name.replace(/^every/, "").trim() || f.name}`, clockAtMs(f.at), () => client.runJob(f.name, clockAtMs(f.at), draw())));
       elapsed += ms;
       return published;
     };
@@ -164,18 +201,51 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
     // Like a real client, the driver gives every call to an \`effect external\` endpoint its own
     // idempotency key, unless the example sends one itself.
     let made = 0;
+    // A refused request changes nothing (a built-in rule of every api with an access block): the data,
+    // the events it publishes and the calls it makes are as they were.
+    let refusalBroken: { line: number; message: string } | undefined;
+    const refusalCheck = (before: string, wire: { access?: { decision: string }; events?: { event: string }[] }, text: string) => {
+      if (wire.access?.decision === "refused" && !refusalBroken) {
+        const after = JSON.stringify(client.data?.() ?? null);
+        if (after !== before || (wire.events ?? []).length) refusalBroken = { line: 0, message: `a refused request changed ${after !== before ? `the data: ${difference(JSON.parse(before), JSON.parse(after))}` : `nothing but published ${(wire.events ?? []).map((e) => e.event).join(", ")}`} (\`${text}\` was refused, so it must change nothing)` };
+      }
+    };
     const call = (c: Call) => {
       const h = toHttp(eps, c);
       const external = eps.find((e) => e.name === c.endpoint)?.external;
-      const headers = external && !Object.keys(c.headers ?? {}).some((k) => k.toLowerCase() === "idempotency-key") ? { ...c.headers, "idempotency-key": `call-${++made}` } : (c.headers ?? {});
-      const wire = client.send(h.method, h.path, h.query, h.body, headers, clockAtMs(elapsed));
+      // As a caller: their key in the key layer's header (anonymous: no key at all).
+      let acted: Record<string, string> = {};
+      if (c.as !== undefined && c.as !== "") {
+        const hdr = acting ? actingAs(acting, c.as, client.data?.()) : undefined;
+        if (!hdr) throw new Error(`no key belongs to ${c.as}`);
+        acted = hdr;
+      }
+      const given = { ...(c.headers ?? {}), ...acted };
+      const headers = external && !Object.keys(given).some((k) => k.toLowerCase() === "idempotency-key") ? { ...given, "idempotency-key": harnessKey(`call-${++made}`) } : given;
+      const before = client.audit ? JSON.stringify(client.data?.() ?? null) : "";
+      const wire = stepped(`call ${c.endpoint}`, clockAtMs(elapsed) ?? clockAt("2026-01-05T09:00"), () => client.send(h.method, h.path, h.query, h.body, headers, clockAtMs(elapsed), draw()));
+      refusalCheck(before, wire, callText(c));
       // Examples speak the spec's names: a choice's wire name is read back as its value.
       const res = wire.spec ? { ...wire, body: wire.spec.body, events: wire.spec.events } : wire;
       responses.set(c.endpoint, res);
       record(res);
+      if (client.audit) responses.set("audit", { status: -1, body: client.audit() });
       return res;
     };
     const broken = (always?: Step[]) => {
+      if (refusalBroken) {
+        const b = refusalBroken;
+        refusalBroken = undefined;
+        return b;
+      }
+      // A change rule broken by a request or a run of recurring work in this step.
+      if (changeBroken) {
+        const b = changeBroken;
+        changeBroken = undefined;
+        return b.ambiguous ? { line: b.line, message: `the sentence in \`always\` is read two ways: ${b.detail}` } : { line: b.line, message: `"${b.text}" does not hold: ${b.detail} (at ${b.event}); the data before: ${JSON.stringify(b.before).slice(0, 700)}; after: ${JSON.stringify(b.after).slice(0, 700)}` };
+      }
+      const dup = keys.length ? duplicateKey(keys, client.data?.()) : undefined;
+      if (dup) return dup;
       // Sentences in `always` over the api's data.
       if (inv) {
         const data = client.data?.();
@@ -214,13 +284,19 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
             }
             if (failure) break;
             const headers = Object.fromEntries((s.headers ?? []).map((h) => [h.name, String(literalJson(h.value))]));
-            const res = call({ endpoint: s.endpoint, args, headers });
+            let res: ReturnType<typeof call>;
+            try {
+              res = call({ endpoint: s.endpoint, args, headers, ...(s.as !== undefined ? { as: s.as } : {}) });
+            } catch (e) {
+              failure = { line: s.line, message: (e as Error).message, screen: dump(responses) };
+              break;
+            }
             if (res.contractError) {
               failure = { line: s.line, message: `the answer breaks the contract: ${res.contractError}`, screen: dump(responses) };
               break;
             }
             const v = broken(job.always);
-            if (v) (failure = { line: s.line, message: `after this call, \`always\` (line ${v.line}) is broken: ${v.message}`, screen: dump(responses) }), true;
+            if (v) (failure = { line: s.line, message: v.line ? `after this call, \`always\` (line ${v.line}) is broken: ${v.message}` : v.message, screen: dump(responses) }), true;
             if (failure) break;
           } else if (s.do === "tick" && s.ms) {
             // Time passes: recurring work that falls in it runs; what it publishes is what this step published.
@@ -239,41 +315,74 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
             }
           } else if (s.do === "request") {
             // A raw request, through the layers and the router: its answer is \`request.…\`.
+            // It is checked like a call: the contract, a refusal that changed something, and \`always\`.
             const r = requestOf(s);
-            const res = client.send(r.method, r.path, r.query, r.body, r.headers, clockAtMs(elapsed));
+            const before = client.audit ? JSON.stringify(client.data?.() ?? null) : "";
+            const res = stepped(`request ${r.method} ${r.path}`, clockAtMs(elapsed) ?? clockAt("2026-01-05T09:00"), () => client.send(r.method, r.path, r.query, r.body, r.headers, clockAtMs(elapsed), draw()));
+            refusalCheck(before, res, `request ${r.method} ${r.path}`);
             responses.set("request", res);
             record(res);
+            if (client.audit) responses.set("audit", { status: -1, body: client.audit() });
+            if (res.contractError) {
+              failure = { line: s.line, message: `the answer breaks the contract: ${res.contractError}`, screen: dump(responses) };
+              break;
+            }
+            const v = broken(job.always);
+            if (v) {
+              failure = { line: s.line, message: v.line ? `after this request, \`always\` (line ${v.line}) is broken: ${v.message}` : v.message, screen: dump(responses) };
+              break;
+            }
           } else if (s.do === "see") {
             const msg = checkSeeApi(responses, s);
             if (msg) {
               failure = { line: s.line, message: msg, screen: dump(responses) };
               break;
             }
+          } else if (s.do === "random") {
+            draws?.steer(s.what, s.order ? [s.order] : s.pick !== undefined ? [String(s.pick)] : canonicalValues(s.values ?? []), s.line);
           }
         }
+        // A steered value still queued: the draw it was meant for did not happen (or not where the example expected it).
+        const left = failure ? [] : (draws?.pending() ?? []);
+        if (left.length) failure = { line: left[0].line ?? job.example.line, message: `steered ${left[0].what === "shuffle" || left[0].what === "pick" ? `${left[0].what} ${left[0].value}` : `${left[0].what} ${literalOf(left[0].what, left[0].value, sites)}`} was never drawn: no call after it drew ${left[0].what === "shuffle" ? "a shuffle" : left[0].what === "pick" ? "a random one of a list" : `a ${left[0].what}`}${left.length > 1 ? ` (${left.length} steered values are left)` : ""}`, screen: dump(responses) };
         out.push({ name: job.example.name, pass: !failure, failure });
       } else {
         const steps: string[] = [];
         let violation: { line: number; message: string; actions: Call[]; screen: string } | undefined;
-        for (const [i, c] of job.calls.entries()) {
+        // The calls, with the draws nothing steered written before each (\`(random)\`): a session to paste.
+        const written: Call[] = [];
+        const heard = (): Call[] => steerSteps(draws?.heard() ?? []).map((x) => ({ endpoint: "(random)", args: { what: x.what, value: x.what === "shuffle" || x.what === "pick" ? x.values[0] : x.values.map((v) => literalOf(x.what, v, sites)).join(", ") } }));
+        for (const c of job.calls) {
+          if (c.endpoint === "(random)") {
+            const what = String(c.args.what);
+            draws?.steer(what, what === "shuffle" || what === "pick" ? [String(c.args.value)] : splitLiterals(String(c.args.value)));
+            written.push(c);
+            steps.push(JSON.stringify({ random: c.args }));
+            continue;
+          }
           if (c.endpoint === "(restart)") {
             steps.push(JSON.stringify({ restart: true }));
+            written.push(c);
             const v = restart() ?? broken(job.always);
-            if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
+            if (v && !violation) violation = { ...v, actions: [...written], screen: dump(responses) };
             continue;
           }
           if (c.endpoint === "(wait)") {
             steps.push(JSON.stringify({ wait: c.args.ms, events: wait(c.args.ms as number) }));
+            written.push(...heard(), c);
             const v = broken(job.always);
-            if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
+            if (v && !violation) violation = { ...v, actions: [...written], screen: dump(responses) };
             continue;
           }
+          const logged = client.audit ? client.audit().length : 0;
           const res = call(c);
-          steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body, headers: Object.fromEntries(Object.entries(res.headers ?? {}).sort()), events: res.events ?? [] }));
+          written.push(...heard(), c);
+          // With an access block, the audit a call adds is part of what it did (twin builds compare it).
+          steps.push(JSON.stringify({ endpoint: c.endpoint, status: res.status, body: res.body, headers: Object.fromEntries(Object.entries(res.headers ?? {}).sort()), events: res.events ?? [], ...(client.audit ? { audit: client.audit().slice(logged) } : {}) }));
           const v = res.contractError ? { line: 0, message: `the answer breaks the contract: ${res.contractError}` } : broken(job.always);
-          if (v && !violation) violation = { ...v, actions: job.calls.slice(0, i + 1), screen: dump(responses) };
+          if (v && !violation) violation = { ...v, actions: [...written], screen: dump(responses) };
         }
-        out.push({ steps, violation });
+        out.push({ steps, violation, ...(changes?.made.size ? { made: Object.fromEntries([...changes.made].map(([l, xs]) => [l, [...xs]])) } : {}) });
       }
     } catch (e) {
       out.push(job.kind === "api-example" ? { name: job.example.name, pass: false, failure: { line: job.example.line, message: `crashed: ${(e as Error).message}`, screen: dump(responses) } } : { steps: [], error: `crashed: ${(e as Error).message}` });
@@ -284,7 +393,7 @@ export async function runApiJobs(dir: string, jobs: ApiJob[]): Promise<unknown[]
 
 /** The latest responses, readable: for repair prompts and reports. */
 function dump(responses: Responses): string {
-  return [...responses].map(([ep, r]) => r.status === 0 ? `${ep} published ${JSON.stringify(r.body)}` : `${ep} → ${r.status}${(r as { source?: string }).source ? ` (from ${(r as { source?: string }).source})` : ""} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
+  return [...responses].map(([ep, r]) => r.status === -1 ? `audit: ${JSON.stringify(r.body).slice(0, 600)}` : r.status === 0 ? `${ep} published ${JSON.stringify(r.body)}` : `${ep} → ${r.status}${(r as { source?: string }).source ? ` (from ${(r as { source?: string }).source})` : ""} ${JSON.stringify(r.body)}${r.headers && Object.keys(r.headers).length ? `  headers ${JSON.stringify(r.headers)}` : ""}`).join("\n");
 }
 
 // ---------------------------------------------------------------- random sessions
@@ -330,6 +439,22 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
   };
   const eps = app.endpoints ?? [];
   const traces: Call[][] = [];
+  // Who calls, in an api with an access block: the callers its examples act as, and every key's owner.
+  const acts = app.access ? actsAsOf(app) : undefined;
+  const exampleCallers = [...new Set(app.examples.flatMap((e) => e.steps).flatMap((s) => (s.do === "call" && s.as ? [s.as] : [])))];
+  const callers = acts ? [...new Set([...exampleCallers, ...("keys" in acts ? acts.keys.map((k) => String(k[acts.owner])) : [])])] : [];
+  // Draws: now and then an edge value is steered before a call (a range's bound, the alphabet's first
+  // or last character, a choice's first or last value; sometimes twice, so \`not among\` must skip one).
+  const drawn = buildSites(app);
+  const edgeOf = (): Call | undefined => {
+    const site = pick(drawn);
+    if (site.form === "shuffle") return { endpoint: "(random)", args: { what: "shuffle", value: rnd() < 0.5 ? "keep" : "reverse" } };
+    if (site.form === "pick") return { endpoint: "(random)", args: { what: "pick", value: "1" } };
+    const sp = site.space;
+    if (!sp || !site.type) return undefined;
+    const v = sp.k === "int" ? String(rnd() < 0.5 ? sp.lo : sp.hi) : sp.k === "names" ? (rnd() < 0.5 ? sp.values[0] : sp.values[sp.values.length - 1]) : JSON.stringify((rnd() < 0.5 ? [...sp.chars][0] : [...sp.chars][[...sp.chars].length - 1]).repeat(sp.n));
+    return { endpoint: "(random)", args: { what: site.type, value: rnd() < 0.3 ? `${v}, ${v}` : v } };
+  };
   const waits = usesClock(app) ? [...new Set([...app.examples.flatMap((e) => e.steps).flatMap((s) => (s.do === "tick" && s.ms ? [s.ms] : [])), 60000, 15 * 60000, 3600000, 86400000])] : [];
   for (let i = 0; i < count; i++) {
     const calls: Call[] = [];
@@ -341,6 +466,10 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
       if (app.state.some((f) => f.stored) && rnd() < 0.08) {
         calls.push({ endpoint: "(restart)", args: {} });
         continue;
+      }
+      if (drawn.length && rnd() < 0.15) {
+        const e = edgeOf();
+        if (e) calls.push(e);
       }
       // A request delivered twice: the last keyed call again, with its key (the service must recognise it).
       const last = [...calls].reverse().find((c) => c.headers?.["idempotency-key"]);
@@ -354,9 +483,17 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
       // Headers the examples send (an API key, an origin): mostly one of theirs, sometimes none or another.
       const headers: Record<string, string> = {};
       for (const [h, vs] of headerValues) if (rnd() < 0.85) headers[h] = rnd() < 0.9 ? pick(vs) : pick(TEXTS);
+      // With an access block: as each caller the examples act as, as a key holder with no grant, and
+      // anonymously; ids come from the examples, so a caller often acts on someone else's row (BOLA).
+      let as: string | undefined;
+      if (callers.length && rnd() < 0.85) {
+        const x = rnd();
+        as = x < 0.15 ? "" : pick(x < 0.75 && exampleCallers.length ? exampleCallers : callers);
+        if (acts) delete headers[acts.header];
+      }
       // Every non-safe call carries its own key, as the runtime's clients send it.
-      if (ep.method !== "GET") headers["idempotency-key"] = `r${i}-${j}`;
-      calls.push({ endpoint: ep.name, args, ...(Object.keys(headers).length ? { headers } : {}) });
+      if (ep.method !== "GET") headers["idempotency-key"] = harnessKey(`r${i}-${j}`);
+      calls.push({ endpoint: ep.name, args, ...(Object.keys(headers).length ? { headers } : {}), ...(as !== undefined ? { as } : {}) });
     }
     traces.push(calls);
   }
@@ -365,8 +502,9 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
 
 export const callText = (c: Call) => {
   if (c.endpoint === "(wait)") return `wait ${Number(c.args.ms) / 60000}m`;
+  if (c.endpoint === "(random)") return c.args.what === "shuffle" ? `steer random shuffle ${c.args.value === "keep" ? "keeps" : "reverses"} order` : c.args.what === "pick" ? `steer random pick ${c.args.value}` : `steer random ${c.args.what} = ${c.args.value}`;
   if (c.endpoint === "(restart)") return "restart";
   const args = [...Object.entries(c.headers ?? {}).map(([k, v]) => `header ${k} = ${JSON.stringify(v)}`), ...Object.entries(c.args).map(([k, v]) => `${k} = ${JSON.stringify(v)}`)];
-  return `call ${c.endpoint}${args.length ? ` with ${args.join(", ")}` : ""}`;
+  return `call ${c.endpoint}${c.as ? ` as ${JSON.stringify(c.as)}` : ""}${args.length ? ` with ${args.join(", ")}` : ""}`;
 };
 

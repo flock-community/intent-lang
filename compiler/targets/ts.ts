@@ -1,13 +1,17 @@
 // Target: TypeScript (strict). The generated interface (spec.ts), the entries (browser, tests),
 // what the prompt says about TypeScript, the toolchain, and a test session on a compiled build.
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
+import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
+import { codeSize } from "../alphabets.ts";
+import { LINE_BASE } from "../ast.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { cap, cellFor, dataField, events, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -22,8 +26,19 @@ export function tsLiteral(l: Literal): string {
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
     case "table": return "[]";
-    case "list": case "record": throw new Error("list and record values are only call arguments in examples");
+    case "list": case "record": throw new Error("a list or record value needs its type: tsValue");
   }
+}
+
+/** A literal of a type: a row's inner list in a seed table (`[{ id = 1, label = "Milk" }]`), each record with its defaults filled in. */
+export function tsValue(app: App, l: Literal, t: Type): string {
+  const inner = t.k === "Maybe" ? t.of : t;
+  if (l.k === "list" && inner.k === "List") return `[${l.items.map((x) => tsValue(app, x, inner.of)).join(", ")}]`;
+  if (l.k === "record" && inner.k === "Named") {
+    const rec = app.records.find((r) => r.name === inner.name);
+    if (rec) return `{ ${rec.fields.map((f) => `${f.name}: ${tsValue(app, l.fields.find((x) => x.name === f.name)?.value ?? f.default ?? { k: "nothing" }, f.type)}`).join(", ")} }`;
+  }
+  return tsLiteral(l);
 }
 
 // ---------------------------------------------------------------- Elm
@@ -63,12 +78,25 @@ export function tsDomain(app: App): string {
   const out: string[] = [];
   out.push(`/** A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. */\nexport type Date = string;\nexport type DateTime = string;\n/** The clock: @now and @today in the spec. */\nexport type Clock = { now: DateTime; today: Date };\n\n`);
   for (const r of app.refined ?? []) {
+    if (r.code) {
+      // A code: exactly n characters of its alphabet; read as the alphabet says (the harness's reader).
+      const unamb = r.code.alphabet === "unambiguous letters and digits";
+      out.push(`/** A code: ${r.code.n} characters from ${doc(q(r.code.chars))} (${codeSize(r.code.n, r.code.chars)}): see is${r.name} and read${r.name}. */\nexport type ${r.name} = string;\n`);
+      out.push(`/** Whether a text is a valid ${r.name}${unamb ? " (read forgivingly: lower case, o for 0, i and l for 1, hyphens ignored)" : ""}. */\nexport function is${r.name}(s: string): boolean {\n  return read${r.name}(s) !== null;\n}\n\n`);
+      // The same reading as the runtime's (api.ts readCode, Elm Draw.readCode): tests/random.test.ts holds them together.
+      out.push(`/** The ${r.name} a text is, in its normal form${unamb ? ' (capitals: "k7mq-or1z" is "K7MQ0R1Z")' : ""}, or null when it is not one. Keep this form, never the text as typed. */\nexport function read${r.name}(s: string): ${r.name} | null {\n  const t = ${unamb ? `s.replace(/-/g, "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1")` : "s"};\n  return [...t].length === ${r.code.n} && [...t].every((c) => ${q(r.code.chars)}.includes(c)) ? t : null;\n}\n\n`);
+      continue;
+    }
     out.push(`/** A ${r.base === "Text" ? "text" : "number"} with a rule: see is${r.name}. */\nexport type ${r.name} = ${r.base === "Text" ? "string" : "number"};\n`);
     if (r.pattern !== undefined) out.push(`/** Whether a text is a valid ${r.name}. */\nexport function is${r.name}(s: string): boolean {\n  return new RegExp(${q(`^(?:${r.pattern})$`)}).test(s);\n}\n\n`);
     else if (r.base === "Text") out.push(`/** Whether a text is a valid ${r.name}: its length in characters. */\nexport function is${r.name}(s: string): boolean {\n  return ${[r.minLength !== undefined ? `[...s].length >= ${r.minLength}` : "", r.maxLength !== undefined ? `[...s].length <= ${r.maxLength}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
     else out.push(`/** Whether a number is a valid ${r.name}. */\nexport function is${r.name}(n: number): boolean {\n  return ${[r.min !== undefined ? `n >= ${r.min}` : "", r.max !== undefined ? `n <= ${r.max}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
   }
   for (const r of app.records) out.push(`export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n\n`);
+  // Following a reference: the row is found in its home list when it is read (null: it is gone).
+  const refs = refLookups(app);
+  for (const b of refs.byKey) out.push(`/** Following a \`ref ${b.record}\`: the ${b.record} in \`${b.list}\` whose \`${b.key}\` is the key, or null when there is none (it was removed). */\nexport function ${b.fn}(rows: ${b.record}[], key: ${tsType(b.keyType)}): ${b.record} | null {\n  return rows.find((r) => r.${b.key} === key) ?? null;\n}\n\n`);
+  for (const f of refs.fields) out.push(`/** \`its @${f.field}'s …\` on a ${f.holder}: the ${f.record} it points at, in \`${f.list}\`; null when there is none. */\nexport function ${f.fn}(rows: ${f.record}[], row: ${f.holder}): ${f.record} | null {\n  return ${f.optional ? `row.${f.field} === null ? null : ` : ""}${f.byKey}(rows, row.${f.field});\n}\n\n`);
   for (const c of app.choices) {
     out.push(`export type ${c.name} = ${c.values.map(q).join(" | ")};\n`);
     out.push(`export const ${lowerFirst(c.name)}Values: ${c.name}[] = [${c.values.map(q).join(", ")}];\n`);
@@ -77,26 +105,119 @@ export function tsDomain(app: App): string {
   for (const f of app.state)
     if (f.default?.k === "table") {
       const rec = app.records.find((r) => f.type.k === "List" && f.type.of.k === "Named" && r.name === f.type.of.name)!;
-      out.push(`/** Initial value of state \`${f.name}\` (the table in the spec). */\nexport const ${f.name}Initial: ${rec.name}[] = [\n${f.default.rows.map((row) => `  { ${rec.fields.map((rf) => `${rf.name}: ${tsLiteral(cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" })}`).join(", ")} },`).join("\n")}\n];\n\n`);
+      out.push(`/** Initial value of state \`${f.name}\` (the table in the spec). */\nexport const ${f.name}Initial: ${rec.name}[] = [\n${f.default.rows.map((row) => `  { ${rec.fields.map((rf) => `${rf.name}: ${tsValue(app, cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" }, rf.type)}`).join(", ")} },`).join("\n")}\n];\n\n`);
     }
+  out.push(tsNested(app));
   return out.join("");
+}
+
+/**
+ * The draws (v69): one function per place a sentence draws a random value, keyed by that place
+ * (`roll1`: the first draw in `on click roll`). The harness makes the values from the event's seed
+ * (runtime draw.ts); the app calls the function where its sentence runs, and never makes randomness.
+ */
+export function tsDraws(app: App): string {
+  const sites = buildSites(app);
+  if (!sites.length) return "";
+  const conv = (s: DrawSite, v: string) => (s.space?.k === "int" ? `Number(${v})` : s.space?.k === "names" ? `${v} as ${s.type}` : v);
+  const item = (s: DrawSite) => (s.item ? tsAtom(s.item) : "unknown");
+  const params = (s: DrawSite, ...more: string[]) => [...(s.row ? ["row: number"] : []), ...more].join(", ");
+  const row = (s: DrawSite) => (s.row ? "row" : "0");
+  const sig = (s: DrawSite): string => {
+    switch (s.form) {
+      case "one": return `(${params(s)}): ${s.type}`;
+      case "many": return `(${params(s, "n: number")}): ${s.type}[]`;
+      case "notAmong": return `(${params(s, `taken: ${s.type}[]`)}): ${s.type}${s.maybe ? " | null" : ""}`;
+      case "pick": return `(${params(s, `xs: ${item(s)}[]`)}): ${item(s)} | null`;
+      case "shuffle": return `(${params(s, `xs: ${item(s)}[]`)}): ${item(s)}[]`;
+    }
+  };
+  const body = (s: DrawSite): string => {
+    const sp = JSON.stringify(s.space ?? null);
+    switch (s.form) {
+      case "one": return conv(s, `drawOne(src, ${q(s.id)}, ${row(s)}, 0, ${sp})`);
+      case "many": return `drawMany(src, ${q(s.id)}, ${row(s)}, n, ${sp}).map((v) => ${conv(s, "v")})`;
+      case "notAmong": {
+        const v = `drawNotAmong(src, ${q(s.id)}, ${row(s)}, ${sp}, taken.map(String))`;
+        return s.maybe ? `{\n      const v = ${v};\n      return v === null ? null : ${conv(s, "v")};\n    }` : conv(s, `(${v} ?? "")`);
+      }
+      case "pick": return `drawPick(src, ${q(s.id)}, ${row(s)}, xs)`;
+      case "shuffle": return `drawShuffle(src, ${q(s.id)}, ${row(s)}, xs)`;
+    }
+  };
+  const drawDoc = (s: DrawSite) => `  /** ${s.unit}, line ${s.line % LINE_BASE}: \`${doc(s.phrase)}\`${s.row ? "; `row`: the index of the loop's row (0 for the first)" : ""}${s.form === "notAmong" ? `; never one of \`taken\`${s.maybe ? ", null when every one is taken" : ""}` : s.form === "pick" ? "; null for an empty list" : s.form === "many" ? "; `n` values, which may repeat" : ""}${s.unit.startsWith("derive ") ? "; drawn once per event: every later read in the same event gives the same value" : ""}. */\n`;
+  // A derived value that draws is drawn once per event (a request, a run of recurring work): its first
+  // read draws, every later read in the event gets that value, also when what it excludes changed.
+  const derived = (s: DrawSite) => s.unit.startsWith("derive ");
+  const fn = (s: DrawSite) => (derived(s) ? `kept(${q(s.id)}, () => ${body(s)})` : body(s));
+  const keeps = sites.some(derived) ? `  /** A derived value's draw: the first read in this event draws, every later read gets the same value. */\n  const values = new Map<string, unknown>();\n  const kept = <T,>(id: string, draw: () => T): T => {\n    if (!values.has(id)) values.set(id, draw());\n    return values.get(id) as T;\n  };\n` : "";
+  return `import { drawMany, drawNotAmong, drawOne, drawPick, drawShuffle, type Source } from "./draw.ts";
+
+/** The draws of one event (a random value in the spec): one function per place a sentence draws, named after its handler (or endpoint, derived value, recurring work) and its place there. The harness makes the values; call a function exactly where its sentence runs, once per value the sentence needs. */
+export type Draws = {
+${sites.map((s) => `${drawDoc(s)}  ${s.id}${sig(s)};`).join("\n")}
+};
+
+/** The draws of an event, from its seed (the harness's; the app never calls this). */
+export function drawsFrom(src: Source): Draws {
+${keeps}  return {
+${sites.map((s) => `    ${s.id}: (${params(s, ...(s.form === "many" ? ["n: number"] : s.form === "notAmong" ? [`taken: ${s.type}[]`] : s.form === "pick" || s.form === "shuffle" ? [`xs: ${item(s)}[]`] : []))}) => ${fn(s)},`).join("\n")}
+  };
+}
+
+`;
+}
+
+/**
+ * Lists inside rows: the key of each row as \`view\` gives it (the record's key, else its place in its
+ * list), and the update of one inner row found by its outer row's key and its own. The harness owns
+ * these, so the model never writes the nested update (typing into a field inside an inner row, a
+ * toggle, "set that item's @done", "remove that item from that task's @items").
+ */
+export function tsNested(app: App): string {
+  const nested = nestedLists(app);
+  if (!nested.length) return "";
+  const out: string[] = [];
+  const lower = (s: string) => s[0].toLowerCase() + s.slice(1);
+  for (const { record: r, key } of rowKeyed(app)) {
+    const k = key ? keyString(app, key.type, `r.${key.name}`) : "String(i)";
+    out.push(`/** The key of ${/^[AEIOU]/.test(r.name) ? "an" : "a"} ${r.name}'s row: ${key ? `its \`${key.name}\`` : "its place in its list"}. Give every row of a list of ${r.name}s this key in \`view\`: row events carry it. */\nexport function ${lower(r.name)}RowKey(r: ${r.name}, i: number): string {\n  return ${k};\n}\n\n`);
+  }
+  for (const n of nested) {
+    const O = n.outer.name, I = n.inner.name, F = n.field;
+    const Fc = F[0].toUpperCase() + F.slice(1);
+    out.push(`/** One ${I} of one ${O}'s \`${F}\` changed by \`f\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\` (the keys a row event inside a row carries). Everything else stays as it is. */\nexport function update${O}${Fc}(rows: ${O}[], outerKey: string, key: string, f: (${lower(I)}: ${I}) => ${I}): ${O}[] {\n  return rows.map((r, i) => (${lower(O)}RowKey(r, i) !== outerKey ? r : { ...r, ${F}: r.${F}.map((x, j) => (${lower(I)}RowKey(x, j) !== key ? x : f(x))) }));\n}\n\n`);
+    out.push(`/** One ${I} removed from one ${O}'s \`${F}\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\`. */\nexport function removeFrom${O}${Fc}(rows: ${O}[], outerKey: string, key: string): ${O}[] {\n  return rows.map((r, i) => (${lower(O)}RowKey(r, i) !== outerKey ? r : { ...r, ${F}: r.${F}.filter((x, j) => ${lower(I)}RowKey(x, j) !== key) }));\n}\n\n`);
+  }
+  return out.join("");
+}
+
+/** A key's value as the text a row key is. */
+function keyString(app: App, t: Type, v: string): string {
+  const base = t.k === "Named" ? (app.refined?.find((x) => x.name === t.name)?.base ?? "Text") : t.k;
+  return base === "Text" || base === "Date" || base === "DateTime" ? v : `String(${v})`;
 }
 
 export function genTsSpec(app: App): string {
   const out: string[] = [];
   out.push(`// Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 import type { Node, Wire } from "./ui.ts";
-${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : hasStored(app) ? `import type { TypeDesc } from "./api.ts";\n` : ""}
+${hasClients(app) ? `import { conforms, fromWire as fromWireValue, type TypeDesc } from "./api.ts";\nimport type { Answer, CallDesc, CallOut } from "./calls.ts";\n` : hasStored(app) ? `import type { TypeDesc } from "./api.ts";\n` : ""}
 `);
   if (app.platforms?.length) out.push(`${app.platforms.map((p) => `/** Platform ${p.name}: the installation's reviewed code, never a home-made version. */\nexport { ${p.functions.map((f) => f.name).join(", ")} } from "./platform/${p.name}.ts";\n`).join("")}\n`);
   out.push(tsDomain(app));
+  out.push(tsDraws(app));
   if (hasData(app)) out.push(tsData(app));
   if (hasStored(app)) out.push(tsStoredFields(app));
   const evs = events(app);
-  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${e.payload === "key" ? "; key: string" : e.payload === "key-text" ? "; key: string; text: string" : e.payload === "key-pick" ? "; key: string; value: string" : e.payload === "key-value" ? `; key: string; value: ${e.choice}` : e.payload === "text" ? "; text: string" : e.payload === "pick" ? "; value: string" : e.payload === "value" ? `; value: ${e.choice}` : ""} }`), ...tsAnswerMsgs(app)];
+  // A row inside a row: `outerKey` is the outer row's key, `key` the inner row's.
+  const keysOf = (p?: string) => (p?.startsWith("keys") ? "; outerKey: string; key: string" : p?.startsWith("key") ? "; key: string" : "");
+  const rest = (p?: string) => (p?.endsWith("-text") || p === "text" ? "; text: string" : p?.endsWith("-pick") || p === "pick" ? "; value: string" : "");
+  const msgMembers = [...evs.map((e) => `{ tag: ${q(e.tag)}${keysOf(e.payload)}${e.payload?.endsWith("value") ? `; value: ${e.choice}` : rest(e.payload)} }`), ...tsAnswerMsgs(app)];
   if (hasScreens(app)) msgMembers.push(`{ tag: "ScreenOpened"; route: Route }`);
   // A screen with nothing to click, type or choose: no message at all.
-  out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`). Typed events carry the full new text of the field. */\nexport type Msg =${msgMembers.length ? `\n  | ${msgMembers.join("\n  | ")}` : " never"};\n\n`);
+  const nestedDoc = nestedLists(app).length ? ` A row inside a row carries its outer row's key too (\`outerKey\`, then \`key\`): find the inner row with the generated \`update…\` / \`removeFrom…\` helpers above, never by hand.` : "";
+  out.push(`/** Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. Row events carry the row's key (the \`key\` you gave that row in \`view\`).${nestedDoc} Typed events carry the full new text of the field. */\nexport type Msg =${msgMembers.length ? `\n  | ${msgMembers.join("\n  | ")}` : " never"};\n\n`);
   out.push(`export type Button = { enabled: boolean };\nexport type LabeledButton = { label: string; enabled: boolean };\n/** A select whose options come from the model: the option texts in order, and the selected one ("" for none). */\nexport type Pick = { options: string[]; selected: string };\n\n`);
   const aliases: string[] = [];
   const fieldType = (el: Element, list?: Element): string => {
@@ -108,7 +229,13 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
       case "checkbox": t = "boolean"; break;
       case "progress": t = "number"; break;
       case "select": t = el.from ? "Pick" : selectChoice(app, el, list); break;
-      case "list": t = `${typeName(el.name)}Row[]`; aliases.push(`export type ${typeName(el.name)}Row = { key: string; ${rowFields(el.children, el)} };\n`); break;
+      case "list": {
+        // A list inside a row: its row type is named after both lists (`TasksItemsRow`).
+        const row = `${list ? typeName(list.name) : ""}${typeName(el.name)}Row`;
+        t = `${row}[]`;
+        aliases.push(`export type ${row} = { key: string; ${rowFields(el.children, el)} };\n`);
+        break;
+      }
       case "section": t = `${typeName(el.name)}Section`; aliases.push(`export type ${typeName(el.name)}Section = { ${rowFields(el.children, list)} };\n`); break;
       default: t = "";
     }
@@ -133,7 +260,7 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
         return `  if ((m = path.match(new RegExp(${q(re(s.path))})))${ints.length ? ` && ${ints.join(" && ")}` : ""}) return { screen: ${q(s.name)}${vals.map((v) => `, ${v}`).join("")} };\n`;
       })
       .join("")}  return { screen: ${q(scs[0].name)}${scs[0].params.map((p) => `, ${p.name}: ${p.type.k === "Int" ? "0" : '""'}`).join("")} } as Route;\n}\n\n`);
-    out.push(`/** The address of a route. */\nexport function pathOf(r: Route): string {\n  switch (r.screen) {\n${scs.map((s) => `    case ${q(s.name)}:\n      return ${"`" + s.path.replace(/\{([a-z]\w*)\}/gi, (_, n) => "${encodeURIComponent(String(r." + n + "))}") + "`"};\n`).join("")}  }\n}\n\n`);
+    out.push(`/** The address of a route. */\nexport function pathOf(r: Route): string {\n  switch (r.screen) {\n${scs.map((s) => `    case ${q(s.name)}:\n      return ${"`" + s.path.split(/(\{[a-z]\w*\})/i).map((x) => (/^\{[a-z]\w*\}$/i.test(x) ? "${encodeURIComponent(String(r." + x.slice(1, -1) + "))}" : x.replace(/[\\`$]/g, (c) => "\\" + c))).join("") + "`"};\n`).join("")}  }\n}\n\n`);
   } else {
     const screen = rowFields(app.screen);
     out.push(`/** What \`view\` returns: one field per dynamic element on the screen. */\nexport type Screen = { ${screen} };\n\n`);
@@ -169,8 +296,11 @@ ${hasClients(app) ? `import { conforms, type TypeDesc } from "./api.ts";\nimport
 
   const cases = evs.map((e) => {
     if (e.on === "tick") return "";
+    // A row inside a row: the outer row's key is the first of the path of keys.
+    const k = e.payload?.startsWith("keys") ? `, outerKey: w.keys?.[0] ?? "", key: w.key ?? ""` : e.payload?.startsWith("key") ? `, key: w.key ?? ""` : "";
+    const p = e.payload?.replace(/^keys?-?/, "") ?? "";
     const body =
-      e.payload === "key" ? `{ tag: ${q(e.tag)}, key: w.key ?? "" }` : e.payload === "key-text" ? `{ tag: ${q(e.tag)}, key: w.key ?? "", text: w.text ?? "" }` : e.payload === "key-pick" ? `{ tag: ${q(e.tag)}, key: w.key ?? "", value: w.value ?? "" }` : e.payload === "key-value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, key: w.key ?? "", value: w.value as ${e.choice} } : null` : e.payload === "pick" ? `{ tag: ${q(e.tag)}, value: w.value ?? "" }` : e.payload === "text" ? `{ tag: ${q(e.tag)}, text: w.text ?? "" }` : e.payload === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)} }`;
+      p === "text" ? `{ tag: ${q(e.tag)}${k}, text: w.text ?? "" }` : p === "pick" ? `{ tag: ${q(e.tag)}${k}, value: w.value ?? "" }` : p === "value" ? `(${lowerFirst(e.choice!)}Values as string[]).includes(w.value ?? "") ? { tag: ${q(e.tag)}${k}, value: w.value as ${e.choice} } : null` : `{ tag: ${q(e.tag)}${k} }`;
     return `    case ${q(`${e.on} ${e.target}`)}:\n      return ${body};\n`;
   });
   out.push(`export function fromWire(w: Wire): Msg | null {\n${hasScreens(app) ? `  // The harness shows a screen (an address, a link, going back): \\\`on open\\\`.\n  if (w.on === "navigate") return { tag: "ScreenOpened", route: routeFromPath(w.target) };\n` : ""}  switch (\`\${w.on} \${w.target}\`) {\n${cases.join("")}  }\n${app.clockMs ? `  if (w.on === "tick") return { tag: "Tick" };\n` : ""}${hasClients(app) ? `  if (w.on === "answer" && w.answer) return fromAnswer(w.answer as Answer);\n  if (w.on === "event" && w.event) return fromEvent(w.event as { event: string; body: unknown });\n` : ""}  return null;\n}\n`);
@@ -211,8 +341,14 @@ export const TS_APP_SKELETON_THROUGH = `
 export function through(model: Model): Through { /* … */ }
 `;
 
+/** Apps that draw: in the browser every event gets a fresh seed from Web Crypto. */
+const DRAW_MAIN = `import { drawsFrom } from "./spec.ts";\nimport { freshSeed } from "./draw.ts";\n`;
+/** Apps that draw, under test: the driver gives every event its seed and its steering. */
+const DRAW_TEST = `import { drawsFrom } from "./spec.ts";\nimport { withPlan, type Source } from "./draw.ts";\n// The driver's draws for an event: its seed, and its steering (a \`steer random\` step, a random session).\nconst drawOf = (w: Wire): Source => (w as { draw?: Source }).draw ?? { seed: "0".repeat(64) };\n`;
+
 /** Entry points of an app that makes calls: the browser performs them with fetch; tests hand them to the driver. */
 function genTsEntriesCalls(app: App): { main: string; test: string } {
+  const dw = usesDraws(app);
   const th = hasThrough(app);
   const c = usesClock(app);
   const st = hasStored(app);
@@ -223,7 +359,7 @@ import { mount, STYLE, type Wire } from "./ui.ts";
 import { ${hasThrough(app) ? "agreement, heldAnswer, rejectedAnswer, type Answer, " : ""}fetchCall, keyFor, listen, type CallOut, type Outgoing } from "./calls.ts";
 import { ${hasThrough(app) ? "keep, " : ""}outbox } from "./outbox.ts";
 import { apply } from "./through.ts";
-${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
+${dw ? DRAW_MAIN : ""}${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
@@ -270,7 +406,7 @@ ${st ? "    const saved = load(KEY, storedFields, storedDefaults);\n    if (save
   step: (w, m) => {
     const e = fromWire(w);
     if (!e) return m;
-    const r = App.update(e, m${c ? ", localClock()" : ""});
+    const r = App.update(e, m${c ? ", localClock()" : ""}${dw ? ", drawsFrom({ seed: freshSeed() })" : ""});
 ${st ? "    save(KEY, App.data(r.model), storedFields);\n" : ""}    current = r.model;
     // Release first: a rejection in this update drops the calls held before it, not the ones it makes.
     release();
@@ -288,7 +424,7 @@ stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, e
 import { callToJson, fromWire, toNode, type Call } from "./spec.ts";
 import type { CallOut } from "./calls.ts";
 import type { Wire } from "./ui.ts";
-${c ? `import type { Clock } from "./clock.ts";\n` : ""}
+${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "./clock.ts";\n` : ""}
 /** A call as data, with the config its client layer gets from the state after the step that made it. */
 const out = (c: Call, current: App.Model): CallOut => {
   const j = callToJson(c);
@@ -320,7 +456,7 @@ ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The
       }
 ` : ""}      const e = fromWire(w);
       if (!e) return;
-      const r = App.update(e, m${c ? ", clock" : ""});
+      const r = ${dw ? `withPlan(drawOf(w), (src, first) => App.update(e, first ? structuredClone(m) : m${c ? ", clock" : ""}, drawsFrom(src)))` : `App.update(e, m${c ? ", clock" : ""})`};
       m = r.model;
       pending.push(...r.calls.map((c) => out(c, m)));
     },
@@ -364,12 +500,13 @@ dispatch({ on: "navigate", target: address() });
 
 function genTsEntriesFor(app: App): { main: string; test: string } {
   if (hasClients(app)) return genTsEntriesCalls(app);
+  const dw = usesDraws(app);
   const c = usesClock(app);
   const st = hasStored(app);
   const main = `import * as App from "./app.ts";
 import { fromWire, toNode${st ? ", storedFields, storedDefaults, type Stored" : ""} } from "./spec.ts";
 import { mount, STYLE } from "./ui.ts";
-${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
+${dw ? DRAW_MAIN : ""}${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
 document.head.append(style);
@@ -381,9 +518,9 @@ ${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
   }` : `App.init(${c ? "localClock()" : ""})`},
   step: (w, m) => {
     const e = fromWire(w);
-    ${st ? `const next = e ? App.update(e, m${c ? ", localClock()" : ""}) : m;
+    ${st ? `const next = e ? App.update(e, m${c ? ", localClock()" : ""}${dw ? ", drawsFrom({ seed: freshSeed() })" : ""}) : m;
     save(KEY, App.data(next), storedFields);
-    return next;` : `return e ? App.update(e, m${c ? ", localClock()" : ""}) : m;`}
+    return next;` : `return e ? App.update(e, m${c ? ", localClock()" : ""}${dw ? ", drawsFrom({ seed: freshSeed() })" : ""}) : m;`}
   },
   render: (m) => toNode(App.view(m${c ? ", localClock()" : ""})),
   clockMs: ${app.clockMs ?? 0},
@@ -392,7 +529,7 @@ ${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
   const test = `import * as App from "./app.ts";
 import { fromWire, toNode } from "./spec.ts";
 import type { Wire } from "./ui.ts";
-${c ? `import type { Clock } from "./clock.ts";\n` : ""}
+${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "./clock.ts";\n` : ""}
 /** The app under test. ${c ? "The driver owns the clock: it comes with every wire event." : ""} */
 export function start(${c ? "initial: Clock" : ""}) {
 ${c ? "  let clock = initial;\n" : ""}  let m = App.init(${c ? "clock" : ""});
@@ -405,7 +542,7 @@ ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The
         return;
       }
 ` : ""}      const e = fromWire(w);
-      if (e) m = App.update(e, m${c ? ", clock" : ""});
+      if (e) m = ${dw ? `withPlan(drawOf(w), (src, first) => App.update(e, first ? structuredClone(m) : m${c ? ", clock" : ""}, drawsFrom(src)))` : `App.update(e, m${c ? ", clock" : ""})`};
     },
   };
 }
@@ -454,20 +591,20 @@ export function genTsCalls(app: App): string {
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`);
     const unknown = [...(c.ep.effect ? [`{ status: "unknown"; error: string }`] : []), ...(gated(app, c) ? [`{ status: "held" }`, `{ status: "rejected" }`] : [])];
-    out.push(`/** What ${c.ep.method} ${c.ep.path} answers, per status (the contract). Status 0: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? ' "unknown": still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed.' : ""}${gated(app, c) ? ' "held": the call waits for approval (it has not gone out); its real answer follows once approved, or "rejected".' : ""} */\nexport type ${c.tag}Answer = ${[...variants, "{ status: 0; error: string }", ...unknown].join(" | ")};\n`);
+    out.push(`/** What ${c.ep.method} ${doc(c.ep.path)} answers, per status (the contract). Status 0: no answer the contract allows (network down, or a body of the wrong shape).${c.ep.effect ? ' "unknown": still no answer after the last attempt, so it may or may not have happened (effect external): do not offer to do it again as if it failed.' : ""}${gated(app, c) ? ' "held": the call waits for approval (it has not gone out); its real answer follows once approved, or "rejected".' : ""} */\nexport type ${c.tag}Answer = ${[...variants, "{ status: 0; error: string }", ...unknown].join(" | ")};\n`);
   }
   out.push(`\n/** Endpoints as data, for sending calls. */\nexport const callEndpoints: CallDesc[] = ${JSON.stringify(callDescs(app))};\n\n`);
   out.push(`/** The contract's answers per endpoint (status → body type): an answer that does not fit arrives as status 0. */\nexport const callAnswers: Record<string, Record<number, TypeDesc | null>> = {\n${eps.map((c) => `  ${q(c.name)}: { ${(c.ep.answers ?? []).map((a) => `${a.status}: ${a.type ? typeDesc(app, a.type) : "null"}`).join(", ")} },`).join("\n")}\n};\n\n`);
   const th = throughs(app);
   if (th.length) out.push(`/** What the client layers need from the app's state, per api (through, under uses): through(model) in the app module computes it. */\nexport type Through = { ${th.map((t) => `${t.alias}: { ${t.state.map((x) => `${x.param}: ${tsType(x.type)} /* state ${x.field} */`).join("; ")} }`).join("; ")} };\n\n`);
-  const undoCases = undos.map((u) => `    case ${q(u.of.name)}:\n      return { endpoint: ${q(`${u.of.alias}.${u.by.name}`)}, args: { ${u.args.map((a) => `${a.name}: ${a.from === "answer" ? ["c.answer", ...a.path].join(".") : `(c as { args: Record<string, unknown> }).args.${a.path[0]}`}`).join(", ")} }, undo: true };\n`);
+  const undoCases = undos.map((u) => `    case ${q(u.of.name)}:\n      return { endpoint: ${q(`${u.of.alias}.${u.by.name}`)}, args: { ${u.args.map((a) => `${a.name}: ${a.from === "answer" ? ["c.answer", ...a.path].join(".") : `(c as { args: Record<string, unknown> }).args.${a.path[0]}`}`).join(", ")} }, undo: true, of: { endpoint: ${q(u.of.name)}, answer: c.answer } };\n`);
   out.push(`export function callToJson(c: Call): CallOut {\n${undos.length ? `  // An undo is the call the contract names in \\\`undone by\\\`, with its args from the original answer.\n  if ("undo" in c)\n    switch (c.undo) {\n${undoCases.join("")}    }\n` : ""}  return { endpoint: ${undos.length ? "(c as { call: string }).call" : "c.call"}, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
   out.push(`const ANSWERED: Record<string, string> = { ${eps.map((c) => `${q(c.name)}: ${q(c.tag + "Answered")}`).join(", ")} };\n\n`);
   const evs = clientEvents(app);
   out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
   out.push(`/** Per alias, the events of its api this app handles. */\nexport const eventsByAlias: Record<string, string[]> = ${JSON.stringify(eventsByAlias(app))};\n\n`);
-  out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: e.body } as unknown as Msg;\n}\n\n`);
-  out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n${clientEndpoints(app).some((c) => gated(app, c)) ? '  if (a.held) return { tag, answer: { status: "held" } } as unknown as Msg;\n  if (a.rejected) return { tag, answer: { status: "rejected" } } as unknown as Msg;\n' : ""}  if (a.unknown && callEndpoints.some((e) => e.name === a.endpoint && e.external)) return { tag, answer: { status: "unknown", error: a.error ?? "no answer" } } as unknown as Msg;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as unknown as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body } } as unknown as Msg;\n}\n`);
+  out.push(`export function fromEvent(e: { event: string; body: unknown }): Msg | null {\n  const d = EVENTS[e.event];\n  if (!d || conforms({ 200: d.type }, { status: 200, body: e.body })) return null;\n  return { tag: d.tag, body: fromWireValue(e.body, d.type) } as unknown as Msg;\n}\n\n`);
+  out.push(`export function fromAnswer(a: Answer): Msg | null {\n  const tag = ANSWERED[a.endpoint];\n  if (!tag) return null;\n${clientEndpoints(app).some((c) => gated(app, c)) ? '  if (a.held) return { tag, answer: { status: "held" } } as unknown as Msg;\n  if (a.rejected) return { tag, answer: { status: "rejected" } } as unknown as Msg;\n' : ""}  if (a.unknown && callEndpoints.some((e) => e.name === a.endpoint && e.external)) return { tag, answer: { status: "unknown", error: a.error ?? "no answer" } } as unknown as Msg;\n  if (a.status === 0 || a.error !== undefined) return { tag, answer: { status: 0, error: a.error ?? "no answer" } } as unknown as Msg;\n  const body = a.body === undefined ? null : a.body;\n  const problem = conforms(callAnswers[a.endpoint], { status: a.status, body });\n  return { tag, answer: problem ? { status: 0, error: \`\${a.endpoint} \${problem}\` } : { status: a.status, body: fromWireValue(body, callAnswers[a.endpoint]?.[a.status]) } } as unknown as Msg;\n}\n`);
   return out.join("");
 }
 
@@ -485,10 +622,11 @@ export function genTsNav(app: App): string {
   const c = usesClock(app);
   const clk = c ? ", clock" : "";
   const clkParam = c ? ", clock: Clock" : "";
+  const dw = usesDraws(app);
   return `// Generated from ${app.name}.intent — do not edit. The screens around the app module: the route is
 // the harness's (the address after #); the app says where to go (\\\`go\\\`), the harness goes there.
 import * as Inner from "./app.ts";
-import { pathOf, routeFromPath, type Msg, type Route${calls ? ", type Call" : ""}${c ? ", type Clock" : ""} } from "./spec.ts";
+import { pathOf, routeFromPath, type Msg, type Route${calls ? ", type Call" : ""}${c ? ", type Clock" : ""}${dw ? ", type Draws" : ""} } from "./spec.ts";
 
 /** The app's model, where it is, and the address to show next (after \\\`go to\\\` or \\\`go back\\\`). */
 export type Model = { inner: Inner.Model; route: Route; go?: string };
@@ -500,9 +638,9 @@ export function init(${c ? "clock: Clock" : ""})${calls ? ": { model: Model; cal
   return ${calls ? "{ model: { inner: r.model, route: start }, calls: r.calls }" : "{ inner: r, route: start }"};
 }
 
-export function update(msg: Msg, m: Model${clkParam})${calls ? ": { model: Model; calls: Call[] }" : ": Model"} {
+export function update(msg: Msg, m: Model${clkParam}${dw ? ", draws: Draws" : ""})${calls ? ": { model: Model; calls: Call[] }" : ": Model"} {
   const route = msg.tag === "ScreenOpened" ? msg.route : m.route;
-  const r = Inner.update(msg, m.inner, route${clk});
+  const r = Inner.update(msg, m.inner, route${clk}${dw ? ", draws" : ""});
   const go = r.go === undefined ? undefined : r.go === "back" ? "back" : pathOf(r.go);
   return ${calls ? "{ model: { inner: r.model, route, go }, calls: r.calls }" : "{ inner: r.model, route, go }"};
 }
@@ -522,11 +660,11 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
   copyFileSync(join(ROOT, "runtime/ts/ui.ts"), join(dir, "ui.ts"));
   copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
   if (usesClock(app)) copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
+  copyDrawRuntime(app, dir);
   if (hasStored(app)) for (const f of ["store.ts", "api.ts"]) copyFileSync(join(ROOT, "runtime/ts", f), join(dir, f));
   if (hasClients(app)) {
     copyFileSync(join(ROOT, "runtime/ts/api.ts"), join(dir, "api.ts"));
-    copyFileSync(join(ROOT, "runtime/ts/calls.ts"), join(dir, "calls.ts"));
-    copyFileSync(join(ROOT, "runtime/ts/outbox.ts"), join(dir, "outbox.ts"));
+    copyCallsRuntime(dir);
     writeThrough(app, dir, layerDirs);
   }
   // Platform functions: the installation's reviewed code, copied in and re-exported by spec.ts.
@@ -539,7 +677,9 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
   if (hasScreens(app)) writeFileSync(join(dir, "app-nav.ts"), genTsNav(app));
   const { main, test } = genTsEntries(app);
   writeFileSync(join(dir, "main.ts"), main);
-  writeFileSync(join(dir, "test-entry.ts"), test);
+  // Tests: the app's own randomness throws (runtime/ts/norandom.ts, imported before the app module).
+  copyFileSync(join(ROOT, "runtime/ts/norandom.ts"), join(dir, "norandom.ts"));
+  writeFileSync(join(dir, "test-entry.ts"), `import "./norandom.ts";\n${test}`);
   if (app.profile === "job") {
     copyFileSync(join(ROOT, "runtime/ts/headless.ts"), join(dir, "headless.ts"));
     writeFileSync(join(dir, "job.ts"), jobEntry(app, main));
@@ -575,7 +715,12 @@ async function compileTs(dir: string): Promise<string> {
 }
 
 async function compileStyledTs(dir: string): Promise<string> {
-  const t = await run(bin("tsc"), ["-p", "."], dir);
+  // Packages (preact) come from the installation: a config outside the build adds where they are, so
+  // the build's own tsconfig.json is the same on every machine.
+  const cfg = mkdtempSync(join(tmpdir(), "styled-tsc-"));
+  writeFileSync(join(cfg, "tsconfig.json"), JSON.stringify({ extends: join(dir, "tsconfig.json"), compilerOptions: { paths: { "*": [join(ROOT, "node_modules/*")] } } }));
+  const t = await run(bin("tsc"), ["-p", join(cfg, "tsconfig.json")], dir);
+  rmSync(cfg, { recursive: true, force: true });
   if (!t.ok) return clean(t.out);
   const b = await run(bin("esbuild"), ["main.tsx", "--bundle", "--format=iife", "--outfile=main.js", "--log-level=error"], dir);
   return b.ok ? "" : clean(b.out);
@@ -633,10 +778,11 @@ Fmt.parseDateTime(text): DateTime | null      // "YYYY-MM-DD HH:MM" or "YYYY-MM-
 - Every argument of a call is given; an absent optional one is \`null\`.`,
     through: "- Export `through(model: Model): Through` too: for each api with a client layer, the params bound to state under `through` in the spec, read from the model. The harness adds the config to every call and to the api's event stream.",
     clock: `Clock (this app reads @now or @today): \`init(clock)\`, \`update(msg, model, clock)\` and \`view(model, clock)\` take the clock (type \`Clock\` from spec.ts) as their LAST argument. \`@now\` is \`clock.now\` (a DateTime), \`@today\` is \`clock.today\` (a Date). Compute with the Fmt date helpers; never store the clock in the model unless the spec says to remember a moment.`,
-    data: "Data (this spec has sentences in `always`): also export `data(model: Model): Data` (the `Data` type in spec.ts: every state field, with the value the model holds now). The harness checks the `always` sentences on it after every step; keep it exact, never computed differently from the model.",
+    data: "Data (this spec has sentences in `always`, stored state, lists a reference points into, or lists inside rows): also export `data(model: Model): Data` (the `Data` type in spec.ts: every state field, with the value the model holds now). The harness checks the `always` sentences, and that the keys of those lists stay unique, on it after every step; keep it exact, never computed differently from the model.",
     screens: "Screens (this spec has several): `update(msg, model, route)` and `view(model, route)` get where the app is (`Route` in spec.ts: `route.screen` names the screen, its path params are fields, so `@id` is `route.id`); `view` returns that screen's variant of `Screen` (`{ screen: \"ticket\", … }`). `update` returns `{ model, go }` (with calls: `{ model, calls, go }`): `go` is the route of a `go to` step (`{ screen: \"ticket\", id: … }`), `\"back\"` for `go back`, or left out. When a screen is shown (a link, an address, going back), the harness sends `{ tag: \"ScreenOpened\", route }`: do what `on open <that screen>` says, and nothing for a screen without one. The route is the harness's: never keep a copy in the model. With a clock, it comes last: `view(model, route, clock)`, `update(msg, model, route, clock)`.",
     stored: "Stored state (this spec has `stored` fields): also export `data(model: Model): Data` and `restore(saved: Stored, model: Model): Model`. `restore(saved, model)` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
     platform: "Platform functions (this spec imports one): a sentence that names a function (`the @sha256 of the given @text`) calls exactly that function, imported from `./spec.ts`. They are the installation's reviewed code: never write your own version of what they do.",
+    draws: `Draws (this spec draws random values): \`update\` takes the event's draws (type \`Draws\` from spec.ts) as its LAST argument, after the route and the clock when there are: \`update(msg, model, draws)\`, \`update(msg, model, clock, draws)\`. Each place a sentence draws (\`a random @Die\`, \`a random @Code not among …\`, \`3 random @Die\`, \`a random one of @xs\`, \`@xs shuffled\`) is one function of \`Draws\`, named after its handler and its place there (\`draws.roll1()\`, \`draws.roll2()\`, \`draws.deal1(xs)\`): call exactly that function where that sentence runs, once per value the sentence needs, in the order the steps say, and nowhere else (not in \`view\`, not ahead of time). Pass what the sentence reads: the list to shuffle or pick from, the values taken, how many; inside a \`for each\`, the row's index first (0 for the first row the loop visits). A value that later steps use again is kept (a variable, the model), never drawn again. Never make randomness yourself (no Math.random, no crypto): a module that does is rejected.`,
   },
   open: openTs,
   job: true,

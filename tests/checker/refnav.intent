@@ -1,0 +1,151 @@
+app RefNav {
+  "Following a reference: `its @ticket's @subject` reads the row the key points at, in the record's home list."
+}
+
+choice Status: Open | Closed
+choice Level: Low | High
+
+record Ticket {
+  id: Int
+  subject: Text
+  status: Status
+  customer: ref Customer
+}
+
+record Customer {
+  key code: Text
+  name: Text
+}
+
+record Comment {
+  id: Int
+  ticket: ref Ticket
+  body: Text
+}
+
+record Country {
+  key code: Text
+  name: Text
+}
+
+record Author {
+  id: Int
+  name: Text
+  country: ref Country
+}
+
+record Book {
+  id: Int
+  title: Text
+  author: ref Author
+}
+
+record Shelf {
+  id: Int
+  book: ref Book                  # two lists of Book below: following it needs `in`
+  pinned: ref Book in books
+}
+
+record Loan {
+  id: Int
+  shelf: ref Shelf in comments    # expect: TYPE
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject         | status | customer
+    1  | "Cannot log in" | Open   | "ACME"
+    1  | "Twice"         | Open   | "ACME"    # expect: DUPLICATE
+  }
+  customers: List Customer = table {
+    code   | name
+    "ACME" | "Acme Inc."
+  }
+  comments: List Comment = []
+  books: List Book = []
+  archive: List Book = []
+  shelves: List Shelf = []
+  authors: List Author = []
+  countries: List Country = []
+  chosenBook: Book or nothing = nothing
+  chosenComment: ref Comment or nothing = nothing
+  chosenTicket: ref Ticket or nothing = nothing
+  draft: Text = ""
+  titles: List Text = []
+}
+
+derive {
+  dutchBooks = the @books whose @author's @country is "NL"
+  wrongKey = the @books whose @author's @country is 7                                      # expect: TYPE
+  byline = @chosenBook's @author's @country's @name, or "unknown" when there is none
+  bareByline = @chosenBook's @author's @name                                                # expect-not: NOTHING
+  subjects = @comments's @ticket's @subject
+  pinnedTitle = the @title of the book whose @id is @chosenBook's @id, or "" when there is none
+  shelfTitle: List Text = @shelves's @book's @title                                          # expect: HOME
+  pinnedTitles = @shelves's @pinned's @title                                                # expect-not: HOME
+  subjectOf = the @subject of the ticket whose @id is @chosenTicket, or "" when there is none   # expect: SPELLING
+  customerName = @chosenTicket's @customer's @name, or "(none)" when there is none
+}
+
+screen {
+  list comments of Comment {
+    text about = "on {its @ticket's @subject, or "a removed ticket" when there is none}"
+    text bare = its @ticket's @subject                                                      # expect: NOTHING
+    text nope = its @ticket's @body, or "" when there is none                               # expect: UNKNOWN_NAME
+    text other = the @subject of its @ticket, or "(removed)" when there is none              # expect-not: NOTHING
+    button close "Close"
+    button closeBad "Close"
+    button check "Check"
+    button look "Look"
+  }
+  button pick "Pick"
+}
+
+on click close {
+  if that comment's @ticket exists {
+    - set the @status of that ticket to @Closed
+    - set @draft to that comment's @ticket's @subject                                        # expect-not: NOTHING
+  }
+}
+
+on click closeBad {
+  - set that comment's @ticket's @status to @Closed                                          # expect: NAV_WRITE
+}
+
+on click check {
+  if that comment's @ticket does not exist {
+    - set @draft to "That ticket was removed"
+    stop
+  }
+  - set that comment's @ticket's @status to @Closed                                          # expect-not: NAV_WRITE
+  - set the @status of that ticket to @Open
+}
+
+on click look {
+  if @draft exists {                                                                         # expect: TYPE
+    stop
+  }
+  if there is a @chosenBook {
+    - set @draft to @chosenBook's @title
+  }
+  if its @ticket's @status is @Closed {                                                      # expect-not: NOTHING
+    - set @draft to "closed"
+  }
+  if its @ticket's @status is @High {                                                      # expect: TYPE
+    stop
+  }
+}
+
+on click pick {
+  for each @c in @comments {
+    - set @draft to @c's @ticket's @subject, or "" when there is none
+    if @c's @ticket is @chosenComment {                                                      # expect: TYPE
+      stop
+    }
+    if @c's @ticket is @chosenTicket {
+      stop
+    }
+  }
+  - set @titles to @comments's @ticket's @subject
+  - set @draft to @comments's @ticket's @subject                                              # expect: TYPE
+}

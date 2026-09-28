@@ -1,0 +1,25 @@
+app AccessInAScreen {
+  "A screen cannot enforce access: whoever controls the browser controls the screen."
+}
+
+state {
+  count: Int = 0
+}
+
+access {                                        # expect: ACCESS
+  - anyone may call @up
+}
+
+screen {
+  text count
+  button up "Up"
+}
+
+on click up {
+  - increase @count by 1
+}
+
+example "up" {
+  click up
+  see count = 1
+}

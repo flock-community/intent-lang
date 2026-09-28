@@ -1,6 +1,6 @@
 # Design: lists inside list rows
 
-Status: proposed for v1. Today a `list` inside a list row is `NOT_YET` (`compiler/parse.ts`, "a
+Status: built in v68 (see "As built" at the end); proposed for v1. Before v68 a `list` inside a list row is `NOT_YET` (`compiler/parse.ts`, "a
 list inside a list row is not in the language yet"), a list in a seed table cell is `NOT_YET`, the
 `data-el` contract says "rows are never nested" (`compiler/look.ts` rule 8), and a row is named by
 one `on row N`. Real apps need sub-items: a task's checklist, an order's lines, a recipe's
@@ -327,3 +327,69 @@ Example apps to add:
 5. **Flattening chains.** `@orders's @lines` flattens. Recommend it (it is what the English means
    and what joins do); a sentence that wants per-order values says "its @lines" in a row or loops
    with `for each`.
+
+## As built (v68), and where it departs
+
+Built in v68 on top of v66 (nothing-safety, following references) and v67 (change rules). The open
+questions are answered as recommended: two levels (1), nested for owned parts and a `ref` for the
+rest, taught in the skill (2), per-row drafts are fields of the row's record (3), a selection of an
+inner row keeps both keys in two state fields (4, `apps/33-order-lines.intent`), and chains through
+lists flatten (5). Departures and details:
+
+- **`RowRef` is a chain, not a list.** `at` stays the innermost row and gets a `parent` (the row of
+  the outer list), so every reader of a one-level step works unchanged; the parser reads the `on row`
+  suffixes innermost first, the printer writes them back the same way (`on row 2 of items on row 1
+  of tasks`), and actions (`compiler/exec.ts`) carry the outer row as `outer`.
+- **The helpers take keys, not predicates, and live in the generated module.** Events carry keys as
+  text, so the harness generates, per nested list, the row key each record's rows get
+  (`taskRowKey`, `itemRowKey`: the record's key, else its place in its list) and the update of one
+  inner row by the two keys: TypeScript `updateTaskItems(rows, outerKey, key, f)` and
+  `removeFromTaskItems(rows, outerKey, key)`, Elm `updateTaskItems outerKey key f rows` and
+  `removeFromTaskItems outerKey key rows` — in `spec.ts` / `Spec` (as v66's lookups are), not a
+  `Rows` module. Adding an inner row is a map over the outer row the model writes itself.
+- **Message names follow the existing convention**: `TasksItemsRemoveItemClicked` (Elm with two
+  `String`s, the outer key first; TypeScript `{ outerKey, key }`), not `ClickedTasksItemsRemoveItem`.
+  The wire is as designed: `target: "tasks.items.removeItem"`, `key` (the inner), `keys: [outer,
+  inner]`; the Elm `Ui.Wire` has `keys : List String`, and the plain renderers of both targets pass
+  the path of lists and keys down.
+- **Keys are checked on the data.** An app with a list inside a state list's rows hands over its data
+  (like an app a reference points into), and `keys.json` gets an `inner` entry: after every step the
+  outer list's keys and each row's inner keys are unique. Top-level lists without inner lists are
+  not checked (no data is required of them).
+- **The source map's key** extends the one-level `tasks[].title`: `tasks[].items[].removeItem`. The
+  list path with dots (`tasks.items.removeItem`) is the wire target and the unit's name (`units.json`).
+- **Checker details.** `list x of R` in a row without `=`: no field `x` is `BAD_BINDING`, a list of
+  another record `TYPE` (as the test plan says). A seeded inner record missing a required field is
+  `BAD_BINDING`; a cell may also hold a list of plain values for a `List Text` field. A row and its
+  inner rows are one scope, but two inner lists of one row are apart (as two lists are). A checkbox,
+  field or select in a row now introduces its row for its handler, as a button does (so `on toggle
+  done` may say "that task"). A list inside a row checks its `= …` in the outer row (`its @items`).
+  `table` inside `table` is `NOT_YET`; a record holding a list of its own kind (a tree) is `NOT_YET`
+  with its own message. New typed forms: `the sum of <value per row> over <list>` (read per row,
+  before `times` splits it), the lookups and conditions over a row's inner list, `every @f in that
+  task's @items`.
+- **Change rules over inner rows are built**, not `NOT_YET`: a record whose rows live only inside the
+  rows of one state list is a change rule's subject there (`a @Line's @price never changes`), its rows
+  matched by the path of keys (`changes.ts`, `inner` in `changes.json`). A `ref` to such a record
+  stays `HOME`, with a message that says why (its key is unique within its row only).
+- **Random sessions**: inner rows are picked outer row first; fields and selects inside rows now act
+  on a row too (they did not in random traces before), so traces of apps with row fields differ from
+  earlier runs. The planted bug (the right item removed from the wrong task) is caught by comparing
+  random sessions in `tests/nested.test.ts` (28 of 30 sessions tell the builds apart), and by an
+  example of `apps/32-checklists.intent`.
+- **Elm and `Order`.** Elm's `Basics` exposes a type `Order`, so a record named `Order` is ambiguous
+  in `App.elm`; the generated `Spec` now says to write `Spec.Order` above that record (both compilers
+  hit the clash on their first attempt of the order-lines app).
+- The recipes api is built as designed with a contract bundle (`lib/kitchen/recipes.intent`,
+  `lib/kitchen/recipesApi.intent`) and a screen, `apps/35-recipes.intent`.
+- **An api that stores nothing, restarted.** Random sessions of the recipes screen steer its api to
+  `restart after effect`; the api's test client called `restore` of an app module that has none (it
+  stores nothing), and the session crashed. The service harness now starts such an api from its
+  defaults (nothing is stored, so nothing survives a restart).
+
+Measured: the new apps and `apps/02-todo.intent`, `apps/25-row-edit.intent` build twin-verified on
+both targets (the probe's reading behaves the same in every session); a converge of the three new
+apps with two builds per target (40 random sessions × 25 actions each) gives 12/12 builds on the
+first try and the same app in every session, Elm and TypeScript alike. Random sessions acted on
+inner rows in about a quarter (checklists) and an eighth (order lines) of their actions.
+

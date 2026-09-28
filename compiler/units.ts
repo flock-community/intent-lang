@@ -4,7 +4,7 @@
 // handler, an endpoint, an `always` sentence, an example. Its digest is of its canonical text, so
 // reformatting or moving it is no change; it depends on the units and types it names.
 import { createHash } from "node:crypto";
-import type { App, Element, Stmt, Type } from "./ast.ts";
+import type { App, Element, RowRef, Stmt, Type } from "./ast.ts";
 import { refsIn } from "./refs.ts";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
@@ -68,7 +68,8 @@ export function units(app: App): Unit[] {
   app.rules.forEach((r, i) => add("rule", String(i + 1), app.ruleLines?.[i] ?? 0, r, refsOf(r)));
   for (const a of app.invariants ?? []) add("always", `${a.line}`, a.line, a.text, refsOf(a.text));
   for (const ex of app.examples) {
-    const deps = ex.steps.flatMap((s) => [...("target" in s ? [s.target] : []), ...("at" in s && s.at?.list ? [s.at.list] : [])]);
+    const lists = (r?: RowRef): string[] => (r ? [...(r.list ? [r.list] : []), ...lists(r.parent)] : []);
+    const deps = ex.steps.flatMap((s) => [...("target" in s ? [s.target] : []), ...("at" in s ? lists(s.at) : [])]);
     add("example", ex.name, ex.line, ex.steps, deps);
   }
   return out;

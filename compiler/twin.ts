@@ -2,7 +2,7 @@
 // When the two compilers build different apps, the spec is ambiguous: stop and say where,
 // instead of shipping whichever way one compiler happened to fall.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { App } from "./ast.ts";
 import { buildOnce, writeProviders, type BuildResult } from "./build.ts";
 import { hasClients } from "./calls.ts";
@@ -14,6 +14,7 @@ import { PROJECT_ROOT, ROOT, type Target } from "./gen.ts";
 import { complete } from "./llm.ts";
 import { compilerPins, sha } from "./load.ts";
 import { runStyledTraces } from "./look.ts";
+import { putDir, withLock } from "./cachedir.ts";
 import { apiTraces, callText } from "./api.ts";
 import { layerTraces, readLayerConfig, requestText } from "./layer.ts";
 
@@ -46,24 +47,55 @@ export interface TwinResult {
 }
 
 /**
- * The harness a build was made with: the generators, prompts and drivers, and the runtime files
- * copied into builds. A change there (a new generated interface, a fixed runtime) is a new build.
+ * The harness a build was made with: every compiler module a build runs (the transitive imports of
+ * the build's entry modules, so a new module is never missed), every target and provider, the
+ * runtime copied into builds, the standard library, and the versions of the tools that compile and
+ * run it. A change to any of them is a new build.
  */
 let harness: string | undefined;
 const filesIn = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesIn(join(dir, e.name)) : [join(dir, e.name)]));
-function harnessDigest(): string {
-  const files = [
-    ...["gen.ts", "calls.ts", "api.ts", "layer.ts", "prompt.ts", "build.ts", "exec.ts", "diff.ts", "invariants.ts", "toolchain.ts", "tools.ts", "styled.ts"].map((f) => join(ROOT, "compiler", f)),
-    ...readdirSync(join(ROOT, "compiler/targets")).map((f) => join(ROOT, "compiler/targets", f)),
-    ...filesIn(join(ROOT, "runtime/ts")),
-    ...readdirSync(join(ROOT, "runtime/elm")).map((f) => join(ROOT, "runtime/elm", f)),
-  ];
-  return (harness ??= sha(files.map((f) => readFileSync(f, "utf8")).join("\0")));
+/** A module and every module it imports (static and dynamic, relative paths), transitively. */
+export function importClosure(entries: string[]): string[] {
+  const seen = new Set<string>();
+  const stack = [...entries];
+  while (stack.length) {
+    const f = stack.pop()!;
+    if (seen.has(f) || !existsSync(f)) continue;
+    seen.add(f);
+    for (const m of readFileSync(f, "utf8").matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|^\s*import\s+)["'](\.{1,2}\/[^"']+)["']/gm)) stack.push(resolve(dirname(f), m[1]));
+  }
+  return [...seen].sort();
+}
+const toolVersions = () =>
+  Object.fromEntries(
+    ["elm", "typescript", "esbuild", "tailwindcss", "@tailwindcss/cli", "playwright"].map((p) => {
+      try {
+        return [p, JSON.parse(readFileSync(join(ROOT, "node_modules", p, "package.json"), "utf8")).version];
+      } catch {
+        return [p, null];
+      }
+    }),
+  );
+export function harnessFiles(): string[] {
+  const c = (f: string) => join(ROOT, "compiler", f);
+  return [
+    ...new Set([
+      ...importClosure([c("twin.ts"), c("converge.ts"), c("build.ts"), c("exec.ts"), c("api.ts"), c("layer.ts"), c("invariants.ts"), c("mutate.ts")]),
+      ...filesIn(join(ROOT, "compiler/targets")),
+      ...filesIn(join(ROOT, "compiler/providers")),
+      ...filesIn(join(ROOT, "compiler/quality")),
+      ...filesIn(join(ROOT, "runtime")),
+      ...filesIn(join(ROOT, "lib/std")),
+    ]),
+  ].sort();
+}
+export function harnessDigest(): string {
+  return (harness ??= sha(JSON.stringify({ files: harnessFiles().map((f) => [relative(ROOT, f), readFileSync(f, "utf8")]), node: process.versions.node, tools: toolVersions() })));
 }
 
-/** What makes two builds the same build: the canonical spec, the compiler (language, model, harness), the target and options. */
-export function cacheKey(specText: string, target: Target, o: Pick<TwinOptions, "styled" | "kit">): string {
-  return sha(JSON.stringify({ specText, compiler: compilerPins(), harness: harnessDigest(), target, styled: !!o.styled, kit: !!o.kit }));
+/** What makes two builds the same build: the canonical spec, the compiler (language, model, harness), the target, options, and how deeply it was verified. */
+export function cacheKey(specText: string, target: Target, o: Pick<TwinOptions, "styled" | "kit" | "sessions" | "length" | "repairs">): string {
+  return sha(JSON.stringify({ specText, compiler: compilerPins(), harness: harnessDigest(), target, styled: !!o.styled, kit: !!o.kit, depth: { sessions: o.sessions ?? 24, length: o.length ?? 20, repairs: o.repairs ?? null } }));
 }
 
 const providerBuilds = new Map<string, Promise<TwinResult>>();
@@ -83,7 +115,8 @@ async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: R
     const dir = join(PROJECT_ROOT, ".intent/providers", c.providerDigest ?? c.alias);
     if (!providerBuilds.has(dir)) {
       o.log(`building the provider ${c.testedWith} first`);
-      providerBuilds.set(dir, compileApp(loaded.app, c.testedWith, text, "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, repairs: o.repairs, log: (m) => o.log(`provider ${c.alias}: ${m}`) }));
+      // Another process may build the same provider: one at a time per directory (the second gets the cache hit).
+      providerBuilds.set(dir, withLock(dir, () => compileApp(loaded.app!, c.testedWith!, text, "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, repairs: o.repairs, log: (m) => o.log(`provider ${c.alias}: ${m}`) })));
     }
     const r = await providerBuilds.get(dir)!;
     costUsd += r.cached ? 0 : r.costUsd;
@@ -103,7 +136,7 @@ async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<
     const dir = join(PROJECT_ROOT, ".intent/layers", `${l.layer}-${l.digest}`);
     if (!layerBuilds.has(dir)) {
       o.log(`building the layer ${l.layer} first`);
-      layerBuilds.set(dir, compileApp(l.spec!, `${l.layer}.intent`, printApp(l.spec!), "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, repairs: o.repairs, log: (m) => o.log(`layer ${l.alias}: ${m}`) }));
+      layerBuilds.set(dir, withLock(dir, () => compileApp(l.spec!, `${l.layer}.intent`, printApp(l.spec!), "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, repairs: o.repairs, log: (m) => o.log(`layer ${l.alias}: ${m}`) })));
     }
     const r = await layerBuilds.get(dir)!;
     costUsd += r.cached ? 0 : r.costUsd;
@@ -143,13 +176,17 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   const { providers, layers: layerDirs } = deps;
   const key = cacheKey(specText, target, o);
   const cached = join(CACHE, key);
-  const meta = existsSync(join(cached, "intent-build.json")) ? JSON.parse(readFileSync(join(cached, "intent-build.json"), "utf8")) : undefined;
-  if (meta && o.twin !== "always" && (meta.verified === "twin" || o.twin === "off")) {
-    rmSync(out, { recursive: true, force: true });
-    cpSync(cached, out, { recursive: true });
+  // A cache hit is copied out under the key's lock (no other process is writing it), and its
+  // examples run again before it is used: a hit is a build that still passes, not only a digest.
+  const meta = o.twin === "always" ? undefined : await takeCached(cached, out, (m) => m.verified === "twin" || o.twin === "off");
+  if (meta) {
     if (providers) writeProviders(app, out, providers);
-    o.log(`cache hit (${meta.verified}-verified build of this exact spec and compiler)`);
-    return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
+    const failed = await examplesFail(app, out, target);
+    if (!failed) {
+      o.log(`cache hit (${meta.verified}-verified build of this exact spec and compiler; ${app.examples.length}/${app.examples.length} examples pass again)`);
+      return { target, ok: true, dir: out, cached: true, verified: meta.verified, builds: [], costUsd: 0 };
+    }
+    o.log(`the cached build fails its examples again (${failed}); compiling again`);
   }
   const opts = { styled: o.styled, kit: o.kit, providers, layers: layerDirs, incremental: o.incremental, maxAttempts: o.repairs === undefined ? undefined : o.repairs + 1 };
   // Incremental: the generated app code depends on everything but the examples. A second cache key
@@ -157,15 +194,11 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   const codeKey = o.twin !== "off" && app.kind !== "layer" && app.profile !== "api" ? cacheKey(printApp({ ...app, examples: [] }), target, o) : undefined;
   if (codeKey) {
     const codeCached = join(CACHE, codeKey);
-    const codeMeta = existsSync(join(codeCached, "intent-build.json")) ? JSON.parse(readFileSync(join(codeCached, "intent-build.json"), "utf8")) : undefined;
-    if (codeMeta && codeMeta.verified === "twin") {
-      rmSync(out, { recursive: true, force: true });
-      cpSync(codeCached, out, { recursive: true });
+    const codeMeta = await takeCached(codeCached, out, (m) => m.verified === "twin");
+    if (codeMeta) {
       if (providers) writeProviders(app, out, providers);
-      const results = await runJobsIsolated(out, target, app.examples.map((example) => ({ kind: "example" as const, example, always: app.always })));
-      const failed = Array.isArray(results) ? (results as { pass?: boolean }[]).filter((r) => !r.pass) : [results];
-      if (!failed.length) {
-        store(out, cached, "twin", key);
+      if (!(await examplesFail(app, out, target))) {
+        await store(out, cached, "twin", key);
         o.log(`the app code is unchanged; reused it (${app.examples.length}/${app.examples.length} examples pass)`);
         return { target, ok: true, dir: out, cached: false, verified: "twin", builds: [], costUsd: 0 };
       }
@@ -174,7 +207,7 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   }
   if (o.twin === "off") {
     const r = await buildOnce(app, specFile, specText, target, out, { ...opts, log: o.log });
-    if (r.ok) store(out, cached, "single", key);
+    if (r.ok) await store(out, cached, "single", key);
     return { target, ok: r.ok, dir: out, cached: false, verified: r.ok ? "single" : "none", builds: [r], costUsd: r.costUsd };
   }
 
@@ -198,8 +231,8 @@ export async function compileApp(app: App, specFile: string, specText: string, t
     // The probe could not find a different reading that passes every example: nothing to compare.
     o.log("the probe found no different reading that passes the examples");
     if (a.incremental && o.cleanCheck) o.log("the clean check is skipped: there is no session comparison to make");
-    store(out, cached, "twin", key);
-    if (codeKey) store(out, join(CACHE, codeKey), "twin", codeKey);
+    await store(out, cached, "twin", key);
+    if (codeKey) await store(out, join(CACHE, codeKey), "twin", codeKey);
     return { ...base, ok: true, verified: "twin" };
   }
 
@@ -247,14 +280,21 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   }
   const cmp = layer ? compare(requests, perBuild, requestText, false) : api ? compare(calls, perBuild, callText, false) : compare(traces, perBuild);
   if (cmp.agree === cmp.total) {
-    store(out, cached, "twin", key);
-    if (codeKey) store(out, join(CACHE, codeKey), "twin", codeKey);
+    await store(out, cached, "twin", key);
+    if (codeKey) await store(out, join(CACHE, codeKey), "twin", codeKey);
     rmSync(twinDir, { recursive: true, force: true });
     o.log(`the probe's reading behaves the same (${cmp.total} sessions): the spec is unambiguous here`);
     return { ...base, ok: true, verified: "twin" };
   }
 
-  // They differ: the spec leaves something open. Stop and say what.
+  // A build that crashes on most sessions is broken, not a reading of the spec: the build fails.
+  const crashes = [...perBuild].map(([id, seqs]) => ({ id, n: seqs.filter((x) => !x).length })).filter((c) => c.n);
+  const broken = crashes.filter((c) => c.n * 2 > cmp.total);
+  if (broken.length) {
+    o.log(`build ${broken.map((c) => `${c.id} crashed on ${c.n} of ${cmp.total} sessions`).join(", ")}: not verified`);
+    return { ...base, ok: false, verified: "none" };
+  }
+  // They differ (a session some build crashed on differs too): the spec leaves something open. Stop and say what.
   const report = renderDivergences(cmp.divergences, cmp.total - cmp.agree, cmp.total);
   const explanation = await explain(specFile, specText, report);
   const full = `${report}\n## What the spec leaves open\n\n${explanation.text}\n`;
@@ -262,11 +302,33 @@ export async function compileApp(app: App, specFile: string, specText: string, t
   return { ...base, ok: false, verified: "none", costUsd: cost + explanation.costUsd, ambiguous: { sessions: cmp.total - cmp.agree, of: cmp.total, report: full } };
 }
 
-function store(dir: string, cached: string, verified: "twin" | "single", key: string) {
-  rmSync(cached, { recursive: true, force: true });
-  mkdirSync(cached, { recursive: true });
-  cpSync(dir, cached, { recursive: true });
-  writeFileSync(join(cached, "intent-build.json"), JSON.stringify({ key, verified, at: new Date().toISOString(), compiler: compilerPins() }, null, 2));
+/** Keep a verified build under its key: whole or not at all, under the key's lock (cachedir.ts). */
+export async function store(dir: string, cached: string, verified: "twin" | "single", key: string) {
+  await withLock(cached, () => putDir(dir, cached, { "intent-build.json": JSON.stringify({ key, verified, at: new Date().toISOString(), compiler: compilerPins() }, null, 2) }));
+}
+
+/** Copy a cached build out (under its lock) when its record says it may be used: its record, or undefined. */
+export async function takeCached(cached: string, out: string, usable: (meta: { key: string; verified: "twin" | "single" }) => boolean): Promise<{ key: string; verified: "twin" | "single" } | undefined> {
+  return withLock(cached, () => {
+    const file = join(cached, "intent-build.json");
+    const meta = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
+    if (!meta || !usable(meta)) return undefined;
+    // The same build is there already (another build of this process's dependencies copied it): keep it, do not rewrite a directory someone may be reading.
+    const here = join(out, "intent-build.json");
+    if (existsSync(here) && JSON.parse(readFileSync(here, "utf8")).key === meta.key) return meta;
+    rmSync(out, { recursive: true, force: true });
+    cpSync(cached, out, { recursive: true });
+    return meta;
+  });
+}
+
+/** Run a build's examples again: undefined when all pass, else what failed. */
+async function examplesFail(app: App, dir: string, target: Target): Promise<string | undefined> {
+  const jobs = app.kind === "layer" ? app.examples.map((example) => ({ kind: "layer-example" as const, example, config: readLayerConfig(dir) })) : app.profile === "api" ? app.examples.map((example) => ({ kind: "api-example" as const, example, always: app.always })) : app.examples.map((example) => ({ kind: "example" as const, example, always: app.always }));
+  const results = await runJobsIsolated(dir, target, jobs as never);
+  if ("error" in results) return results.error;
+  const failed = (results as { name?: string; pass?: boolean }[]).filter((r) => !r.pass);
+  return failed.length ? failed.map((r) => r.name).join(", ") : undefined;
 }
 
 /** The differing sessions, grouped by what differs, as a readable report. */

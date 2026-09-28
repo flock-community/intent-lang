@@ -1,7 +1,8 @@
 # Design: access control (v1)
 
-Status: proposed, not built. It turns "who may do what" from sentences in endpoint steps and a gate
-in the browser into declared, default-deny rules that the harness enforces on the server.
+Status: built in v70 (see "As built" at the end); proposed for v1. It turns "who may do what" from
+sentences in endpoint steps and a gate in the browser into declared, default-deny rules that the
+harness enforces on the server.
 
 ## What exists today (precisely)
 
@@ -578,3 +579,88 @@ Apps and measurement:
    caller may call)?** Recommend next, not v1. It is the right shape (the same rules, evaluated by
    the service, so the screen never duplicates them), but it needs a contract form of its own.
    v1 screens use a `me` endpoint and `visible when`.
+
+## As built (v70), and where it departs
+
+Built in v70 on top of v66 (following references, nothing-safety), v67 (change rules), v68 and v69.
+The open questions are answered as recommended: default deny starts at the block, and `NO_ACCESS`
+is a std.quality warning, but the compiler's error for a spec that declares `language v70` or later
+(1); roles are a `choice` plus a list of grants (2); refusals are 403 with the rule's message (3);
+permitted reads are not audited (4); no generated `GET /access` (5). Departures and details:
+
+- **The plan is data, not a generated module.** As v67 did for change rules, the block compiles to a
+  plan (`accessPlan.ts` in a build, `access.json` for the drivers; `compiler/access.ts`
+  `accessPlan`), and one reviewed decision reads it (`runtime/ts/access.ts` `decide`), the same for
+  every build and tested once (`tests/access.test.ts`), instead of an `access.mjs` per build. The
+  pipeline runs it after the layers and the route's input checks, before a remembered idempotent
+  answer and the endpoint; the endpoint's handler is reachable only on the branch where it allowed.
+  The pipeline also requires the app module to export `data(model)` (a type-level reference to it),
+  so a build that does not hand its data over does not compile.
+- **`public` is bound per request, not from a list.** The key layer runs without `public`; only when
+  it refuses and the route (method and the path's shape) is one `anyone may call` does it run again
+  with `public` bound to exactly that request. So a valid key on a public endpoint still names its
+  caller (a static binding would have made every caller anonymous there), an endpoint with a path
+  param can be public, and a rule mutant that drops an `anyone` rule behaves as if `public` were
+  unbound. The stream opens anonymously only while some event is one `anyone may hear`.
+- **An anonymous caller equals nothing** (the design said anonymous is `""`): a blank assignee is
+  not "the caller", and an anonymous caller is in no list, so a forbid on "not the caller" holds for
+  them. A permit that covers the caller but whose condition fails gives its message (the design's
+  desk example needs it); otherwise `"Not allowed"`. An anonymous request no rule permits gets the
+  key layer's own 401.
+- **Three values, fail closed.** A condition is true, false, cannot be decided, or vacuous (the
+  request's own row is missing). A permit holds when every condition is true or vacuous; a forbid
+  when every condition is true or cannot be decided. Besides a reference whose row is gone and an
+  absent param, a list the data does not hold (the app did not hand it over) cannot be decided.
+- **`anyone may` takes no condition** (`ACCESS`): it is decided before a key is read. Roles may be
+  listed with commas (`a @Clerk, an @Approver or a @Lead`). An event rule may also say `the @caller is
+  in its body's @watchers`.
+- **The audit** holds access decisions only: a 401 from the key layer is authentication, not a
+  decision, and is not in it. Hear decisions are not audited (volume). It lives outside the model,
+  survives a restart in tests, and on the server `keep()` appends it after the stored state of the
+  same request (the same function, two files: not one atomic write).
+- **Contracts and screens.** A `ref` param in a contract gets its key type in the clients that use it
+  (`compiler/load.ts`), so the wire and the generated call types are unchanged. A contract's own
+  examples cannot act as a caller (a contract has no keys), so examples that need a key move to the
+  implementation (`lib/pay/paymentsApi.intent`). Another client in a screen's example acts as a
+  caller against the provider's keys, read at run time; the checker knows the provider's key owners.
+  A screen hears only the events its caller may hear (`deliverEvents` asks the provider's test client
+  per event), which is only observable when the screen shows what it heard: `apps/16-desk-ui.intent`
+  counts its updates and `apps/37-expenses-ui.intent` lists the decisions it heard.
+- **Rule mutation is a command**: `intent mutate <api> --build <dir> [--screen <spec>=<dir>]` drops
+  each rule, and each condition of a permit (and of a forbid with several), runs the api's examples
+  and the screens' on the existing builds with the mutant plan (`start(plan)` in the test entry; a
+  screen's provider in-process), and lists the survivors. Hear rules are proven by the screens.
+  `ACCESS_UNPROVEN` is its static half: the seeded grants, a `see x.status` or a check on the body;
+  it skips hear rules.
+- **Random sessions** call as each caller the examples act as (60%), as any key's owner (25%, the
+  key without a grant too) and anonymously (15%); crossing ownership comes from the examples' ids, not
+  from a weighting of its own. Each session step carries the audit entries it added, so twin builds
+  compare decisions.
+- **Refinement** appends a child's rules to its base's block; `override access` is not built (a
+  refinement of an api does not carry endpoints yet either).
+- **Apps.** `apps/api/payments-api.intent`: anyone may charge (a customer pays from the shop's page),
+  a Merchant refunds, looks up and sends receipts, a Cashier only the last two; so
+  `apps/18-checkout.intent` refunds with a staff key through `std.http.sendKey`, and
+  `apps/20-approval.intent` (the brake, `std.actions`) keeps charging anonymously and says in its
+  purpose that it is a brake. A screen that needs both a brake and a key cannot say so yet (one
+  `through` per `uses`). The expenses screen is `apps/37-expenses-ui.intent` (32 was taken). In
+  `apps/api/payouts-api.intent` the static separation of duty made the four-eyes forbid unprovable (no
+  one could both request and approve), so a Lead may do both, never on their own payout; an Admin
+  grants and revokes roles, which proves that a change counts from the next request.
+- **Not built**, as the design says ("Not in v1"): field-level access, lists filtered by access, role
+  hierarchies, a server-side hold, tenants and tokens, `@now` in conditions, a `hidden` rule (404).
+  Also not: a stream whose key is removed while it is open keeps its caller (grants are still read
+  per event), and `see x.body.f is absent` is false for a `T or nothing` field that is `null` (the
+  first payouts build stopped on it with a `SPEC CONFLICT`, rightly: the example was wrong).
+
+Measured (LLM builds, twin-verified, first attempt unless said): the apiKey layer (its `acts as` line
+changed its spec) and `apps/api/desk-api.intent` ($0.94 with the layers), `expenses-api` ($1.12),
+`payments-api` ($0.87), `payouts-api` ($0.96; a first build stopped on its own wrong example, $2.08),
+`apps/16-desk-ui.intent` ($1.88, Elm and TypeScript), `apps/37-expenses-ui.intent` ($2.08),
+`apps/18-checkout.intent` ($1.80) and `apps/20-approval.intent` ($1.85). No generated module checks
+access itself. A converge of the desk api (2 builds, 40 sessions × 25 calls, as each caller) gives
+2/2 builds and the same app in every session ($0.93). `intent mutate` finds no surviving mutant on
+the four apis: 8/8 on the desk api and 8/8 on the expenses api with their screens (the hear rules are
+caught only by the screens), 7/7 on payouts, 3/3 on payments. The real server was also run: an
+Agent's event stream got only its own tickets' events, a lead's every one, an anonymous stream 401;
+`audit.jsonl` held the refusals and the permitted writes; `x-intent-source` named the deciding rule.

@@ -65,7 +65,7 @@ derive {
   chosen = the workshop in @events whose @title is @chosenEvent
   attendees = the @Confirmed @signups whose workshop is @chosenEvent, in list order
   waitingList = the @Waiting @signups whose workshop is @chosenEvent, in list order
-  placesLeft = the @capacity of @chosen minus the number of @attendees, but at least 0
+  placesLeft = the @capacity of @chosen minus the number of @attendees, but at least 0 (0 when there is none)
   emailIsValid = @email, trimmed, contains exactly one "@", has at least one character before the "@", and has a "." with at least one character on each side of it after the "@"
 }
 
@@ -110,13 +110,13 @@ screen {
 
     section chosenHeader as header {
       text chosenTitle = "{chosenEvent}" as title
-      text chosenWhen = "{@date of @chosen} · {@location of @chosen}" as caption
+      text chosenWhen = "{@date of @chosen, or "" when there is none} · {@location of @chosen, or "" when there is none}" as caption
     }
 
     section stats as grid {
       section confirmedStat as StatCard {
         text confirmedLabel = "Signed up"
-        text confirmedValue = "{the number of @attendees} of {@capacity of @chosen}"
+        text confirmedValue = "{the number of @attendees} of {@capacity of @chosen, or 0 when there is none}"
       }
       section placesStat as StatCard {
         text placesLabel = "Places left"

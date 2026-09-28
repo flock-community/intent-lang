@@ -1,0 +1,163 @@
+app Table {
+  "Roll two dice, deal five cards from a shuffled deck, or draw one card at random."
+}
+language v69
+
+type Die = Int from 1 to 6
+
+choice Suit: Hearts | Diamonds | Clubs | Spades
+
+record Card {
+  name: Text
+  suit: Suit
+}
+
+state {
+  first: Die = 1
+  second: Die = 1
+  rolled: Bool = false
+  deck: List Card = table {
+    name                | suit
+    "Ace of Hearts"     | Hearts
+    "Two of Hearts"     | Hearts
+    "Three of Hearts"   | Hearts
+    "Four of Hearts"    | Hearts
+    "Five of Hearts"    | Hearts
+    "Six of Hearts"     | Hearts
+    "Seven of Hearts"   | Hearts
+    "Eight of Hearts"   | Hearts
+    "Nine of Hearts"    | Hearts
+    "Ten of Hearts"     | Hearts
+    "Jack of Hearts"    | Hearts
+    "Queen of Hearts"   | Hearts
+    "King of Hearts"    | Hearts
+    "Ace of Diamonds"   | Diamonds
+    "Two of Diamonds"   | Diamonds
+    "Three of Diamonds" | Diamonds
+    "Four of Diamonds"  | Diamonds
+    "Five of Diamonds"  | Diamonds
+    "Six of Diamonds"   | Diamonds
+    "Seven of Diamonds" | Diamonds
+    "Eight of Diamonds" | Diamonds
+    "Nine of Diamonds"  | Diamonds
+    "Ten of Diamonds"   | Diamonds
+    "Jack of Diamonds"  | Diamonds
+    "Queen of Diamonds" | Diamonds
+    "King of Diamonds"  | Diamonds
+    "Ace of Clubs"      | Clubs
+    "Two of Clubs"      | Clubs
+    "Three of Clubs"    | Clubs
+    "Four of Clubs"     | Clubs
+    "Five of Clubs"     | Clubs
+    "Six of Clubs"      | Clubs
+    "Seven of Clubs"    | Clubs
+    "Eight of Clubs"    | Clubs
+    "Nine of Clubs"     | Clubs
+    "Ten of Clubs"      | Clubs
+    "Jack of Clubs"     | Clubs
+    "Queen of Clubs"    | Clubs
+    "King of Clubs"     | Clubs
+    "Ace of Spades"     | Spades
+    "Two of Spades"     | Spades
+    "Three of Spades"   | Spades
+    "Four of Spades"    | Spades
+    "Five of Spades"    | Spades
+    "Six of Spades"     | Spades
+    "Seven of Spades"   | Spades
+    "Eight of Spades"   | Spades
+    "Nine of Spades"    | Spades
+    "Ten of Spades"     | Spades
+    "Jack of Spades"    | Spades
+    "Queen of Spades"   | Spades
+    "King of Spades"    | Spades
+  }
+  hand: List Card = []
+  drawn: Card or nothing = nothing
+}
+
+derive {
+  total: Int = @first plus @second
+}
+
+screen {
+  button roll "Roll"
+  text dice = "{first} and {second}" {
+    visible when @rolled
+  }
+  text total = "{total}" {
+    visible when @rolled
+  }
+  button deal "Deal"
+  list hand of Card {
+    text name
+  }
+  button draw "Draw a card"
+  text card = "{the @name of @drawn}" {
+    visible when there is a @drawn
+  }
+}
+
+# Two dice are two draws: two values.
+on click roll {
+  - set @first to a random @Die
+  - set @second to a random @Die
+  - set @rolled to true
+}
+
+on click deal {
+  - set @hand to the first 5 of @deck shuffled
+}
+
+on click draw {
+  - set @drawn to a random one of @deck
+}
+
+always {
+  see total is at least 2
+  see total is at most 12
+  see hand has at most 5 rows
+  - no two @hand have the same @name
+}
+
+example "a double six" {
+  steer random Die = 6, 6
+  click roll
+  see dice = "6 and 6"
+  see total = 12
+}
+
+example "the dice are drawn in the order the steps say" {
+  steer random Die = 2, 5
+  click roll
+  see dice = "2 and 5"
+  see total = 7
+}
+
+example "dealing from an unshuffled deck gives the top five" {
+  steer random shuffle keeps order
+  click deal
+  see hand has 5 rows
+  see name on row 1 = "Ace of Hearts"
+  see name on row 5 = "Five of Hearts"
+}
+
+example "a reversed deck deals from the bottom" {
+  steer random shuffle reverses order
+  click deal
+  see name on row 1 = "King of Spades"
+  see name on row 5 = "Nine of Spades"
+}
+
+example "drawing the third card" {
+  steer random pick 3
+  click draw
+  see card = "Three of Hearts"
+}
+
+example "any roll is two dice" {
+  click roll
+  see total is at least 2
+  see total is at most 12
+  click deal
+  see hand has 5 rows
+}

@@ -8,6 +8,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const bin = (name: string) => join(ROOT, "node_modules/.bin", name);
 
+/** `tsc` flags for a build whose tsconfig.json names Node's types (a service): where they are, on the
+ *  command line, so that the generated tsconfig.json says nothing about this machine. */
+export const NODE_TYPES = ["--typeRoots", join(ROOT, "node_modules/@types")];
+
 // A build may live anywhere (a project outside the installation): packages the runtime needs (preact,
 // Node's types) come from the installation, so nothing depends on where the build directory is.
 export const env = { ...process.env, NODE_PATH: [join(ROOT, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(":") };

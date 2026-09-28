@@ -72,7 +72,7 @@ state {
 derive {
   matching = the @books whose @title or @author contains @search trimmed, ignoring upper and lower case, in list order; all @books when @search is blank
   chosenMember = the member whose @name is @chosen, or nothing when @chosen is empty
-  chosenLoans = the @loans whose member is the @number of @chosenMember, earliest @due first, ties by lowest @id; empty when nobody is picked
+  chosenLoans = the @loans whose member is the @number of @chosenMember, earliest @due first, ties by lowest @id; none when there is no @chosenMember
   chosenCount = the number of @chosenLoans
   overdueLoans = the @loans whose @due is below @today, earliest @due first, ties by lowest @id
   overdueCount = the number of @overdueLoans
@@ -142,7 +142,7 @@ screen {
         text noMemberHint = "Pick a member to see their loans and lend books."
       }
       section memberInfo as MemberCard {
-        visible when @chosen is not empty
+        visible when there is a @chosenMember
         text memberName = the @name of @chosenMember
         text memberNumber = "Member #{number}", where @number is the @number of @chosenMember
         text memberCount = "{chosenCount} of 3 books out"
@@ -169,7 +169,7 @@ screen {
     list overdueList of Loan = @overdueLoans as table {
       look "Every row has a light danger background."
       text overdueBook = its book
-      text overdueWho = the @name of the member whose @number is its member
+      text overdueWho = the @name of the member whose @number is its member, or "" when there is none
       text overdueDue = "Overdue, was due day {its @due}" as DueBadge
     }
   }
@@ -196,7 +196,7 @@ on click clearMember {
 }
 
 on click lend {
-  if @chosen is empty {
+  if there is no @chosenMember {
     stop
   }
   if @chosenLoans has a loan whose book is that book's @title {
@@ -218,7 +218,7 @@ on click lend {
 
 on click takeBack {
   - remove that loan from @loans
-  - set @toast.message to "{that loan's book} returned by {the @name of the member whose @number is that loan's member}"
+  - set @toast.message to "{that loan's book} returned by {the @name of the member whose @number is that loan's member, or "a member" when there is none}"
 }
 
 rules {

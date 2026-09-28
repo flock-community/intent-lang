@@ -14,7 +14,7 @@ export type TypeDesc =
   | { k: "Maybe"; of: TypeDesc }
   | { k: "Choice"; name: string; values: string[]; wire?: string[] } // wire: each value's name in JSON (`Info = "info"`), in order
   | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] }
-  | { k: "Refined"; name: string; base: TypeDesc; pattern?: string; min?: number; max?: number; minLength?: number; maxLength?: number };
+  | { k: "Refined"; name: string; base: TypeDesc; pattern?: string; min?: number; max?: number; minLength?: number; maxLength?: number; code?: { n: number; chars: string; unambiguous?: boolean } };
 
 export interface EndpointDesc {
   name: string;
@@ -105,9 +105,12 @@ function coerce(v: unknown, t: TypeDesc): unknown {
 
 /** Check a JSON value against a type; returns the value or an error message. */
 function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error: string } {
+  // Nothing on the wire: a `T or nothing` is `null`, and on input a missing key is nothing too. For a
+  // `T`, a missing key is "is required" and `null` is not a value of the type ("must be …").
   if (t.k === "Maybe") return v === null || v === undefined ? { ok: null } : check(v, t.of, name);
-  if (v === undefined || v === null) return { error: `${name} is required` };
+  if (v === undefined) return { error: `${name} is required` };
   const bad = { error: `${name} must be ${describe(t)}` };
+  if (v === null) return bad;
   switch (t.k) {
     case "Text": return typeof v === "string" ? { ok: v } : bad;
     case "Int": return typeof v === "number" && Number.isInteger(v) ? { ok: v } : bad;
@@ -127,6 +130,11 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
     case "Refined": {
       const b = check(v, t.base, name);
       if ("error" in b) return { error: `${name} must be a valid ${t.name}` };
+      // A code is read as its alphabet says, and the app sees its normal form (`k7mqor1z` → `K7MQ0R1Z`).
+      if (t.code) {
+        const c = readCode(String(b.ok), t.code.n, t.code.chars, t.code.unambiguous);
+        return c === null ? bad : { ok: c };
+      }
       const x = b.ok as string | number;
       const len = typeof x === "string" ? [...x].length : 0; // characters (code points), as on both targets
       const fits =
@@ -160,14 +168,22 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
   }
 }
 
-/** A value as it goes over the wire: every choice value by its wire name (`Info` → "info"). */
+/** A value as it goes over the wire: every choice value by its wire name (`Info` → "info"), and every
+ *  `T or nothing` field of a record written, as `null` when it is nothing (never left out). */
 export function toWire(v: unknown, t: TypeDesc | null | undefined): unknown {
+  if (t?.k === "Maybe" && v === undefined) return null;
   if (!t || v === null || v === undefined) return v;
   switch (t.k) {
     case "Maybe": return toWire(v, t.of);
     case "Choice": return t.wire && typeof v === "string" && t.values.includes(v) ? t.wire[t.values.indexOf(v)] : v;
     case "List": return Array.isArray(v) ? v.map((x) => toWire(x, t.of)) : v;
-    case "Record": return v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, toWire(x, t.fields.find((f) => f.name === k)?.type)])) : v;
+    case "Record": {
+      if (typeof v !== "object" || Array.isArray(v)) return v;
+      const o = v as Record<string, unknown>;
+      const out = Object.fromEntries(Object.entries(o).map(([k, x]) => [k, toWire(x, t.fields.find((f) => f.name === k)?.type)]));
+      for (const f of t.fields) if (f.type.k === "Maybe" && o[f.name] === undefined) out[f.name] = null;
+      return out;
+    }
     default: return v;
   }
 }
@@ -223,4 +239,15 @@ export function route(endpoints: EndpointDesc[], method: string, path: string, q
     request[p.name] = r.ok;
   }
   return { request };
+}
+
+/**
+ * A code read the way its alphabet says: `unambiguous` codes Crockford's way (lower case accepted,
+ * `o`/`O` as 0, `i`/`I`/`l`/`L` as 1, hyphens ignored); every other alphabet exactly. The normal
+ * form, or null when the text is not a code of n characters of the alphabet.
+ */
+export function readCode(text: string, n: number, alphabet: string, unambiguous = false): string | null {
+  const s = unambiguous ? text.replace(/-/g, "").toUpperCase().replace(/O/g, "0").replace(/[IL]/g, "1") : text;
+  const cs = [...s];
+  return cs.length === n && cs.every((c) => alphabet.includes(c)) ? s : null;
 }

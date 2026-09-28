@@ -10,7 +10,11 @@ const K = new Uint32Array([
 
 /** The SHA-256 of the text's UTF-8 bytes, as 64 lower-case hex digits (FIPS 180-4). */
 export function sha256(text: string): string {
-  const bytes = new TextEncoder().encode(text);
+  return [...sha256Bytes(new TextEncoder().encode(text))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The SHA-256 of bytes, as 32 bytes (FIPS 180-4): the same code, for keyed hashing (draw.ts: HMAC-SHA-256). */
+export function sha256Bytes(bytes: Uint8Array): Uint8Array {
   // Padding: a 1 bit, zeros, then the length in bits as a 64-bit big-endian number.
   const len = bytes.length;
   const total = Math.ceil((len + 9) / 64) * 64;
@@ -49,5 +53,8 @@ export function sha256(text: string): string {
     }
     h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
   }
-  return [...h].map((x) => x.toString(16).padStart(8, "0")).join("");
+  const out = new Uint8Array(32);
+  const outView = new DataView(out.buffer);
+  h.forEach((x, i) => outView.setUint32(i * 4, x));
+  return out;
 }

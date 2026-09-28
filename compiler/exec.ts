@@ -16,26 +16,49 @@ import { targetModule } from "./targets/index.ts";
 import type { Session } from "./targets/target.ts";
 import type { Target } from "./gen.ts";
 import { difference, stable } from "./diff.ts";
+import { duplicateKey, harnessKey } from "./keys.ts";
+import { coveredKeys, loadChanges, type ChangeBroken, type ChangeWatch } from "./changes.ts";
+import { canonicalValues, drawer, literalOf, loadDrawTable, splitLiterals, steerSteps, type Drawer } from "./drawer.ts";
+import { sha256 } from "../runtime/ts/platform/std.crypto.ts";
+import { actingAs, type ActsAs } from "../runtime/ts/access.ts";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { Check, Example, Step } from "./ast.ts";
+import type { Check, Example, RowRef, Step } from "./ast.ts";
 
 export type Obs = any; // Ui Node as JSON
 
+/** Rule mutation (compiler/mutate.ts): a mutant of a provider's access plan, per alias, for the sessions opened in this process. */
+let providerPlans: Record<string, import("../runtime/ts/access.ts").Plan> | undefined;
+export const useProviderPlans = (p?: Record<string, import("../runtime/ts/access.ts").Plan>) => void (providerPlans = p);
+
+/** Another client's call in a test, made as a caller (\`call desk.solveTicket as "Sam"\`): with their key in the provider. */
+export type Acting = CallOut & { as?: string };
+
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back" | "size";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back" | "size" | "random";
   target: string; // element name ("" for tick; the endpoint for another client's call)
-  call?: CallOut; // on "other": another client calls the provider
+  call?: Acting; // on "other": another client calls the provider (as a caller, when the example says so)
   ms?: number; // on "tick" from a `wait`: how far the clock moves
   list?: string;
   row?: number; // 1-based
   rowWith?: string; // or: the first row showing this text
+  outer?: RowAt; // a row inside a row: the row of the outer list it is in (list, row and rowWith are the inner row's)
   text?: string;
-  value?: string;
+  value?: string; // on "random": the values as a step writes them (`"308122", "555001"`), `keep` / `reverse` for a shuffle, the pick
   pick?: number; // choose the (pick mod n)-th option: for selects whose options come from the model
   times?: number;
 }
+
+/** One level of rows: a list, and its row by position or by what it shows. */
+export interface RowAt {
+  list: string;
+  row?: number;
+  rowWith?: string;
+}
+
+/** The rows an action is in, outermost first (none for an element outside lists). */
+export const rowsOf = (a: { list?: string; row?: number; rowWith?: string; outer?: RowAt }): RowAt[] => (a.list ? [...(a.outer ? [a.outer] : []), { list: a.list, row: a.row, rowWith: a.rowWith }] : []);
 
 export type Job =
   | { kind: "example"; example: Example; always?: Step[] }
@@ -56,6 +79,7 @@ export interface ExploreResult {
   actions: Action[];
   violation?: Violation;
   error?: string;
+  made?: Record<number, string[]>; // per transition rule (its line), the changes the session made
 }
 
 export interface ExampleResult {
@@ -68,6 +92,7 @@ export interface TraceResult {
   steps: string[]; // canonical observation after each action, or "-" when the action was unavailable
   violation?: Violation;
   error?: string;
+  made?: Record<number, string[]>; // per transition rule (its line), the changes the session made
 }
 
 /** Invariants only apply to what is on the screen: a check on an absent element is skipped. */
@@ -79,7 +104,7 @@ function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]
   for (const s of always ?? []) {
     if (s.do !== "see") continue;
     if (!s.every && s.check.is !== "hidden" && s.check.is !== "shown" && "missing" in locate(obs, s.target)) continue;
-    const msg = checkSee(obs, s);
+    const msg = checkSee(obs, s, true);
     if (msg) return { line: s.line, message: msg, actions: [...actions], screen: describe(obs) };
   }
 }
@@ -96,9 +121,15 @@ function brokenInvariant(obs: Obs, always: Step[] | undefined, actions: Action[]
  * after every observation they run on the app's data, and a sentence that does not hold is marked
  * on the observation, where the `always` handling picks it up.
  */
-async function openSession(dir: string, target: string): Promise<Session> {
-  const session = await restartable(dir, await navigable(dir, await openSessionInner(dir, target)));
-  if (!existsSync(join(dir, "invariants.mjs"))) return session;
+async function openSession(dir: string, target: string, run: { name: string; edges?: () => number } = { name: "" }): Promise<Session & { watch?: ChangeWatch; drawer?: Drawer }> {
+  // Change rules (changes.json): checked on every event the app handles, below the provider's settling.
+  const watch = await loadChanges(dir);
+  const box: { broken?: ChangeBroken & { event: string } } = {};
+  // Draws (draws.json): every event gets its seed from the run and its number, and the run's steering.
+  const sites = loadDrawTable(dir);
+  const draws = Object.keys(sites).length ? drawer(sites, run.name, run.edges) : undefined;
+  const session = { ...(await changed(box, await keyed(dir, await restartable(dir, await navigable(dir, await openSessionInner(dir, target, watch ? { watch, box } : undefined, draws)))))), watch, drawer: draws };
+  if (!existsSync(join(dir, "invariants.mjs")) || !existsSync(join(dir, "invariants.json"))) return session;
   const loadChecks = async (file: string) => ((await import(pathToFileURL(join(dir, file)).href + `?t=${Date.now()}`)).invariants ?? []) as { line: number; holds: (d: unknown, c: unknown) => boolean }[];
   const checks = await loadChecks("invariants.mjs");
   const probes = existsSync(join(dir, "invariants-probe.mjs")) ? await loadChecks("invariants-probe.mjs") : undefined;
@@ -107,6 +138,7 @@ async function openSession(dir: string, target: string): Promise<Session> {
     ...session,
     observe: async () => {
       const obs = await session.observe();
+      if (obs?.dataViolation) return obs; // a change rule broken by an event of this step: reported first
       const data = await session.data?.();
       const clock = (await session.clock?.()) ?? clockAt("2026-01-05T09:00");
       let ambiguity: { line: number; message: string } | undefined;
@@ -128,6 +160,65 @@ async function openSession(dir: string, target: string): Promise<Session> {
       }
       if (ambiguity) return { ...obs, dataAmbiguity: ambiguity };
       return obs;
+    },
+  };
+}
+
+/**
+ * Change rules (v67): a rule about before and after is about one update, so it is checked on every
+ * event the app handles (a click, each answer and event the provider settles, each tick, each \`on
+ * open\`), not per settled step: a settled step could hide a transient break, or join a legal chain
+ * (Open → Solved → Closed) into a pair the table does not list. \`Program.step\` is pure: the data
+ * before and after each wire is the step's. A restart is not a step (stored state comes back as it
+ * was, checked by \`restartable\`); a step that changes nothing passes (stuttering).
+ */
+function watching(session: Session, w: { watch: ChangeWatch; box: { broken?: ChangeBroken & { event: string } } }, clock: () => unknown): Session {
+  if (!session.data) return session;
+  return {
+    ...session,
+    send: async (wire) => {
+      const on = (wire as { on?: string }).on;
+      if (on === "restart" || w.box.broken) return session.send(wire);
+      const before = await session.data!();
+      await session.send(wire);
+      const after = await session.data!();
+      const b = w.watch.step(before, after, clock());
+      const t = wire as { on?: string; target?: string; key?: string; keys?: string[] };
+      if (b) w.box.broken = { ...b, event: `${t.on}${t.target ? ` ${t.target}` : ""}${t.keys?.length ? ` (rows ${t.keys.join(" / ")})` : t.key ? ` (row ${t.key})` : ""}` };
+    },
+  };
+}
+
+/** A broken change rule, marked on the next observation (where the \`always\` handling picks it up). */
+async function changed(box: { broken?: ChangeBroken & { event: string } }, session: Session): Promise<Session> {
+  return {
+    ...session,
+    observe: async () => {
+      const obs = await session.observe();
+      const b = box.broken;
+      if (!b) return obs;
+      box.broken = undefined;
+      if (b.ambiguous) return obs?.dataAmbiguity ? obs : { ...obs, dataAmbiguity: { line: b.line, message: b.detail } };
+      return { ...obs, dataViolation: { line: b.line, message: `"${b.text}" does not hold: ${b.detail} (at the event ${b.event})`, data: { before: b.before, after: b.after } } };
+    },
+  };
+}
+
+/**
+ * The lists a reference points into (`keys.json` in the build): after every step their keys are
+ * unique, like a primary key; the step that made two rows with one key fails with that step.
+ */
+async function keyed(dir: string, session: Session): Promise<Session> {
+  if (!existsSync(join(dir, "keys.json"))) return session;
+  const keys = JSON.parse(readFileSync(join(dir, "keys.json"), "utf8"));
+  return {
+    ...session,
+    observe: async () => {
+      const obs = await session.observe();
+      if (obs?.dataViolation) return obs;
+      const data = await session.data?.();
+      const dup = duplicateKey(keys, data);
+      return dup ? { ...obs, dataViolation: { ...dup, data } } : obs;
     },
   };
 }
@@ -211,7 +302,10 @@ async function navigable(dir: string, session: Session): Promise<Session> {
   };
 }
 
-async function openSessionInner(dir: string, target: string): Promise<Session> {
+/** Every event the app gets carries its draws (the seed of this event, and the run's steering). */
+const drawing = (session: Session, d?: Drawer): Session => (!d ? session : { ...session, send: (w) => session.send({ ...w, draw: d.next() }) });
+
+async function openSessionInner(dir: string, target: string, changes?: { watch: ChangeWatch; box: { broken?: ChangeBroken & { event: string } } }, draws?: Drawer): Promise<Session> {
   // Apps that read the clock (clock.json): the driver owns it. It starts at `examples start at`,
   // moves with every tick and every `wait`, and comes with every event (and every call to a provider).
   const clockSpec: { start: string; tickMs: number; sizes?: string[] } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
@@ -219,7 +313,8 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
   // The size the host shows the app at (`sizes` in the spec): the first, until an example says `size …`.
   let size = clockSpec?.sizes?.[0];
   const clockNow = () => (clockSpec ? { ...clockAt(addMinutes(clockSpec.start, Math.floor(elapsed / 60000))), ...(size ? { size } : {}) } : undefined);
-  const inner = await openRawSession(dir, target, clockNow());
+  const opened = drawing(await openRawSession(dir, target, clockNow()), draws);
+  const inner = changes ? watching(opened, changes, () => clockNow() ?? clockAt("2026-01-05T09:00")) : opened;
   const raw: Session = !clockSpec
     ? inner
     : {
@@ -241,12 +336,25 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
           return inner.send({ ...w, clock: clockNow() });
         },
       };
-  if (!existsSync(join(dir, "providers.json"))) return raw;
+  // `steer random …`: the next draws of that type take these values (the app never sees this step).
+  const steered: Session = !draws
+    ? raw
+    : {
+        ...raw,
+        send: async (w) => {
+          const r = w as { on?: string; target?: string; value?: string };
+          if (r.on === "random") return draws.steer(r.target!, r.target === "shuffle" || r.target === "pick" ? [r.value!] : splitLiterals(r.value ?? ""));
+          return raw.send(w);
+        },
+      };
+  if (!existsSync(join(dir, "providers.json"))) return steered;
   const { endpoints, providers, events: eventTypes = {} } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string>; events?: Record<string, TypeDesc> };
-  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number }> = {};
+  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number; hear?: (h: Record<string, string>, q: Record<string, string>, ev: { event: string; body: unknown }) => boolean; data?: () => unknown }> = {};
+  // How another client in a test acts as a caller against each provider (\`call desk.solveTicket as "Sam"\`).
+  const acting: Record<string, ActsAs | undefined> = Object.fromEntries(Object.entries(providers).map(([alias, pdir]) => [alias, existsSync(join(pdir, "acting.json")) ? JSON.parse(readFileSync(join(pdir, "acting.json"), "utf8")) : undefined]));
   // The client layers (\`through\` under \`uses\`), as the build composed them: calls and event streams go through them.
   const layers: { apply: (alias: string, req: Outgoing, config: Record<string, unknown> | undefined) => Outgoing } | undefined = existsSync(join(dir, "through.mjs")) ? await import(pathToFileURL(join(dir, "through.mjs")).href + `?t=${Date.now()}`) : undefined;
-  for (const [alias, pdir] of Object.entries(providers)) clients[alias] = (await import(pathToFileURL(join(pdir, "test.mjs")).href + `?t=${Date.now()}`)).start();
+  for (const [alias, pdir] of Object.entries(providers)) clients[alias] = (await import(pathToFileURL(join(pdir, "test.mjs")).href + `?t=${Date.now()}`)).start(providerPlans?.[alias]);
   const log: string[] = [];
   // Faults the examples (\`steer tickets lose answer\`) and random sessions inject, per api, in order.
   const faults: Record<string, { kind: string; left: number }[]> = {};
@@ -257,7 +365,15 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     const alias = c.endpoint.split(".")[0];
     const client = clients[alias];
     if (!client) throw new Error(`a call to ${c.endpoint}, but no provider for \`${alias}\` (add \`tested with "…"\` to its \`uses\`)`);
-    const call = { ...c, key: c.key ?? `${alias}-${++made}` };
+    // Another client acting as a caller sends their key (anonymous: none).
+    let acted: Record<string, string> = {};
+    const as = (c as Acting).as;
+    if (!mine && as) {
+      const hdr = acting[alias] ? actingAs(acting[alias]!, as, client.data?.()) : undefined;
+      if (!hdr) throw new Error(`no key belongs to ${as} in the provider of \`${alias}\``);
+      acted = hdr;
+    }
+    const call = { ...c, headers: { ...(c.headers ?? {}), ...acted }, key: c.key ?? `${alias}-${++made}` };
     const h = outgoing(endpoints, call, mine && layers ? (a, req) => layers.apply(a, req, c.config) : undefined);
     const events: { event: string; body: unknown }[] = [];
     const notes: string[] = [];
@@ -307,9 +423,9 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     const made: CallOut[] = [];
     if (!events?.length) return made;
     // Only a stream the provider's layers let through gets events (a screen that is not signed in gets none).
+    const config = (await raw.through?.())?.[alias];
+    const req = layers ? layers.apply(alias, { method: "GET", path: "/events", query: {}, headers: {}, body: undefined }, config) : { headers: {} as Record<string, string>, query: {} as Record<string, string> };
     if (clients[alias].stream) {
-      const config = (await raw.through?.())?.[alias];
-      const req = layers ? layers.apply(alias, { method: "GET", path: "/events", query: {}, headers: {}, body: undefined }, config) : { headers: {}, query: {} };
       const status = clients[alias].stream!(req.headers, req.query);
       if (status !== 200) {
         log.push(`(event stream refused: ${status})`);
@@ -317,6 +433,11 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
       }
     }
     for (const ev of events) {
+      // With an access block, each event goes only to a stream whose caller may hear it (per listener).
+      if (clients[alias].hear && !clients[alias].hear!(req.headers, req.query, ev)) {
+        log.push(`(event ${alias}.${ev.event} not for this screen's caller)`);
+        continue;
+      }
       log.push(`event ${alias}.${ev.event}`);
       await raw.send({ on: "event", target: `${alias}.${ev.event}`, event: { event: `${alias}.${ev.event}`, body: fromWire(ev.body, eventTypes[`${alias}.${ev.event}`]) } });
       made.push(...(await raw.calls!()));
@@ -324,7 +445,7 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
     return made;
   };
   // Test keys are counted (a replay is reproducible); an undo's key is what it undoes, as in the browser.
-  const withKey = (c: CallOut): CallOut => (c.key ? c : { ...c, key: c.undo ? keyFor(c) : `${c.endpoint.split(".")[0]}-${++made}` });
+  const withKey = (c: CallOut): CallOut => (c.key ? c : { ...c, key: c.undo ? keyFor(c) : harnessKey(`${c.endpoint.split(".")[0]}-${++made}`) });
   // The agreement (`through std.actions`, runtime/ts/calls.ts), the same one the browser runs: a call
   // no permission covers is held, a rejection drops the calls held when it is given, and the
   // emergency stop answers at once. `now` is the test clock, so a permission's period can pass.
@@ -395,6 +516,8 @@ async function openSessionInner(dir: string, target: string): Promise<Session> {
         log.push(`(another client) ${other.endpoint} ${stable(other.args)} → ${answer.status}`);
         return settle(await deliverEvents(alias, events));
       }
+      // \`steer random …\`: queued for the draws, not an event.
+      if ((w as { on?: string }).on === "random") return steered.send(w);
       // \`steer <api> …\`: the next attempts to that api go wrong in this way.
       const steer = w as { on?: string; target?: string; value?: string; times?: number };
       if (steer.on === "steer") {
@@ -415,7 +538,7 @@ const openRawSession = (dir: string, target: string, clock?: { now: string; toda
 
 // ---------------------------------------------------------------- observation helpers
 
-type Found = { node: any; rowKey?: string } | { missing: string };
+type Found = { node: any; rowKey?: string; rowKeys?: string[] } | { missing: string };
 
 function findIn(nodes: any[], name: string): any | undefined {
   for (const n of nodes) {
@@ -432,17 +555,39 @@ function shows(nodes: any[], text: string): boolean {
   return nodes.some((n) => (n.k === "text" || n.k === "field" ? n.v === text : n.k === "button" || n.k === "checkbox" ? n.label === text : n.k === "section" ? shows(n.c, text) : false));
 }
 
-function locate(obs: Obs, name: string, list?: string, row?: number, rowWith?: string): Found {
-  if (!list) {
-    const node = findIn(obs.c, name);
-    return node ? { node } : { missing: `\`${name}\` is not on the screen` };
+/**
+ * An element on the screen, in the rows `levels` (outermost first): a walk down the path, outer list
+ * → its row → the inner list in that row → its row. A row showing a text is matched by what its own
+ * elements show, not its inner rows'. `rowKeys` are the rows' keys along the path.
+ */
+function locate(obs: Obs, name: string, levels: RowAt[] = []): Found {
+  let nodes: any[] = obs.c;
+  const keys: string[] = [];
+  const where: string[] = [];
+  for (const lv of levels) {
+    const l = findIn(nodes, lv.list);
+    const inRow = where.length ? ` in ${where[where.length - 1]}` : "";
+    if (!l) return { missing: `list \`${lv.list}\` is not on the screen${inRow}` };
+    const r = lv.rowWith !== undefined ? l.rows.find((r: any) => shows(r.c, lv.rowWith!)) : l.rows[lv.row! - 1];
+    if (!r) return { missing: lv.rowWith !== undefined ? `list \`${lv.list}\`${inRow} has no row showing ${JSON.stringify(lv.rowWith)}` : `list \`${lv.list}\`${inRow} has no row ${lv.row} (it has ${l.rows.length})` };
+    keys.push(String(r.key));
+    where.push(`row ${lv.rowWith !== undefined ? `with ${JSON.stringify(lv.rowWith)}` : lv.row} of \`${lv.list}\``);
+    nodes = r.c;
   }
-  const l = findIn(obs.c, list);
-  if (!l) return { missing: `list \`${list}\` is not on the screen` };
-  const r = rowWith !== undefined ? l.rows.find((r: any) => shows(r.c, rowWith)) : l.rows[row! - 1];
-  if (!r) return { missing: rowWith !== undefined ? `list \`${list}\` has no row showing ${JSON.stringify(rowWith)}` : `list \`${list}\` has no row ${row} (it has ${l.rows.length})` };
-  const node = findIn(r.c, name);
-  return node ? { node, rowKey: r.key } : { missing: `row ${row} of \`${list}\` has no \`${name}\`` };
+  const node = findIn(nodes, name);
+  if (!levels.length) return node ? { node } : { missing: `\`${name}\` is not on the screen` };
+  return node ? { node, rowKey: keys[keys.length - 1], rowKeys: keys } : { missing: `${where[where.length - 1]} has no \`${name}\`` };
+}
+
+/** Every list with this name, also those inside rows (a list inside each row of another), with where each is. */
+function listsNamed(nodes: any[], name: string, where = ""): { list: any; where: string }[] {
+  const out: { list: any; where: string }[] = [];
+  for (const n of nodes) {
+    if (n.k === "list" && n.n === name) out.push({ list: n, where });
+    if (n.k === "section") out.push(...listsNamed(n.c, name, where));
+    if (n.k === "list") n.rows.forEach((r: any, i: number) => out.push(...listsNamed(r.c, name, `${where} in row ${i + 1} of \`${n.n}\``)));
+  }
+  return out;
 }
 
 /** Observation without row keys (internal) and with stable key order. */
@@ -500,7 +645,8 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   if (a.on === "size") return { wires: [{ on: "size", target: a.target }] }; // handled by the session: the host's size, with the clock
   if (a.on === "open" || a.on === "back") return { wires: [{ on: a.on, target: a.target }] }; // handled by the session: the history
   if (a.on === "steer") return { wires: [{ on: "steer", target: a.target, value: a.value, times: a.times }] }; // handled by the session: the next attempts to that api go wrong
-  const f = locate(obs, a.target, a.list, a.row, a.rowWith);
+  if (a.on === "random") return { wires: [{ on: "random", target: a.target, value: a.value }] }; // handled by the session: the next draws take these values
+  const f = locate(obs, a.target, rowsOf(a));
   if ("missing" in f) return { unavailable: f.missing };
   const n = f.node;
   const want = { click: "button", toggle: "checkbox", input: "field", choose: "select" }[a.on];
@@ -512,8 +658,10 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
     value = n.options[a.pick % n.options.length];
   }
   if (a.on === "choose" && !n.options.includes(value)) return { unavailable: `\`${value}\` is not an option` };
-  const target = a.list ? `${a.list}.${a.target}` : a.target;
-  return { wires: [{ on: a.on, target, key: f.rowKey ?? "", text: a.text ?? "", value: value ?? "" }] };
+  // The wire target is the list path (`tasks.items.removeItem`); a row inside a row carries its path of keys.
+  const target = [...rowsOf(a).map((x) => x.list), a.target].join(".");
+  const keys = (f.rowKeys?.length ?? 0) > 1 ? { keys: f.rowKeys } : {};
+  return { wires: [{ on: a.on, target, key: f.rowKey ?? "", ...keys, text: a.text ?? "", value: value ?? "" }] };
 }
 
 /** A random fault on the way to an api: what random sessions steer. */
@@ -523,28 +671,42 @@ export function steerAction(api: string, rnd: () => number): Action {
   return { on: "steer", target: api, value: kind, times: kind === "fail" ? 1 + Math.floor(rnd() * 3) : 1 };
 }
 
+/** A step's rows as an action's: the innermost row, and the outer row it is in (`on row 2 on row 1`). */
+const rowOfStep = (at?: RowRef): Pick<Action, "list" | "row" | "rowWith" | "outer"> =>
+  !at ? {} : { list: at.list, row: at.row, rowWith: at.with, ...(at.parent ? { outer: { list: at.parent.list!, row: at.parent.row, rowWith: at.parent.with } } : {}) };
+
+/** An action's rows as a step's (`on row …` innermost first). */
+export const rowsText = (a: { list?: string; row?: number; rowWith?: string; outer?: RowAt }) =>
+  [...rowsOf(a)].reverse().map((x) => ` on row ${x.rowWith !== undefined ? `with ${JSON.stringify(x.rowWith)}` : x.row} of ${x.list}`).join("");
+
 export function stepToAction(s: Step): Action | undefined {
   switch (s.do) {
-    case "type": return { on: "input", target: s.target, text: s.text, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
-    case "click": return { on: "click", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
-    case "toggle": return { on: "toggle", target: s.target, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
-    case "choose": return { on: "choose", target: s.target, value: s.value, list: s.at?.list, row: s.at?.row, rowWith: s.at?.with };
+    case "type": return { on: "input", target: s.target, text: s.text, ...rowOfStep(s.at) };
+    case "click": return { on: "click", target: s.target, ...rowOfStep(s.at) };
+    case "toggle": return { on: "toggle", target: s.target, ...rowOfStep(s.at) };
+    case "choose": return { on: "choose", target: s.target, value: s.value, ...rowOfStep(s.at) };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "restart": return { on: "restart", target: "" };
     case "size": return { on: "size", target: s.size };
     case "open": return { on: "open", target: s.path };
     case "back": return { on: "back", target: "" };
     case "steer": return { on: "steer", target: s.api, value: s.fault, times: s.times };
-    case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}) } } : undefined;
+    case "random": return { on: "random", target: s.what, value: s.order ?? (s.pick !== undefined ? String(s.pick) : (s.values ?? []).map((v) => (v.k === "text" ? JSON.stringify(v.v) : v.k === "number" ? v.raw : String((v as { v: unknown }).v))).join(", ")) };
+    case "call": return s.endpoint.includes(".") ? { on: "other", target: s.endpoint, call: { endpoint: s.endpoint, args: Object.fromEntries(s.args.map((a) => [a.name, literalJson(a.value)])), ...(s.headers?.length ? { headers: Object.fromEntries(s.headers.map((h) => [h.name, String(literalJson(h.value))])) } : {}), ...(s.as !== undefined ? { as: s.as } : {}) } } : undefined;
     default: return undefined;
   }
 }
 
-/** The number an element shows: a progress value, or the first number in its text ("10 left" → 10). */
-function shownNumber(n: any): number | undefined {
+/**
+ * The number an element shows: a progress value, or the first number in its text ("10 left" → 10),
+ * read as the harness formats numbers (Fmt): a "." for decimals and no thousands separator. A number
+ * written with a "," or with more than one "." ("1,250", "1.250.000") is read two ways: NaN.
+ */
+export function shownNumber(n: any): number | undefined {
   if (n.k === "progress") return Number(n.v);
-  const m = String(n.v ?? "").replace(/(\d),(\d)/g, "$1.$2").match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : undefined;
+  const m = String(n.v ?? "").match(/-?\d+(?:[.,]\d+)*/);
+  if (!m) return undefined;
+  return /,/.test(m[0]) || (m[0].match(/\./g) ?? []).length > 1 ? NaN : Number(m[0]);
 }
 
 function compareNumber(n: any, c: Extract<Check, { is: "num" }>, scope: any[], what: string): string | undefined {
@@ -552,37 +714,46 @@ function compareNumber(n: any, c: Extract<Check, { is: "num" }>, scope: any[], w
   const other = c.ref !== undefined ? findIn(scope, c.ref) : undefined;
   const y = c.ref !== undefined ? (other ? shownNumber(other) : undefined) : c.value;
   if (x === undefined) return `${what} shows no number (${JSON.stringify(n.v)})`;
+  if (Number.isNaN(x)) return `${what} shows ${JSON.stringify(n.v)}: a number with a "," (or two ".") is read two ways (1,250 or 1.25); numbers are shown with a "." for decimals and no thousands separator (Fmt)`;
+  if (y !== undefined && Number.isNaN(y)) return `\`${c.ref}\` shows a number that is read two ways (with a "," or two ".")`;
   if (y === undefined) return c.ref !== undefined ? `\`${c.ref}\` is not on the screen or shows no number` : undefined;
   const ok = c.op === "atLeast" ? x >= y : c.op === "atMost" ? x <= y : c.op === "above" ? x > y : x < y;
   const words = { atLeast: "at least", atMost: "at most", above: "above", below: "below" }[c.op];
   return ok ? undefined : `expected ${what} to be ${words} ${c.ref ? `\`${c.ref}\` (${y})` : y}, but it shows ${x}`;
 }
 
-export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | undefined {
+export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>, invariant = false): string | undefined {
   const c = s.check;
   // Where an app with several screens is.
   if ((s.target === "screen" || s.target === "path") && !s.at && obs?.[s.target] !== undefined && c.is === "eq")
     return obs[s.target] === c.value ? undefined : `expected the ${s.target} to be ${JSON.stringify(c.value)}, but it is ${JSON.stringify(obs[s.target])}`;
   if (s.every) {
-    // Check each row of the list; a missing list or a row without the element is skipped.
-    const list = findIn(obs.c, s.every);
-    if (!list) return;
+    // Check each row of the list (of every one, for a list inside each row of another). In an
+    // example a missing list, or a row without the element, fails (a check of nothing proves
+    // nothing); in \`always\`, which holds on every screen, they are skipped.
+    const lists = listsNamed(obs.c, s.every);
+    if (!lists.length && !invariant && c.is !== "hidden") return `expected every row of \`${s.every}\` to be checked, but there is no list \`${s.every}\` on the screen`;
+    for (const { list, where } of lists)
     for (const [i, r] of list.rows.entries()) {
       const n = findIn(r.c, s.target);
-      const what = `\`${s.target}\` on row ${i + 1} of \`${s.every}\``;
+      const what = `\`${s.target}\` on row ${i + 1} of \`${s.every}\`${where}`;
       if (c.is === "hidden") {
         if (n) return `expected ${what} to be hidden`;
         continue;
       }
-      if (!n) continue;
+      if (!n) {
+        if (invariant) continue;
+        return `expected ${what} to be checked, but the row has no \`${s.target}\``;
+      }
       const msg =
         c.is === "num" ? compareNumber(n, c, r.c, what) : c.is === "eq" ? (String(n.k === "button" ? n.label : n.v) === c.value ? undefined : `expected ${what} = ${JSON.stringify(c.value)}, got ${JSON.stringify(n.v)}`) : checkSee({ c: r.c }, { ...s, every: undefined });
       if (msg) return msg;
     }
     return;
   }
-  const f = locate(obs, s.target, s.at?.list, s.at?.row, s.at?.with);
-  const what = s.at ? `\`${s.target}\` on row ${s.at.with !== undefined ? `with ${JSON.stringify(s.at.with)}` : s.at.row}` : `\`${s.target}\``;
+  const levels = rowsOf(rowOfStep(s.at));
+  const f = locate(obs, s.target, levels);
+  const what = s.at ? `\`${s.target}\`${[...levels].reverse().map((x, i) => ` on row ${x.rowWith !== undefined ? `with ${JSON.stringify(x.rowWith)}` : x.row}${i ? ` of \`${x.list}\`` : ""}`).join("")}` : `\`${s.target}\``;
   if (c.is === "hidden") return "missing" in f ? undefined : `expected ${what} to be hidden, but it is on the screen`;
   if ("missing" in f) return c.is === "shown" ? `expected ${what} to be shown, but ${f.missing}` : f.missing;
   const n = f.node;
@@ -605,26 +776,36 @@ export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>): string | un
   }
 }
 
-/** Every action that is possible on this screen, with a weight. */
-function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => number): { w: number; a: Action }[] {
+/**
+ * Every action that is possible on this screen, with a weight. Rows a change rule freezes or keeps
+ * (\`covered\`: their keys, from the data now) weigh more: reach a frozen row, then try every way to
+ * touch it (type into it, click it, choose in it).
+ */
+function available(obs: Obs, job: Extract<Job, { kind: "explore" }>, rnd: () => number, covered?: Set<string>): { w: number; a: Action }[] {
   const pickText = (field: string) => {
     const own = job.pools[field] ?? [];
     const src = own.length && rnd() < 0.6 ? own : job.pool;
     return src[Math.floor(rnd() * src.length)];
   };
   const out: { w: number; a: Action }[] = [];
-  const walk = (nodes: any[], list?: string, row?: number) => {
+  // `rows`: the rows the nodes are in, outermost first, with their keys (an inner row's key is its path, `1/2`).
+  const walk = (nodes: any[], rows: (RowAt & { key: string })[], hot = 1) => {
+    const inner = rows[rows.length - 1];
+    const at: Pick<Action, "list" | "row" | "outer"> = inner ? { list: inner.list, row: inner.row, ...(rows.length > 1 ? { outer: { list: rows[0].list, row: rows[0].row } } : {}) } : {};
     for (const n of nodes) {
-      const at = list ? { list, row } : {};
-      if (n.k === "section") walk(n.c, list, row);
-      else if (n.k === "field") out.push({ w: 2, a: { on: "input", target: n.n, text: pickText(n.n) } });
-      else if (n.k === "button" && n.enabled) out.push({ w: 3, a: { on: "click", target: n.n, ...at } });
-      else if (n.k === "checkbox") out.push({ w: 1, a: { on: "toggle", target: n.n, ...at } });
-      else if (n.k === "select" && n.options.length) out.push({ w: 1, a: { on: "choose", target: n.n, value: n.options[Math.floor(rnd() * n.options.length)] } });
-      else if (n.k === "list") n.rows.forEach((r: any, i: number) => walk(r.c, n.n, i + 1));
+      if (n.k === "section") walk(n.c, rows, hot);
+      else if (n.k === "field") out.push({ w: 2 * hot, a: { on: "input", target: n.n, text: pickText(n.n), ...at } });
+      else if (n.k === "button" && n.enabled) out.push({ w: 3 * hot, a: { on: "click", target: n.n, ...at } });
+      else if (n.k === "checkbox") out.push({ w: 1 * hot, a: { on: "toggle", target: n.n, ...at } });
+      else if (n.k === "select" && n.options.length) out.push({ w: 1 * hot, a: { on: "choose", target: n.n, value: n.options[Math.floor(rnd() * n.options.length)], ...at } });
+      else if (n.k === "list")
+        n.rows.forEach((r: any, i: number) => {
+          const key = [...rows.map((x) => x.key), String(r.key)].join("/");
+          walk(r.c, [...rows, { list: n.n, row: i + 1, key }], covered?.has(key) ? 6 : hot);
+        });
     }
   };
-  walk(obs.c);
+  walk(obs.c, []);
   if (job.ticks.length) out.push({ w: 3, a: { on: "tick", target: "", times: job.ticks[Math.floor(rnd() * job.ticks.length)] } });
   for (const o of job.others ?? []) out.push({ w: 1, a: varyOther(o, rnd) });
   if (job.waits?.length) out.push({ w: 2, a: { on: "tick", target: "", times: 0, ms: job.waits[Math.floor(rnd() * job.waits.length)] } });
@@ -648,6 +829,17 @@ function mulberry32(seed: number) {
   };
 }
 
+/**
+ * The draws an action made that nothing steered, as \`steer random …\` actions to put before it: a
+ * session written down with them draws the same values on any build and under any seed (a pasted example).
+ */
+function heardActions(s: { drawer?: Drawer }, dir: string): Action[] {
+  const heard = s.drawer?.heard() ?? [];
+  if (!heard.length) return [];
+  const sites = loadDrawTable(dir);
+  return steerSteps(heard).map((x) => ({ on: "random" as const, target: x.what, value: x.what === "shuffle" || x.what === "pick" ? x.values[0] : x.values.map((v) => literalOf(x.what, v, sites)).join(", ") }));
+}
+
 export async function runJobs(dir: string, target: string, jobs: Job[]): Promise<(ExampleResult | TraceResult | ExploreResult)[]> {
   const out: (ExampleResult | TraceResult | ExploreResult)[] = [];
   for (const job of jobs) {
@@ -656,7 +848,9 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
       const actions: Action[] = [];
       const rnd = mulberry32(job.seed);
       try {
-        const s = await openSession(dir, target);
+        // Draws come from the session's seed, with an edge value now and then (from their own generator,
+        // so an app without draws walks as it did); each action's draws are written before it.
+        const s = await openSession(dir, target, { name: `session:${job.seed}`, edges: mulberry32(job.seed ^ 0x2545f491) });
         let obs = await s.observe();
         let violation: Violation | undefined = brokenInvariant(obs, job.always, actions);
         const step = async (a: Action) => {
@@ -664,17 +858,19 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
           actions.push(a);
           if ("unavailable" in r) return;
           for (const w of r.wires) await s.send(w);
+          actions.splice(actions.length - 1, 0, ...heardActions(s, dir));
           obs = await s.observe();
           violation ??= brokenInvariant(obs, job.always, actions);
         };
         for (const a of job.prefix) await step(a);
         for (let i = 0; i < job.length && !violation; i++) {
-          const opts = available(obs, job, rnd);
+          const covered = s.watch ? coveredKeys(s.watch.checks, await s.data?.()) : undefined;
+          const opts = available(obs, job, rnd, covered);
           const total = opts.reduce((t, o) => t + o.w, 0);
           let x = rnd() * total;
           await step((opts.find((o) => (x -= o.w) < 0) ?? opts[opts.length - 1]).a);
         }
-        out.push({ actions, violation });
+        out.push({ actions, violation, ...made(s.watch) });
       } catch (e) {
         out.push({ actions, error: (e as Error).message });
       }
@@ -683,10 +879,15 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
       let failure: ExampleResult["failure"];
       let obs: Obs;
       try {
-        const s = await openSession(dir, target);
+        // Unsteered draws come from a seed of the example's own name: the same in every run and build.
+        const s = await openSession(dir, target, { name: ex.name });
         obs = await s.observe();
         for (const step of ex.steps) {
           if (step.do === "snapshot") continue;
+          if (step.do === "random") {
+            s.drawer?.steer(step.what, step.order ? [step.order] : step.pick !== undefined ? [String(step.pick)] : canonicalValues(step.values ?? []), step.line);
+            continue;
+          }
           if (step.do === "see") {
             const msg = checkSee(obs, step);
             if (msg) {
@@ -709,6 +910,9 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
             break;
           }
         }
+        // A steered value still queued: the draw it was meant for did not happen (or not where the example expected it).
+        const left = failure ? [] : (s.drawer?.pending() ?? []);
+        if (left.length) failure = { line: left[0].line ?? ex.line, message: `steered ${left[0].what === "shuffle" || left[0].what === "pick" ? `${left[0].what} ${left[0].value}` : `${left[0].what} ${literalOf(left[0].what, left[0].value, loadDrawTable(dir))}`} was never drawn: no step after it drew ${left[0].what === "shuffle" ? "a shuffle" : left[0].what === "pick" ? "a random one of a list" : `a ${left[0].what}`}${left.length > 1 ? ` (${left.length} steered values are left)` : ""}`, screen: describe(obs) };
       } catch (e) {
         failure = { line: ex.line, message: `crashed: ${(e as Error).message}`, screen: obs ? describe(obs) : "" };
       }
@@ -717,30 +921,39 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
       const steps: string[] = [];
       let error: string | undefined;
       let violation: Violation | undefined;
+      let watch: ChangeWatch | undefined;
       try {
-        const s = await openSession(dir, target);
+        // The same actions draw the same values on every build: the seed is the session's own.
+        const s = await openSession(dir, target, { name: `trace:${sha256(JSON.stringify(job.actions))}` });
+        watch = s.watch;
         let obs = await s.observe();
         steps.push(canonical(obs));
         violation = brokenInvariant(obs, job.always, []);
-        for (const [i, a] of job.actions.entries()) {
+        const written: Action[] = []; // the actions, with the draws nothing steered written before each (a session to paste)
+        for (const a of job.actions) {
           const r = resolve(obs, a);
           if ("unavailable" in r) {
+            written.push(a);
             steps.push("-");
             continue;
           }
           for (const w of r.wires) await s.send(w);
+          written.push(...heardActions(s, dir), a);
           obs = await s.observe();
           steps.push(canonical(obs));
-          violation ??= brokenInvariant(obs, job.always, job.actions.slice(0, i + 1));
+          violation ??= brokenInvariant(obs, job.always, [...written]);
         }
       } catch (e) {
         error = `crashed: ${(e as Error).message}`;
       }
-      out.push({ steps, violation, error });
+      out.push({ steps, violation, error, ...made(watch) });
     }
   }
   return out;
 }
+
+/** The transitions a session made, per rule line (for the coverage note of transition tables). */
+const made = (watch?: ChangeWatch): { made?: Record<number, string[]> } => (watch?.made.size ? { made: Object.fromEntries([...watch.made].map(([l, xs]) => [l, [...xs]])) } : {});
 
 /** Run jobs in a child process with a timeout, so an infinite loop in generated code cannot hang the harness. */
 export async function runJobsIsolated(dir: string, target: string, jobs: Job[] | import("./api.ts").ApiJob[] | import("./layer.ts").LayerJob[], timeoutMs = 120_000): Promise<(ExampleResult | TraceResult | ExploreResult)[] | { error: string }> {

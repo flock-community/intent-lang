@@ -4,10 +4,16 @@ app MembersApi {
 }
 
 profile api
+import std.text
 
 use auth = std.http.apiKey {
   keys = apiKeys
-  public = "POST /signup"
+}
+
+# Anyone may sign up; seeing who you are takes a key.
+access {
+  - anyone may call @signup
+  - any caller may call @me
 }
 
 record Member {
@@ -31,8 +37,8 @@ endpoint signup POST "/signup" {
   if some @ApiKey in @apiKeys has @name trimmed as its @owner {
     answer 409 "That name is taken"
   }
-  - add an @ApiKey to the end of @apiKeys with @secret = @newToken and @owner = @name trimmed
-  answer 201 with a @Member with @name = @name trimmed and @apiKey = @newToken
+  - add an @ApiKey to the end of @apiKeys with @secret = a random @Token and @owner = @name trimmed
+  answer 201 with a @Member with @name = @name trimmed and @apiKey = the @secret of the new api key
 }
 
 endpoint me GET "/me" {
@@ -41,11 +47,12 @@ endpoint me GET "/me" {
 }
 
 example "signing up gives a key that works at once" {
+  steer random Token = "0123456789abcdef0123456789abcdef"
   call signup with name = " Ann "
   see signup.status = 201
   see signup.body.name = "Ann"
-  see signup.body.apiKey = "token-1"
-  call me with header x-api-key = "token-1"
+  see signup.body.apiKey = "0123456789abcdef0123456789abcdef"
+  call me with header x-api-key = "0123456789abcdef0123456789abcdef"
   see me.status = 200
   see me.body = "Ann"
 }
@@ -67,8 +74,9 @@ example "only signing up is open" {
 }
 
 example "keys survive a restart" {
+  steer random Token = "fedcba9876543210fedcba9876543210"
   call signup with name = "Sam"
   restart
-  call me with header x-api-key = "token-1"
+  call me with header x-api-key = "fedcba9876543210fedcba9876543210"
   see me.body = "Sam"
 }

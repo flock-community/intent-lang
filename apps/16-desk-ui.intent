@@ -1,6 +1,7 @@
 app DeskUi {
   "An agent's own tickets, after signing in with their API key."
   "The list follows changes made elsewhere: a ticket taken in another tab shows up here."
+  "The desk tells each agent only about their own tickets; a lead hears about every ticket."
 }
 language v47
 import support.tickets
@@ -16,6 +17,7 @@ state {
   apiKey: Text = ""                # the key the agent signed in with
   mine: List Ticket = []           # the agent's tickets, as the desk last listed them
   problem: Text = ""
+  heard: Int = 0                   # the ticket events this screen heard since signing in
 }
 
 screen {
@@ -26,6 +28,7 @@ screen {
   text problem {
     visible when problem is not empty
   }
+  text updates = "Updates: {heard}"
   list mine of Ticket {
     text subject
     text status
@@ -36,6 +39,7 @@ screen {
 }
 
 on click signIn {
+  - set @heard to 0
   - call @desk.myTickets
 }
 
@@ -64,10 +68,12 @@ on answer desk.solveTicket {
 }
 
 on event desk.ticketSolved {
+  - increase @heard by 1
   - replace the ticket in @mine with the same @id as its body by its body
 }
 
 on event desk.ticketAssigned {
+  - increase @heard by 1
   - call @desk.myTickets
 }
 
@@ -98,13 +104,43 @@ example "Sam solves a ticket" {
 example "a ticket Sam takes in another tab shows up" {
   type "k-sam-91bc" into apiKey
   click signIn
-  call desk.takeTicket with header x-api-key = "k-sam-91bc", id = 4
+  call desk.takeTicket as "Sam" with id = 4
   see mine has 3 rows
   see subject on row 1 = "Export to CSV is empty"
 }
 
+example "a lead solves Sam's ticket elsewhere, and Sam's list follows" {
+  type "k-sam-91bc" into apiKey
+  click signIn
+  call desk.solveTicket as "Lin" with id = 1
+  see status on row 2 = "Solved"
+  see solve on row 2 is disabled
+  see updates = "Updates: 1"
+}
+
+example "Sam hears only about his own tickets" {
+  type "k-sam-91bc" into apiKey
+  click signIn
+  call desk.takeTicket as "Ann" with id = 4
+  see updates = "Updates: 0"
+  call desk.solveTicket as "Ann" with id = 2
+  see updates = "Updates: 0"
+  call desk.solveTicket as "Lin" with id = 3
+  see updates = "Updates: 1"
+}
+
+example "a lead hears about every ticket" {
+  type "k-lin-44d0" into apiKey
+  click signIn
+  see mine has 0 rows
+  call desk.takeTicket as "Sam" with id = 4
+  see updates = "Updates: 1"
+  call desk.solveTicket as "Ann" with id = 2
+  see updates = "Updates: 2"
+}
+
 example "before signing in, nothing arrives" {
-  call desk.takeTicket with header x-api-key = "k-ann-7f3a", id = 4
+  call desk.takeTicket as "Ann" with id = 4
   see mine has 0 rows
   see problem is hidden
 }

@@ -3,12 +3,13 @@
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { App } from "./ast.ts";
-import { buildOnce, type BuildResult } from "./build.ts";
+import { buildOnce, shortest, type BuildResult } from "./build.ts";
+import { changePlan, transitionCoverage } from "./changes.ts";
 import { buildDeps } from "./twin.ts";
 import { runJobsIsolated, type Action, type ExploreResult, type TraceResult, type Violation } from "./exec.ts";
 import { apiTraces, callText } from "./api.ts";
 import { layerTraces, readLayerConfig, requestText } from "./layer.ts";
-import { actionText, compare, exploreJobs, makeTraces, type Divergence } from "./fuzz.ts";
+import { actionText, asExample, compare, exploreJobs, makeTraces, type Divergence } from "./fuzz.ts";
 import { ROOT, type Target } from "./gen.ts";
 import { runStyledTraces } from "./look.ts";
 import { closeBrowser } from "./browser.ts";
@@ -63,6 +64,7 @@ interface AppReport {
   fidelity?: Record<string, { sessions: number; first: string }>;
   visual?: VisualReport;
   traces: number;
+  transitions?: { line: number; text: string; missing: string[] }[]; // declared changes no session made (a coverage note)
 }
 
 export async function converge(files: string[], o: ConvergeOptions): Promise<AppReport[]> {
@@ -146,6 +148,7 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
   const n = api ? calls.length : layer ? requests.length : traces.length;
   const perBuild = new Map<string, (string[] | null)[]>();
   const violations: Record<string, { sessions: number; first: Violation }> = {};
+  const made: Record<number, string[]> = {}; // the transitions sessions made, on any build
   const fidelity: Record<string, { sessions: number; first: string }> = {};
   let visual: VisualReport | undefined;
   if (o.styled && !api && !layer) {
@@ -173,7 +176,9 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
       perBuild.set(r.id, "error" in res ? Array.from({ length: n }, () => null) : (res as TraceResult[]).map((t) => (t.error ? null : t.steps)));
       if (!("error" in res)) {
         const vs = (res as TraceResult[]).filter((t) => t.violation);
-        if (vs.length) violations[r.id] = { sessions: vs.length, first: vs[0].violation! };
+        // The first violation, shrunk to the fewest steps that still break the rule.
+        if (vs.length) violations[r.id] = { sessions: vs.length, first: vs[0].violation!.ambiguous ? vs[0].violation! : await shortest(r.dir, r.target, app, api, vs[0].violation!) };
+        for (const t of res as TraceResult[]) for (const [l, xs] of Object.entries(t.made ?? {})) made[Number(l)] = [...new Set([...(made[Number(l)] ?? []), ...xs])];
       }
     }),
   );
@@ -199,7 +204,7 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
         }
         return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
       };
-      if (major(elmIds) === major(tsIds)) same++;
+      if (major(elmIds) === major(tsIds) && major(elmIds) !== "CRASH") same++; // both crashing is not agreement
     }
     crossTarget = same / n;
   }
@@ -232,6 +237,7 @@ async function analyse(file: string, name: string, app: App, results: (BuildResu
     fidelity,
     visual,
     traces: n,
+    transitions: transitionCoverage(changePlan(app).named, made),
   };
 }
 
@@ -268,8 +274,11 @@ export function renderReport(reports: AppReport[], o: ConvergeOptions): string {
     for (const [id, f] of Object.entries(r.fidelity ?? {})) out.push(`- **${id}: the page differs from the logic in ${f.sessions} session(s):** ${f.first}`);
     if (r.visual) out.push("", `Contact sheets: \`${join(basename(o.out), r.file.replace(/^.*\//, "").replace(".intent", ""), "sheets")}/\``, "");
     for (const [id, v] of Object.entries(r.violations ?? {})) {
-      out.push(`- **${id} breaks \`always\` (line ${v.first.line}) in ${v.sessions} session(s):** ${v.first.message}`, "", "```", ...v.first.actions.slice(-8).map(actionText), "```");
+      const steps = v.first.actions.map((a) => ("endpoint" in a ? callText(a as never) : actionText(a)));
+      out.push(`- **${id} breaks \`always\` (line ${v.first.line}) in ${v.sessions} session(s):** ${v.first.message}`, "", "```intent", asExample(`always, line ${v.first.line}`, steps, `(line ${v.first.line})`), "```");
     }
+    // Transition tables: declared changes no session made (not a failure: a note on what the sessions reached).
+    for (const t of r.transitions ?? []) out.push(`- transitions at line ${t.line} (\`${t.text}\`) no session made: ${t.missing.join(", ")}`);
     out.push("", `Agreement with the majority: ${Object.entries(r.matchMajority).map(([k, v]) => `${k} ${pct(v)}`).join(", ")}`, "");
     // Group divergences by their first diverging action, show a few.
     const seen = new Set<string>();
