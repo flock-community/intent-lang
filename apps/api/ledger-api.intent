@@ -5,7 +5,7 @@ app LedgerApi {
 
 profile api
 
-language v67
+language 1
 
 examples start at 2026-09-24 09:00
 
@@ -34,36 +34,39 @@ state {
 
 endpoint deposit POST "/deposits" {
   body amount: Decimal
-  returns Deposit
+  answers 201 Deposit
+  answers 400 Problem
   if @amount is not a valid @Amount {
     answer 400 "The amount must be between 0.01 and 10000.00"
   }
-  - add a @Deposit to the end of @deposits with @id = the highest @id in @deposits + 1 (1 when there are none) and the given @amount
+  - add a @Deposit to the end of @deposits with @id = the highest @id in @deposits + 1, or 1 when there is none and the given @amount
   - increase @balance by @amount
   answer 201 with the new deposit
 }
 
 endpoint withdraw POST "/withdrawals" {
   body amount: Decimal
-  returns Withdrawal
+  answers 201 Withdrawal
+  answers 400 Problem
+  answers 409 Problem
   if @amount is not a valid @Amount {
     answer 400 "The amount must be between 0.01 and 10000.00"
   }
   if @amount is above @balance {
     answer 409 "Not enough money"
   }
-  - add a @Withdrawal to the end of @withdrawals with @id = the highest @id in @withdrawals + 1 (1 when there are none), the given @amount and @fee = false
+  - add a @Withdrawal to the end of @withdrawals with @id = the highest @id in @withdrawals + 1, or 1 when there is none, the given @amount and @fee = false
   - decrease @balance by @amount
   answer 201 with the new withdrawal
 }
 
 endpoint showBalance GET "/balance" {
-  returns Balance
+  answers 200 Balance
   answer 200 with a @Balance with @amount = @balance
 }
 
 endpoint listWithdrawals GET "/withdrawals" {
-  returns List Withdrawal
+  answers 200 List Withdrawal
   answer 200 with @withdrawals
 }
 
@@ -71,7 +74,7 @@ every 1d {
   if @balance is below 1 {
     stop
   }
-  - add a @Withdrawal to the end of @withdrawals with @id = the highest @id in @withdrawals + 1 (1 when there are none), @amount = 1 and @fee = true
+  - add a @Withdrawal to the end of @withdrawals with @id = the highest @id in @withdrawals + 1, or 1 when there is none, @amount = 1 and @fee = true
   - decrease @balance by 1
 }
 

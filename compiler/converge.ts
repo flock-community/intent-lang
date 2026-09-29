@@ -65,6 +65,7 @@ interface AppReport {
   visual?: VisualReport;
   traces: number;
   transitions?: { line: number; text: string; missing: string[] }[]; // declared changes no session made (a coverage note)
+  depsCostUsd?: number; // the twin builds of its providers and its service and client layers (0 when cached)
 }
 
 export async function converge(files: string[], o: ConvergeOptions): Promise<AppReport[]> {
@@ -81,6 +82,8 @@ export async function converge(files: string[], o: ConvergeOptions): Promise<App
       // The builds an app is tested against (its providers and layers), as `build` resolves them.
       const deps = await buildDeps(app, { styled: o.styled, kit: o.kit, twin: "auto", sessions: o.traces, length: o.length, repairs: 3, log: (m) => console.log(`${name}: ${m}`) });
       if ("problem" in deps) throw new Error(`${file}: ${deps.problem}`);
+      // What building its providers and layers cost (twin builds, once per run), counted in its cost column.
+      const depsCostUsd = deps.costUsd;
       const jobs: Promise<BuildResult & { id: string }>[] = [];
       // A service, a layer or a job has one target (TypeScript): no Elm builds to count against it.
       const targets = app.profile === "api" || app.kind === "layer" || app.profile === "job" ? o.targets.filter((t) => t === "ts") : o.targets;
@@ -91,11 +94,11 @@ export async function converge(files: string[], o: ConvergeOptions): Promise<App
             run(() => buildOnce(app, basename(file), src, target, join(o.out, name, id), { styled: o.styled, kit: o.kit, providers: deps.providers, layers: deps.layers, log: (m) => console.log(`${name} ${id}: ${m}`) })).then((r) => ({ ...r, id })),
           );
         }
-      return { file, name, app, results: await Promise.all(jobs) };
+      return { file, name, app, results: await Promise.all(jobs), depsCostUsd };
     }),
   );
 
-  for (const { file, name, app, results } of perApp) reports.push(await analyse(file, name, app, results, o));
+  for (const { file, name, app, results, depsCostUsd } of perApp) reports.push({ ...(await analyse(file, name, app, results, o)), ...(depsCostUsd ? { depsCostUsd: +depsCostUsd.toFixed(3) } : {}) });
   await closeBrowser();
   return writeReports(reports, o);
 }
@@ -125,7 +128,7 @@ function writeReports(reports: AppReport[], o: ConvergeOptions, name = "report")
       at: new Date().toISOString(),
       tag: o.tag,
       out: o.out,
-      apps: reports.map((r) => ({ app: r.app, ok: r.builds.filter((b) => b.ok).length, of: r.builds.length, agreement: r.agreement, cost: +r.builds.reduce((s, b) => s + b.costUsd, 0).toFixed(2) })),
+      apps: reports.map((r) => ({ app: r.app, ok: r.builds.filter((b) => b.ok).length, of: r.builds.length, agreement: r.agreement, cost: +(r.builds.reduce((s, b) => s + b.costUsd, 0) + (r.depsCostUsd ?? 0)).toFixed(2) })),
     }) + "\n",
   );
   return reports;
@@ -249,11 +252,11 @@ export function renderReport(reports: AppReport[], o: ConvergeOptions): string {
   for (const r of reports) {
     const ok = r.builds.filter((b) => b.ok).length;
     const first = r.builds.filter((b) => b.ok && (b.failedAttempts ?? b.attempts - 1) === 0).length;
-    const cost = r.builds.reduce((s, b) => s + b.costUsd, 0);
+    const cost = r.builds.reduce((s, b) => s + b.costUsd, 0) + (r.depsCostUsd ?? 0);
     const held = r.builds.filter((b) => b.ok && !r.violations?.[b.id]).length;
     out.push(`| ${r.app} | ${ok}/${r.builds.length} | ${first}/${r.builds.length} | ${held}/${ok} | ${pct(r.agreement.all)} | ${pct(r.agreement.elm)} | ${pct(r.agreement.ts)} | ${pct(r.agreement.crossTarget)} | ${pct(r.codeSimilarity.elm)} / ${pct(r.codeSimilarity.ts)} | $${cost.toFixed(2)} |`);
   }
-  out.push("", "*Same app* = share of random sessions in which every build showed identical screens after every action.", "");
+  out.push("", "*Same app* = share of random sessions in which every build showed identical screens after every action. *Cost* includes the twin builds of the app's providers and layers made for this run (a cached one costs nothing).", "");
   const styled = reports.filter((r) => r.visual);
   if (styled.length) {
     out.push("### Looks (styled builds)", "", "| App | Page = logic | Pixels differ: Elm / TS / Elm↔TS | Local layout agrees: Elm / TS / Elm↔TS | Boxes within 8px (absolute) | Median box offset (px) |", "|---|---|---|---|---|---|");

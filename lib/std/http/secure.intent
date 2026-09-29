@@ -1,6 +1,7 @@
 layer std.http.secure {
   "Safe headers for a JSON API: answers are not sniffed, framed, cached, or leak where a request came from."
 }
+language 1
 
 after every answer {
   - set header x-content-type-options to "nosniff"

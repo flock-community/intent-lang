@@ -1,6 +1,7 @@
 bundle expenses.expenses {
   "Team expenses: what an employee spent, and who decided on it."
 }
+language 1
 
 choice Category: Travel | Meals | Equipment | Other
 choice ExpenseStatus: Pending | Approved | Rejected

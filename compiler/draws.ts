@@ -259,23 +259,40 @@ export function checkDraws(app: App, err: Err) {
     const recs = app.records.filter((r) => (added ? r.name === added : true) && (r.key ?? (r.fields.some((f) => f.name === "id") ? "id" : undefined)) === m[1]);
     if (!recs.length) continue;
     const size = spaceSize(s.space);
-    err(s.line, "COLLISION", `\`@${m[1]} = ${s.phrase}\`: ${m[1]} is ${recs[0].name}'s key, and ${s.type} has ${codeSizeOf(s.space)}: a repeat is likely (50 %) after about ${count(1.1774 * Math.sqrt(size))} ${s.type}s. Say \`${s.phrase} not among the @${m[1]} of @${homeName(app, recs[0].name)}\` (and what happens when none is left), or use a type of 128 bits or more (${s.unit})`);
+    // A row inside a row (an item of a task) has a key unique within its row: exclude the keys of that row's list.
+    const into = text.match(/\badd\s+(?:an?|the new)\s+@[A-Z]\w*\s+to\s+(?:the\s+(?:end|start)\s+of\s+)?((?:its|(?:that|this)\s+[a-z]\w*['’]s)\s+@[a-z]\w*)/)?.[1];
+    const exclude = into ? `${into}'s @${m[1]}` : `the @${m[1]} of @${homeName(app, recs[0].name)}`;
+    err(s.line, "COLLISION", `\`@${m[1]} = ${s.phrase}\`: ${m[1]} is ${recs[0].name}'s key, and ${s.type} has ${codeSizeOf(s.space)}: a repeat is likely (50 %) after about ${count(1.1774 * Math.sqrt(size))} ${s.type}s. Say \`${s.phrase} not among ${exclude}\` (and what happens when none is left), or use a type of 128 bits or more (${s.unit})`);
   }
 
   // The examples' steering: a type that is drawn somewhere, values of that type.
   const drawnTypes = new Set(sites.filter((s) => s.type).map((s) => s.type!));
+  // A screen's example steers its providers' draws too (the provider named in \`tested with\`): a value
+  // steered for a type only a provider draws goes to that provider. A type both draw is ambiguous.
+  const providers = (app.clients ?? []).flatMap((c) => (c.providerDraws ?? []).map((d) => ({ ...d, alias: c.alias })));
+  const ownWhat = (w: string) => (w === "shuffle" || w === "pick" ? sites.some((s) => s.form === w) : drawnTypes.has(w));
   for (const ex of app.examples) {
     if (ex.line >= LINE_BASE) continue;
     for (const st of ex.steps) {
       if (st.do !== "random") continue;
-      if (st.what === "shuffle" || st.what === "pick") {
-        if (!sites.some((s) => s.form === st.what)) err(st.line, "STEP", `\`steer random ${st.what} …\`: nothing in the spec ${st.what === "shuffle" ? "is shuffled (`@xs shuffled`)" : "picks one (`a random one of @xs`)"}, so there is nothing to steer`);
+      const theirs = [...new Set(providers.filter((d) => d.what === st.what).map((d) => d.alias))];
+      if (theirs.length && ownWhat(st.what)) {
+        err(st.line, "STEP", `\`steer random ${st.what}\`: both this screen and the provider of \`${theirs[0]}\` draw ${st.what === "shuffle" ? "a shuffle" : st.what === "pick" ? "a random one of a list" : an(st.what)}, so it is not clear which draw takes the value; give one of them its own type`);
         continue;
       }
-      const space = drawSpace(app, st.what);
-      const declared = !!(app.refined?.some((x) => x.name === st.what) || app.choices.some((x) => x.name === st.what));
+      if (theirs.length > 1) {
+        err(st.line, "STEP", `\`steer random ${st.what}\`: the providers of \`${theirs[0]}\` and \`${theirs[1]}\` both draw it, so it is not clear which draw takes the value`);
+        continue;
+      }
+      if (st.what === "shuffle" || st.what === "pick") {
+        if (!theirs.length && !sites.some((s) => s.form === st.what)) err(st.line, "STEP", `\`steer random ${st.what} …\`: nothing in the spec ${st.what === "shuffle" ? "is shuffled (`@xs shuffled`)" : "picks one (`a random one of @xs`)"}, so there is nothing to steer`);
+        continue;
+      }
+      const provided = providers.find((d) => d.what === st.what);
+      const space = drawSpace(app, st.what) ?? provided?.space;
+      const declared = !!(provided || app.refined?.some((x) => x.name === st.what) || app.choices.some((x) => x.name === st.what));
       if (!declared) err(st.line, "UNKNOWN_NAME", `\`steer random ${st.what}\`: no type \`${st.what}\``);
-      else if (!drawnTypes.has(st.what)) err(st.line, "STEP", `\`steer random ${st.what}\`: no sentence draws ${an(st.what)} (\`a random @${st.what}\`), so nothing takes these values`);
+      else if (!drawnTypes.has(st.what) && !provided) err(st.line, "STEP", `\`steer random ${st.what}\`: no sentence draws ${an(st.what)} (\`a random @${st.what}\`)${(app.clients ?? []).some((c) => c.testedWith) ? ", here or in a provider," : ","} so nothing takes these values`);
       if (!space) continue;
       for (const v of st.values ?? []) if (!fitsSpace(v, space)) err(st.line, "TYPE", `\`steer random ${st.what}\`: ${litText(v)} is not a ${st.what} (${spaceWords(space)})`);
     }

@@ -1,7 +1,7 @@
 app RefKeys {
   "A `ref X` field holds the key of X: the field marked `key`, or the field named `id`, never a field's position."
 }
-language v59
+language 1
 
 record Author {
   name: Text

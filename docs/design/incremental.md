@@ -27,7 +27,7 @@ off by default): **the from-scratch clean check** (step 5) — after an incremen
 is also built from scratch and the two are compared on the twin's sessions, so a build the code's
 history decided is caught; measured on the same app: A (incremental), B (probe) and A′ (from scratch)
 agreed over 24 sessions. Built too (`incremental auto`): **resuming a stopped twin build** — A and B
-each keep their own previous code (`.intent/incremental/<app>/<target>/main` and `/probe`), so after
+each keep their own previous code (`.intent/incremental/<spec>/<target>/main` and `/probe`, keyed by the spec's file, never by its app name alone), so after
 a spec fix both resume from their own clean regions and only the dirty ones are rewritten; measured
 on the same app: changing one handler, both A and B logged `reusing the previous build's clean
 regions (2 kept, 1 rewritten)` and the twin still verified. Built too: the twin's sessions are

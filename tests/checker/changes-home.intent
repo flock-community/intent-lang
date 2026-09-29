@@ -1,6 +1,7 @@
 app ChangesHome {
   "A change rule's `a @Ticket` reads the rows of the one state list of Tickets."
 }
+language 1
 
 record Ticket {
   id: Int

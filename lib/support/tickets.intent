@@ -1,6 +1,7 @@
 bundle support.tickets {
   "Support tickets: what customers ask, how urgent it is, where it stands."
 }
+language 1
 
 choice Priority: Urgent | High | Normal | Low
 choice Status: Open | Pending | Solved
@@ -11,7 +12,7 @@ record Ticket {
   customer: Text
   priority: Priority
   status: Status
-  assignee: Text          # empty when nobody has picked it up
+  assignee: Text or nothing = nothing   # nothing until somebody picks it up
 }
 
 record Comment {

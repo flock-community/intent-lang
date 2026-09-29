@@ -9,18 +9,19 @@ import { ROOT, scaffold, type Target } from "./gen.ts";
 import { complete, extractCode } from "./llm.ts";
 import { buildPrompt, incrementalPrompt, layerPrompt, repairPrompt, SYSTEM } from "./prompt.ts";
 import { targetModule } from "./targets/index.ts";
+import { mangledNames } from "./targets/shared.ts";
 import { apiTraces, callText, type Call } from "./api.ts";
 import { readFileSync } from "node:fs";
 import { buildLook } from "./look.ts";
 import { compilerPins, sourceMap, where } from "./load.ts";
 import { units } from "./units.ts";
 import { checkIncremental, checkRegions, regionUnits } from "./regions.ts";
-import { loadIncremental, planIncremental, saveIncremental } from "./incremental.ts";
+import { explainIncremental, loadIncremental, saveIncremental } from "./incremental.ts";
 import { typeDescOf } from "./targets/ts-service.ts";
 import { callDescs, eventWireTypes, hasClients, hasThrough, manifest, wireType } from "./calls.ts";
 import { usesClock } from "./refs.ts";
 import { prepareInvariants, stageSentences } from "./invariants.ts";
-import { dataField, hasData, hasHomes, hasInvariants, hasStored } from "./gen.ts";
+import { dataField, hasData, hasHomes, hasInvariants, hasStored, startsAfterRestore } from "./gen.ts";
 import { keyedLists } from "./homes.ts";
 import { ownRandomness, usesDraws } from "./draws.ts";
 import { drawTable, loadDrawTable, simplerDraws } from "./drawer.ts";
@@ -140,7 +141,7 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
     }
   }
   const regions = opts.incremental && !layer && !api && !opts.styled ? regionUnits(app) : [];
-  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length, regions, usesDraws(app), !!app.access);
+  const base = layer ? layerPrompt(specFile, specText, specSource, !!opts.probe, !!app.beforeCall) : buildPrompt(target, specFile, specText, specSource, !!opts.probe, api, hasClients(app), hasThrough(app), usesClock(app), hasData(app), hasStored(app), !!app.screens?.length, !!app.platforms?.length, regions, usesDraws(app), !!app.access, mangledNames(app, api ? "ts" : target), startsAfterRestore(app));
 
   let code = "";
   let problems = "";
@@ -149,7 +150,9 @@ export async function buildOnce(app: App, specFile: string, specText: string, ta
   // the answer only if nothing else moved. Any problem falls back to a full build below.
   if (regions.length) {
     const prev = loadIncremental(app, target, which, tm.appFile);
-    const plan = prev && planIncremental(app, prev);
+    const explained = explainIncremental(app, prev);
+    const plan = "why" in explained ? undefined : explained;
+    if ("why" in explained) log(`not reusing a previous build: ${explained.why}`);
     if (prev && plan) {
       const r = await complete(SYSTEM, incrementalPrompt(base, target, prev.code, plan.diff.dirty, plan.diff.removed), !!opts.probe);
       res.costUsd += r.costUsd;
@@ -320,7 +323,7 @@ export async function shortest<V extends { line: number; actions: unknown[] }>(d
   };
   await shrink(v.actions, stillFails);
   // Then the draws: every steered value at its simplest, kept when the session still fails the same way.
-  const simpler = simplerDraws((last ?? v).actions, loadDrawTable(dir));
+  const simpler = simplerDraws((last ?? v).actions, loadDrawTable(dir, true));
   if (simpler) await stillFails([simpler]);
   return last ? { ...v, ...last } : v;
 }

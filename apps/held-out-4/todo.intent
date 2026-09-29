@@ -1,0 +1,328 @@
+app Todo {
+  "A small to-do list: add items, tick them off when done, delete them."
+}
+
+language 1
+
+examples start at 2026-09-24 09:00
+
+choice Person: Ann | Bob
+choice ItemFilter: AllItems "All" | OnlyOverdue "Overdue"
+choice DueChoice: NoDue "No date" | DueToday "Today" | DueTomorrow "Tomorrow" | DueInAWeek "In a week"
+
+record Quote {
+  id: Int
+  words: Text
+}
+
+record Subtask {
+  id: Int
+  label: Text
+  finished: Bool = false
+}
+
+record Item {
+  id: Int
+  title: Text
+  owner: Person = Ann        # who added it; only they may delete it
+  done: Bool = false
+  due: Date or nothing = nothing
+  subtasks: List Subtask = []
+  newSubtask: Text = ""      # what is typed into this item's "New subtask" field
+}
+
+state {
+  stored items: List Item = table {
+    id | title      | owner | due        | subtasks
+    1  | "Buy milk" | Ann   | 2026-09-25 | [{ id = 1, label = "Oat milk" }, { id = 2, label = "Whole milk" }]
+    2  | "Call mum" | Bob   | nothing    | []
+  }
+  quotes: List Quote = table {
+    id | words
+    1  | "Small steps still move you forward."
+    2  | "Done is better than perfect."
+    3  | "Start where you are."
+  }
+  stored nextId: Int = 3     # the id the next item gets: never one a deleted item had, so undoing a delete cannot clash
+  quote: Quote or nothing = nothing
+  draft: Text = ""
+  lastDeleted: Item or nothing = nothing   # the item the last delete removed, until it is undone or a new item is added
+  me: Person = Ann           # who is using the list
+  dueChoice: DueChoice = NoDue
+  filter: ItemFilter = AllItems
+}
+
+derive {
+  left = the number of @items whose @done is false
+  overdue = the @items whose @done is false and there is a @due and @due is before @today
+  shownItems = @overdue when @filter is @OnlyOverdue, otherwise @items
+  chosenDue: Date or nothing = @today when @dueChoice is @DueToday; the day after @today when @dueChoice is @DueTomorrow; 7 days after @today when @dueChoice is @DueInAWeek; nothing when @dueChoice is @NoDue
+}
+
+screen {
+  heading "To do" as title
+  select me "I am" as segmented
+  section motivation as row {
+    text quoteText = "{@quote's @words, or "Need a push? Ask for a quote." when there is none}"
+    button inspire "Inspire me" as link
+  }
+  section entry as toolbar {
+    field draft "New item"
+    select dueChoice "Due" as dropdown
+    button add "Add" as primary {
+      enabled when @draft is not blank
+    }
+  }
+  select filter as chips
+  list items of Item = @shownItems {
+    look "On a phone-width screen (below 640px) each row is compact: tight padding, the tick box, title, due date and delete button on one line, the subtasks indented below in a smaller font."
+    checkbox done {
+      visible when its @done is false
+    }
+    text doneMark = "Done" as badge {
+      visible when its @done is true
+    }
+    text title
+    text dueText = "due {its @due as a date}" {
+      visible when there is a @due
+    }
+    button remove "Delete" as icon {
+      enabled when its @done is false and its @owner is @me
+    }
+    list subtasks of Subtask {
+      checkbox finished {
+        visible when that item's @done is false
+      }
+      text label
+      button removeSubtask "Remove" as icon {
+        visible when that item's @done is false
+      }
+    }
+    field newSubtask "New subtask" {
+      visible when its @done is false
+    }
+    button addSubtask "Add subtask" as secondary {
+      visible when its @done is false
+      enabled when its @newSubtask is not blank
+    }
+  }
+  section undoBar as banner {
+    visible when there is a @lastDeleted
+    text undoNote = "Deleted \"{@lastDeleted's @title}\""
+    button undoDelete "Undo" as link
+  }
+  text leftCount = "{left} left" as caption
+}
+
+on click add {
+  if @draft is blank {
+    stop
+  }
+  - add an @Item to the end of @items with @id = @nextId, @title = @draft, trimmed, @owner = @me, @due = @chosenDue
+  - increase @nextId by 1
+  - clear @draft
+  - set @dueChoice to @NoDue
+  - set @lastDeleted to nothing
+}
+
+on click remove {
+  if that item's @done is true {
+    stop
+  }
+  if that item's @owner is not @me {
+    stop
+  }
+  - set @lastDeleted to that item
+  - remove that item from @items
+}
+
+on click addSubtask {
+  if that item's @done is true {
+    stop
+  }
+  if that item's @newSubtask is blank {
+    stop
+  }
+  - add a @Subtask to the end of that item's @subtasks with @id = the highest @id in that item's @subtasks + 1, or 1 when there is none, @label = that item's @newSubtask, trimmed
+  - clear that item's @newSubtask
+}
+
+on click removeSubtask {
+  if that item's @done is true {
+    stop
+  }
+  - remove that subtask from that item's @subtasks
+}
+
+on click undoDelete {
+  if there is no @lastDeleted {
+    stop
+  }
+  - add @lastDeleted to @items at the place it had: before the first item whose @id is above @lastDeleted's @id, or at the end when there is none
+  - set @lastDeleted to nothing
+}
+
+on click inspire {
+  - set @quote to a random one of @quotes
+}
+
+rules {
+  - only the @owner of an item may delete it
+}
+
+always {
+  - an @Item whose @done was true never changes
+}
+
+example "adding an item" {
+  type "Bread" into draft
+  click add
+  see items has 3 rows
+  see title on row 3 = "Bread"
+  see leftCount = "3 left"
+  see draft = ""
+  see add is disabled
+  see dueText on row 3 is hidden
+}
+
+example "adding an item due tomorrow" {
+  type "Pay rent" into draft
+  choose DueTomorrow in dueChoice
+  click add
+  see title on row 3 = "Pay rent"
+  see dueText on row 3 = "due 25 Sep 2026"
+  see dueText on row 1 = "due 25 Sep 2026"
+  see dueText on row 2 is hidden
+  see dueChoice = NoDue
+}
+
+example "ticking an item off" {
+  toggle done on row 1
+  see done on row 1 is hidden
+  see doneMark on row 1 = "Done"
+  see leftCount = "1 left"
+}
+
+example "a motivational quote" {
+  see quoteText = "Need a push? Ask for a quote."
+  steer random pick 2
+  click inspire
+  see quoteText = "Done is better than perfect."
+  steer random pick 3
+  click inspire
+  see quoteText = "Start where you are."
+}
+
+example "only the overdue items" {
+  wait 2d
+  choose OnlyOverdue in filter
+  see items has 1 row
+  see title on row 1 = "Buy milk"
+  toggle done on row 1
+  see items has 0 rows
+  choose AllItems in filter
+  see items has 2 rows
+}
+
+example "due today is not overdue yet" {
+  wait 1d
+  choose OnlyOverdue in filter
+  see items has 0 rows
+}
+
+example "subtasks of the second item" {
+  type "Ask about Sunday" into newSubtask on row 2
+  click addSubtask on row 2
+  see subtasks on row 2 has 1 row
+  see label on row 1 on row 2 = "Ask about Sunday"
+  see newSubtask on row 2 = ""
+  see subtasks on row 1 has 2 rows
+  toggle finished on row 1 on row 2
+  see finished on row 1 on row 2 is checked
+  see finished on row 1 on row 1 is unchecked
+}
+
+example "removing a subtask" {
+  click removeSubtask on row with "Oat milk" on row with "Buy milk"
+  see subtasks on row 1 has 1 row
+  see label on row 1 on row 1 = "Whole milk"
+}
+
+example "a done item's subtasks stay as they are" {
+  toggle done on row 1
+  see finished on row 1 on row 1 is hidden
+  see removeSubtask on row 1 on row 1 is hidden
+  see newSubtask on row 1 is hidden
+  see addSubtask on row 1 is hidden
+  see subtasks on row 1 has 2 rows
+}
+
+example "a done item stays as it is" {
+  toggle done on row 2
+  see doneMark on row 2 = "Done"
+  see remove on row 2 is disabled
+  see items has 2 rows
+  see title on row 2 = "Call mum"
+  see doneMark on row 1 is hidden
+}
+
+example "only the owner may delete" {
+  see remove on row 2 is disabled
+  choose Bob in me
+  see remove on row 1 is disabled
+  see remove on row 2 is enabled
+  type "Water plants" into draft
+  click add
+  see remove on row 3 is enabled
+  choose Ann in me
+  see remove on row 3 is disabled
+}
+
+example "deleting an item" {
+  click remove on row with "Buy milk"
+  see items has 1 row
+  see title on row 1 = "Call mum"
+  see leftCount = "1 left"
+}
+
+example "undo the last delete" {
+  see undoBar is hidden
+  click remove on row with "Buy milk"
+  see items has 1 row
+  see undoNote = "Deleted \"Buy milk\""
+  click undoDelete
+  see items has 2 rows
+  see title on row 1 = "Buy milk"
+  see subtasks on row 1 has 2 rows
+  see dueText on row 1 = "due 25 Sep 2026"
+  see undoBar is hidden
+}
+
+example "only the last delete is undone" {
+  choose Bob in me
+  type "Water plants" into draft
+  click add
+  click remove on row with "Water plants"
+  click remove on row with "Call mum"
+  see undoNote = "Deleted \"Call mum\""
+  click undoDelete
+  see items has 2 rows
+  see title on row 2 = "Call mum"
+  see undoBar is hidden
+}
+
+example "adding an item ends the undo" {
+  choose Bob in me
+  click remove on row with "Call mum"
+  type "Water plants" into draft
+  click add
+  see undoBar is hidden
+  see items has 2 rows
+  see title on row 2 = "Water plants"
+}
+
+example "a blank item is not added" {
+  type "   " into draft
+  see add is disabled
+  see items has 2 rows
+}

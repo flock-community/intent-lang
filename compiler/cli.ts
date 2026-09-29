@@ -4,8 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { basename, join, resolve } from "node:path";
-import { formatDiagnostics } from "./parse.ts";
-import { compilerPins, load as loadSpec, readCompilerLock, sha, writeLock } from "./load.ts";
+import { formatDiagnostics, parseSyntax } from "./parse.ts";
+import { compilerPins, load as loadSpec, modelPinProblem, readCompilerLock, sha, writeLock } from "./load.ts";
 import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
 import { existsSync, statSync, writeFileSync } from "node:fs";
@@ -146,6 +146,11 @@ switch (cmd) {
   case "publish": {
     // The version is computed from the bundle's names and its demo's examples, never chosen.
     const file = resolve(args[0]);
+    // A published spec says the language it needs (checked before its demo is loaded).
+    if (!parseSyntax(readFileSync(file, "utf8")).language) {
+      console.log(`${args[0]} has no \`language\` line: a published spec says the language version it needs (\`intent fix\` adds \`language 1\`)`);
+      process.exit(1);
+    }
     // A bundle is proven by its demo app; a published app or contract is its own proof.
     const isApp = /^(app|contract)\s/m.test(readFileSync(file, "utf8").split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "");
     const demo = isApp ? file : file.replace(/\.intent$/, ".demo.intent");
@@ -190,7 +195,7 @@ switch (cmd) {
   }
   case "fix": {
     // Apply the mechanical fixes the checker names: `Maybe T` → `T or nothing`, `UNMARKED`
-    // (`@name`), a lookup's other spelling, a missing `import`, and the `language vN` line.
+    // (`@name`), a lookup's other spelling, a missing `import`, and the `language 1` line.
     // `--check` only reports. Nothing is refused silently: what was not fixed says why.
     let changed = 0;
     for (const f of args) {
@@ -281,6 +286,9 @@ switch (cmd) {
     process.exit(0);
   }
   case "build": {
+    // The model intent.lock pins, before anything rewrites the lock: a new model is locked on purpose.
+    const pinProblem = modelPinProblem();
+    if (pinProblem) (console.log(pinProblem), process.exit(1));
     // Dependencies first: a project's required bundles are downloaded and pinned.
     const project = readProject();
     if (project?.requires.length) {
@@ -317,6 +325,8 @@ switch (cmd) {
   case "converge":
   case "reanalyse": {
     for (const f of args) if (!load(f).app) process.exit(1);
+    const pinProblem = cmd === "converge" ? modelPinProblem() : undefined;
+    if (pinProblem) (console.log(pinProblem), process.exit(1));
     const tag = flags.tag ?? "run";
     const out = resolve(flags.out ?? `runs/${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}-${tag}`);
     const reports = await (cmd === "converge" ? converge : reanalyse)(args, {

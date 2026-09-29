@@ -1,6 +1,7 @@
 app ContractChecks {
   "An implementation matches its contract exactly: every endpoint, no extra ones, the contract's signatures and events."
 }
+language 1
 
 import notify.alerts
 

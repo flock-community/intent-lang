@@ -1,6 +1,7 @@
 app LockersApi {
   "The parcel lockers of one building. A courier deposits a parcel into a free locker of the size asked for and gets the locker number and a six-digit pickup code. The recipient picks it up with the number and the code; after that the locker is free again. A parcel not picked up within 72 hours expires and its locker is freed. A locker never holds two parcels."
 }
+language 1
 
 profile api
 implements lockers.lockersApi
@@ -8,8 +9,8 @@ import lockers.lockers
 
 examples start at 2026-09-24 09:00
 
-use secure = std.http.secure
-use auth = std.http.apiKey {
+layer secure = std.http.secure
+layer auth = std.http.apiKey {
   keys = table {
     secret         | owner
     "k-courier-a1" | "Courier A"
@@ -21,7 +22,7 @@ use auth = std.http.apiKey {
 # code (no key: the code is the secret); anyone may see how many lockers are free.
 access {
   - any caller may call @deposit
-  - anyone may call @pickup and @freeLockers
+  - anyone, without a key, may call @pickup and @freeLockers
 }
 
 record Parcel {
@@ -82,7 +83,7 @@ endpoint freeLockers {
 }
 
 every 1m {
-  for each @old in @parcels where @old.expiresAt is at or before @now {
+  for each @old in @parcels whose @expiresAt is at or before @now {
     - remove @old from @parcels
   }
 }

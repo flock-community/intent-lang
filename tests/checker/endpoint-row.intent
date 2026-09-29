@@ -1,0 +1,59 @@
+app EndpointRow {
+  "v73: an endpoint's row named by a `ref` param is smart-cast by asking whether it exists."
+}
+language 1
+
+profile api
+
+choice Status: Open | Solved
+
+record Ticket {
+  id: Int
+  subject: Text
+  status: Status = Open
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject
+    1  | "Printer"
+  }
+}
+
+endpoint solve POST "/tickets/{id}/solve" {
+  path id: ref Ticket
+  answers 200 Ticket
+  answers 404 Problem
+  if that ticket does not exist {
+    answer 404 "No such ticket"
+  }
+  - set that ticket's @status to @Solved
+  answer 200 with that ticket
+}
+
+endpoint reopen POST "/tickets/{id}/reopen" {
+  path id: ref Ticket
+  answers 200 Ticket
+  - set that ticket's @status to @Open         # expect: NOTHING
+  answer 200 with that ticket                  # expect: NOTHING
+}
+
+endpoint show GET "/tickets/{id}" {
+  path id: ref Ticket
+  answers 200 Ticket
+  answers 404 Problem
+  if that ticket exists {
+    answer 200 with that ticket
+  }
+  answer 404 "No such ticket"
+}
+
+example "solving" {
+  call solve with id = 1
+  see solve.status = 200
+  call solve with id = 9
+  see solve.status = 404
+  call reopen with id = 1
+  call show with id = 1
+  see show.body.status = Open
+}

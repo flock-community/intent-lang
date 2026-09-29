@@ -1,6 +1,7 @@
 app Inventory {
   "The parts warehouse of a small bike shop: see every part and its stock, spot what needs reordering, receive and pick stock, and keep a short history of movements."
 }
+language 1
 
 import ui.admin
 import std.list

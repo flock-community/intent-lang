@@ -1,7 +1,7 @@
 app Tags {
   "Tags, each value in its own row."
 }
-language v47
+language 1
 state {
   tags: List Text = []
   draft: Text = ""

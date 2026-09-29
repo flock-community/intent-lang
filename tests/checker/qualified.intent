@@ -1,0 +1,27 @@
+app Qualified {
+  "v73: a qualified declared name is the expansion's (intent expand), never an author's."
+}
+language 1
+
+state {
+  pager.page: Int = 1                 # expect: SYNTAX
+  count: Int = 0
+}
+
+derive {
+  pager.last = @count plus 1          # expect: SYNTAX
+}
+
+screen {
+  button pager.next "Next"            # expect: SYNTAX
+  text count
+}
+
+on click pager.next {
+  - increase @count by 1
+}
+
+example "counting" {
+  click pager.next
+  see count = 1
+}

@@ -4,6 +4,7 @@ app CommunityWorkshops {
   "When a confirmed person cancels, the first person waiting for that event gets the place."
   "The organiser sees, per event, who is signed up and who is waiting."
 }
+language 1
 
 import ui.admin
 import std.list
@@ -65,7 +66,7 @@ derive {
   chosen = the workshop in @events whose @title is @chosenEvent
   attendees = the @Confirmed @signups whose workshop is @chosenEvent, in list order
   waitingList = the @Waiting @signups whose workshop is @chosenEvent, in list order
-  placesLeft = the @capacity of @chosen minus the number of @attendees, but at least 0 (0 when there is none)
+  placesLeft = the @capacity of @chosen minus the number of @attendees, but at least 0, or 0 when there is none
   emailIsValid = @email, trimmed, contains exactly one "@", has at least one character before the "@", and has a "." with at least one character on each side of it after the "@"
 }
 

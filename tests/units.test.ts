@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { parse } from "../compiler/parse.ts";
 import { units, diffUnits } from "../compiler/units.ts";
 import { orderByDirty } from "../compiler/fuzz.ts";
-import { planIncremental } from "../compiler/incremental.ts";
+import { explainIncremental, forgetIncremental, loadIncremental, planIncremental, saveIncremental, storeKey } from "../compiler/incremental.ts";
+import { load } from "../compiler/load.ts";
 
 const app = (src: string) => {
   const { app, diagnostics } = parse(src);
@@ -17,7 +18,7 @@ const app = (src: string) => {
 const spec = (subject: string, order = false) => `app Units {
   "A tiny app for testing units."
 }
-language v49
+language 1
 
 record Ticket {
   id: Int
@@ -139,4 +140,24 @@ on click back {
 `));
 assert.deepEqual(screens.filter((u) => u.kind === "element").map((u) => u.key), ["element home/title", "element home/back", "element about/title", "element about/back"], "one unit per screen's element");
 
-console.log("ok units: canonical digests, dependencies, the dirty set, and the session order");
+// Held-out round 4 (H2): the store is the spec file's, not the app's name. Two specs that both say
+// \`app Todo\` never reuse each other's build, and a build says why it reuses nothing.
+{
+  const one = load("apps/02-todo.intent", { ignoreLock: true }).app!;
+  const two = load("apps/held-out-4/todo.intent", { ignoreLock: true }).app!;
+  assert.equal(one.name, two.name, "both are app Todo");
+  assert.notEqual(storeKey(one), storeKey(two), "one store per spec file");
+  forgetIncremental(one, "ts", "probe");
+  forgetIncremental(two, "ts", "probe");
+  try {
+    saveIncremental(one, "ts", "probe", "app.ts", "// apps/02-todo's code");
+    assert.equal(loadIncremental(two, "ts", "probe", "app.ts"), undefined, "another spec named Todo finds nothing to reuse");
+    assert.equal(loadIncremental(one, "ts", "probe", "app.ts")?.code, "// apps/02-todo's code", "the same spec finds its own");
+    const why = explainIncremental(two, undefined);
+    assert.ok("why" in why && /no previous verified build of .*held-out-4\/todo\.intent/.test(why.why), "and the build says why it reuses nothing");
+  } finally {
+    forgetIncremental(one, "ts", "probe");
+  }
+}
+
+console.log("ok units: canonical digests, dependencies, the dirty set, and the session order; the incremental store is per spec file");

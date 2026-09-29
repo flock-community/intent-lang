@@ -1,4 +1,5 @@
 app CallsFit
+language 1
 
 import support.tickets
 
@@ -36,7 +37,7 @@ on answer tickets.createTicket {
   if its status is 201 {
     - set @last to its body's @subject
     - set @count to its body   # expect: TYPE
-    - set @last to the error in its body
+    - set @last to the error
     - set @last to its body's @body                # expect: UNKNOWN_NAME
   }
 }

@@ -1,6 +1,7 @@
 app NoticesApi {
   "Short notices for a team: each one disappears when its time is up, and nobody posts more than three an hour."
 }
+language 1
 
 profile api
 
@@ -24,7 +25,9 @@ endpoint post POST "/notices" {
   body text: Text
   body sender: Text
   body duration: Int                 # how many minutes the notice stays
-  returns Notice
+  answers 201 Notice
+  answers 400 Problem
+  answers 429 Problem
   if @text, trimmed, is blank {
     answer 400 "Text is required"
   }
@@ -34,17 +37,17 @@ endpoint post POST "/notices" {
   if 3 or more of the @notices have this @sender and a @sentAt less than 60 minutes before @now {
     answer 429 "At most 3 notices an hour"
   }
-  - add a @Notice to the end of @notices with @id = the highest @id in @notices + 1 (1 when there are none), @text trimmed, the given @sender, @sentAt = @now and @expiresAt = @duration minutes after @now
+  - add a @Notice to the end of @notices with @id = the highest @id in @notices + 1, or 1 when there is none, @text trimmed, the given @sender, @sentAt = @now and @expiresAt = @duration minutes after @now
   answer 201 with the new notice
 }
 
 endpoint list GET "/notices" {
-  returns List Notice
+  answers 200 List Notice
   answer 200 with the @notices, the latest @sentAt first, and on the same @sentAt the highest @id first
 }
 
 every 1m {
-  for each @notice in @notices where @notice.expiresAt is at or before @now {
+  for each @notice in @notices whose @expiresAt is at or before @now {
     - remove @notice from @notices
     - publish @noticeExpired with @notice
   }

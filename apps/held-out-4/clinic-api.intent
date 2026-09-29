@@ -1,0 +1,480 @@
+app ClinicApi {
+  "Appointment booking for a small clinic. Receptionists open and remove slots and manage every booking; patients book open slots, see only their own bookings, and cancel them up to 24 hours before the appointment. A slot is never booked twice, and every booking gets a 6-character code that people can read out without mixing up 0/O or 1/I/L."
+}
+
+language 1
+
+implements clinic.bookingsApi
+
+examples start at 2026-09-28 09:00
+
+layer secure = std.http.secure
+layer cors = std.http.cors {
+  origins = "https://book.clinic.example"
+  headers = "content-type", "x-api-key"
+}
+layer auth = std.http.apiKey {
+  keys = table {
+    secret        | owner
+    "k-ann-4c1e"  | "Ann"
+    "k-bob-9d2a"  | "Bob"
+    "k-rita-77b0" | "Rita"
+    "k-zed-01f3"  | "Zed"
+  }
+}
+
+record Grant {
+  who: Text                  # a caller, as the key layer names them
+  role: Role
+}
+
+state {
+  stored grants: List Grant = table {
+    who    | role
+    "Ann"  | Patient
+    "Bob"  | Patient
+    "Rita" | Receptionist
+  }
+  stored slots: List Slot = table {
+    id | start            | doctor
+    1  | 2026-09-28 08:00 | "Dr. Jansen"
+    2  | 2026-09-29 09:00 | "Dr. Jansen"
+    3  | 2026-09-29 10:00 | "Dr. Jansen"
+    4  | 2026-09-29 11:00 | "Dr. Peters"
+    5  | 2026-09-30 09:00 | "Dr. Peters"
+    6  | 2026-10-01 14:00 | "Dr. Jansen"
+    7  | 2026-09-28 15:00 | "Dr. Peters"
+  }
+  stored bookings: List Booking = table {
+    id | code     | slot | start            | doctor       | patient | status
+    1  | "K7MQ2R" | 3    | 2026-09-29 10:00 | "Dr. Jansen" | "Ann"   | Booked
+    2  | "P4X9TW" | 5    | 2026-09-30 09:00 | "Dr. Peters" | "Bob"   | Booked
+    3  | "H3NB8D" | 7    | 2026-09-28 15:00 | "Dr. Peters" | "Ann"   | Booked
+    4  | "Z2Y6FA" | 4    | 2026-09-29 11:00 | "Dr. Peters" | "Bob"   | Cancelled
+  }
+}
+
+derive {
+  activeBookings = the @bookings whose @status is @Booked
+  freeCode = a random @BookingCode not among the @code of @bookings
+  nextBookingId: Int = the highest @id in @bookings + 1, or 1 when there is none
+  openList: List Slot = the @slots whose @start is after @now and that no booking in @activeBookings has as its @slot sorted by @start, earliest first, then by @id, lowest first
+}
+
+access {
+  roles = grants
+  - a @Patient may call @openSlots, @book and @myBookings
+  - a @Patient may call @cancelBooking when that booking's @patient is the @caller: "You can only cancel your own bookings"
+  - a @Receptionist may call @openSlots, @allSlots, @addSlot, @removeSlot, @bookFor, @allBookings, @findBooking and @deskCancel
+}
+
+endpoint openSlots {
+  answer 200 with @openList
+}
+
+endpoint allSlots {
+  answer 200 with the @slots sorted by @start, earliest first, then by @id, lowest first
+}
+
+endpoint addSlot {
+  if @doctor, trimmed, is blank {
+    answer 400 "Doctor is required"
+  }
+  - add a @Slot to the end of @slots with @id = the highest @id in @slots + 1, or 1 when there is none, @start = @start, @doctor = @doctor, trimmed
+  answer 201 with the new slot
+}
+
+endpoint removeSlot {
+  if that slot does not exist {
+    answer 404 "No such slot"
+  }
+  if there is a booking in @activeBookings whose @slot is @id {
+    answer 409 "This slot is booked; cancel the booking first"
+  }
+  - remove that slot from @slots
+  answer 204
+}
+
+endpoint book {
+  if that slot does not exist {
+    answer 404 "No such slot"
+  }
+  if that slot's @start is at or before @now {
+    answer 409 "This slot is in the past"
+  }
+  if there is a booking in @activeBookings whose @slot is @slotId {
+    answer 409 "This slot is already booked"
+  }
+  if there is no @freeCode {
+    answer 409 "No booking code is free"
+  }
+  - add a @Booking to the end of @bookings with @id = @nextBookingId, @code = @freeCode, @slot = @slotId, @start = that slot's @start, @doctor = that slot's @doctor, @patient = the @caller, @status @Booked
+  answer 201 with the new booking
+}
+
+endpoint bookFor {
+  if there is no grant in @grants whose @who is @patient and whose @role is @Patient {
+    answer 400 "No such patient"
+  }
+  if that slot does not exist {
+    answer 404 "No such slot"
+  }
+  if that slot's @start is at or before @now {
+    answer 409 "This slot is in the past"
+  }
+  if there is a booking in @activeBookings whose @slot is @slotId {
+    answer 409 "This slot is already booked"
+  }
+  if there is no @freeCode {
+    answer 409 "No booking code is free"
+  }
+  - add a @Booking to the end of @bookings with @id = @nextBookingId, @code = @freeCode, @slot = @slotId, @start = that slot's @start, @doctor = that slot's @doctor, @patient = @body.patient, @status @Booked
+  answer 201 with the new booking
+}
+
+endpoint myBookings {
+  answer 200 with the @bookings whose @patient is the @caller sorted by @start, earliest first, then by @id, lowest first
+}
+
+endpoint allBookings {
+  answer 200 with the @bookings sorted by @start, earliest first, then by @id, lowest first
+}
+
+endpoint findBooking {
+  if there is no booking in @bookings whose @code is @path.code {
+    answer 404 "No booking with that code"
+  }
+  answer 200 with that booking
+}
+
+endpoint cancelBooking {
+  if that booking does not exist {
+    answer 404 "No such booking"
+  }
+  if that booking's @status is @Cancelled {
+    answer 409 "This booking is already cancelled"
+  }
+  if that booking's @start is before 24 hours after @now {
+    answer 409 "Too late to cancel online: call the clinic"
+  }
+  - set that booking's @status to @Cancelled
+  answer 200 with that booking
+}
+
+endpoint deskCancel {
+  if that booking does not exist {
+    answer 404 "No such booking"
+  }
+  if that booking's @status is @Cancelled {
+    answer 409 "This booking is already cancelled"
+  }
+  - set that booking's @status to @Cancelled
+  answer 200 with that booking
+}
+
+rules {
+  - A @Patient may cancel their own booking online up to 24 hours before its @start; exactly 24 hours before is still in time. After that only the desk can cancel it.
+  - A cancelled booking frees its slot: the slot can be booked again.
+}
+
+always {
+  - no two @bookings whose @status is @Booked have the same @slot
+  - no two @bookings have the same @code
+  - a @Booking is never removed
+  - a @Booking's @status only changes from @Booked to @Cancelled
+  - a @Booking's @code never changes
+  - a @Booking's @slot never changes
+  - a @Slot's @start never changes
+}
+
+# --- slots -------------------------------------------------------------------
+
+example "a patient sees the open future slots, soonest first" {
+  call openSlots as "Ann"
+  see openSlots.status = 200
+  see openSlots.body has 3 rows
+  see openSlots.body[1].id = 2
+  see openSlots.body[2].id = 4
+  see openSlots.body[3].id = 6
+}
+
+example "a slot whose time has passed is no longer open" {
+  wait 1d
+  call openSlots as "Bob"
+  see openSlots.body has 2 rows
+  see openSlots.body[1].id = 4
+}
+
+example "the receptionist sees every slot" {
+  call allSlots as "Rita"
+  see allSlots.status = 200
+  see allSlots.body has 7 rows
+  see allSlots.body[1].id = 1
+  see allSlots.body[2].id = 7
+  see allSlots.body[7].id = 6
+}
+
+example "the receptionist opens a slot" {
+  call addSlot as "Rita" with start = 2026-10-02 08:30, doctor = "  Dr. Peters "
+  see addSlot.status = 201
+  see addSlot.body.id = 8
+  see addSlot.body.doctor = "Dr. Peters"
+  call openSlots as "Ann"
+  see openSlots.body has 4 rows
+  see openSlots.body[4].id = 8
+}
+
+example "a slot needs a doctor" {
+  call addSlot as "Rita" with start = 2026-10-02 08:30, doctor = "   "
+  see addSlot.status = 400
+  see addSlot.body.error = "Doctor is required"
+  call addSlot as "Rita" with start = 2026-10-02 08:30
+  see addSlot.status = 400
+  see addSlot.body.error = "doctor is required"
+}
+
+example "the receptionist removes a free slot" {
+  call removeSlot as "Rita" with id = 6
+  see removeSlot.status = 204
+  call allSlots as "Rita"
+  see allSlots.body has 6 rows
+}
+
+example "a booked slot cannot be removed" {
+  call removeSlot as "Rita" with id = 3
+  see removeSlot.status = 409
+  see removeSlot.body.error = "This slot is booked; cancel the booking first"
+  call removeSlot as "Rita" with id = 99
+  see removeSlot.status = 404
+  see removeSlot.body.error = "No such slot"
+}
+
+example "a slot whose booking was cancelled can be removed" {
+  call removeSlot as "Rita" with id = 4
+  see removeSlot.status = 204
+}
+
+# --- booking -----------------------------------------------------------------
+
+example "Bob books Tuesday 11:00 and gets a code" {
+  steer random BookingCode = "M8TX3Q"
+  call book as "Bob" with slotId = 4
+  see book.status = 201
+  see book.body.id = 5
+  see book.body.code = "M8TX3Q"
+  see book.body.patient = "Bob"
+  see book.body.start = 2026-09-29 11:00
+  see book.body.doctor = "Dr. Peters"
+  see book.body.status = Booked
+  call openSlots as "Bob"
+  see openSlots.body has 2 rows
+}
+
+example "no double booking" {
+  call book as "Bob" with slotId = 3
+  see book.status = 409
+  see book.body.error = "This slot is already booked"
+  steer random BookingCode = "M8TX3Q"
+  call book as "Bob" with slotId = 2
+  see book.status = 201
+  call book as "Ann" with slotId = 2
+  see book.status = 409
+  see book.body.error = "This slot is already booked"
+}
+
+example "a slot in the past cannot be booked" {
+  call book as "Ann" with slotId = 1
+  see book.status = 409
+  see book.body.error = "This slot is in the past"
+  call book as "Ann" with slotId = 42
+  see book.status = 404
+  see book.body.error = "No such slot"
+}
+
+example "a taken code is skipped" {
+  steer random BookingCode = "K7MQ2R", "Z2Y6FA", "W5RD9E"
+  call book as "Ann" with slotId = 6
+  see book.status = 201
+  see book.body.code = "W5RD9E"
+}
+
+example "the receptionist books for a patient on the phone" {
+  steer random BookingCode = "T6GH4J"
+  call bookFor as "Rita" with slotId = 6, patient = "Bob"
+  see bookFor.status = 201
+  see bookFor.body.patient = "Bob"
+  see bookFor.body.code = "T6GH4J"
+  call myBookings as "Bob"
+  see myBookings.body has 3 rows
+  see myBookings.body[3].code = "T6GH4J"
+}
+
+example "the receptionist cannot book for someone who is not a patient" {
+  call bookFor as "Rita" with slotId = 6, patient = "Zed"
+  see bookFor.status = 400
+  see bookFor.body.error = "No such patient"
+  call bookFor as "Rita" with slotId = 3, patient = "Ann"
+  see bookFor.status = 409
+  see bookFor.body.error = "This slot is already booked"
+  call bookFor as "Rita" with slotId = 1, patient = "Ann"
+  see bookFor.status = 409
+  see bookFor.body.error = "This slot is in the past"
+  call bookFor as "Rita" with slotId = 77, patient = "Ann"
+  see bookFor.status = 404
+}
+
+# --- seeing bookings ---------------------------------------------------------
+
+example "a patient sees only their own bookings, soonest first" {
+  call myBookings as "Ann"
+  see myBookings.status = 200
+  see myBookings.body has 2 rows
+  see myBookings.body[1].id = 3
+  see myBookings.body[2].id = 1
+  see every row of myBookings.body: patient = "Ann"
+}
+
+example "a cancelled booking stays in the patient's list" {
+  call myBookings as "Bob"
+  see myBookings.body has 2 rows
+  see myBookings.body[1].id = 4
+  see myBookings.body[1].status = Cancelled
+  see myBookings.body[2].id = 2
+}
+
+example "the receptionist sees every booking" {
+  call allBookings as "Rita"
+  see allBookings.status = 200
+  see allBookings.body has 4 rows
+  see allBookings.body[1].id = 3
+  see allBookings.body[2].id = 1
+  see allBookings.body[3].id = 4
+  see allBookings.body[4].id = 2
+}
+
+example "the receptionist finds a booking by the code read out on the phone" {
+  call findBooking as "Rita" with code = "k7mq-2r"
+  see findBooking.status = 200
+  see findBooking.body.id = 1
+  see findBooking.body.patient = "Ann"
+  call findBooking as "Rita" with code = "AAAAAA"
+  see findBooking.status = 404
+  see findBooking.body.error = "No booking with that code"
+}
+
+# --- cancelling --------------------------------------------------------------
+
+example "a patient cancels in time, and the slot is open again" {
+  call cancelBooking as "Ann" with id = 1
+  see cancelBooking.status = 200
+  see cancelBooking.body.status = Cancelled
+  call openSlots as "Bob"
+  see openSlots.body has 4 rows
+  see openSlots.body[2].id = 3
+}
+
+example "exactly 24 hours before is still in time" {
+  wait 1h
+  call cancelBooking as "Ann" with id = 1
+  see cancelBooking.status = 200
+}
+
+example "one minute past the deadline is too late" {
+  wait 61m
+  call cancelBooking as "Ann" with id = 1
+  see cancelBooking.status = 409
+  see cancelBooking.body.error = "Too late to cancel online: call the clinic"
+}
+
+example "a booking later today can only be cancelled by the desk" {
+  call cancelBooking as "Ann" with id = 3
+  see cancelBooking.status = 409
+  see cancelBooking.body.error = "Too late to cancel online: call the clinic"
+  call deskCancel as "Rita" with id = 3
+  see deskCancel.status = 200
+  see deskCancel.body.status = Cancelled
+}
+
+example "a cancelled booking cannot be cancelled again" {
+  call cancelBooking as "Bob" with id = 4
+  see cancelBooking.status = 409
+  see cancelBooking.body.error = "This booking is already cancelled"
+  call deskCancel as "Rita" with id = 4
+  see deskCancel.status = 409
+  see deskCancel.body.error = "This booking is already cancelled"
+  call deskCancel as "Rita" with id = 50
+  see deskCancel.status = 404
+  see deskCancel.body.error = "No such booking"
+}
+
+example "a missing booking is not found" {
+  call cancelBooking as "Ann" with id = 50
+  see cancelBooking.status = 404
+  see cancelBooking.body.error = "No such booking"
+}
+
+# --- who may do what ---------------------------------------------------------
+
+example "a patient cannot cancel someone else's booking" {
+  call cancelBooking as "Bob" with id = 1
+  see cancelBooking.status = 403
+  see cancelBooking.body.error = "You can only cancel your own bookings"
+  call myBookings as "Ann"
+  see myBookings.body[2].status = Booked
+}
+
+example "a patient cannot use the desk" {
+  call allBookings as "Ann"
+  see allBookings.status = 403
+  call deskCancel as "Ann" with id = 1
+  see deskCancel.status = 403
+  call addSlot as "Bob" with start = 2026-10-02 08:30, doctor = "Dr. Bob"
+  see addSlot.status = 403
+  call findBooking as "Bob" with code = "K7MQ2R"
+  see findBooking.status = 403
+  call removeSlot as "Ann" with id = 6
+  see removeSlot.status = 403
+  call allSlots as "Ann"
+  see allSlots.status = 403
+  call bookFor as "Bob" with slotId = 6, patient = "Bob"
+  see bookFor.status = 403
+  see audit[1].decision = "refused"
+  see audit[1].caller = "Ann"
+}
+
+example "the receptionist does not book or cancel as a patient" {
+  call book as "Rita" with slotId = 6
+  see book.status = 403
+  call cancelBooking as "Rita" with id = 1
+  see cancelBooking.status = 403
+  call myBookings as "Rita"
+  see myBookings.status = 403
+}
+
+example "the receptionist opens the patient screen's list too" {
+  call openSlots as "Rita"
+  see openSlots.status = 200
+}
+
+example "without a key, or with a wrong one, nothing is shown" {
+  call openSlots
+  see openSlots.status = 401
+  call myBookings with header x-api-key = "wrong"
+  see myBookings.status = 401
+}
+
+example "a key without a role gets nothing" {
+  call openSlots as "Zed"
+  see openSlots.status = 403
+  see openSlots.body.error = "Not allowed"
+}
+
+example "bookings survive a restart and new ids continue" {
+  call cancelBooking as "Ann" with id = 1
+  restart
+  call myBookings as "Ann"
+  see myBookings.body[2].status = Cancelled
+  steer random BookingCode = "M8TX3Q"
+  call book as "Bob" with slotId = 6
+  see book.body.id = 5
+}

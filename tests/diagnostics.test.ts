@@ -3,7 +3,7 @@
 // contract endpoint left out (CONTRACT), a base's proof about an override (OVERRIDES_PROOF), and
 // JUDGEMENT (off by default). Projects with their own intent.lock and lib/ are temporary folders;
 // the project is the folder a command runs in, so those checks run in a child process there.
-// Last: every code the compiler emits is expected by some test and listed in the reference (§7).
+// Last: every code the compiler emits is expected by some test and listed in docs/TOOLS.md (§6).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -101,8 +101,8 @@ try {
   let ds = check(dir, "uses.intent");
   assert.ok(has(ds, "LOCK", 5), `an unlocked bundle is a LOCK error at its import (got ${codes(ds)})`);
   assert.ok(ds.some((d) => d.code === "LOCK" && d.level === "error"), "LOCK on a bundle is an error");
-  // LANGUAGE: `language v1` is older than the reference.
-  assert.ok(has(ds, "LANGUAGE", 4), `an old \`language\` line is a LANGUAGE warning on that line (got ${codes(ds)})`);
+  // LANGUAGE: `language v1` is from before language 1 (it reads as `language 1`).
+  assert.ok(has(ds, "LANGUAGE", 4), `a pre-1 \`language\` line is a LANGUAGE warning on that line (got ${codes(ds)})`);
   assert.equal(ds.find((d) => d.code === "LANGUAGE")?.level, "warning");
 
   // Locked: no LOCK. Then the bundle changes: LOCK again, with both digests.
@@ -120,10 +120,16 @@ try {
   assert.ok(ds.some((d) => d.code === "LOCK" && d.level === "warning" && d.line === 1 && /language reference changed/.test(d.message)), `a changed language reference is a LOCK warning (got ${codes(ds)})`);
   lock(dir, "uses.intent");
   // LANGUAGE is silent for the current version.
-  const current = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8").match(/language reference \((v\d+)/)![1];
+  const current = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8").match(/language reference \((\d+(?:\.\d+)?)\)/)![1];
+  assert.equal(current, "1", "the reference is language 1");
   writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace("language v1", `language ${current}`));
   ds = check(dir, "uses.intent");
   assert.ok(!has(ds, "LANGUAGE") && !has(ds, "LOCK"), `the current language and a fresh lock: neither LANGUAGE nor LOCK (got ${codes(ds)})`);
+  // NEWER_LANGUAGE: the line is the lowest version the spec needs; a newer one needs a newer compiler.
+  writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace(`language ${current}`, "language 1.1"));
+  ds = check(dir, "uses.intent");
+  assert.ok(ds.some((d) => d.code === "NEWER_LANGUAGE" && d.level === "error" && d.line === 4 && /needs language 1\.1; this compiler reads language 1/.test(d.message)), `a spec that needs 1.1 is an error for a 1 compiler (got ${codes(ds)})`);
+  writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace("language 1.1", `language ${current}`));
 
   // BASE_CHANGED: the refinement is locked with a fingerprint of each part it overrides.
   ds = check(dir, "child.intent");
@@ -180,7 +186,7 @@ try {
   assert.ok(on.length > 0 && on.every((d) => d.level === "warning" && /left to judgement/.test(d.message)), "at `warning`, each untyped sentence is listed");
 }
 
-// Every code the compiler emits is expected by a test and listed in the reference's §7.
+// Every code the compiler emits is expected by a test and listed in docs/TOOLS.md's §6.
 {
   const files: string[] = [];
   const walk = (d: string, keep: (f: string) => boolean) => readdirSync(d).forEach((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f), keep) : keep(f) && files.push(join(d, f))));
@@ -199,12 +205,13 @@ try {
   const expectedBySpec = new Set(specs.filter((f) => f.endsWith(".intent")).flatMap((f) => [...readFileSync(f, "utf8").matchAll(/# expect: ([A-Z_]+)/g)].map((m) => m[1])));
   const tsTests = specs.filter((f) => f.endsWith(".ts") && !f.endsWith("diagnostics.test.ts") && !f.includes("/harness/")).map((f) => readFileSync(f, "utf8")).join("\n");
   const here = readFileSync(fileURLToPath(import.meta.url), "utf8").split("// Every code the compiler emits")[0];
-  const doc = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
-  const section7 = doc.slice(doc.indexOf("## 7. Checker"), doc.indexOf("## 8."));
+  // The codes are tooling: docs/TOOLS.md lists them (§6), out of the compiler's prompt.
+  const doc = readFileSync(join(ROOT, "docs/TOOLS.md"), "utf8");
+  const section7 = doc.slice(doc.indexOf("## 6. The checker and its codes"));
   const untested = [...emitted].filter((c) => !expectedBySpec.has(c) && !new RegExp(`["'\`]${c}["'\`:]`).test(tsTests + here));
   const undocumented = [...emitted].filter((c) => !section7.includes(`| \`${c}\` |`));
   assert.deepEqual(untested, [], `codes no test expects: ${untested.join(", ")}`);
-  assert.deepEqual(undocumented, [], `codes missing from the reference's §7 tables: ${undocumented.join(", ")}`);
+  assert.deepEqual(undocumented, [], `codes missing from docs/TOOLS.md's code tables (§6): ${undocumented.join(", ")}`);
   assert.ok(emitted.size > 40, `the scan finds the codes (${emitted.size})`);
 }
 

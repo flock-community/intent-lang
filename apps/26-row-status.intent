@@ -1,7 +1,7 @@
 app RowStatus {
   "Change a row's status with a select inside the row."
 }
-language v54
+language 1
 design {
   look "A calm, modern list. White surfaces on a light neutral background, one brand color, muted secondary text."
   brand: indigo

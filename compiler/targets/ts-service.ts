@@ -10,7 +10,7 @@ import { usesClock, usesToken } from "../refs.ts";
 import { usesDraws } from "../draws.ts";
 import { accessPlan } from "../access.ts";
 import { layerConfig } from "../layer.ts";
-import { copyDrawRuntime, dataField, doc, hasData, ROOT } from "./shared.ts";
+import { copyDrawRuntime, dataField, doc, hasData, mangle, ROOT } from "./shared.ts";
 import { tsData, tsDomain, tsDraws, tsStoredFields, tsType } from "./ts.ts";
 import { bin, clean, run, NODE_TYPES } from "../tools.ts";
 import type { ServiceModule } from "./target.ts";
@@ -550,7 +550,7 @@ ${(app.layers ?? []).map((l) => `  { name: ${q(l.alias)}, source: ${q(specLine(a
 
 export const API_TARGET_RULES = `Target: TypeScript (strict mode), a pure HTTP handler. You write \`app.ts\`.
 - The harness already routes requests and validates their input: \`handle\` only receives valid requests (the \`Request\` union in spec.ts). Unknown routes and bad input never reach you.
-- Answer with \`answer(status, body)\` or \`fail(status, message)\` from "./api.ts" (\`answer(204)\` for no body). A body is records, lists of records, or plain values, exactly as the endpoint \`returns\`. "answer 404 \\"No such ticket\\"" means \`fail(404, "No such ticket")\`.
+- Answer with \`answer(status, body)\` or \`fail(status, message)\` from "./api.ts" (\`answer(204)\` for no body). A body is records, lists of records, or plain values, exactly as the endpoint \`answers\` for that status. "answer 404 \\"No such ticket\\"" means \`fail(404, "No such ticket")\`.
 - Available: the standard library, "./spec.ts", "./api.ts" and "./fmt.ts". No I/O, no timers, no randomness, no Date. Import with explicit extensions.
 - Model is immutable: return a new model from handle. Handle every endpoint in the switch.
 - A step "publish ticketCreated with the new ticket" adds \`{ event: "ticketCreated", body: ticket }\` to the handler's \`publish\` list, in step order. Publish only what the steps say; an answer that stops early publishes nothing the steps after it would have.
@@ -710,7 +710,7 @@ export function scaffoldLayer(app: App, dir: string): { appFile: string; specSou
 export const API_CODING_RULES = `Rules that keep every build identical:
 1. Model mirrors the spec's \`state\`: same names, same meaning. Add only what you truly need.
 2. Each endpoint: implement its steps in order, literally. "answer 404 \\"…\\" and stop" returns \`fail(404, "…")\` at once, leaving the model unchanged. "answer 201 with X" returns \`answer(201, X)\`.
-3. Bodies are exactly the declared \`returns\` type: records with their declared fields, lists in the order the steps say.
+3. Bodies are exactly the type the endpoint \`answers\` with for that status: records with their declared fields, lists in the order the steps say.
 4. Where the spec is silent, apply the defaults in §9 of the language reference. Never add behaviour the spec does not ask for.
 5. Every example in the spec must pass. Walk through each one step by step before you answer.
 6. All rounding goes through Fmt. For every refined type the interface has a check (\`isEmail\`); "is a valid Email" means that check. Write plain, straightforward code. No comments needed.`;
@@ -756,8 +756,8 @@ async function compileLayer(dir: string): Promise<string> {
 /** A platform's functions as TypeScript declarations (the implementation is the installation's). */
 function platformDeclarations(p: NonNullable<App["platforms"]>[number]): string {
   return `// Generated from platform ${p.name} — do not edit. Implemented by the Intent installation (runtime/ts/platform/${p.name}.ts).
-${p.records.map((r) => `export type ${r.name} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n`).join("")}
-${p.functions.map((f) => `/**${f.note ? ` ${doc(f.note)}` : ""} */\nexport declare function ${f.name}(${f.params.map((x) => `${x.name}: ${tsType(x.type)}`).join(", ")}): ${tsType(f.returns)};\n`).join("\n")}`;
+${p.records.map((r) => `export type ${mangle(r.name)} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n`).join("")}
+${p.functions.map((f) => `/**${f.note ? ` ${doc(f.note)}` : ""} */\nexport declare function ${f.name}(${f.params.map((x) => `${mangle(x.name)}: ${tsType(x.type)}`).join(", ")}): ${tsType(f.returns)};\n`).join("\n")}`;
 }
 
 // ---------------------------------------------------------------- the service module

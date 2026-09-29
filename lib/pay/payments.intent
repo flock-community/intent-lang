@@ -1,6 +1,7 @@
 bundle pay.payments {
   "Payments: an amount taken from a customer, and given back."
 }
+language 1
 
 choice ChargeStatus: Paid | Refunded
 

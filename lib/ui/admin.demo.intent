@@ -1,6 +1,7 @@
 app AdminDemo {
   "Proves ui.admin: its design, a StatCard and an EmptyState."
 }
+language 1
 
 import ui.admin
 
@@ -14,7 +15,7 @@ screen {
     text statValue = @count
   }
   button clear "Clear"
-  section nothing as EmptyState {
+  section empty as EmptyState {
     visible when @count is 0
     text nothingTitle = "Nothing open"
     text nothingHint = "New items show up here."
@@ -27,7 +28,7 @@ on click clear {
 
 example "a stat and the empty state" {
   see statValue = "3"
-  see nothing is hidden
+  see empty is hidden
   click clear
   see statValue = "0"
   see nothingTitle = "Nothing open"

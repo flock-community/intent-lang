@@ -1,6 +1,7 @@
 app ImportChecks {
   "A name that only arrives through another spec must be imported directly."
 }
+language 1
 
 uses support.ticketsApi as tickets {
   tested with "apps/api/tickets-api.intent"

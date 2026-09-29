@@ -100,7 +100,7 @@ export const invariants: { line: number; holds: (d: Data, clock: Clock) => boole
 
 - One entry per sentence above, in the same order, with its line number.
 ${changeRules}- A sentence may use derived values from the spec (\`derive\`): compute them from the data exactly as the spec's sentence says.
-- \`@today\` / \`@now\` are \`clock.today\` / \`clock.now\`. Dates are "YYYY-MM-DD" and moments "YYYY-MM-DDTHH:MM" strings; use Fmt for arithmetic (addDays, daysBetween, addMinutes, minutesBetween, …).
+- \`@today\` / \`@now\` are \`clock.today\` / \`clock.now\`. Dates are "YYYY-MM-DD" and moments "YYYY-MM-DDTHH:MM" strings; use Fmt for arithmetic (addDays, daysBetween, addMinutes, minutesBetween, hoursBetween, …).
 - Pure functions: no I/O, no Date, no randomness. Strict TypeScript. Import with explicit extensions.
 ${first ? `\n# A first reading of these sentences\n\n\`\`\`ts\n${first}\`\`\`\n\nTake a different reading wherever a sentence leaves room for one (a boundary included or not, "at most" as \`<\` or \`<=\`, a tie order, what a phrase refers to); where the sentence is precise, keep the same. Reply with the complete module.\n` : ""}${previous ? `\n# Your previous attempt\n\n\`\`\`ts\n${previous.code}\`\`\`\n\n# Problems with it\n\n${previous.problems}\n\nFix these problems. Reply with the complete module.\n` : ""}`;
 }

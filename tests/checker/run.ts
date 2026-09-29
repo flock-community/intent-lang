@@ -48,7 +48,7 @@ for (const root of ["apps", "lib"])
 // The profile is the source of truth; the language reference (the compiler's prompt) must agree.
 const { uiProfile } = await import("../../compiler/profile.ts");
 const doc = readFileSync(join(dir, "../../docs/LANGUAGE.md"), "utf8");
-const table = doc.slice(doc.indexOf("Built-in presentations"), doc.indexOf("## 4b."));
+const table = doc.slice(doc.indexOf("Built-in presentations"), doc.indexOf("## 4d."));
 for (const e of uiProfile().elements)
   for (const pr of e.presentations)
     if (!table.includes(`\`${pr.name}\``)) (failures++, console.log(`profile presentation ${e.kind} as ${pr.name} is missing from the reference's presentation table`));

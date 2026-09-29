@@ -1,7 +1,7 @@
 app InlineEdit {
   "Edit a row's title in place: a field inside a list row changes that row's item."
 }
-language v53
+language 1
 design {
   look "A calm, modern list. White surfaces on a light neutral background, one brand color, muted secondary text."
   brand: indigo

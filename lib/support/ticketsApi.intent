@@ -1,6 +1,7 @@
 contract support.ticketsApi {
   "The support desk's tickets and comments over HTTP: what clients send, and what they get back."
 }
+language 1
 
 import support.tickets
 
@@ -13,7 +14,7 @@ endpoint listTickets GET "/tickets" {
 }
 
 endpoint getTicket GET "/tickets/{id}" {
-  path id: Int
+  path id: ref Ticket
   answers 200 Ticket
   answers 404 Problem
 }
@@ -27,14 +28,14 @@ endpoint createTicket POST "/tickets" {
 }
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
-  path id: Int
+  path id: ref Ticket
   answers 200 Ticket
   answers 404 Problem
   answers 409 Problem               # already solved
 }
 
 endpoint addComment POST "/tickets/{id}/comments" {
-  path id: Int
+  path id: ref Ticket
   body author: Text
   body text: Text
   answers 201 Comment
@@ -43,7 +44,7 @@ endpoint addComment POST "/tickets/{id}/comments" {
 }
 
 endpoint listComments GET "/tickets/{id}/comments" {
-  path id: Int
+  path id: ref Ticket
   answers 200 List Comment
   answers 404 Problem
 }

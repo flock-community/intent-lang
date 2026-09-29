@@ -7,6 +7,7 @@ import { bareWords, CLOCK_NAMES, declaredNames, refsIn, sentences, usedByAlias }
 import { parseString } from "../parse.ts";
 import { parseChange } from "../changes.ts";
 import { drawSites } from "../draws.ts";
+import { refusalsOf } from "../access.ts";
 
 /** A hint: the line, the rule's code, and what to do. */
 export type Warn = (line: number, code: string, message: string) => void;
@@ -435,19 +436,50 @@ function drawnFields(app: App): Map<string, string> {
   return out;
 }
 
+/**
+ * A new key made as \`the highest @id in @xs + 1\` while rows of @xs can be removed (held-out round 4,
+ * G14): a removed row's key is handed out again, so an undo that puts the row back, a reference to it,
+ * or a client that kept its key now finds another row. Keep a counter instead (\`stored nextId: Int\`).
+ */
+export function reusedKey(app: App, warn: Warn) {
+  const texts = sentences(app);
+  const refd = new Set(app.records.flatMap((r) => r.fields.map((f) => (f.type.k === "Maybe" ? f.type.of : f.type)).filter((t) => t.k === "Ref").map((t) => (t as { name: string }).name)));
+  const kept = new Set(app.state.filter((f) => f.type.k === "Maybe" && f.type.of.k === "Named").map((f) => ((f.type as { of: { name: string } }).of).name));
+  for (const s of texts) {
+    if (s.line >= LINE_BASE) continue;
+    for (const m of s.text.matchAll(/\badd\s+(?:an?)\s+@([A-Z]\w*)\s+to\s+(?:the\s+(?:end|start)\s+of\s+)?@([a-z]\w*)\b[^]*?@([a-z]\w*)\s*=\s*the\s+highest\s+@\3\s+in\s+@\2\s*\+\s*1/g)) {
+      const [rec, list, key] = [m[1], m[2], m[3]];
+      const removes = texts.some((t) => new RegExp(`\\bremove\\b[^]*@${list}\\b`).test(t.text));
+      if (!removes) continue;
+      const why = app.profile === "api" ? "a client that kept the old key now reaches the new row" : refd.has(rec) ? `a \`ref ${rec}\` that held the old key now points at the new row` : kept.has(rec) ? `a kept ${rec} (an undo that puts the row back) now clashes with the new row` : undefined;
+      if (why) warn(s.line, "REUSED_KEY", `\`@${key} = the highest @${key} in @${list} + 1\` hands out a removed row's ${key} again: ${why}. Keep a counter (\`stored next${key[0].toUpperCase()}${key.slice(1)}: Int = …\` in \`state\`, \`@${key} = @next${key[0].toUpperCase()}${key.slice(1)}\`, then \`increase @next${key[0].toUpperCase()}${key.slice(1)} by 1\`)`);
+    }
+  }
+}
+
 /** An example compares a value of a drawn type with a literal, and nothing steered that type before: the value is the seed's. */
 export function unsteered(app: App, warn: Warn) {
   const fields = drawnFields(app);
   if (!fields.size) return;
+  // Values the spec seeds (held-out round 4, K6): a seeded row's code was never drawn.
+  const seeded = new Map<string, Set<string>>();
+  const seed = (name: string, v: string) => seeded.set(name, (seeded.get(name) ?? new Set()).add(v));
+  for (const f of app.state) {
+    const d = f.default;
+    if (d?.k === "table") d.rows.forEach((row) => d.columns.forEach((c, i) => row[i] && (row[i].k === "text" || row[i].k === "number" || row[i].k === "value") && seed(c, String((row[i] as { v: unknown }).v))));
+    else if (d && (d.k === "text" || d.k === "number" || d.k === "value")) seed(f.name, String(d.v));
+  }
   for (const ex of app.examples) {
     if (ex.line >= LINE_BASE) continue;
     const steered = new Set<string>();
+    let acted = false; // a value is drawn by an event: before the first, nothing was
     for (const st of ex.steps) {
       if (st.do === "random") steered.add(st.what);
+      if (st.do !== "see" && st.do !== "snapshot" && st.do !== "random") acted = true;
       if (st.do !== "see" || st.check.is !== "eq") continue;
       const last = (st.every ? st.target : st.target.split(".").pop() ?? "").replace(/\[\d+\]$/, "");
       const t = fields.get(last);
-      if (t && !steered.has(t)) warn(st.line, "UNSTEERED", `\`${st.target} = ${JSON.stringify(st.check.value)}\` compares a ${t} with a value, but no \`steer random ${t} = …\` comes before it: the ${t} is drawn from this example's seed, and changes when the spec's draws change. Steer it (\`steer random ${t} = ${JSON.stringify(st.check.value)}\`), or carry it forward (\`{…body.${last}}\`)`);
+      if (t && acted && !steered.has(t) && !seeded.get(last)?.has(st.check.value)) warn(st.line, "UNSTEERED", `\`${st.target} = ${JSON.stringify(st.check.value)}\` compares a ${t} with a value, but no \`steer random ${t} = …\` comes before it: the ${t} is drawn from this example's seed, and changes when the spec's draws change. Steer it (\`steer random ${t} = ${JSON.stringify(st.check.value)}\`), or carry it forward (\`{…body.${last}}\`)`);
     }
   }
 }
@@ -460,25 +492,15 @@ export function guessable(app: App, warn: Warn) {
     for (const p of ep.params) {
       const t = p.type.k === "Maybe" ? p.type.of : p.type;
       const bits = t.k === "Named" ? drawn.get(t.name) : undefined;
-      if (bits === undefined || bits >= 128 || p.line >= LINE_BASE) continue;
-      warn(p.line, "GUESSABLE", `\`${p.in} ${p.name}: ${(t as { name: string }).name}\` takes a drawn ${(t as { name: string }).name} as input, and it has ${Number.isInteger(bits) ? bits : bits.toFixed(1)} bits: with no limit on attempts it can be guessed. Give it 128 bits or more (\`Text of 22 letters and digits\`), or limit the attempts (OWASP ASVS 11.5.1; NIST SP 800-63B-4 §3.2.2)`);
+      if (bits === undefined || bits >= 128) continue;
+      // A param the contract declares (held-out round 4, K5): said at the implementation's endpoint.
+      const line = p.line < LINE_BASE ? p.line : ep.line;
+      warn(line, "GUESSABLE", `\`${p.in} ${p.name}: ${(t as { name: string }).name}\`${p.line < LINE_BASE ? "" : ` (in the contract of endpoint ${ep.name})`} takes a drawn ${(t as { name: string }).name} as input, and it has ${Number.isInteger(bits) ? bits : bits.toFixed(1)} bits: with no limit on attempts it can be guessed. Give it 128 bits or more (\`Text of 22 letters and digits\`), or limit the attempts (OWASP ASVS 11.5.1; NIST SP 800-63B-4 §3.2.2)`);
     }
   }
 }
 
 // ---------------------------------------------------------------- access (v70)
-
-/** The language version a spec declares, as a number (`language v70` → 70); 0 when it declares none. */
-export const declaredVersion = (app: App) => Number(app.language?.slice(1) ?? 0);
-/** From this version on, an api with a key layer and no \`access\` block is an error (the compiler's), not a hint. */
-export const ACCESS_VERSION = 70;
-
-/** An api that knows who calls but says nothing about what they may do: every key holder may call every endpoint. */
-export function noAccess(app: App, warn: Warn) {
-  if (app.kind === "contract" || app.kind === "layer" || app.profile !== "api" || app.access || app.language === undefined || declaredVersion(app) >= ACCESS_VERSION) return; // no `language` line: the current language, where it is the compiler's error
-  const auth = (app.layers ?? []).find((l) => l.spec?.provides?.some((p) => p.name === "caller"));
-  if (auth && auth.line < LINE_BASE) warn(auth.line, "NO_ACCESS", `\`${auth.alias}\` says who is calling, but nothing says what they may do: every key holder may call every endpoint. Say it in an \`access\` block (default deny): \`access { - any caller may call @… }\``);
-}
 
 /** With an access block, an endpoint that answers 403 on a condition about the caller checks access by hand. */
 export function handAccess(app: App, warn: Warn) {
@@ -503,7 +525,8 @@ const PROMISE = new RegExp(`\\b(?:a|an|the|only)\\s+${ROLE}\\s+(?:approves?|reje
 export function unenforced(app: App, warn: Warn) {
   if (app.kind && app.kind !== "app") return;
   if (app.profile === "api" || app.clients?.length) return;
-  const said = [...app.purpose, ...app.rules].find((t) => PROMISE.test(t));
+  // A marked name reads as the word (\`only the @owner of an item may delete it\`, held-out round 4, K7).
+  const said = [...app.purpose, ...app.rules].map((t) => t.replace(/@(?=[A-Za-z])/g, "")).find((t) => PROMISE.test(t));
   if (!said) return;
   const what = said.match(PROMISE)![0];
   warn(1, "UNENFORCED", `the spec says who may do what ("${what}"), but a screen enforces nothing: whoever controls the browser can do anything the screen can. Keep the promise on a service (an api with an \`access\` block) that this screen calls`);
@@ -533,6 +556,7 @@ function codeOf(line: string): string {
   return out;
 }
 
+const records = (app: App) => new Set(app.records.map((r) => r.name));
 const article = (name: string) => (/^[aeiou]/i.test(name) ? "an" : "a");
 /** A subject that is a name of its own (not a row's field: `whose @f`, `its @f`, `x's @f`). */
 const OWN = String.raw`(?<!(?:['’]s|\bwhose|\bits|\bwith|\bof|\bwhere|\bthe|\bthat|\bthis|\bevery|\bno)\s)`;
@@ -545,6 +569,7 @@ const OWN = String.raw`(?<!(?:['’]s|\bwhose|\bits|\bwith|\bof|\bwhere|\bthe|\b
  * Each old form is a SPELLING hint that `intent fix` rewrites.
  */
 export function languageSpelling(app: App, warn: Warn) {
+  const own = app.sources?.[0]?.text.split("\n") ?? [];
   const says = (line: number, from: string, to: string, why: string) => warn(line, "SPELLING", `\`${from}\` is written \`${to}\`: ${why} (\`intent fix\` rewrites it)`);
   const optional = new Set([...app.state.filter((f) => f.type.k === "Maybe").map((f) => f.name), ...app.derive.filter((d) => d.type?.k === "Maybe").map((d) => d.name)]);
   const seen = new Set<string>();
@@ -571,9 +596,61 @@ export function languageSpelling(app: App, warn: Warn) {
     // A date moves by days in words: `14 days after @today`.
     for (const m of t.matchAll(/(@?today)\s*([+-])\s*(\d+)\b/g))
       if (once(s.line, m[0])) says(s.line, m[0], `${m[3]} ${m[3] === "1" ? "day" : "days"} ${m[2] === "+" ? "after" : "before"} @today`, "a date moves by days in words (`14 days after @today`, `the day before @today`)");
+    // An order is `sorted by`, one key at a time (held-out round 4, G3): `, earliest @start first, then
+    // lowest @id first` is ` sorted by @start, earliest first, then by @id, lowest first`; `, @name from A
+    // to Z` is ` sorted by @name, A to Z`. Only an order that ends the value is rewritten.
+    {
+      const KEY = String.raw`(?:(?:the\s+)?(lowest|highest|earliest|latest)\s+@([a-z]\w*)\s+first|@([a-z]\w*)\s+from\s+(A\s+to\s+Z|Z\s+to\s+A))`;
+      const key = (dir: string | undefined, f1: string | undefined, f2: string | undefined, az: string | undefined) => `@${f1 ?? f2}, ${dir ? `${dir} first` : az}`;
+      for (const m of t.matchAll(new RegExp(String.raw`,\s+${KEY}((?:,\s+then\s+${KEY})*)(?=\s*(?:$|;|\)|,\s+or\b|\s+when\b))`, "g"))) {
+        if (!once(s.line, m[0])) continue;
+        const rest = [...m[5].matchAll(new RegExp(String.raw`,\s+then\s+${KEY}`, "g"))].map((k) => `, then by ${key(k[1], k[2], k[3], k[4])}`).join("");
+        says(s.line, m[0], ` sorted by ${key(m[1], m[2], m[3], m[4])}${rest}`, "an order is `sorted by`, one key at a time, each with its direction when it is not the usual one: `sorted by @due, earliest first, then by @id`");
+      }
+    }
     // An answer's message and fields: `the error`, `its body's @f`.
     if ((m = t.match(/\bthe error in its body\b/)) && once(s.line, m[0])) says(s.line, m[0], "the error", "an answer's message is `the error`");
     for (const m of t.matchAll(/\bthe\s+@([a-z]\w*)\s+(?:in|of)\s+its\s+body\b/g)) if (once(s.line, m[0])) says(s.line, m[0], `its body's @${m[1]}`, "a field of an answer or an event is `its body's @f`");
+  }
+  // The row an endpoint's request names: `path id: ref Ticket`, then `if that ticket does not exist { answer 404 "…" }`.
+  for (const ep of app.endpoints ?? []) {
+    if (ep.line >= LINE_BASE) continue;
+    const refs = ep.params.filter((p) => (p.type.k === "Maybe" ? p.type.of : p.type).k === "Ref");
+    const conds = (b: Stmt[] | undefined): { cond: string; line: number }[] => (b ?? []).flatMap((x) => (x.k === "if" ? x.branches.flatMap((br) => [...(br.cond ? [{ cond: br.cond, line: br.line }] : []), ...conds(br.body)]) : x.k === "for" ? conds(x.body) : []));
+    for (const c of conds(ep.body)) {
+      const m = c.cond.match(/^(no\s+([a-z]\w*)\s+has\s+(?:that\s+)?@(?:(?:path|query|body)\.)?([a-z]\w*)|there\s+is\s+no\s+([a-z]\w*)\s+whose\s+@\w+\s+is\s+(?:that\s+)?@([a-z]\w*))$/);
+      if (!m) continue;
+      const word = m[2] ?? m[4];
+      const param = m[3] ?? m[5];
+      const rec = word[0].toUpperCase() + word.slice(1);
+      const p = ep.params.find((x) => x.name === param);
+      const ref = p && refs.length === 1 && refs[0] === p && (p.type.k === "Maybe" ? p.type.of : p.type).k === "Ref" && ((p.type.k === "Maybe" ? p.type.of : p.type) as { name: string }).name === rec;
+      if (ref) says(c.line, m[1], `that ${word} does not exist`, `the request names the ${word} (\`${p!.in} ${param}: ref ${rec}\`), so ask whether it is there, and "that ${word}" is it after`);
+      else if (p && records(app).has(rec)) warn(c.line, "SPELLING", `\`${m[1]}\`: declare the param as a reference, \`${p.in} ${param}: ref ${rec}\` (in the contract, when there is one), then write \`if that ${word} does not exist { answer 404 "…" }\`: "that ${word}" is the row after it`);
+    }
+  }
+  // An endpoint says what it answers with `answers <status> <Type>`, one line per status (`returns` is the older word).
+  const src = app.sources?.[0]?.text.split("\n") ?? [];
+  for (const ep of app.endpoints ?? []) {
+    if (ep.line >= LINE_BASE || !ep.returns) continue;
+    let at = -1;
+    for (let i = ep.line; i < src.length && !/^\S/.test(src[i]); i++) if (/^\s+returns\s+/.test(src[i])) (at = i + 1);
+    if (at < 0) continue;
+    const type = src[at - 1].trim().replace(/^returns\s+/, "").replace(/\s*#.*$/, "");
+    const statuses = new Map<number, string | undefined>();
+    for (const [i, st] of ep.steps.entries()) {
+      void i;
+      for (const m of st.matchAll(/\banswer\s+([1-5]\d\d)\b(\s+with\b)?/g)) {
+        const n = Number(m[1]);
+        if (!statuses.has(n)) statuses.set(n, n >= 200 && n < 300 ? (m[2] ? type : undefined) : m[2] ? "?" : "Problem");
+      }
+    }
+    for (const n of refusalsOf(app, ep.name)) if (!statuses.has(n)) statuses.set(n, "Problem");
+    for (const a of ep.answers ?? []) statuses.delete(a.status);
+    const lines = [...statuses].sort((a, b) => a[0] - b[0]).map(([n, t]) => `answers ${n}${t ? ` ${t}` : ""}`);
+    const success = lines.find((l) => /^answers 2\d\d /.test(l));
+    if (!success || lines.some((l) => l.endsWith(" ?"))) warn(at, "SPELLING", `\`returns ${type}\` is written \`answers <status> ${type}\`, one \`answers\` line for each status the endpoint answers (with a \`Problem\` for a refusal): say which status answers with ${type}`);
+    else says(at, `returns ${type}`, success, `an endpoint lists what it answers, one line per status${lines.length > 1 ? `; the others it answers: ${lines.filter((l) => l !== success).map((l) => `\`${l}\``).join(", ")}` : ""}`);
   }
   // Loops: `for each @x in @xs whose @f …`, and the row's field is `@x's @f`.
   const loopsIn = (b: Stmt[] | undefined, rows: string[]) => {
@@ -601,8 +678,33 @@ export function languageSpelling(app: App, warn: Warn) {
   for (const ep of app.endpoints ?? []) loopsIn(ep.body, []);
   for (const j of app.jobs ?? []) loopsIn(j.body, []);
   for (const b of [app.before, app.after, app.beforeCall]) loopsIn(b?.body, []);
+  // A server's layers: `layer auth = std.http.apiKey { … }` (`use` is for components and `intent.project`).
+  for (const l of app.layers ?? []) if (l.spelledUse && l.line < LINE_BASE) says(l.line, `use ${l.alias} =`, `layer ${l.alias} =`, "an api runs behind a layer, declared with `layer`; `use` places a component");
+  // `select x from list.f` edits a `Text or nothing`: nothing is "none chosen" (never a "" stand-in).
+  const picks: { name: string; rec?: string }[] = [];
+  const walkEls = (els: Element[], rec?: string) => {
+    for (const el of els) {
+      if (el.kind === "select" && el.from) picks.push({ name: el.name, rec });
+      walkEls(el.children, el.kind === "list" && el.of ? el.of : rec);
+    }
+  };
+  walkEls(app.screen);
+  for (const p of picks) {
+    const f = p.rec ? app.records.find((r) => r.name === p.rec)?.fields.find((x) => x.name === p.name) : app.state.find((x) => x.name === p.name);
+    // A select that always has a choice (a text default of its own, never un-picked) is a plain `Text`.
+    if (!f || f.line >= LINE_BASE || f.type.k !== "Text" || (f.default?.k === "text" && f.default.v !== "")) continue;
+    const decl = own[f.line - 1] ?? "";
+    const m = decl.match(new RegExp(String.raw`\b${p.name}\s*:\s*Text(?:\s*=\s*"")?`));
+    const keeps = m && /^\s*=/.test(decl.slice((m.index ?? 0) + m[0].length)); // a default of its own: kept
+    if (m) says(f.line, m[0], `${p.name}: Text or nothing${!keeps && (/=/.test(m[0]) || !p.rec) ? " = nothing" : ""}`, `\`select ${p.name} from …\` holds what is chosen, or nothing when none is (never a "" stand-in)`);
+  }
+  for (const s of sentences(app)) {
+    if (s.line >= LINE_BASE) continue;
+    for (const p of picks)
+      for (const m of s.text.matchAll(new RegExp(String.raw`\bset\s+((?:its\s+|(?:that|this)\s+[a-z]\w*['’]s\s+|the\s+)?@${p.name})\s+to\s+""`, "g")))
+        says(s.line, m[0], `set ${m[1]} to nothing`, `nothing chosen is nothing (\`clear @${p.name}\` says the same)`);
+  }
   // Lines of the file itself: types, sizes.
-  const own = app.sources?.[0]?.text.split("\n") ?? [];
   own.forEach((raw, i) => {
     const line = i + 1;
     const t = codeOf(raw);

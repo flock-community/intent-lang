@@ -1,7 +1,7 @@
 app References {
   "A comment thread: each comment refers to a ticket by key, and the reference is checked against the ticket's key. The open ticket is a reference too: it is followed to show the ticket, and says so when the ticket was removed."
 }
-language v66
+language 1
 design {
   look "A calm, modern admin. White surfaces on a light neutral background, one brand color, muted secondary text."
   brand: indigo
@@ -35,7 +35,7 @@ state {
 }
 
 derive {
-  thread = the @comments whose @ticket is @chosen, in their order, and none when there is no @chosen
+  thread = the @comments whose @ticket is @chosen, in their order
 }
 
 screen {

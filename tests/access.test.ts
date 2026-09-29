@@ -133,7 +133,7 @@ import { targetModule } from "../compiler/targets/index.ts";
 // ---------------------------------------------------------------- v73: the checker: orders on nothing, the spelling of values and `anyone`
 {
   const dir = mkdtempSync(join(tmpdir(), "access-v73-"));
-  const spec = (access: string, extra = "") => `app A {\n  "t"\n}\nprofile api\n\nrecord Ticket {\n  id: Int\n  assignee: Text or nothing = nothing\n  status: Status = Open\n}\nchoice Status: Open | Archived\n\nstate {\n  tickets: List Ticket = []\n  limit: Int or nothing = nothing\n}\n\nuse auth = std.http.apiKey {\n  keys = table {\n    secret | owner\n    "k-ann" | "Ann"\n  }\n}\n${extra}\naccess {\n${access}\n}\n\nendpoint health GET "/health" {\n  answer 200 with "ok"\n}\n\nendpoint take POST "/tickets/{id}/take" {\n  path id: ref Ticket\n  query amount: Int or nothing\n  answer 200 with "ok"\n}\n`;
+  const spec = (access: string, extra = "") => `app A {\n  "t"\n}\nprofile api\n\nrecord Ticket {\n  id: Int\n  assignee: Text or nothing = nothing\n  status: Status = Open\n}\nchoice Status: Open | Archived\n\nstate {\n  tickets: List Ticket = []\n  limit: Int or nothing = nothing\n}\n\nlayer auth = std.http.apiKey {\n  keys = table {\n    secret | owner\n    "k-ann" | "Ann"\n  }\n}\n${extra}\naccess {\n${access}\n}\n\nendpoint health GET "/health" {\n  answer 200 with "ok"\n}\n\nendpoint take POST "/tickets/{id}/take" {\n  path id: ref Ticket\n  query amount: Int or nothing\n  answer 200 with "ok"\n}\n`;
   const check = (access: string) => {
     const f = join(dir, `a${Math.random().toString(36).slice(2)}.intent`);
     writeFileSync(f, spec(access));
@@ -184,7 +184,7 @@ import { targetModule } from "../compiler/targets/index.ts";
     mkdirSync(join(proj, "lib/expenses"), { recursive: true });
     copyFileSync("apps/api/expenses-api.intent", join(proj, "lib/base/expensesApp.intent"));
     for (const f of ["expenses.intent", "expensesApi.intent"]) copyFileSync(join("lib/expenses", f), join(proj, "lib/expenses", f));
-    const child = (rules: string) => `app MyExpenses {\n  "Our expenses api."\n}\nlanguage v70\nextends base.expensesApp\n\naccess {\n${rules}\n}\n`;
+    const child = (rules: string) => `app MyExpenses {\n  "Our expenses api."\n}\nlanguage 1\nextends base.expensesApp\n\naccess {\n${rules}\n}\n`;
     writeFileSync(join(proj, "child.intent"), child('  - any caller may call @approveExpense when that expence\'s @submitter is the @caller\n  - an @Employee may call @rejectExpense when that expense\'s @submiter is the @caller'));
     // The project root is where a process starts: load the child from there.
     const { execFileSync } = await import("node:child_process");
@@ -285,7 +285,7 @@ export const handlers: Handlers<Model> = {
   takeTicket: (req, model) => {
     const t = model.tickets.find((x) => x.id === req.id);
     if (!t) return { model, response: fail(404, "No such ticket") };
-    if (t.assignee.trim() !== "" && t.assignee !== req.caller) return { model, response: fail(409, \`Already taken by \${t.assignee}\`) };
+    if (t.assignee !== null && t.assignee !== req.caller) return { model, response: fail(409, \`Already taken by \${t.assignee}\`) };
     const next = { ...t, assignee: req.caller };
     return { model: { ...model, tickets: model.tickets.map((x) => (x.id === t.id ? next : x)) }, response: answer(200, next), publish: [{ event: "ticketAssigned", body: next }] };
   },
@@ -338,13 +338,13 @@ try {
   const as = (who: string) => ({ "x-api-key": { Ann: "k-ann-7f3a", Sam: "k-sam-91bc", Lin: "k-lin-44d0", Eve: "k-eve-0b1e" }[who]! });
   const r1 = c.send("POST", "/tickets/4/take", {}, undefined, { ...as("Sam"), "idempotency-key": "k1" });
   assert.equal(r1.status, 200);
-  assert.deepEqual(r1.access, { decision: "allowed", rules: ["apps/api/desk-api.intent:54"] });
+  assert.deepEqual(r1.access, { decision: "allowed", rules: ["apps/api/desk-api.intent:55"] });
   const r2 = c.send("POST", "/tickets/4/solve", {}, undefined, as("Ann"));
   assert.equal(r2.status, 403);
-  assert.equal(r2.source, "apps/api/desk-api.intent:55 (access)", "x-intent-source names the determining rule");
+  assert.equal(r2.source, "apps/api/desk-api.intent:56 (access)", "x-intent-source names the determining rule");
   const r3 = c.send("GET", "/tickets/mine", {}, undefined, as("Eve"));
   assert.equal(r3.status, 403);
-  assert.match(r3.source, /^no rule permits this: access block at apps\/api\/desk-api\.intent:51/);
+  assert.match(r3.source, /^no rule permits this: access block at apps\/api\/desk-api\.intent:52/);
   c.send("GET", "/tickets/mine", {}, undefined, as("Ann")); // a permitted read: not audited
   const audit = c.audit();
   assert.deepEqual(audit.map((e: any) => [e.caller, e.endpoint, e.decision, e.status]), [["Sam", "takeTicket", "allowed", 200], ["Ann", "solveTicket", "refused", 403], ["Eve", "myTickets", "refused", 403]]);

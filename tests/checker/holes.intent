@@ -1,0 +1,64 @@
+app Holes {
+  "Every template hole is typed and nothing-safe: an answer's message too."
+}
+language 1
+
+profile api
+
+choice Status: Open | Solved
+
+record Ticket {
+  id: Int
+  subject: Text
+  assignee: Text or nothing = nothing
+  status: Status = Open
+}
+
+state {
+  tickets: List Ticket = table {
+    id | subject
+    1  | "Printer"
+  }
+  note: Text or nothing = nothing
+  last: Text = ""
+}
+
+endpoint solve POST "/tickets/{id}/solve" {
+  path id: ref Ticket
+  answers 200 Ticket
+  answers 404 Problem
+  answers 409 Problem
+  if that ticket does not exist {
+    answer 404 "No such ticket"
+  }
+  if that ticket's @status is @Solved {
+    answer 409 "Already solved by {that ticket's @assignee}"          # expect: NOTHING
+  }
+  if that ticket's @subject is "" {
+    answer 409 "Nobody: {that ticket's @assignee, or "no one" when there is none}"   # expect-not: NOTHING
+  }
+  if there is a @note {
+    answer 409 "Noted: {@note}"                                     # expect-not: NOTHING
+  }
+  if that ticket's @subject is "x" {
+    answer 409 "{that ticket's @subject, or "?" when there is none} by {that ticket's @assignee}"   # expect: NOTHING
+  }
+  - set @last to "solved for {that ticket's @assignee}"              # expect: NOTHING
+  answer 200 with that ticket
+}
+
+endpoint greet POST "/greet" {
+  body who: Text or nothing
+  body name: Text
+  answers 200 Problem
+  answers 400 Problem
+  if @name is "" {
+    answer 400 "hello {@who}"                                       # expect: NOTHING
+  }
+  answer 200 "hello {@name}"                                        # expect-not: NOTHING
+}
+
+example "solving" {
+  call solve with id = 1
+  see solve.status = 200
+}

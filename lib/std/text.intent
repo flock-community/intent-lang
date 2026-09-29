@@ -1,6 +1,7 @@
 bundle std.text {
   "Common kinds of text, each with one precise rule."
 }
+language 1
 
 type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/     # something@domain.tld, no spaces
 type Token = Text of 32 hex digits                         # a secret: 128 bits (`a random @Token`)

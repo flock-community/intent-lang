@@ -2,17 +2,18 @@ app MembersApi {
   "Anyone can sign up and gets an API key; with it they can see who they are."
   "Keys belong to the members who signed up, and survive a restart."
 }
+language 1
 
 profile api
 import std.text
 
-use auth = std.http.apiKey {
+layer auth = std.http.apiKey {
   keys = apiKeys
 }
 
 # Anyone may sign up; seeing who you are takes a key.
 access {
-  - anyone may call @signup
+  - anyone, without a key, may call @signup
   - any caller may call @me
 }
 
@@ -30,7 +31,9 @@ state {
 
 endpoint signup POST "/signup" {
   body name: Text
-  returns Member
+  answers 201 Member
+  answers 400 Problem
+  answers 409 Problem
   if @name, trimmed, is blank {
     answer 400 "Name is required"
   }
@@ -42,7 +45,8 @@ endpoint signup POST "/signup" {
 }
 
 endpoint me GET "/me" {
-  returns Text
+  answers 200 Text
+  answers 401 Problem
   answer 200 with @caller
 }
 

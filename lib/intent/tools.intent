@@ -1,6 +1,7 @@
 platform intent.tools {
   "The Intent toolchain for services about specs, such as a registry: check a spec and compute what publishing it would record."
 }
+language 1
 
 record Checked {
   ok: Bool                     # it passes the checker

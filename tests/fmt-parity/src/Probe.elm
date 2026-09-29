@@ -38,6 +38,11 @@ dateTexts =
     [ "2026-09-24", " 2026-09-24 ", "2026-02-30", "2024-02-29", "2023-02-29", "2026-13-01", "26-09-24", "2026-9-24", "", "2026-09-24T09:00", "2026-09-24 09:00", "2026-09-24 24:00", "2026-09-24T09:60", "2026-09-24T9:00" ]
 
 
+sortRows : List ( Int, Maybe String, String )
+sortRows =
+    [ ( 1, Just "2026-09-25", "anna" ), ( 2, Nothing, "Zoë" ), ( 3, Just "2026-09-24", "Émile" ), ( 4, Just "2026-09-25", "Bob" ), ( 5, Nothing, "bob" ), ( 6, Just "2026-09-24", "Ann" ) ]
+
+
 maybeString : Maybe String -> J.Value
 maybeString m =
     Maybe.withDefault J.null (Maybe.map J.string m)
@@ -69,10 +74,14 @@ main =
                         , ( "formatDate", J.list J.string (List.map Fmt.formatDate dates) )
                         , ( "addMinutes", J.list J.string (List.concatMap (\t -> List.map (Fmt.addMinutes t) [ -1441, -1, 15, 60, 1440 ]) moments) )
                         , ( "minutesBetween", J.list J.int (List.map (Fmt.minutesBetween "2026-09-24T09:00") moments) )
+                        , ( "hoursBetween", J.list J.int (List.concatMap (\t -> [ Fmt.hoursBetween "2026-09-24T09:00" t, Fmt.hoursBetween t "2026-09-24T09:00" ]) moments) )
                         , ( "formatDateTime", J.list J.string (List.map Fmt.formatDateTime moments) )
                         , ( "dateOf", J.list J.string (List.map (\t -> Fmt.dateOf t ++ " " ++ Fmt.timeOf t) moments) )
                         , ( "parseDate", J.list maybeString (List.map Fmt.parseDate dateTexts) )
                         , ( "parseDateTime", J.list maybeString (List.map Fmt.parseDateTime dateTexts) )
+                        , ( "sortBy", J.list J.string (List.map (\( id, _, _ ) -> String.fromInt id) (Fmt.sortBy [ ( \( _, due, _ ) -> Maybe.withDefault Fmt.SortNothing (Maybe.map Fmt.SortText due), Fmt.Ascending ), ( \( id, _, _ ) -> Fmt.SortInt id, Fmt.Descending ) ] sortRows)) )
+                        , ( "sortByText", J.list J.string (List.map (\( _, _, name ) -> name) (Fmt.sortBy [ ( \( _, _, name ) -> Fmt.SortText name, Fmt.Ascending ) ] sortRows)) )
+                        , ( "sortByDesc", J.list J.string (List.map (\( id, _, _ ) -> String.fromInt id) (Fmt.sortBy [ ( \( _, due, _ ) -> Maybe.withDefault Fmt.SortNothing (Maybe.map Fmt.SortText due), Fmt.Descending ) ] sortRows)) )
                         , ( "sha256", J.list J.string (List.map Crypto.sha256 shaTexts) )
                         ]
                     )

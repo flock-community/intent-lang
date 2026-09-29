@@ -1,0 +1,32 @@
+app ChangeThroughRef {
+  "v73: a change rule's subject is a field of the record's own rows, never a hop through a reference."
+}
+language 1
+
+record Ticket {
+  id: Int
+  subject: Text
+}
+
+record Comment {
+  id: Int
+  ticket: ref Ticket
+  body: Text
+}
+
+state {
+  tickets: List Ticket = []
+  comments: List Comment = []
+  chosen: Comment or nothing = nothing
+}
+
+screen {
+  text count = "{the number of @comments}"
+}
+
+always {
+  - a @Comment's @ticket's @subject never changes        # expect: CHANGE
+  - @chosen's @ticket's @subject never changes           # expect: CHANGE
+  - a @Ticket's @subject never changes                   # expect-not: CHANGE
+  - a @Comment's @body never changes                     # expect-not: CHANGE
+}

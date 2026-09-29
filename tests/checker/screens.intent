@@ -1,6 +1,7 @@
 app ScreenChecks {
   "Several screens: addresses, going to one, and examples that move between them."
 }
+language 1
 
 record Ticket {
   id: Int

@@ -1,16 +1,25 @@
 # Working plan
 
-Where the work stands (2026-09-27, language v49) and what comes next, in order. Each step: build,
+Where the work stands (2026-09-28, language 1) and what comes next, in order. Each step: build,
 verify (examples, twin build, harness snapshot, `npm test`, a planted bug where it applies), update
-`docs/LANGUAGE.md` + `docs/CHANGELOG.md`, `skills/intent-spec/SKILL.md`, README, then commit and push.
+`docs/LANGUAGE.md` (or `docs/TOOLS.md` for tooling) + `docs/CHANGELOG.md`,
+`skills/intent-spec/SKILL.md`, README, then commit and push. From language 1 on, a change keeps the
+promise in `docs/STABILITY.md`: a `1.x` release only adds, and a breaking change waits for an
+edition (`language 2`) with an `intent fix` rewrite.
 
 ## State
 
-- Language v64. Last Claude converge: v63, the same 12 apps, 72/72 builds, 100% the same app on
+- Language 1: v73 stamped as the first stable version (`docs/STABILITY.md`). Pre-1 lines
+  (`language vNN`) read as `language 1` with a `LANGUAGE` warning that `intent fix`
+  rewrites; a spec without the line means `language 1`. **In progress:** a final converge round on
+  language 1.
+- Last full Claude converge: v63, the same 12 apps, 72/72 builds, 100% the same app on
   both targets, 69/72 first try (three Library Elm builds forgot the clock argument; the repair
   fixed each) (`runs/r63-converge/`). Third held-out round (v63, two new authors from the reference
   alone): expense approvals 6/6 and parcel lockers 3/3 first try, 100% the same app
-  (`runs/r63-held-out-3/`). Previous: v35, 72/72 first try (`runs/r35-converge/`).
+  (`runs/r63-held-out-3/`). Previous: v35, 72/72 first try (`runs/r35-converge/`). The v68–v70
+  features were measured on their own apps (checklists, order lines, recipes, dice and cards, the
+  desk API with `access`): every build OK, 100% the same app (`runs/history.jsonl`).
   Independent score at v36: 78.4 (`docs/reviews/scores/v36.md`). The language also converged under
   DeepSeek through the OpenAI-compatible provider (v45): every build that succeeded was 100% the
   same app and Elm≡TS 100% (`runs/2026-09-26-11-0*-deepseek*/`).
@@ -52,9 +61,9 @@ Elm error message for an undeclared status now matches TypeScript's.
      ~~told a param from a field with the same name~~ done (v46: `@path.x` / `@query.x` /
      `@body.x`; `apps/api/payments-api.intent` uses it);
    - ~~loops as a parser form~~ done (v39: `for each @x in @xs where … { … }`; the notices API
-     uses it); ~~a lookup that can find nothing is now guarded~~ (`UNGUARDED` covers
-     `the ticket whose …` and optional record fields); a lookup *form* and declared references
-     ("the @xs where …") still open;
+     uses it); ~~a lookup that can find nothing is now guarded~~ done (v66: `NOTHING`, an error,
+     replaced the `UNGUARDED` hint); ~~a lookup form and declared references~~ done (v59: one
+     spelling, `the ticket whose …`; `ref` fields, followed with `'s` since v66);
    - ~~`see` on the wrong screen~~ done: the checker follows an example's `open`, `go back` and a
      clicked button's `go to`, so `see` of an element on another screen is an error
      (`tests/checker/screens.intent`);
@@ -67,7 +76,7 @@ Elm error message for an undeclared status now matches TypeScript's.
      (`tests/docs/snippets.ts`, ```` ```intent ```` blocks; durations, names, events, publish,
      randomness, `T or nothing`, README counts).
    - ~~`intent fix`~~ done (criterion 11): applies `Maybe T` → `T or nothing`, an unmarked name
-     (`@name`), a missing `import`, and the `language vN` line, only when it adds no error
+     (`@name`), a missing `import`, and the `language 1` line, only when it adds no error
      (`compiler/fix.ts`, `tests/fix.test.ts`).
    - ~~profiles as checked files~~ done (criterion 4, step 1): `intent check lib/profile/*.intent`
      now checks a profile with `checkProfile` (duplicate kinds/presentations, the name, bad lines);
@@ -117,5 +126,18 @@ Elm error message for an undeclared status now matches TypeScript's.
    no interactive element now generates a valid interface)~~; ~~a field inside a list row (v54), a
    select inside a list row (v55) and a `select … from …` inside a row (v56) (they edit that row's
    item; `apps/25-row-edit.intent`, `apps/26-row-status.intent`, `apps/27-row-assign.intent`, all
-   twin-verified; a list inside a list row stays `NOT_YET`)~~; Spectavity adopting v35–v38 features
+   twin-verified; a list inside a list row followed in v68)~~; Spectavity adopting v35–v38 features
    (Spectavity is the registry and package manager, so its work is not done here).
+
+## Done: the v1 features (v66–v73)
+
+Nothing-safety and following a reference (v66), rules over changes (v67), lists inside list rows
+(v68), random values (v69), access control (v70; `NO_ACCESS` is an error), the security review
+(v71), robustness (v72) and one spelling per form (v73). Details: `docs/CHANGELOG.md`.
+
+## Next
+
+The final measurements on language 1 are done: README, "Phase 7", and `runs/r1-*`.
+
+1. The candidates in `docs/CHANGELOG.md`, "Next candidates": each a `1.x` addition, or an edition
+   when it would break specs.

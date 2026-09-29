@@ -9,7 +9,7 @@
 import { LINE_BASE, type App, type Element, type Literal, type Stmt, type Type } from "./ast.ts";
 import { typeToString } from "./parse.ts";
 import { homeLists, homeOf, innerHomes, referencedHomes, refTypes } from "./homes.ts";
-import { changeWords, DELTA_RE, parseChange } from "./changes.ts";
+import { changeWords, DELTA_RE, looseChangeWords, parseChange } from "./changes.ts";
 import { DRAW_FORMS, drawSpace, findDraws, spaceSize, strayDraw, type DrawFact } from "./draws.ts";
 export { homeLists, homeOf, referencedHomes, refTypes };
 
@@ -382,6 +382,17 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
       out.set(n, f.t.of);
     }
     for (const k of existKeys(cond, holds, sc, row)) out.set(`∃${k.key}`, { k: "Named", name: k.home ?? "" });
+    // The endpoint's own row: `that ticket exists` (holds), `that ticket does not exist` (does not hold),
+    // and the older `no ticket has that @id` / `there is no ticket whose @id is @id` (do not hold).
+    for (const k of [...sc.keys()].filter((x) => x.startsWith("∄row:"))) {
+      const rec = k.slice(5);
+      const w = rec[0].toLowerCase() + rec.slice(1);
+      const c = maskJoins(cond).trim();
+      const asks = (re: RegExp) => re.test(c);
+      const there = (holds && !/\sor\s/.test(c) && asks(new RegExp(`(?:^|\\sand\\s)(?:that|this|the)\\s+${w}\\s+exists\\b|(?:^|\\sand\\s)(?:a|an|some)\\s+${w}\\s+has\\s+that\\s+@`))) ||
+        (!holds && !/\sand\s/.test(c) && asks(new RegExp(`^(?:(?:that|this|the)\\s+${w}\\s+does\\s+not\\s+exist|no\\s+${w}\\s+has\\s+(?:that\\s+)?@(?:(?:path|query|body)\\.)?[a-z]\\w*|there\\s+is\\s+no\\s+${w}\\s+(?:in\\s+@[a-z][\\w.]*\\s+)?whose\\s+@[a-z]\\w*\\s+is\\s+(?:that\\s+)?@[a-z]\\w*)$`)));
+      if (there) out.delete(k);
+    }
     // `if there is no locker in @empty whose @size is … { answer 409 }`: after it, that list has a row,
     // so its highest / lowest is there (until any step changes state: a list may be derived).
     const c = maskJoins(cond).trim();
@@ -462,6 +473,19 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
       if (t.k === "Maybe" && !under) optional = true;
       types.push(under ? strip(t) : t);
     }
+    // Every case is said (held-out round 4, G13), as Kotlin's \`when\` as a value: without \`otherwise\`,
+    // the conditions name every value of one choice (\`… when @f is @A; … when @f is @B\`), or the value
+    // is undefined where none holds, and two builds would each pick one.
+    if (!elvis && parts.length > 1 && parts.every((p) => p.cond)) {
+      const subjects = parts.map((p) => p.cond!.trim().match(/^@([a-z][\w.]*)\s+is\s+@([A-Z]\w*)$/));
+      const subject = subjects[0]?.[1];
+      const st = subject ? typeOfValue(typeExpr(`@${subject}`, scope, row)) : undefined;
+      const choice = st && base(strip(st)).k === "Named" ? app.choices.find((c) => c.name === (base(strip(st)) as { name: string }).name) : undefined;
+      if (choice && subjects.every((x) => x?.[1] === subject)) {
+        const missing = choice.values.filter((v) => !subjects.some((x) => x![2] === v));
+        if (missing.length) return wrong(`the alternatives say nothing for ${missing.map((v) => `@${v}`).join(", ")}: add \`… when @${subject} is @${missing[0]}\`, or end with \`, otherwise …\``);
+      } else return wrong(`the alternatives do not say the value when none of their conditions holds: end with \`, otherwise …\` (or name every value of one choice: \`… when @x is @A; … when @x is @B\`)`);
+    }
     if (untyped || !types.length) return undefined;
     // In a template every alternative is shown as text; elsewhere they share one type.
     if (inText) return T(optional ? { k: "Maybe", of: { k: "Text" } } : { k: "Text" });
@@ -505,8 +529,34 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
     // `…, rounded down` / `…, trimmed`: after a comma, a postfix word applies to everything before it.
     const post = topLevel(x, [", rounded", ", trimmed", ", in capitals"]);
     if (post) return at(`(${x.slice(0, post.at)})${x.slice(post.at + 1)}`);
+    // An order, typed (held-out round 4, G3): \`<list> sorted by @due, earliest first, then by @id\`. Each
+    // key is a field of the list's rows, with its direction when it is not the usual one: lowest / highest
+    // (numbers, days, moments), earliest / latest (days, moments), A to Z / Z to A (text); without one,
+    // lowest, earliest, A to Z, a choice in its declared order, false before true. A field that may be
+    // nothing sorts its nothing last (§9), so it needs no fallback. The harness sorts (Fmt.sortBy).
+    const KEY = "@([a-z]\\w*)(?:,\\s+(?:(lowest|highest|earliest|latest)\\s+first|(A\\s+to\\s+Z|Z\\s+to\\s+A)))?";
+    if ((m = x.match(new RegExp(`^(.+?),?\\s+sorted\\s+by\\s+${KEY}((?:,\\s+then\\s+by\\s+${KEY})*)$`)))) {
+      const list = at(m[1]);
+      if (list?.k === "error") return list;
+      const lt = typeOfValue(list);
+      const rec = recordOf(listItem(lt));
+      if (!lt || !rec) return list;
+      const keys = [[m[2], m[3], m[4]], ...[...m[5].matchAll(new RegExp(`,\\s+then\\s+by\\s+${KEY}`, "g"))].map((k) => [k[1], k[2], k[3]])];
+      for (const [name, word, az] of keys) {
+        const said = `@${name}${word ? `, ${word} first` : az ? `, ${az}` : ""}`;
+        const field = records.get(rec)!.fields.find((y) => y.name === name);
+        if (!field) return wrong(`\`sorted by ${said}\`: ${rec} has no field \`${name}\` (${records.get(rec)!.fields.map((y) => y.name).join(", ")})`);
+        const ft = strip(field.type);
+        const inner = base(ft);
+        const orderable = numeric(ft) || temporal(ft) || isText(ft) || inner.k === "Bool" || (inner.k === "Named" && isChoice((inner as { name: string }).name));
+        if (!orderable) return wrong(`\`sorted by ${said}\`: ${rec}.${name} is ${show(field.type)}, which has no order`);
+        const ok = word === "earliest" || word === "latest" ? temporal(ft) : word ? numeric(ft) || temporal(ft) : az ? isText(ft) : true;
+        if (!ok) return wrong(`\`sorted by ${said}\`: ${rec}.${name} is ${show(field.type)}; ${word === "earliest" || word === "latest" ? "earliest / latest order days and moments" : word ? "lowest / highest order numbers, days and moments" : "A to Z orders text"}${isText(ft) ? ` (a text: \`sorted by @${name}, A to Z\`)` : temporal(ft) ? ` (a moment: \`sorted by @${name}, earliest first\`)` : ""}`);
+      }
+      return list;
+    }
     // Tails that keep the type: an order (`, highest @id first`, `, in list order`) or a bound (`, but at least 0`).
-    if ((m = x.match(/^(.+?),\s+(?:(?:highest|lowest|newest|oldest|latest|earliest|largest|smallest)\s+@[a-z]\w*\s+first|in\s+(?:list|their|its|the\s+same)\s+order|in\s+the\s+order\s+of\s+.+|sorted\s+by\s+.+|but\s+at\s+(?:least|most)\s+.+)$/))) return at(m[1]);
+    if ((m = x.match(/^(.+?),\s+(?:(?:highest|lowest|newest|oldest|latest|earliest|largest|smallest)\s+@[a-z]\w*\s+first|in\s+(?:list|their|its|the\s+same)\s+order|in\s+the\s+order\s+of\s+.+|sorted\s+by\s+(?:(?!,\s+or\s).)+|but\s+at\s+(?:least|most)\s+(?:(?!,\s+or\s).)+)$/))) return at(m[1]);
     // A value that depends on a condition: `A when C; B when D`, `A when C, otherwise B`, `A while C, otherwise B`.
     const alts: string[] = [];
     {
@@ -579,6 +629,35 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
     if ((m = x.match(/^(.+?)\s+read\s+as\s+(?:an?\s+)?(whole number|decimal|number)(?:\s*\([^)]*\))?$/)))
       return needs(at(m[1]), isText, "`read as` needs text", { k: m[2] === "whole number" ? "Int" : "Decimal" });
     if ((m = x.match(/^(.+?)\s+as\s+(?:money|a date|a moment|a clock)$/))) return needs(at(m[1]), (t) => numeric(t) || temporal(t), "`as …` needs a number or a moment", { k: "Text" });
+    // Time, typed whole (held-out round 4, K8 and G6): \`the minutes / hours between A and B\` (two
+    // moments), \`the days between A and B\` (two days): a whole number, negative when B comes first;
+    // \`N minutes / hours / days / weeks after (before) A\`: a moment (a day, for days and weeks after a day).
+    if ((m = x.match(/^(?:the\s+)?(minutes|hours|days)\s+between\s+(.+?)\s+and\s+(.+)$/))) {
+      const unit = m[1];
+      const want = unit === "days" ? "Date" : "DateTime";
+      const ends = [at(m[2]), at(m[3])];
+      for (const v of ends) if (v?.k === "error") return v;
+      const ts = ends.map(typeOfValue);
+      for (const t of ts) if (t && base(strip(t)).k !== want) return wrong(`\`the ${unit} between\` ${unit === "days" ? "counts the days between two days (Date)" : "counts between two moments (DateTime)"}, not ${show(t)}${unit === "days" ? ": for moments, count the hours or minutes" : ": for days, count the days"}`);
+      const none = ends.find((v) => v?.k === "nothing" || (v?.k === "type" && v.t.k === "Maybe"));
+      if (none && !safe) return nothingErr(`\`the ${unit} between\` needs two ${unit === "days" ? "days" : "moments"}`, none.k === "nothing" ? none : (none as { t: Type }).t);
+      if (ts.some((t) => !t)) return undefined;
+      return T(none ? { k: "Maybe", of: { k: "Int" } } : { k: "Int" });
+    }
+    if ((m = x.match(/^(.+?)\s+(minutes?|hours?|days?|weeks?)\s+(after|before)\s+(.+)$/)) && !/\bthe\s*$/.test(m[1])) {
+      const [n, from] = [at(m[1]), at(m[4])];
+      for (const v of [n, from]) if (v?.k === "error") return v;
+      const [nt, ft] = [typeOfValue(n), typeOfValue(from)];
+      if (ft && numeric(ft)) return undefined; // a day number of the app's own (\`14 days after @today\` where \`today: Int\`): judgement
+      if (nt && !(base(strip(nt)).k === "Int")) return wrong(`\`${m[1].trim()} ${m[2]} ${m[3]}\` moves by a whole number of ${m[2].replace(/s?$/, "s")}, not ${show(nt)}`);
+      if (ft && !temporal(ft)) return wrong(`\`${m[2]} ${m[3]}\` moves a day or a moment, not ${show(ft)}`);
+      if (ft && /^(minutes?|hours?)$/.test(m[2]) && base(strip(ft)).k !== "DateTime") return wrong(`\`${m[2]} ${m[3]}\` moves a moment (DateTime); ${show(ft)} is a day: move it by days`);
+      const none = [n, from].find((v) => v?.k === "nothing" || (v?.k === "type" && v.t.k === "Maybe"));
+      if (none && !safe) return nothingErr(`\`${m[2]} ${m[3]}\` needs a ${ft && base(strip(ft)).k === "Date" ? "day" : "moment"}`, none.k === "nothing" ? none : (none as { t: Type }).t);
+      if (!ft) return undefined;
+      return T(none ? { k: "Maybe", of: strip(ft) } : strip(ft));
+    }
+    if ((m = x.match(/^the\s+day\s+(after|before)\s+(.+)$/))) return needs(at(m[2]), (t) => base(strip(t)).k === "Date", `\`the day ${m[1]}\` needs a day (Date)`, { k: "Date" });
     if ((m = x.match(/^(?:the\s+)?number\s+of\s+(.+)$/))) return needs(at(m[1]), (t) => !!listItem(t), "`the number of` counts a list", { k: "Int" });
     if ((m = x.match(/^(?:the\s+)?sum\s+of\s+(?:all\s+)?(?!@[a-z]\w*\s+over\s)(?!the\s+@[a-z]\w*\s+of\s)(.+)$/))) {
       const inner = at(m[1]);
@@ -783,7 +862,10 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
       return t ? (numeric(t) ? (none(v, `\`is ${m0[2]} or …\` needs a number`) ?? "") : `\`is ${m0[2]} or …\` needs a number, not ${show(t)}`) : undefined;
     }
     // "at or before", "3 or more", "or nothing": an "or" inside a phrase does not join two conditions.
-    const masked = x.replace(/\b(at|or) or (before|after|more|less|fewer|higher|lower|nothing)\b|\b(\d+(?:\.\d+)?) or (more|less|fewer|higher|lower)\b|,? or nothing\b/g, (m0) => m0.replace(/ /g, "_"));
+    const masked = x
+      .replace(/\b(at|or) or (before|after|more|less|fewer|higher|lower|nothing)\b|\b(\d+(?:\.\d+)?) or (more|less|fewer|higher|lower)\b|,? or nothing\b/g, (m0) => m0.replace(/ /g, "_"))
+      // `the minutes between @now and that booking's @start is below 1440`: the \`and\` of \`between A and B\` joins its two ends, not two conditions (K8).
+      .replace(/\bbetween\s+(?:(?!\sand\s).)+?\sand\s/g, (m0) => m0.replace(/\sand\s$/, (a) => a.replace(/ /g, "_")));
     const joins = chainOf(masked, [" and ", " or "]);
     // A condition of more parts than anyone reads is left to judgement (LONG_SENTENCE asks to name its
     // parts in `derive`): typing it would take time and stack in proportion to its parts, squared.
@@ -813,12 +895,19 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
       if (f.k === "type" && f.t.k === "Ref") return `@${m[1]} is a reference: its key is always there; ask whether its row is: \`@${m[1]} ${/\bno\b/.test(x) ? "does not exist" : "exists"}\``;
       return f.k === "type" ? "" : undefined;
     }
+    // that ticket exists / does not exist: the endpoint's own row (its `ref` param), or a row found before
+    if ((m = x.match(/^(?:that|this)\s+([a-z]\w*)\s+(?:exists|does\s+not\s+exist)$/)) && recordNamed(m[1])) return "";
     // @comment's @ticket exists / does not exist: whether the row a reference points at is there
     if ((m = x.match(/^(.+?)\s+(exists|does\s+not\s+exist)$/))) {
       const t = typeOfValue(at(m[1]));
       if (!t) return undefined;
       if (strip(t).k === "Ref") return "";
-      return `\`${m[2]}\` asks whether the row a reference points at is there, and ${m[1].trim()} is ${show(t)}${t.k === "Maybe" ? `: write \`there is a ${m[1].trim()}\`` : ", not a reference"}`;
+      // The working form for a \`T or nothing\` (held-out round 4, K1): \`there is a @x\` names one value;
+      // a field of the row this sentence is in is named alone (\`its @due\` → \`there is a @due\`).
+      const v = m[1].trim();
+      const own = v.match(/^(?:its\s+)?@([a-z][\w.]*)$/)?.[1];
+      const how = own ? `write \`there is a @${own}\`${v.startsWith("its") ? " (a field of this row is named alone)" : ""}` : "ask with `there is a @x` about one name (a field of this row alone: `there is a @due`), or say what then: `…, or X when there is none`";
+      return `\`${m[2]}\` asks whether the row a reference points at is there, and ${v} is ${show(t)}${t.k === "Maybe" ? `: ${how}` : ", not a reference"}`;
     }
     // every @Parcel's @locker is the @number of a locker in @lockers: a relation — the two fields fit
     // (a reference is compared with its record's key)
@@ -947,6 +1036,7 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
   for (const d of app.derive) {
     if (!d.type || d.line >= LINE_BASE) continue;
     const got = typeExpr(d.sentence, new Map());
+    if (got?.k === "error" && !got.msg.includes("∅")) continue; // the sentence's own error is said where it is checked
     const msg = fitsValue(d.type, got);
     if (msg) err(d.line, msg.includes("∅") ? "NOTHING" : "TYPE", `\`${d.name}\` is declared ${show(d.type)}, but the sentence gives ${msg.replace(/∅/g, "").replace(/, but it is .*$/, "")}${msg.includes("∅") ? `: ${NOTHING_HOW}` : ""}`);
   }
@@ -1044,6 +1134,15 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       err(line, code, `${msg} (${where})`);
     };
     const nothingAt = (what: string, x: Fit) => x.k === "type" && x.t.k === "Maybe" && say("NOTHING", `${what}: the value may be nothing (${show(x.t)}); ${NOTHING_HOW}`);
+    // The endpoint's row (`path id: ref Ticket`) is read before a condition asks whether it exists.
+    for (const k of [...scope.keys()].filter((x) => x.startsWith("∄row:"))) {
+      const rec = k.slice(5);
+      const w = rec[0].toLowerCase() + rec.slice(1);
+      const plain = text.replace(/"(?:[^"\\{]|\\.)*/g, " ");
+      if (kind === "cond" && new RegExp(`^\\s*(?:that|this)\\s+${w}\\s+(?:exists|does\\s+not\\s+exist)\\s*$`).test(plain)) continue;
+      const read = new RegExp(`\\b(?:that|this|the)\\s+${w}\\b(?!\\s+(?:whose|where|in|with|that|which|exists|does))|\\bits\\s+@`).exec(plain);
+      if (read) say("NOTHING", `\`${read[0].trim()}\` reads the row the request names, which may not exist: ask first, \`if that ${w} does not exist { answer 404 "…" }\``);
+    }
 
     // A draw is one of the five forms; \`random\` or \`shuffled\` anywhere else would be judgement (v69).
     if (kind !== "always" && kind !== "rules") {
@@ -1053,7 +1152,7 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
     // A change form (`@x before`, `… was …`, `the new @xs`) reads the state before a step and after it:
     // only a rule in `always` sees both. A handler, a derived value or a screen reads one state.
     if (kind !== "always" && kind !== "rules") {
-      const w = changeWords(text);
+      const w = kind === "cond" || kind === "derive" ? looseChangeWords(text) : changeWords(text);
       if (w.length) say("CHANGE", `\`${w[0]}\` reads the state before a step, which only a rule in \`always\` can: ${kind === "derive" ? "a derived value is computed from one state" : /^(on|endpoint|every|before|after)\b/.test(where) ? "a handler runs in one state" : "the screen shows one state"}; name the old value first (\`set @previous to @x\` before the step that changes it)`);
     }
     // `the new @xs` / `the removed @xs`: rows are matched by their key before and after the step.
@@ -1069,8 +1168,12 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       if (x.k === "type" && !numeric(x.t)) say("TYPE", `\`${m[1]} @${m[2]}\`: @${m[2]} is ${show(x.t)}, not a number`);
       else nothingAt(`\`${m[1]} @${m[2]}\``, x);
     }
+    // The second end of \`between A and B\` is not the subject of what follows (\`the minutes between @now
+    // and that booking's @start is below 1440\` compares the minutes, K8).
+    const endOfBetween = (i: number) => /\bbetween\s+\S.*?\s+and\s+(?:(?!\bis\b).)*$/.test(text.slice(0, i));
     // @x is (not) @y — a value of its choice, or a value it can be compared with (a reference with its record's key)
     for (const m of text.matchAll(new RegExp(`${SUBJECT}${REF}\\s+is\\s+(?:not\\s+)?(?:equal\\s+to\\s+|the\\s+same\\s+as\\s+)?${REF}(?![\\w.'’])${END}`, "g"))) {
+      if (endOfBetween(m.index!)) continue;
       const [x, y] = [at(m[1]), at(m[2])];
       if (x.k === "type" && y.k === "value" && !valueFits(x.t, y.choices)) say("TYPE", `\`@${m[1]} is @${m[2]}\`: @${m[1]} is ${show(x.t)}, and ${m[2]} is a value of ${y.choices.join(" / ")}`);
       if (x.k === "type" && y.k === "type") {
@@ -1081,6 +1184,7 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
     }
     // @x is above / below / at least … @y (or a number): both numbers, or both moments
     for (const m of text.matchAll(new RegExp(`${SUBJECT}${REF}\\s+is\\s+(?:not\\s+)?${NUM_CMP}\\s+(?:${REF}|(-?\\d+(?:\\.\\d+)?))${END}`, "g"))) {
+      if (endOfBetween(m.index!)) continue;
       const x = at(m[1]);
       const y: Fit = m[2] ? at(m[2]) : { k: "type", t: literalType(m[3])! };
       if (x.k !== "type") continue;
@@ -1157,6 +1261,25 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       } else if (m[5]) {
         const lt = literalType(m[5]);
         if (lt && !comparable(field.type, lt)) say("TYPE", `\`whose @${m[3]} is ${m[5]}\`: ${rec}.${m[3]} is ${show(field.type)}`);
+      }
+    }
+    // the @items whose @due is before @today: an order on a row's field that may be nothing is refused,
+    // as anywhere else (held-out round 4, K9); \`whose there is a @due and @due is before …\` asks first.
+    for (const m of text.matchAll(/\b(?:the|a|an|no|any|every|each|some)\s+(?:@([a-z]\w*)|([a-z]\w*))\s+(?:in\s+(@[a-z][\w.]*)\s+)?(?:whose|where)\s+(.+?)(?=$|;|,\s|\s+(?:when|otherwise|sorted|first|last)\b)/g)) {
+      const rec = m[1] ? recordOf(listItem(typeOfValue(at(m[1])))) : m[3] ? recordOf(listItem(typeOfValue(at(m[3].slice(1))))) : recordNamed(m[2]);
+      if (!rec) continue;
+      const asked = new Set<string>();
+      for (const part of m[4].split(/\s+and\s+/)) {
+        const p = part.trim();
+        const q = p.match(/^there\s+is\s+(?:a|an)\s+@([a-z]\w*)$/);
+        if (q) {
+          asked.add(q[1]);
+          continue;
+        }
+        const o = p.match(new RegExp(`^@([a-z]\\w*)\\s+is\\s+(?:not\\s+)?${NUM_CMP}\\s+(.+)$`));
+        if (!o || asked.has(o[1])) continue;
+        const f = records.get(rec)!.fields.find((y) => y.name === o[1]);
+        if (f?.type.k === "Maybe") say("NOTHING", `\`whose ${p}\`: ${rec}.${o[1]} may be nothing (${show(f.type)}), and an order needs a value: ask first in the filter (\`whose there is a @${o[1]} and ${p}\`)`);
       }
     }
     // the @books whose @author's @country is "NL": a condition through a reference, typed as the field it reads
@@ -1289,7 +1412,9 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       if ((m = x.match(/^publish\s+@([a-z]\w*)(?:\s+with\s+(.+))?$/))) return !m[2] || typedValue(m[2]);
       if ((m = x.match(/^undo\s+@([a-z]\w*)\.([a-z]\w*)$/))) return true;
       if ((m = x.match(/^go\s+to\s+@([a-z]\w*)(?:\s+with\s+(.+))?$/))) return !m[2] || /@/.test(m[2]) === false || m[2].split(/\s*(?:,|\band\b)\s*/).every((p) => !/=/.test(p) || typedValue(p.split("=")[1]));
-      if ((m = x.match(/^(?:answer\s+)?\d{3}(?:\s+with\s+(.+)|\s+("(?:[^"\\]|\\.)*"))?$/))) return !m[1] || typedValue(m[1]);
+      // `answer 409 "Already solved by {…}"`: the message is a template too, its holes typed and nothing-safe.
+      //  A hole may hold a string of its own (`{…, or "someone" when there is none}`).
+      if ((m = x.match(/^(?:answer\s+)?\d{3}(?:\s+with\s+(.+)|\s+(".*"))?$/s)) && (!m[2] || /^"(?:[^"\\]|\\.)*"$/.test(m[2].replace(/\{[^{}]*\}/g, "")))) return m[1] ? typedValue(m[1]) : m[2] ? typedValue(m[2]) : true;
       return false;
     };
     /** Several steps in one sentence: `…; …` and `…, and set …`. One pass: the separators outside
@@ -1351,6 +1476,7 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       // A derived value may be `T or nothing`; what it reads may not be nothing where a T is needed.
       const v = value(text);
       if (v?.k === "error" && v.msg.includes("∅")) say("NOTHING", `\`${text.trim()}\`: ${v.msg}`);
+      else if (v?.k === "error") say("TYPE", `\`${text.trim()}\`: ${v.msg}`);
       if (!v) {
         const c = typeCond(text, scope, row);
         if (c?.includes("∅")) say("NOTHING", `\`${text.trim()}\`: ${c}`);
@@ -1432,6 +1558,26 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
     const c = parseChange(text);
     if (!c) return false;
     if (line >= LINE_BASE) return true; // from a bundle: checked there
+    // A named form's subject is a field of the record's own rows (or of a state value): a hop through a
+    // reference is another record's field, and a rule belongs on the record it is a field of.
+    const hop = text.trim().match(/^(?:(?:a|an|every|each)\s+@([A-Z]\w*)|(?:the\s+)?@([a-z][\w.]*))((?:['’]s\s+@[a-z]\w*)+)\s+(?:never\s+changes|never\s+goes\s+(?:down|up)|only\s+changes\s+from\b|(?:is|are)\s+never\s+removed)/);
+    if (hop) {
+      const hops = [...hop[3].matchAll(/@([a-z]\w*)/g)].map((y) => y[1]);
+      let t: Type | undefined = hop[1] ? { k: "Named", name: hop[1] } : typeOfName(hop[2]);
+      for (let i = 0; i < hops.length - 1 && t; i++) {
+        const r = strip(t);
+        const rec = r.k === "Ref" ? r.name : recordOf(r);
+        const f = rec ? records.get(rec)?.fields.find((y) => y.name === hops[i]) : undefined;
+        const ft = f && strip(f.type);
+        if (ft?.k === "Ref") {
+          const target = ft.name;
+          const field = hops[i + 1];
+          err(line, "CHANGE", `\`${hop[0].replace(/\s+(?:never|only|is|are)\b.*$/, "")}\` goes through a reference (\`${hops[i]}\` holds a ${target}'s key): a change rule is about a record's own fields; write it on the record it belongs to: \`a @${target}'s @${field} never changes\` (always)`);
+          return true;
+        }
+        t = f?.type;
+      }
+    }
     if (!("named" in c) || !c.named) {
       check(text, line, "always", new Map(), undefined, undefined, "always");
       return true;
@@ -1607,11 +1753,13 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
         if (item) inner.set(s.name, item);
         else inner.delete(s.name);
         const loopRows = item && recordOf(item) ? [...rows, recordOf(item)!] : rows;
-        if (s.where) check(s.where, s.line, where, inner, row, bodyTypes, "cond");
+        // `whose @expiresAt …` reads the loop's rows' fields by name, as a lookup's `whose` does.
+        const condRow = s.whose && item ? (recordOf(item) ?? row) : row;
+        if (s.where) check(s.where, s.line, where, inner, condRow, bodyTypes, "cond");
         noteDraws(s.list, s.line, where, scope, row); // `for each @card in @deck shuffled`
         loops++;
         try {
-          walk(s.body, [], undefined, s.line, where, s.where ? narrowBy(inner, s.where, true, row) : inner, bodyTypes, row, loopRows, answerOrEvent);
+          walk(s.body, [], undefined, s.line, where, s.where && !s.whose ? narrowBy(inner, s.where, true, row) : inner, bodyTypes, row, loopRows, answerOrEvent);
         } finally {
           loops--;
         }
@@ -1674,7 +1822,16 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
     const rows = ["click", "toggle", "type", "choose"].includes(h.verb) ? rowOf.get(h.target) : undefined;
     walk(h.body, h.steps, h.stepLines, h.line, where, scope, bodyTypes, rows?.[rows.length - 1], rows ?? [], h.verb === "answer" || h.verb === "event");
   }
-  for (const ep of app.endpoints ?? []) walk(ep.body, ep.steps, ep.stepLines, ep.line, `endpoint ${ep.name}`, new Map(ep.params.map((p) => [p.name, p.type])));
+  // An endpoint whose request names a row with a `ref` param (`path id: ref Ticket`): "that ticket" is
+  // that row from the first step, and it may not exist (`∄row:Ticket`) until a condition asks
+  // (`if that ticket does not exist { answer 404 "…" }`): a smart cast, as in the access rules.
+  for (const ep of app.endpoints ?? []) {
+    const refs = ep.params.map((p) => strip(p.type)).filter((t): t is Extract<Type, { k: "Ref" }> => t.k === "Ref");
+    const one = refs.length === 1 ? refs[0].name : undefined;
+    const scope = new Map<string, Type>(ep.params.map((p) => [p.name, p.type]));
+    if (one) scope.set(`∄row:${one}`, { k: "Named", name: one });
+    walk(ep.body, ep.steps, ep.stepLines, ep.line, `endpoint ${ep.name}`, scope, undefined, undefined, one ? [one] : []);
+  }
   for (const j of app.jobs ?? []) walk(j.body, j.steps, j.stepLines, j.line, `every ${j.name.slice(5)}`, new Map());
 
   // Derived values used where their type matters, with none known: a quality rule's to report (UNTYPED).

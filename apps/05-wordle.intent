@@ -1,7 +1,7 @@
 app Wordle {
   "Guess the hidden five-letter word in six tries."
 }
-language v47
+language 1
 record Guess {
   word: Text
   marks: Text

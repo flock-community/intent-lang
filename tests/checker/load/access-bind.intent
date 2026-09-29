@@ -1,10 +1,11 @@
 app AccessBindings {
   "What an access block binds: the key layer's `public` said once, the grants, the homes a rule follows."
 }
+language 1
 
 profile api
 
-use auth = std.http.apiKey {
+layer auth = std.http.apiKey {
   keys = table {
     secret     | owner
     "k-ann-1"  | "Ann"
@@ -40,7 +41,7 @@ state {
 
 access {
   roles = badges                                # expect: ACCESS
-  - anyone may call @health
+  - anyone, without a key, may call @health
   - an @Agent may call @takeTicket when the @caller is in that ticket's @team's @members   # expect: HOME
 }
 

@@ -1,6 +1,7 @@
 app NotYet {
   "Constructs the language does not have yet are NOT_YET; wire names for a choice are all or none, and each is used once."
 }
+language 1
 
 choice Level: Info = "info" | Urgent = "urgent"                  # expect-not: SYNTAX  # expect-not: DUPLICATE
 choice Half: Low = "low" | High                                  # expect: SYNTAX

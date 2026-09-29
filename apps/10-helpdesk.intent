@@ -1,7 +1,7 @@
 app Helpdesk {
   "A support desk for a small team: see what needs attention, triage tickets and answer customers."
 }
-language v47
+language 1
 design {
   look "A calm, modern SaaS admin. Light neutral page background; white surfaces with a thin neutral border and a subtle shadow; comfortable spacing; dark neutral headings and muted neutral secondary text; the brand color for primary actions and the active navigation item."
   brand: indigo
@@ -87,8 +87,8 @@ derive {
   pageCount = the number of @sorted @tickets divided by 5, rounded up, but at least 1
   shown = @sorted from position (@pageNumber - 1) × 5 + 1 on, at most 5 of them
   urgentOpen = the number of @Urgent @tickets that are not @Solved
-  current = the ticket whose @id is @selected, or nothing when there is no @selected
-  thread = the @comments whose @ticket is @selected, in their order (none when there is no @selected)
+  current = the ticket whose @id is @selected, or nothing when there is none
+  thread = the @comments whose @ticket is @selected, in their order
   byPriority = one @Bar per @priority, in the order @Urgent, @High, @Normal, @Low: @label is the @priority's name, @count is the number of @tickets with that @priority that are not @Solved, and @share is @count × 100 divided by the largest @count of the four, rounded down (0 when all counts are 0)
 }
 

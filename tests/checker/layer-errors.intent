@@ -1,4 +1,5 @@
 layer test.broken
+language 1
 
 param keys: List Text                     # expect: BAD_BINDING
 param size: Nope = 1                      # expect: UNKNOWN_NAME

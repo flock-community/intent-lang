@@ -1,15 +1,23 @@
 // Keeps the last verified build of an app per target, so the next build can reuse the code of the
 // units the spec did not change (`incremental auto`, docs/design/incremental.md). The code and the
-// unit digests live in `.intent/incremental/<app>/<target>/`.
+// unit digests live in `.intent/incremental/<spec>/<target>/`, keyed by the spec's file (two specs
+// that both say `app Todo` never share a store): its name, and a digest of its path.
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { App } from "./ast.ts";
 import { ROOT, type Target } from "./gen.ts";
 import { regionUnits } from "./regions.ts";
 import { diffUnits, units, type Diff, type Unit } from "./units.ts";
 
 const STORE = join(ROOT, ".intent/incremental");
-const dirFor = (app: App, target: Target, which: Which) => join(STORE, app.name, target, which);
+/** The store of a spec: its file (as loaded), never only its app's name. */
+export const storeKey = (app: App): string => {
+  const file = app.sources?.[0]?.file;
+  if (!file) return `${app.name}-nofile`;
+  return `${basename(file, ".intent").replace(/[^A-Za-z0-9._-]+/g, "_")}-${createHash("sha256").update(file).digest("hex").slice(0, 8)}`;
+};
+const dirFor = (app: App, target: Target, which: Which) => join(STORE, storeKey(app), target, which);
 
 /** Which compiler of a twin build: A (main) or B (the probe); each keeps its own previous code. */
 export type Which = "main" | "probe";
@@ -41,15 +49,23 @@ export function forgetIncremental(app: App, target: Target, which: Which) {
 
 /** What an incremental build would rewrite, or undefined when there is nothing to reuse. */
 export function planIncremental(app: App, prev: { code: string; units: Unit[] }): { diff: Diff; regions: string[] } | undefined {
+  const r = explainIncremental(app, prev);
+  return "why" in r ? undefined : r;
+}
+
+/** The plan, or why the previous build cannot be reused (the build logs it). */
+export function explainIncremental(app: App, prev: { code: string; units: Unit[] } | undefined): { diff: Diff; regions: string[] } | { why: string } {
+  if (!prev) return { why: `no previous verified build of ${app.sources?.[0]?.file ?? app.name} for this target` };
   const regions = regionUnits(app);
   // Nothing is marked: the previous build cannot be reused region by region.
-  if (!regions.length) return undefined;
+  if (!regions.length) return { why: "the app has no regions to reuse" };
   const diff = diffUnits(prev.units, units(app));
   // Only new units (or everything dirty): a full build is as cheap and simpler.
-  if (!diff.clean.length) return undefined;
+  if (!diff.clean.length) return { why: "no unit is unchanged since the previous build" };
   // A dirty or removed behaviour unit with no region (an element, an endpoint in a screen, a job)
   // cannot be rewritten in place: a full build is needed, so nothing changes silently.
   const inPlace = (k: string) => regions.includes(k);
-  if (diff.dirty.some((k) => !inPlace(k)) || diff.removed.some((k) => !inPlace(k))) return undefined;
+  const outside = [...diff.dirty, ...diff.removed].filter((k) => !inPlace(k));
+  if (outside.length) return { why: `${outside.slice(0, 3).join(", ")}${outside.length > 3 ? ` and ${outside.length - 3} more` : ""} changed outside a region (an element, the state, a record): a full build` };
   return { diff, regions };
 }

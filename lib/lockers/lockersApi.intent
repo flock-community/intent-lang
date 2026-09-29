@@ -1,6 +1,7 @@
 contract lockers.lockersApi {
   "Parcel lockers over HTTP: a courier deposits a parcel into a free locker of a size and gets the locker number and a pickup code; the recipient picks it up with both; anyone may ask how many lockers of each size are free."
 }
+language 1
 
 import lockers.lockers
 

@@ -2,18 +2,19 @@ app DeskApi {
   "The support desk's API for agents, called from the desk's web pages."
   "Every request carries an agent's API key; what an agent may do depends on who they are: an agent works on their own tickets, a lead on every ticket."
 }
+language 1
 
 import support.tickets
 
 implements support.deskApi
 
 # The first layer sees every request first and every answer last.
-use secure = std.http.secure
-use cors = std.http.cors {
+layer secure = std.http.secure
+layer cors = std.http.cors {
   origins = "https://desk.example"
   headers = "content-type", "x-api-key"
 }
-use auth = std.http.apiKey {
+layer auth = std.http.apiKey {
   keys = table {
     secret         | owner
     "k-ann-7f3a"   | "Ann"
@@ -42,7 +43,7 @@ state {
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     2  | "Invoice shows wrong VAT"      | "Piet de Vries" | High     | Open    | "Ann"
     3  | "Feature request: dark mode"   | "Lena Smit"     | Low      | Pending | "Sam"
-    4  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | ""
+    4  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | nothing
     5  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Solved  | "Ann"
   }
   comments: List Comment = []
@@ -63,15 +64,15 @@ endpoint health {
 }
 
 endpoint myTickets {
-  answer 200 with the @tickets whose @assignee is the @caller, highest @id first
+  answer 200 with the @tickets whose @assignee is the @caller sorted by @id, highest first
 }
 
 endpoint takeTicket {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
-  if that ticket's @assignee is not blank and is not the @caller {
-    answer 409 "Already taken by {assignee}"
+  if there is a @assignee on that ticket and it is not the @caller {
+    answer 409 "Already taken by {that ticket's @assignee, or "someone" when there is none}"
   }
   - set its @assignee to the @caller
   - publish @ticketAssigned with the ticket
@@ -79,7 +80,7 @@ endpoint takeTicket {
 }
 
 endpoint solveTicket {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   if that ticket is @Solved {
@@ -91,7 +92,7 @@ endpoint solveTicket {
 }
 
 endpoint addComment {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   if @text, trimmed, is blank {
@@ -159,6 +160,14 @@ example "taking and solving: only the assignee solves; a lead solves any ticket"
   call solveTicket as "Lin" with id = 2
   see solveTicket.status = 200
   see solveTicket.body.assignee = "Ann"
+}
+
+example "an unassigned ticket is nobody's to solve but a lead's" {
+  call solveTicket as "Sam" with id = 4
+  see solveTicket.status = 403
+  see solveTicket.body.error = "Only the assignee can solve this ticket"
+  call solveTicket as "Lin" with id = 4
+  see solveTicket.status = 200
 }
 
 example "a key without a role reaches nothing but health" {

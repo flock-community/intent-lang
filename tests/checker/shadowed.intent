@@ -1,6 +1,7 @@
 app Shadowed {
   "A row element whose name is both a field of the row and an app-level name."
 }
+language 1
 
 record Booking {
   party: Int

@@ -1,6 +1,7 @@
 app BraceChecks {
   "Blocks with braces: a stray brace and an unclosed block are errors."
 }
+language 1
 
 state {
   count: Int = 0

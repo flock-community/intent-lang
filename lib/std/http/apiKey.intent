@@ -1,6 +1,7 @@
 layer std.http.apiKey {
   "Every request carries an API key in a header; the caller is whoever the key belongs to."
 }
+language 1
 
 record ApiKey {
   secret: Text
@@ -9,7 +10,7 @@ record ApiKey {
 
 param keys: List ApiKey                            # the keys that may call, and who each belongs to
 param keyHeader: Text = "x-api-key"                # the header that carries the key
-param public: List Text = []                       # what anyone may call without a key: "/health" (that path), "/bundles/*" (every path under /bundles/), "GET /bundles/*" (only with that method); in an app with an `access` block the harness binds it from the `anyone may` rules
+param public: List Text = []                       # what anyone may call without a key: "/health" (that path), "/bundles/*" (every path under /bundles/), "GET /bundles/*" (only with that method); in an app with an `access` block the harness binds it from the `anyone, without a key, may call` rules
 
 provides caller: Text                              # the owner of the key; "" on a public path and for OPTIONS
 

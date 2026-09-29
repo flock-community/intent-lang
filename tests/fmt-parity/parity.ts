@@ -8,6 +8,7 @@ const dates = ["2026-09-24", "2024-02-28", "2024-02-29", "2023-02-28", "2000-02-
 const moments = ["2026-09-24T09:00", "2026-09-24T23:50", "2024-02-28T23:59", "1970-01-01T00:00", "1969-12-31T23:30"];
 const dateTexts = ["2026-09-24", " 2026-09-24 ", "2026-02-30", "2024-02-29", "2023-02-29", "2026-13-01", "26-09-24", "2026-9-24", "", "2026-09-24T09:00", "2026-09-24 09:00", "2026-09-24 24:00", "2026-09-24T09:60", "2026-09-24T9:00"];
 const shaTexts = ["", "abc", "a", "Café", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "The quick brown fox jumps over the lazy dog"];
+const sortRows: [number, string | null, string][] = [[1, "2026-09-25", "anna"], [2, null, "Zoë"], [3, "2026-09-24", "Émile"], [4, "2026-09-25", "Bob"], [5, null, "bob"], [6, "2026-09-24", "Ann"]];
 const ts = {
   fixed2: floats.map((x) => Fmt.fixed(2, x)),
   fixed0: floats.map((x) => Fmt.fixed(0, x)),
@@ -27,10 +28,14 @@ const ts = {
   formatDate: dates.map(Fmt.formatDate),
   addMinutes: moments.flatMap((t) => [-1441, -1, 15, 60, 1440].map((n) => Fmt.addMinutes(t, n))),
   minutesBetween: moments.map((t) => Fmt.minutesBetween("2026-09-24T09:00", t)),
+  hoursBetween: moments.flatMap((t) => [Fmt.hoursBetween("2026-09-24T09:00", t), Fmt.hoursBetween(t, "2026-09-24T09:00")]),
   formatDateTime: moments.map(Fmt.formatDateTime),
   dateOf: moments.map((t) => Fmt.dateOf(t) + " " + Fmt.timeOf(t)),
   parseDate: dateTexts.map(Fmt.parseDate),
   parseDateTime: dateTexts.map(Fmt.parseDateTime),
+  sortBy: Fmt.sortBy(sortRows, [(r) => r[1], "asc"], [(r) => r[0], "desc"]).map((r) => String(r[0])),
+  sortByText: Fmt.sortBy(sortRows, [(r) => r[2], "asc"]).map((r) => r[2]),
+  sortByDesc: Fmt.sortBy(sortRows, [(r) => r[1], "desc"]).map((r) => String(r[0])),
   sha256: shaTexts.map(sha256),
 };
 const { Elm } = createRequire(import.meta.url)("./probe.cjs");

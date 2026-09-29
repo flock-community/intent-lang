@@ -1,6 +1,7 @@
 app StructureApi {
   "An endpoint must answer on every path."
 }
+language 1
 
 profile api
 
@@ -18,7 +19,7 @@ endpoint bump POST "/bump" {               # expect: NO_ANSWER
 }
 
 endpoint read GET "/count" {
-  returns Int
+  answers 200 Int
   else {                                   # expect: SYNTAX
     answer 200 with @count
   }
@@ -26,7 +27,7 @@ endpoint read GET "/count" {
 }
 
 endpoint stopInstead PATCH "/stop" {
-  returns Int
+  answers 200 Int
   if @count is above 5 {
     stop                                   # expect: STEP
   }
@@ -34,7 +35,8 @@ endpoint stopInstead PATCH "/stop" {
 }
 
 endpoint silent PUT "/silent" {
-  returns Int
+  answers 200 Int
+  answers 409 Problem
   if @count is above 1 {
     answer 409                             # expect: STEP
   }
@@ -43,7 +45,7 @@ endpoint silent PUT "/silent" {
 
 endpoint item GET "/items/{id}" {
   path id: Int
-  returns Int
+  answers 200 Int
   if @path.id is above 0 {
     answer 200 with @path.id
   }

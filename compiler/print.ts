@@ -2,7 +2,7 @@
 // the same spec — whatever its formatting or imports — gives the same bytes. `intent expand`.
 import type { App, Binding, Element, Literal, Step, Stmt } from "./ast.ts";
 import { LINE_BASE } from "./ast.ts";
-import { typeToString } from "./parse.ts";
+import { EXPANDED_LINE, typeToString } from "./parse.ts";
 import { toBraces } from "./braces.ts";
 import { codeSize } from "./alphabets.ts";
 import { ruleText } from "./access.ts";
@@ -53,7 +53,7 @@ export function stepText(s: Step): string {
     case "tick": return s.ms ? `wait ${duration(s.ms)}` : `tick ${s.times} times`;
     case "snapshot": return `snapshot ${q(s.name)}`;
     case "restart": return "restart";
-    case "size": return `size ${s.size[0].toLowerCase()}${s.size.slice(1)}`;
+    case "size": return `size ${s.size}`;
     case "open": return `open ${q(s.path)}`;
     case "back": return "go back";
     case "random": return `steer random ${s.what}${s.order ? ` ${s.order === "keep" ? "keeps" : "reverses"} order` : s.pick !== undefined ? ` ${s.pick}` : ` = ${(s.values ?? []).map((v) => lit(v, "")).join(", ")}`}`;
@@ -127,7 +127,7 @@ function body(b: { body?: Stmt[]; steps: string[] }, ind: string, app?: App): st
       else if (s.k === "answer") out.push(`${i}answer ${s.text}`);
       else if (s.k === "stop") out.push(`${i}stop`);
       else if (s.k === "for") {
-        out.push(`${i}for each @${s.name} in ${s.list}${s.where ? ` where ${s.where}` : ""}`);
+        out.push(`${i}for each @${s.name} in ${s.list}${s.where ? ` ${s.whose ? "whose" : "where"} ${s.where}` : ""}`);
         walk(s.body, i + "  ");
       } else
         s.branches.forEach((br, n) => {
@@ -151,14 +151,17 @@ function binding(b: Binding, ind: string): string[] {
 export function printApp(app: App): string {
   const out: string[] = [];
   const block = (lines: string[]) => lines.length && out.push(...lines, "");
+  // Qualified names (a component's, `pager.next`) read back only in a spec that says it is expanded.
+  const els = (xs: Element[]): boolean => xs.some((e) => e.name.includes(".") || els(e.children));
+  if (app.state.some((f) => f.name.includes(".")) || app.derive.some((d) => d.name.includes(".")) || els(app.screen)) out.push(EXPANDED_LINE);
   block([`${app.kind ?? "app"} ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
   if (app.profile && app.profile !== "ui" && app.kind !== "layer") block([`profile ${app.profile}`]);
   if (app.startsAt) block([`examples start at ${app.startsAt.replace("T", " ")}`]);
-  if (app.sizes) block([`sizes ${app.sizes.map((x) => x[0].toLowerCase() + x.slice(1)).join(" | ")}`]);
+  if (app.sizes) block([`sizes ${app.sizes.join(" | ")}`]);
   // Layers the api runs behind, in order, with their bound params.
   for (const l of app.layers ?? [])
     block([
-      `use ${l.alias} = ${l.layer}${l.digest ? `  # layer ${l.digest}` : ""}`,
+      `layer ${l.alias} = ${l.layer}${l.digest ? `  # layer ${l.digest}` : ""}`,
       ...(l.spec?.purpose ?? []).map((p) => `  # ${p}`),
       ...(l.spec?.provides ?? []).map((p) => `  # provides ${p.name}: ${typeToString(p.type)} to every endpoint${p.note ? ` — ${p.note}` : ""}`),
       ...l.bindings.flatMap((b) => binding(b, "  ")),
@@ -234,7 +237,7 @@ export function printApp(app: App): string {
     block([
       `endpoint ${ep.name} ${ep.method} ${q(ep.path)}${origin(app, ep.line, ep.note)}`,
       ...ep.params.map((p) => `  ${p.in} ${p.name}: ${typeToString(p.type)}`),
-      ...(ep.returns && app.kind !== "contract" ? [`  returns ${typeToString(ep.returns)}`] : []),
+      ...(ep.returns && app.kind !== "contract" && !ep.answers?.length ? [`  returns ${typeToString(ep.returns)}`] : []),
       ...(ep.answers ?? []).map((a) => `  answers ${a.status}${a.type ? ` ${typeToString(a.type)}` : ""}`),
       ...effectLines(ep, "  "),
       ...(app.kind === "contract" ? [] : body(ep, "  ", app)),

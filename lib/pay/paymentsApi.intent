@@ -1,6 +1,7 @@
 contract pay.paymentsApi {
   "Taking payments and giving them back, over HTTP. Money leaves the customer: every charge reaches outside, and a refund is how it is undone."
 }
+language 1
 
 import pay.payments
 
@@ -17,20 +18,20 @@ endpoint charge POST "/charges" {
 }
 
 endpoint refund POST "/charges/{id}/refund" {
-  path id: Int
+  path id: ref Charge
   answers 200 Charge
   answers 404 Problem
   answers 409 Problem                 # already refunded
 }
 
 endpoint getCharge GET "/charges/{id}" {
-  path id: Int
+  path id: ref Charge
   answers 200 Charge
   answers 404 Problem
 }
 
 endpoint sendReceipt POST "/charges/{id}/receipt" {
-  path id: Int
+  path id: ref Charge
   body email: Text
   answers 204
   answers 404 Problem

@@ -1,5 +1,5 @@
 // `intent fix` (compiler/fix.ts): the mechanical fixes — an old `Maybe T`, an unmarked declared
-// name, and the `language vN` line. The source is only rewritten when it does not add errors.
+// name, and the `language 1` line. The source is only rewritten when it does not add errors.
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,10 +13,10 @@ assert.equal(markWord('text x = "count"', "count"), undefined, "a word inside a 
 assert.equal(markWord('text x = "{count}"', "count"), 'text x = "{@count}"', "a template hole is a sentence");
 
 const src = 'app A {\n  "keep Maybe here"\n}\n\nstate {\n  x: Maybe Item = nothing\n}\n';
-const fixed = fixSource(src, "v39");
+const fixed = fixSource(src, "1");
 assert.match(fixed.out, /"keep Maybe here"/, "a Maybe in prose is left alone");
 assert.match(fixed.out, /x: Item or nothing = nothing/, "an old Maybe type is rewritten");
-assert.match(fixed.out, /^language v39$/m, "the language line is added");
+assert.match(fixed.out, /^language 1$/m, "the language line is added");
 assert.equal(fixed.fixes.length, 2, "both fixes are reported");
 
 const dir = mkdtempSync(join(tmpdir(), "fix-test-"));
@@ -88,7 +88,7 @@ assert.equal(p1.judgements.filter((j) => /ambiguous: `id` — the request's `@pa
 const rf = join(dir, "refuse.intent");
 writeFileSync(rf, readFileSync(new URL("./fix/refuse.intent", import.meta.url), "utf8"));
 const r1 = fixFile(rf);
-assert.match(r1.out, /^language v\d+$/m, "the language line is written");
+assert.match(r1.out, /^language 1$/m, "the language line is written");
 assert.match(r1.out, /note: Text or nothing = nothing/);
 assert.match(r1.out, /enabled when @current is not @Solved/, "`@current` is kept once `@Solved` is marked (the order does not matter)");
 assert.match(r1.out, /- increase @count by 1/);
@@ -98,22 +98,51 @@ assert.equal(r1.refused[0].what, "marked @chosen");
 assert.match(r1.refused[0].why[0], /NOTHING: `@chosen plus 1`/, "the refusal says which error it would add");
 assert.equal(r1.left.filter((d) => d.level === "error").length, 0);
 
-// The v70 case: an api behind keys with no `access` block. The newer language makes that an error;
-// fix writes `language vN` anyway and reports the error as the author's, instead of refusing everything.
+// A pre-1 line (`language v69`) reads as `language 1`, and fix rewrites it. An api behind keys with
+// no \`access\` block is an error in language 1 whatever the line says: fix leaves it to the author.
 const na = join(dir, "noaccess.intent");
 writeFileSync(na, readFileSync(new URL("./fix/noaccess.intent", import.meta.url), "utf8"));
 const n1 = fixFile(na);
-assert.ok(n1.fixes.some((f) => /^language v69 → v\d+$/.test(f.what)), "the language line is updated");
-assert.ok(n1.judgements.some((j) => j.code === "NO_ACCESS" && /makes this an error/.test(j.what)), "NO_ACCESS is reported as needing the author");
+assert.ok(n1.fixes.some((f) => f.what === "language v69 → 1"), "the pre-1 language line is rewritten");
 assert.deepEqual(n1.left.filter((d) => d.level === "error").map((d) => d.code), ["NO_ACCESS"]);
+// A `language 1.x` line stays (it is the lowest version the spec needs); a second run changes nothing.
+assert.equal(fixSource('app H {\n  "p"\n}\nlanguage 1.2\n', "1").out, 'app H {\n  "p"\n}\nlanguage 1.2\n');
+assert.equal(fixText(n1.out).fixes.length, 0, "fix is idempotent on the rewritten line");
 
 // A fix may not trade one error for another: errors are compared as (file, line, code), not counted.
 assert.deepEqual(newErrors([{ level: "error", code: "TYPE", line: 3, col: 1, message: "x" }], [{ level: "error", code: "NOTHING", line: 5, col: 1, message: "y" }]).map((d) => d.code), ["NOTHING"], "one error removed and another added is a new error");
 assert.deepEqual(newErrors([{ level: "error", code: "TYPE", line: 3, col: 1, message: "x" }], [{ level: "error", code: "TYPE", line: 3, col: 1, message: "x" }]), []);
 
 // The language line goes after the header, also in the older indentation syntax (never inside it).
-assert.equal(fixSource('app H\n  "purpose"\n\nstate\n  x: Int = 0\n', "v72").out, 'app H\n  "purpose"\nlanguage v72\n\nstate\n  x: Int = 0\n');
-assert.equal(fixSource('# a note\napp H {\n  "p"\n}', "v72").out, '# a note\napp H {\n  "p"\n}\nlanguage v72\n');
+assert.equal(fixSource('app H\n  "purpose"\n\nstate\n  x: Int = 0\n', "1").out, 'app H\n  "purpose"\nlanguage 1\n\nstate\n  x: Int = 0\n');
+assert.equal(fixSource('# a note\napp H {\n  "p"\n}', "1").out, '# a note\napp H {\n  "p"\n}\nlanguage 1\n');
+
+// Nothing on the wire is null: `is absent` on a declared `T or nothing` (an answer's, an event's) is a
+// STEP error that names its rewrite, `= nothing`; `is absent` on an event stays.
+const ab = join(dir, "absent.intent");
+writeFileSync(ab, readFileSync(new URL("./fix/absent.intent", import.meta.url), "utf8"));
+const a1 = fixFile(ab);
+assert.match(a1.out, /see note\.body\.due = nothing\n/, "an answer's nothing is `= nothing`");
+assert.match(a1.out, /see noteMade\.body\.due = nothing\n/, "an event's nothing is `= nothing`");
+assert.match(a1.out, /see noteMade is absent\n/, "`is absent` on an event stays");
+assert.equal(a1.fixes.filter((f) => f.what === "`is absent` → `= nothing`").length, 2);
+assert.equal(a1.left.filter((d) => d.level === "error").length, 0, "the rewritten examples check clean");
+
+// v73: one spelling per form. Each old form is a SPELLING warning that names its rewrite; the result
+// checks clean, with no SPELLING left, on a screen (nothing, fallbacks, sizes, dates, a select's
+// none) and on an api (layers, access, answers, the endpoint's row, loops).
+for (const [name, expect] of [
+  ["v73.intent", [/^sizes Compact \| Standard$/m, /payer: Text or nothing = nothing/, /nextId = the highest @id in @people \+ 1, or 1 when there is none$/m, /shown = @picked plus 1, or 0 when there is none$/m, /- set @payer to nothing/, /if there is a @picked \{/, /14 days after @today/, /^  size Standard$/m]],
+  ["v73-api.intent", [/^layer auth = std\.http\.apiKey \{/m, /- anyone, without a key, may call @health/, /when that notice's @status is not @Archived/, /^  answers 200 Text$/m, /^  answers 201 Notice\n  answers 400 Problem\n  answers 401 Problem$/m, /if that notice does not exist \{/, /for each @notice in @notices whose @expiresAt is at or before @now \{/, /- set @notice's @status to @Archived/]],
+] as const) {
+  const f = join(dir, name);
+  writeFileSync(f, readFileSync(new URL(`./fix/${name}`, import.meta.url), "utf8"));
+  const r = fixFile(f);
+  for (const re of expect) assert.match(r.out, re, `${name}: ${re}`);
+  assert.equal(r.left.filter((d) => d.level === "error").length, 0, `${name}: the rewritten spec checks clean (${r.left.filter((d) => d.level === "error").map((d) => `${d.line} ${d.code} ${d.message}`).join("; ")})`);
+  assert.ok(!r.left.some((d) => d.code === "SPELLING"), `${name}: no old spelling is left (${r.left.filter((d) => d.code === "SPELLING").map((d) => d.message).join("; ")})`);
+  assert.deepEqual(r.refused, [], `${name}: nothing refused`);
+}
 
 // Idempotent: a second run changes nothing, on every spec here, on the fixtures above, and on old specs
 // (tests/fix/old: this repository's apps as they were at v20 and v29, in the indentation syntax).
@@ -129,4 +158,4 @@ for (const f of all) {
   assert.deepEqual(twice.fixes, [], `${f}: a second \`intent fix\` still fixes something`);
 }
 
-console.log(`ok fix: @newToken as a draw, change rules in other words, Maybe T, @unmarked names, a lookup's where, a lookup of a reference's row as navigation, and the language line, only when no error is added; never a declaration, judgements reported, refusals said with their error, errors compared by line and code, idempotent on ${all.length} specs`);
+console.log(`ok fix: the v73 spellings (nothing, fallbacks, loops, answers, layers, access, the endpoint's row, sizes, dates, a select's none), @newToken as a draw, change rules in other words, Maybe T, @unmarked names, a lookup's where, a lookup of a reference's row as navigation, and the language line, only when no error is added; never a declaration, judgements reported, refusals said with their error, errors compared by line and code, idempotent on ${all.length} specs`);

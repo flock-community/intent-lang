@@ -1,0 +1,70 @@
+app SpellingsApi {
+  "v73: the old spellings of an api, each rewritten by intent fix."
+}
+
+profile api
+
+use auth = std.http.apiKey {
+  keys = table {
+    secret  | owner
+    "k-ann" | "Ann"
+  }
+}
+
+choice Status: Open | Archived
+
+record Notice {
+  id: Int
+  text: Text
+  expiresAt: DateTime
+  status: Status = Open
+}
+
+state {
+  notices: List Notice = []
+}
+
+access {
+  - anyone may call @health
+  - any caller may call @archive when that notice is not @Archived
+  - any caller may call @create
+}
+
+endpoint health GET "/health" {
+  returns Text
+  answer 200 with "ok"
+}
+
+endpoint create POST "/notices" {
+  body text: Text
+  returns Notice
+  if @text, trimmed, is blank {
+    answer 400 "Text is required"
+  }
+  - add a @Notice to the end of @notices with @id = the highest @id in @notices + 1 (1 when there are none), @text trimmed and @expiresAt = @now
+  answer 201 with the new notice
+}
+
+endpoint archive POST "/notices/{id}/archive" {
+  path id: ref Notice
+  returns Notice
+  if no notice has that @id {
+    answer 404 "No such notice"
+  }
+  - set that notice's @status to @Archived
+  answer 200 with that notice
+}
+
+every 1m {
+  for each @notice in @notices where @notice.expiresAt is at or before @now {
+    - set @notice.status to @Archived
+  }
+}
+
+example "archiving" {
+  call create as "Ann" with text = "Hello"
+  see create.status = 201
+  call archive as "Ann" with id = 1
+  see archive.status = 200
+  see archive.body.status = Archived
+}

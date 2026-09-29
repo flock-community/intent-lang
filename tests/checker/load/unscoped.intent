@@ -1,6 +1,7 @@
 app Unscoped {
   "Inside a component its own names are written with @, so each use gets its own; a bare one is UNSCOPED."
 }
+language 1
 
 component Counter {
   param step = 1

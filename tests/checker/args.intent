@@ -1,6 +1,7 @@
 app ArgChecks {
   "Lists and records as call arguments; new lines in strings."
 }
+language 1
 
 profile api
 
@@ -16,26 +17,26 @@ state {
 
 endpoint want POST "/needs" {
   body needs: List Need
-  returns List Need
+  answers 200 List Need
   - add every one of the given @needs to the end of @needs
   answer 200 with @needs
 }
 
 endpoint note POST "/notes" {
   body text: Text
-  returns Text
+  answers 200 Text
   - set @notes to the given @text
   answer 200 with @notes
 }
 
 endpoint day GET "/day" {
   query at: Date
-  returns Date
+  answers 200 Date
   answer 200 with @at
 }
 
 endpoint ping GET "/ping" {
-  returns Text
+  answers 200 Text
   answer 200 with "pong"
 }
 

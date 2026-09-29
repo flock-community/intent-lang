@@ -2,7 +2,7 @@ app AlertsUi {
   "Raise an alert with a level and see every alert, also those others raise."
   "The service names the levels in lower case on the wire; the screen shows them as the spec names them."
 }
-language v60
+language 1
 import notify.alerts
 
 uses notify.alertsApi as alerts only raise, listAlerts, alertRaised {
@@ -58,7 +58,7 @@ on answer alerts.raise {
 }
 
 on event alerts.alertRaised {
-  if no row in @rows has the @id of its body {
+  if no row in @rows has its body's @id {
     - add its body to the end of @rows
   }
 }

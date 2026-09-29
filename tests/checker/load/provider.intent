@@ -1,6 +1,7 @@
 app ProviderChecks {
   "The provider an api's examples run against must check clean and implement that contract."
 }
+language 1
 
 uses notify.alertsApi as alerts {                     # expect: PROVIDER
   tested with "tests/checker/load/contract.intent"

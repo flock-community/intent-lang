@@ -14,10 +14,11 @@ import { targetModule } from "../compiler/targets/index.ts";
 const SPEC = (access: boolean) => `app Pings {
   "Key holders hear pings; a key can be revoked."
 }
-${access ? "" : "\nlanguage v60\n"}
+language 1
+
 profile api
 
-use auth = std.http.apiKey {
+layer auth = std.http.apiKey {
   keys = apiKeys
 }
 
@@ -93,10 +94,13 @@ try {
   for (const access of [true, false]) {
     const dir = join(root, access ? "access" : "plain");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "Pings.intent"), SPEC(access));
+    // Without an access block a spec behind keys is a NO_ACCESS error in language 1, so the harness's
+    // path without one is tested on the checked spec with its block taken out after the check.
+    writeFileSync(join(dir, "Pings.intent"), SPEC(true));
     const loaded = load(join(dir, "Pings.intent"), { ignoreLock: true });
     assert.deepEqual(loaded.diagnostics.filter((d) => d.level === "error").map((d) => `${d.line} ${d.code} ${d.message}`), []);
     const app = loaded.app!;
+    if (!access) delete app.access;
     const layerDir = join(dir, "layer-auth");
     scaffoldLayer(app.layers![0].spec!, layerDir);
     writeFileSync(join(layerDir, "layer.ts"), KEY_LAYER);

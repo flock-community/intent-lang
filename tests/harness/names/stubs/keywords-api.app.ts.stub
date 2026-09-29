@@ -1,0 +1,28 @@
+// A hand-written app module (a .stub, not type-checked in place) for tests/harness/names/build.ts: it proves the generated interface of a spec
+// whose names are target keywords compiles, and that its examples pass (no model involved).
+import type { Handlers, Class, Data, Stored } from "./spec.ts";
+
+export type Model = { class: Class[] };
+
+export function init(): Model {
+  return { class: [] };
+}
+
+export function data(m: Model): Data {
+  return { class: m.class };
+}
+
+export function restore(saved: Stored, m: Model): Model {
+  return { ...m, class: saved.class };
+}
+
+export const handlers: Handlers<Model> = {
+  add: (req, m) => {
+    const row: Class = { id: m.class.reduce((a, c) => Math.max(a, c.id), 0) + 1, type: req.type, in: req.in, new: false };
+    return { model: { class: [...m.class, row] }, response: { status: 201, body: row } };
+  },
+  of: (req, m) => {
+    const row = m.class.find((c) => c.id === req.new);
+    return { model: m, response: row ? { status: 200, body: row } : { status: 404, body: { error: "No such class" } } };
+  },
+};

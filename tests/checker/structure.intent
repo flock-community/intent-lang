@@ -1,6 +1,7 @@
 app StructureChecks {
   "if / else / answer / stop / for each: misplaced or unreachable steps are errors, prose control words a hint."
 }
+language 1
 
 record Row {
   id: Int
@@ -36,7 +37,7 @@ on click down {
 }
 
 on click clear {
-  for each @row in @rows where @row.id is above 0 {
+  for each @row in @rows whose @id is above 0 {
     - remove @row from @rows
   }
 }

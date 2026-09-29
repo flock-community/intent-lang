@@ -1,6 +1,7 @@
 app PagerDemo {
   "Proves std.list.Pager: twelve numbers, five per page."
 }
+language 1
 
 import std.list
 

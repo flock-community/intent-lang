@@ -1,6 +1,7 @@
 app EventsOnly {
   "`only` covers events too: handling one it does not list is undeclared. A value from a bundle this file does not import is an import error."
 }
+language 1
 
 uses notify.alertsApi as alerts only raise {      # expect: UNDECLARED  # expect-not: UNUSED
   tested with "apps/api/alerts-api.intent"

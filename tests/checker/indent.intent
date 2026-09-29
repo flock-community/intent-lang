@@ -1,6 +1,7 @@
 app IndentInBraces {
   "With braces the layout is free (a tab is fine), but a block under a line that takes none is an INDENT error."
 }
+language 1
 
 state {
   count: Int = 0 {

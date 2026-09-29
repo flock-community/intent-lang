@@ -1,6 +1,7 @@
 app Tabs {
   "Two screens that share an element name: each has a Back button, and one handler belongs to the name."
 }
+language 1
 
 state {
   visits: Int = 0

@@ -1,0 +1,42 @@
+app KeywordsApi {
+  "An api whose params and fields are named like keywords."
+}
+language 1
+profile api
+
+record Class {
+  id: Int
+  type: Text
+  in: Int = 0
+  new: Bool = false
+}
+
+state {
+  stored class: List Class = []
+}
+
+endpoint add POST "/classes" {
+  body type: Text
+  body in: Int
+  answers 201 Class
+  - add a @Class to the end of @class with @id = the highest @id in @class + 1, or 1 when there is none, @type = @body.type, @in = @body.in
+  answer 201 with the new class
+}
+
+endpoint of GET "/classes/{new}" {
+  path new: Int
+  answers 200 Class
+  answers 404 Problem
+  if there is no class in @class whose @id is @path.new {
+    answer 404 "No such class"
+  }
+  answer 200 with that class
+}
+
+example "adding" {
+  call add with type = "a", in = 2
+  see add.status = 201
+  see add.body.type = "a"
+  call of with new = 1
+  see of.body.in = 2
+}

@@ -1,6 +1,7 @@
 app ToastDemo {
   "Proves std.feedback.Toast: a message appears, is replaced, and is dismissed."
 }
+language 1
 
 import std.feedback
 

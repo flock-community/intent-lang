@@ -3,7 +3,7 @@ app OrderLines {
   "A line's id is unique only within its order, so the chosen line is the chosen order's line with the chosen id."
   "Removing an order removes its lines with it."
 }
-language v68
+language 1
 record Line {
   id: Int
   product: Text

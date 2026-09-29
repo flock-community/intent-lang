@@ -1,0 +1,48 @@
+app HolesScreen {
+  "Every template hole on a screen is typed and nothing-safe."
+}
+language 1
+
+record Ticket {
+  id: Int
+  subject: Text
+  assignee: Text or nothing = nothing
+}
+
+state {
+  tickets: List Ticket = []
+  note: Text or nothing = nothing
+  last: Text = ""
+}
+
+derive {
+  summary = "Note: {@note}"                                          # expect: NOTHING
+  safe = "Note: {@note, or "none" when there is none}"               # expect-not: NOTHING
+}
+
+screen {
+  text header = "Last note: {@note}"                                 # expect: NOTHING
+  text ok = "Last note: {@note, or "none" when there is none}"       # expect-not: NOTHING
+  section noted {
+    visible when there is a @note
+    text only = "Note: {@note}"                                      # expect-not: NOTHING
+  }
+  button add "Add"
+  list rows of Ticket = @tickets {
+    text line = "{@subject} for {@assignee}"                         # expect: NOTHING
+    text fine = "{@subject} for {@assignee, or "nobody" when there is none}"   # expect-not: NOTHING
+  }
+}
+
+on click add {
+  - set @last to "note {@note}"                                      # expect: NOTHING
+  if there is a @note {
+    - set @last to "note {@note}"                                    # expect-not: NOTHING
+  }
+}
+
+example "empty" {
+  see ok = "Last note: none"
+  see noted is hidden
+  see rows has 0 rows
+}

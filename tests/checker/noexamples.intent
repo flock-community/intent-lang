@@ -1,6 +1,7 @@
 app NoExamples {                                   # expect: NO_EXAMPLES
   "An app with a clock and no examples: nothing proves it, and nothing handles the tick."
 }
+language 1
 
 record Item {
   name: Text

@@ -10,7 +10,7 @@ import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
 import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -23,7 +23,7 @@ export function elmLiteral(l: Literal, t: Type): string {
     case "bool": return l.v ? "True" : "False";
     case "emptyList": return "[]";
     case "nothing": return "Nothing";
-    case "value": return l.v;
+    case "value": return mangle(l.v);
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
     case "table": return "[]";
@@ -38,7 +38,7 @@ export function elmValue(app: App, l: Literal, t: Type): string {
   if (l.k === "list" && inner.k === "List") return wrap(l.items.length ? `[ ${l.items.map((x) => elmValue(app, x, inner.of)).join(", ")} ]` : "[]");
   if (l.k === "record" && inner.k === "Named") {
     const rec = app.records.find((r) => r.name === inner.name);
-    if (rec) return wrap(`{ ${rec.fields.map((f) => `${f.name} = ${elmValue(app, l.fields.find((x) => x.name === f.name)?.value ?? f.default ?? { k: "nothing" }, f.type)}`).join(", ")} }`);
+    if (rec) return wrap(`{ ${rec.fields.map((f) => `${mangle(f.name)} = ${elmValue(app, l.fields.find((x) => x.name === f.name)?.value ?? f.default ?? { k: "nothing" }, f.type)}`).join(", ")} }`);
   }
   return elmLiteral(l, t);
 }
@@ -49,7 +49,7 @@ function genElmData(app: App): string {
   const storedPart = stored.length
     ? `{-| The state that survives a restart (\`stored\` in the spec). \`restore saved model\` in the app module puts it into a freshly started model. -}
 type alias Stored =
-    { ${stored.map((f) => `${dataField(f.name)} : ${elmType(f.type)}`).join("\n    , ")}
+    { ${stored.map((f) => `${mangle(dataField(f.name))} : ${elmType(f.type)}`).join("\n    , ")}
     }
 
 
@@ -63,14 +63,14 @@ ${stored.map((f) => `        |> jsonAndMap (D.field ${q(dataField(f.name))} ${el
     : "";
   return `${storedPart}{-| The app's data${hasInvariants(app) ? ", for the checks in \`always\`" : ""}${stored.length ? `${hasInvariants(app) ? " and" : ","} to save what is stored` : ""}: every state field, as in the spec. \`data\` in the app module fills it. -}
 type alias Data =
-    { ${app.state.map((f) => `${dataField(f.name)} : ${elmType(f.type)}`).join("\n    , ")}
+    { ${app.state.map((f) => `${mangle(dataField(f.name))} : ${elmType(f.type)}`).join("\n    , ")}
     }
 
 
 encodeData : Data -> J.Value
 encodeData d =
     J.object
-        [ ${app.state.map((f) => `( ${q(dataField(f.name))}, ${elmEncode(app, f.type, `d.${dataField(f.name)}`)} )`).join("\n        , ")}
+        [ ${app.state.map((f) => `( ${q(dataField(f.name))}, ${elmEncode(app, f.type, `d.${mangle(dataField(f.name))}`)} )`).join("\n        , ")}
         ]
 
 
@@ -87,7 +87,7 @@ export function elmType(t: Type): string {
     case "DateTime": return "DateTime";
     case "List": return `List ${elmAtom(t.of)}`;
     case "Maybe": return `Maybe ${elmAtom(t.of)}`;
-    case "Named": return t.name;
+    case "Named": return mangle(t.name);
     case "Ref": return t.key ? elmType(t.key) : "Int";
   }
 }
@@ -115,13 +115,13 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     if (r.code) {
       // A code: exactly n characters of its alphabet, read as the alphabet says (the harness's reader, Draw.readCode).
       const unamb = r.code.alphabet === "unambiguous letters and digits";
-      out.push(`{-| A code: ${r.code.n} characters from ${doc(q(r.code.chars))} (${codeSize(r.code.n, r.code.chars)}): see is${r.name} and read${r.name}. -}\ntype alias ${r.name} =\n    String\n\n\n{-| Whether a text is a valid ${r.name}${unamb ? " (read forgivingly: lower case, o for 0, i and l for 1, hyphens ignored)" : ""}. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    read${r.name} s /= Nothing\n\n\n{-| The ${r.name} a text is, in its normal form${unamb ? ' (capitals: "k7mq-or1z" is "K7MQ0R1Z")' : ""}, or Nothing when it is not one. Keep this form, never the text as typed. -}\nread${r.name} : String -> Maybe ${r.name}\nread${r.name} =\n    Draw.readCode ${r.code.n} ${q(r.code.chars)} ${unamb ? "True" : "False"}\n\n\n`);
+      out.push(`{-| A code: ${r.code.n} characters from ${doc(q(r.code.chars))} (${codeSize(r.code.n, r.code.chars)}): see is${r.name} and read${r.name}. -}\ntype alias ${mangle(r.name)} =\n    String\n\n\n{-| Whether a text is a valid ${r.name}${unamb ? " (read forgivingly: lower case, o for 0, i and l for 1, hyphens ignored)" : ""}. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    read${r.name} s /= Nothing\n\n\n{-| The ${r.name} a text is, in its normal form${unamb ? ' (capitals: "k7mq-or1z" is "K7MQ0R1Z")' : ""}, or Nothing when it is not one. Keep this form, never the text as typed. -}\nread${r.name} : String -> Maybe ${mangle(r.name)}\nread${r.name} =\n    Draw.readCode ${r.code.n} ${q(r.code.chars)} ${unamb ? "True" : "False"}\n\n\n`);
       continue;
     }
     // A refined type is its base type plus a generated check: `isEmail : String -> Bool`.
     const lc = lowerFirst(r.name);
     const base = r.base === "Text" ? "String" : r.base === "Int" ? "Int" : "Float";
-    out.push(`type alias ${r.name} =\n    ${base}\n\n`);
+    out.push(`type alias ${mangle(r.name)} =\n    ${base}\n\n`);
     if (r.pattern !== undefined)
       out.push(`${lc}Pattern : Regex.Regex\n${lc}Pattern =\n    Maybe.withDefault Regex.never (Regex.fromString ${q(`^(?:${r.pattern})$`)})\n\n\n{-| Whether a text is a valid ${r.name}. -}\nis${r.name} : String -> Bool\nis${r.name} s =\n    Regex.contains ${lc}Pattern s\n\n`);
     else if (r.base === "Text") {
@@ -134,24 +134,25 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     }
   }
   // A record named like a type Elm's Basics always exposes (`Order`) is ambiguous in App.elm unless qualified.
-  for (const r of app.records) out.push((["Order", "Never"].includes(r.name) ? `{-| Elm's Basics also has an \`${r.name}\`: in App.elm write this record's type as \`Spec.${r.name}\`. -}\n` : "") + elmRecord(r.name, r.fields.map((f) => [f.name, elmType(f.type)])) + "\n");
+  for (const r of app.records) out.push((["Order", "Never"].includes(r.name) ? `{-| Elm's Basics also has an \`${r.name}\`: in App.elm write this record's type as \`Spec.${r.name}\`. -}\n` : "") + elmRecord(mangle(r.name), r.fields.map((f) => [mangle(f.name), elmType(f.type)])) + "\n");
   // Following a reference: the row is found in its home list when it is read (Nothing: it is gone).
   const refs = refLookups(app);
-  for (const b of refs.byKey) out.push(`{-| Following a \`ref ${b.record}\`: the ${b.record} in \`${b.list}\` whose \`${b.key}\` is the key, or Nothing when there is none (it was removed). -}\n${b.fn} : List ${b.record} -> ${elmType(b.keyType)} -> Maybe ${b.record}\n${b.fn} rows k =\n    List.head (List.filter (\\r -> r.${b.key} == k) rows)\n\n\n`);
-  for (const f of refs.fields) out.push(`{-| \`its @${f.field}'s …\` on a ${f.holder}: the ${f.record} it points at, in \`${f.list}\`; Nothing when there is none. -}\n${f.fn} : List ${f.record} -> ${f.holder} -> Maybe ${f.record}\n${f.fn} rows row =\n    ${f.optional ? `Maybe.andThen (${f.byKey} rows) row.${f.field}` : `${f.byKey} rows row.${f.field}`}\n\n\n`);
+  for (const b of refs.byKey) out.push(`{-| Following a \`ref ${b.record}\`: the ${b.record} in \`${b.list}\` whose \`${b.key}\` is the key, or Nothing when there is none (it was removed). -}\n${b.fn} : List ${mangle(b.record)} -> ${elmType(b.keyType)} -> Maybe ${mangle(b.record)}\n${b.fn} rows k =\n    List.head (List.filter (\\r -> r.${mangle(b.key)} == k) rows)\n\n\n`);
+  for (const f of refs.fields) out.push(`{-| \`its @${f.field}'s …\` on a ${f.holder}: the ${f.record} it points at, in \`${f.list}\`; Nothing when there is none. -}\n${f.fn} : List ${mangle(f.record)} -> ${mangle(f.holder)} -> Maybe ${mangle(f.record)}\n${f.fn} rows row =\n    ${f.optional ? `Maybe.andThen (${f.byKey} rows) row.${mangle(f.field)}` : `${f.byKey} rows row.${mangle(f.field)}`}\n\n\n`);
   for (const c of app.choices) {
     const lc = lowerFirst(c.name);
-    out.push(`type ${c.name}\n    = ${c.values.join("\n    | ")}\n\n`);
-    out.push(`${lc}Values : List ${c.name}\n${lc}Values =\n    [ ${c.values.join(", ")} ]\n\n`);
-    out.push(`${lc}ToString : ${c.name} -> String\n${lc}ToString v =\n    case v of\n${c.values.map((v) => `        ${v} ->\n            ${q(v)}\n`).join("\n")}\n`);
-    out.push(`{-| The text users see for a value. -}\n${lc}Label : ${c.name} -> String\n${lc}Label v =\n    case v of\n${c.values.map((v) => `        ${v} ->\n            ${q(c.labels[v])}\n`).join("\n")}\n`);
-    out.push(`${lc}FromString : String -> Maybe ${c.name}\n${lc}FromString s =\n    case s of\n${c.values.map((v) => `        ${q(v)} ->\n            Just ${v}\n`).join("\n")}\n        _ ->\n            Nothing\n\n`);
+    const C = mangle(c.name);
+    out.push(`type ${C}\n    = ${c.values.map(mangle).join("\n    | ")}\n\n`);
+    out.push(`${lc}Values : List ${C}\n${lc}Values =\n    [ ${c.values.map(mangle).join(", ")} ]\n\n`);
+    out.push(`${lc}ToString : ${C} -> String\n${lc}ToString v =\n    case v of\n${c.values.map((v) => `        ${mangle(v)} ->\n            ${q(v)}\n`).join("\n")}\n`);
+    out.push(`{-| The text users see for a value. -}\n${lc}Label : ${C} -> String\n${lc}Label v =\n    case v of\n${c.values.map((v) => `        ${mangle(v)} ->\n            ${q(c.labels[v])}\n`).join("\n")}\n`);
+    out.push(`${lc}FromString : String -> Maybe ${C}\n${lc}FromString s =\n    case s of\n${c.values.map((v) => `        ${q(v)} ->\n            Just ${mangle(v)}\n`).join("\n")}\n        _ ->\n            Nothing\n\n`);
   }
 
   for (const f of app.state)
     if (f.default?.k === "table") {
       const rec = app.records.find((r) => f.type.k === "List" && f.type.of.k === "Named" && r.name === f.type.of.name)!;
-      out.push(`{-| Initial value of state \`${f.name}\` (the table in the spec). -}\n${f.name}Initial : List ${rec.name}\n${f.name}Initial =\n    [ ${f.default.rows.map((row) => `{ ${rec.fields.map((rf) => `${rf.name} = ${elmValue(app, cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" }, rf.type)}`).join(", ")} }`).join("\n    , ")}\n    ]\n\n`);
+      out.push(`{-| Initial value of state \`${f.name}\` (the table in the spec). -}\n${f.name}Initial : List ${mangle(rec.name)}\n${f.name}Initial =\n    [ ${f.default.rows.map((row) => `{ ${rec.fields.map((rf) => `${mangle(rf.name)} = ${elmValue(app, cellFor(f.default as TableLit, row, rf.name) ?? rf.default ?? { k: "nothing" }, rf.type)}`).join(", ")} }`).join("\n    , ")}\n    ]\n\n`);
     }
   out.push(elmNested(app));
   out.push(elmDraws(app));
@@ -161,7 +162,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   // A row inside a row carries two keys: the outer row's, then its own.
   const keyArgs = (p?: string) => (p?.startsWith("keys") ? " String String" : p?.startsWith("key") ? " String" : "");
   const msgMembers = [...evs
-    .map((e) => e.tag + keyArgs(e.payload) + (e.payload?.endsWith("value") ? ` ${e.choice}` : e.payload?.endsWith("text") || e.payload?.endsWith("pick") ? " String" : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : [])];
+    .map((e) => e.tag + keyArgs(e.payload) + (e.payload?.endsWith("value") ? ` ${mangle(e.choice!)}` : e.payload?.endsWith("text") || e.payload?.endsWith("pick") ? " String" : "")), ...elmAnswerMsgs(app), ...(hasScreens(app) ? ["ScreenOpened Route"] : []), ...(startsAfterRestore(app) ? ["Started"] : [])];
   // A screen with nothing to click, type or choose: Elm has no empty type, so one no-op variant.
   out.push(`{-| Everything the user (or the clock) can do${hasClients(app) ? ", and the answers to calls" : ""}. -}\ntype Msg\n    = ${msgMembers.length ? msgMembers.join("\n    | ") : "NoOp"}\n\n`);
   out.push(`{-| Row events carry the row's key (the \`key\` you gave that row in \`view\`).${nestedLists(app).length ? " A row inside a row carries its outer row's key first, then its own: find the inner row with the generated `update…` / `removeFrom…` helpers above, never by hand." : ""} Typed events carry the full new text of the field. -}\n\n`);
@@ -169,7 +170,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   // Screen types
   out.push(`type alias Button =\n    { enabled : Bool }\n\n`);
   out.push(`type alias LabeledButton =\n    { label : String, enabled : Bool }\n\n`);
-  out.push(`{-| A select whose options come from the model: the option texts in order, and the selected one ("" for none). -}\ntype alias Pick =\n    { options : List String, selected : String }\n\n`);
+  out.push(`{-| A select whose options come from the model: the option texts in order, and the selected one (Nothing: none is chosen). -}\ntype alias Pick =\n    { options : List String, selected : Maybe String }\n\n`);
   const aliases: string[] = [];
   const fieldType = (el: Element, list?: Element): string => {
     let t: string;
@@ -179,7 +180,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       case "button": t = el.expr ? "LabeledButton" : "Button"; break;
       case "checkbox": t = "Bool"; break;
       case "progress": t = "Int"; break;
-      case "select": t = el.from ? "Pick" : selectChoice(app, el, list); break;
+      case "select": t = el.from ? "Pick" : mangle(selectChoice(app, el, list)); break;
       case "list": {
         // A list inside a row: its row type is named after both lists (`TasksItemsRow`).
         const row = `${list ? typeName(list.name) : ""}${typeName(el.name)}Row`;
@@ -192,25 +193,25 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     }
     return el.visibleWhen ? `Maybe ${t.includes(" ") ? `(${t})` : t}` : t;
   };
-  const rowFields = (els: Element[], list?: Element): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [ident(e.name), fieldType(e, list)]);
+  const rowFields = (els: Element[], list?: Element): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [mangle(ident(e.name)), fieldType(e, list)]);
   if (hasScreens(app)) {
     const scs = app.screens!;
     const rec = (fields: [string, string][]) => (fields.length ? `{ ${fields.map(([n, t]) => `${n} : ${t}`).join(", ")} }` : "{}");
-    out.push(`{-| Where the app is: one variant per screen, with its path params. The harness keeps it (the address after #). -}\ntype Route\n    = ${scs.map((s) => `${cap(s.name)}Route${s.params.length ? ` ${rec(s.params.map((p) => [p.name, elmType(p.type)]))}` : ""}`).join("\n    | ")}\n\n\n`);
+    out.push(`{-| Where the app is: one variant per screen, with its path params. The harness keeps it (the address after #). -}\ntype Route\n    = ${scs.map((s) => `${cap(s.name)}Route${s.params.length ? ` ${rec(s.params.map((p) => [mangle(p.name), elmType(p.type)]))}` : ""}`).join("\n    | ")}\n\n\n`);
     out.push(`{-| Where to go after an update: \`go to\` a screen, \`go back\`, or stay. -}\ntype Go\n    = Stay\n    | GoTo Route\n    | GoBack\n\n\n`);
     out.push(`{-| What \`view\` returns: the current screen, with one field per dynamic element on it. -}\ntype Screen\n    = ${scs.map((s) => `${cap(s.name)}Screen ${rec(rowFields(app.screen.filter((e) => e.screen === s.name)))}`).join("\n    | ")}\n\n\n`);
     // Addresses ↔ routes: the harness's. An address that fits no screen is the first screen.
-    const first = `${cap(scs[0].name)}Route${scs[0].params.length ? ` { ${scs[0].params.map((p) => `${p.name} = ${p.type.k === "Int" ? "0" : '""'}`).join(", ")} }` : ""}`;
+    const first = `${cap(scs[0].name)}Route${scs[0].params.length ? ` { ${scs[0].params.map((p) => `${mangle(p.name)} = ${p.type.k === "Int" ? "0" : '""'}`).join(", ")} }` : ""}`;
     const branch = (s: (typeof scs)[number]): string => {
       const segs = s.path.split("/").filter(Boolean);
       const pat = `[ ${segs.map((g, i) => (/^\{[a-z]\w*\}$/i.test(g) ? `a${i}` : q(g))).join(", ")} ]`.replace("[  ]", "[]");
       const holes = segs.flatMap((g, i) => (/^\{([a-z]\w*)\}$/i.test(g) ? [{ name: g.slice(1, -1), v: `a${i}` }] : []));
       // Each param read in turn; one that does not fit makes it the first screen.
-      let body = `${cap(s.name)}Route${holes.length ? ` { ${holes.map((h) => `${h.name} = ${h.name}`).join(", ")} }` : ""}`;
+      let body = `${cap(s.name)}Route${holes.length ? ` { ${holes.map((h) => `${mangle(h.name)} = ${mangle(h.name)}`).join(", ")} }` : ""}`;
       for (const h of [...holes].reverse()) {
         const p = s.params.find((x) => x.name === h.name)!;
         const read = p.type.k === "Int" ? `String.toInt ${h.v}` : `Url.percentDecode ${h.v}`;
-        body = `case ${read} of\n                Just ${h.name} ->\n                    ${body.replace(/\n/g, "\n        ")}\n\n                Nothing ->\n                    ${first}`;
+        body = `case ${read} of\n                Just ${mangle(h.name)} ->\n                    ${body.replace(/\n/g, "\n        ")}\n\n                Nothing ->\n                    ${first}`;
       }
       return `        ${pat} ->\n            ${body}\n`;
     };
@@ -220,7 +221,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
         const h = x.match(/^\{([a-z]\w*)\}$/i);
         if (!h) return q(x);
         const p = s.params.find((y) => y.name === h[1])!;
-        return p.type.k === "Int" ? `String.fromInt p.${h[1]}` : `Url.percentEncode p.${h[1]}`;
+        return p.type.k === "Int" ? `String.fromInt p.${mangle(h[1])}` : `Url.percentEncode p.${mangle(h[1])}`;
       }).join(" ++ ")}\n`)
       .join("\n")}\n\n`);
   } else {
@@ -233,7 +234,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
   const items = (els: Element[], acc: string, d: number, list?: Element): string[] =>
     els.map((el) => {
       if (el.kind === "heading") return `Just (Ui.NHeading ${q(el.label ?? "")})`;
-      const v = `${acc}.${ident(el.name)}`;
+      const v = `${acc}.${mangle(ident(el.name))}`;
       if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${node(el, `v${d}`, d + 1, list)}) ${v}`;
       return `Just (${node(el, v, d + 1, list)})`;
     });
@@ -245,7 +246,7 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       case "checkbox": return `Ui.NCheckbox ${q(el.name)} ${q(el.label ?? "")} ${v}`;
       case "progress": return `Ui.NProgress ${q(el.name)} ${q(el.label ?? "")} ${v}`;
       case "select": {
-        if (el.from) return `Ui.NSelect ${q(el.name)} ${q(el.label ?? "")} ${v}.options ${v}.selected`;
+        if (el.from) return `Ui.NSelect ${q(el.name)} ${q(el.label ?? "")} ${v}.options (Maybe.withDefault "" ${v}.selected)`;
         const lc = lowerFirst(selectChoice(app, el, list));
         return `Ui.NSelect ${q(el.name)} ${q(el.label ?? "")} (List.map ${lc}ToString ${lc}Values) (${lc}ToString ${v})`;
       }
@@ -298,13 +299,14 @@ export function elmNested(app: App): string {
   };
   for (const { record: r, key } of rowKeyed(app)) {
     const lr = lower(r.name);
-    out.push(`{-| The key of ${/^[AEIOU]/.test(r.name) ? "an" : "a"} ${r.name}'s row: ${key ? `its \`${key.name}\`` : "its place in its list"}. Give every row of a list of ${r.name}s this key in \`view\`: row events carry it. -}\n${lr}RowKey : Int -> ${r.name} -> String\n${lr}RowKey ${key ? "_" : "i"} r =\n    ${key ? keyString(key.type, `r.${key.name}`) : "String.fromInt i"}\n\n\n`);
+    out.push(`{-| The key of ${/^[AEIOU]/.test(r.name) ? "an" : "a"} ${r.name}'s row: ${key ? `its \`${key.name}\`` : "its place in its list"}. Give every row of a list of ${r.name}s this key in \`view\`: row events carry it. -}\n${lr}RowKey : Int -> ${mangle(r.name)} -> String\n${lr}RowKey ${key ? "_" : "i"} r =\n    ${key ? keyString(key.type, `r.${mangle(key.name)}`) : "String.fromInt i"}\n\n\n`);
   }
   for (const n of nested) {
     const O = n.outer.name, I = n.inner.name, F = n.field;
     const Fc = F[0].toUpperCase() + F.slice(1);
-    out.push(`{-| One ${I} of one ${O}'s \`${F}\` changed by \`f\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\` (the keys a row event inside a row carries). Everything else stays as it is. -}\nupdate${O}${Fc} : String -> String -> (${I} -> ${I}) -> List ${O} -> List ${O}\nupdate${O}${Fc} outerKey key f rows =\n    List.indexedMap\n        (\\i r ->\n            if ${lower(O)}RowKey i r == outerKey then\n                { r | ${F} = List.indexedMap (\\j x -> if ${lower(I)}RowKey j x == key then f x else x) r.${F} }\n\n            else\n                r\n        )\n        rows\n\n\n`);
-    out.push(`{-| One ${I} removed from one ${O}'s \`${F}\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\`. -}\nremoveFrom${O}${Fc} : String -> String -> List ${O} -> List ${O}\nremoveFrom${O}${Fc} outerKey key rows =\n    List.indexedMap\n        (\\i r ->\n            if ${lower(O)}RowKey i r == outerKey then\n                { r | ${F} = List.indexedMap Tuple.pair r.${F} |> List.filter (\\( j, x ) -> ${lower(I)}RowKey j x /= key) |> List.map Tuple.second }\n\n            else\n                r\n        )\n        rows\n\n\n`);
+    const [MO, MI, MF] = [mangle(O), mangle(I), mangle(F)]; // as identifiers
+    out.push(`{-| One ${I} of one ${O}'s \`${F}\` changed by \`f\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\` (the keys a row event inside a row carries). Everything else stays as it is. -}\nupdate${O}${Fc} : String -> String -> (${MI} -> ${MI}) -> List ${MO} -> List ${MO}\nupdate${O}${Fc} outerKey key f rows =\n    List.indexedMap\n        (\\i r ->\n            if ${lower(O)}RowKey i r == outerKey then\n                { r | ${MF} = List.indexedMap (\\j x -> if ${lower(I)}RowKey j x == key then f x else x) r.${MF} }\n\n            else\n                r\n        )\n        rows\n\n\n`);
+    out.push(`{-| One ${I} removed from one ${O}'s \`${F}\`: the ${lower(O)} whose row key is \`outerKey\`, its ${lower(I)} whose row key is \`key\`. -}\nremoveFrom${O}${Fc} : String -> String -> List ${MO} -> List ${MO}\nremoveFrom${O}${Fc} outerKey key rows =\n    List.indexedMap\n        (\\i r ->\n            if ${lower(O)}RowKey i r == outerKey then\n                { r | ${MF} = List.indexedMap Tuple.pair r.${MF} |> List.filter (\\( j, x ) -> ${lower(I)}RowKey j x /= key) |> List.map Tuple.second }\n\n            else\n                r\n        )\n        rows\n\n\n`);
   }
   return out.join("");
 }
@@ -320,7 +322,7 @@ export function elmDraws(app: App): string {
   const space = (s: DrawSite) => (!s.space ? "(Draw.IntRange 0 0)" : s.space.k === "int" ? `(Draw.IntRange ${s.space.lo < 0 ? `(${s.space.lo})` : s.space.lo} ${s.space.hi < 0 ? `(${s.space.hi})` : s.space.hi})` : s.space.k === "text" ? `(Draw.Chars ${s.space.n} ${q(s.space.chars)})` : `(Draw.Names [ ${s.space.values.map(q).join(", ")} ])`);
   const lc = (n: string) => lowerFirst(n);
   // From the canonical text a draw gives to the type, and back (for \`not among\`).
-  const from = (s: DrawSite) => (s.space?.k === "int" ? `(String.toInt >> Maybe.withDefault ${s.space.lo < 0 ? `(${s.space.lo})` : s.space.lo})` : s.space?.k === "names" ? `(${lc(s.type!)}FromString >> Maybe.withDefault ${s.space.values[0]})` : "identity");
+  const from = (s: DrawSite) => (s.space?.k === "int" ? `(String.toInt >> Maybe.withDefault ${s.space.lo < 0 ? `(${s.space.lo})` : s.space.lo})` : s.space?.k === "names" ? `(${lc(s.type!)}FromString >> Maybe.withDefault ${mangle(s.space.values[0])})` : "identity");
   const toText = (s: DrawSite) => (s.space?.k === "int" ? "String.fromInt" : s.space?.k === "names" ? `${lc(s.type!)}ToString` : "identity");
   const fromMaybe = (s: DrawSite) => (s.space?.k === "int" ? "String.toInt" : s.space?.k === "names" ? `${lc(s.type!)}FromString` : "Just");
   const item = (s: DrawSite) => (s.item ? elmAtom(s.item) : "()");
@@ -328,10 +330,11 @@ export function elmDraws(app: App): string {
   const args = (s: DrawSite, ...more: string[]) => [...(s.row ? ["row"] : []), ...more];
   const sig = (s: DrawSite): string => {
     const r = s.row ? "Int -> " : "";
+    const T = mangle(s.type ?? "");
     switch (s.form) {
-      case "one": return `${r || "() -> "}${s.type}`;
-      case "many": return `${r}Int -> List ${s.type}`;
-      case "notAmong": return `${r}List ${s.type} -> ${s.maybe ? `Maybe ${s.type}` : s.type}`;
+      case "one": return `${r || "() -> "}${T}`;
+      case "many": return `${r}Int -> List ${T}`;
+      case "notAmong": return `${r}List ${T} -> ${s.maybe ? `Maybe ${T}` : T}`;
       case "pick": return `${r}List ${item(s)} -> Maybe ${item(s)}`;
       case "shuffle": return `${r}List ${item(s)} -> List ${item(s)}`;
     }
@@ -363,6 +366,34 @@ drawsFrom : Draw.Source -> Draws
 drawsFrom src =
     { ${sites.map((s) => `${s.id} = ${impl(s)}`).join("\n    , ")}
     }
+
+
+`;
+}
+
+/**
+ * An app with stored fields and \`on start\`: the harness owns the order. \`init\` is the app from its
+ * defaults; the stored fields are put back; then \`Started\` runs \`on start\`, which sees them. The
+ * calls \`init\` returns (none, by the prompt) go out before those of \`on start\`.
+ */
+function elmStarted(app: App, arg: string, argType: string, restored: string): string {
+  const c = usesClock(app);
+  const calls = hasClients(app);
+  const ck = c ? " clock" : "";
+  // \`on start\` draws nothing (the checker refuses it): an empty source.
+  const upd = `App.update${ck}${usesDraws(app) ? ' (Spec.drawsFrom (Draw.source "" J.null))' : ""} Spec.Started`;
+  return `{-| The app as it starts: from its defaults, with the stored fields put back, then \`on start\` (\`Started\`), so \`on start\` sees what the app remembered. -}
+started : ${c ? "Spec.Clock -> " : ""}${argType} -> ${calls ? "( App.Model, List Spec.Call )" : "App.Model"}
+started${ck} ${arg} =
+    let
+        ${calls ? "( fresh, first )" : "fresh"} =
+            App.init${ck}
+${calls ? `
+        ( m, onStart ) =
+            ${upd} (${restored})
+    in
+    ( m, first ++ onStart )` : `    in
+    ${upd} (${restored})`}
 
 
 `;
@@ -411,7 +442,9 @@ function genElmMainPorts(app: App): string {
   const clk = c ? " model.clock" : "";
   const first = c ? "(App.init start)" : "App.init";
   // Stored state: what this browser kept comes in with the flags, and the data goes out after every update.
-  const init = st ? (calls ? `(Tuple.mapFirst (restoreFrom flags) ${first})` : `(restoreFrom flags ${first})`) : first;
+  // With \`on start\`, the harness restores first and then sends \`Started\` (\`started\`, below).
+  const sar = startsAfterRestore(app);
+  const init = sar ? `(started${c ? " start" : ""} flags)` : st ? (calls ? `(Tuple.mapFirst (restoreFrom flags) ${first})` : `(restoreFrom flags ${first})`) : first;
   // Draws: the page's base seed (Web Crypto, in the flags) and a counter give every event its own seed.
   const withClock = (fn: string) => {
     const f = c ? `(${fn} model.clock)` : fn;
@@ -481,7 +514,7 @@ restoreFrom flags m =
         Err _ ->
             m
 
-` : ""}${calls ? send : `send : App.Model -> ( App.Model, Cmd In )
+` : ""}${sar ? `\n${elmStarted(app, "flags", "D.Value", "restoreFrom flags fresh")}` : ""}${calls ? send : `send : App.Model -> ( App.Model, Cmd In )
 send m =
     ( m, Cmd.none )`}
 
@@ -580,7 +613,7 @@ decodeClock v before =
     Result.withDefault before (D.decodeValue ${elmClockDecoder(app)} v)
 
 
-main : Program D.Value Model D.Value
+${startsAfterRestore(app) ? elmStarted(app, "saved", "Maybe Spec.Stored", "Maybe.withDefault fresh (Maybe.map (\\s -> App.restore s fresh) saved)") : ""}main : Program D.Value Model D.Value
 main =
     Platform.worker
         { init =
@@ -590,7 +623,7 @@ main =
                         decodeClock flags ${elmClockStart(app)}
 
                     first =
-                        ${c ? "App.init start" : "App.init"}
+                        ${startsAfterRestore(app) ? `started${c ? " start" : ""} Nothing` : c ? "App.init start" : "App.init"}
                 in
                 ( { app = ${calls ? "Tuple.first first" : "first"}${calls ? ", pending = Tuple.second first" : ""}${c ? ", clock = start" : ""} }, Cmd.none )
         , update =
@@ -639,7 +672,12 @@ ${dw ? `
                                     Nothing
 
                     ( next, calls ) =
-                        ${st ? `if on == "restart" then
+                        ${startsAfterRestore(app) ? `if on == "restart" then
+                            -- The app starts again with what the driver saved (the stored fields of its data), then \`on start\`.
+                            ${calls ? "" : "( "}started${c ? " clock" : ""} (Result.toMaybe (D.decodeValue (D.field "saved" Spec.decodeStored) v))${calls ? "" : ", [] )"}
+
+                        else
+                        ` : st ? `if on == "restart" then
                             -- The app starts again with what the driver saved (the stored fields of its data).
                             let
                                 ( fresh, first ) =
@@ -662,9 +700,18 @@ ${dw ? `
 
                     screen =
                         Ui.encode (Spec.toNode (App.view${c ? " clock" : ""} next))
-                in
+${startsAfterRestore(app) ? `
+                    -- The data right after the restart put the stored fields back, before \`on start\` ran (for the driver's check).
+                    restored =
+                        case ( on, D.decodeValue (D.field "saved" Spec.decodeStored) v ) of
+                            ( "restart", Ok saved ) ->
+                                Spec.encodeData (App.data (App.restore saved ${calls ? `(Tuple.first (App.init${c ? " clock" : ""}))` : `(App.init${c ? " clock" : ""})`}))
+
+                            _ ->
+                                J.null
+` : ""}                in
                 ( { app = ${sc ? "App.settled next" : "next"}${calls ? ", pending = []" : ""}${c ? ", clock = clock" : ""} }
-                , observe ${calls || inv || sc ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}${inv ? `( "data", Spec.encodeData (App.data next) ), ` : ""}${sc ? `( "go", Maybe.withDefault J.null (Maybe.map J.string next.go) ), ` : ""}( "screen", screen )${calls ? `, ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) )` : ""} ])` : "screen"}
+                , observe ${calls || inv || sc ? `(J.object [ ${hasThrough(app) ? `( "through", Spec.encodeThrough (App.through next) ), ` : ""}${inv ? `( "data", Spec.encodeData (App.data next) ), ` : ""}${startsAfterRestore(app) ? `( "restored", restored ), ` : ""}${sc ? `( "go", Maybe.withDefault J.null (Maybe.map J.string next.go) ), ` : ""}( "screen", screen )${calls ? `, ( "calls", J.list ${hasThrough(app) ? "(Spec.callOut (App.through next))" : "Spec.callToJson"} (m.pending ++ calls) )` : ""} ])` : "screen"}
                 )
         , subscriptions = \\_ -> act identity
         }
@@ -778,10 +825,10 @@ view model =
 /** The decoder for the clock JavaScript sends: { now, today } (and { size } with `sizes`). */
 const elmClockDecoder = (app: App) =>
   app.sizes
-    ? `(D.map3 Spec.Clock (D.field "now" D.string) (D.field "today" D.string) (D.oneOf [ D.field "size" (D.map (Spec.sizeFromString >> Maybe.withDefault Spec.${app.sizes[0]}) D.string), D.succeed Spec.${app.sizes[0]} ]))`
+    ? `(D.map3 Spec.Clock (D.field "now" D.string) (D.field "today" D.string) (D.oneOf [ D.field "size" (D.map (Spec.sizeFromString >> Maybe.withDefault Spec.${mangle(app.sizes[0])}) D.string), D.succeed Spec.${mangle(app.sizes[0])} ]))`
     : `(D.map2 Spec.Clock (D.field "now" D.string) (D.field "today" D.string))`;
 /** The clock before JavaScript says otherwise. */
-const elmClockStart = (app: App) => `{ now = "2026-01-05T09:00", today = "2026-01-05"${app.sizes ? `, size = Spec.${app.sizes[0]}` : ""} }`;
+const elmClockStart = (app: App) => `{ now = "2026-01-05T09:00", today = "2026-01-05"${app.sizes ? `, size = Spec.${mangle(app.sizes[0])}` : ""} }`;
 
 export function elmDecoder(app: App, t: Type): string {
   switch (t.k) {
@@ -828,15 +875,15 @@ export function genElmJson(app: App): string {
   out.push(`{-| A \`T or nothing\` field: missing or null is Nothing; anything else must be a T. -}\njsonOptional : String -> D.Decoder a -> D.Decoder (Maybe a)\njsonOptional name d =\n    D.maybe (D.field name D.value)\n        |> D.andThen\n            (\\v ->\n                case v of\n                    Nothing ->\n                        D.succeed Nothing\n\n                    Just _ ->\n                        D.field name (D.nullable d)\n            )\n\n\n`);
   for (const c of app.choices) {
     const lc = lowerFirst(c.name);
-    out.push(`decode${c.name} : D.Decoder ${c.name}\ndecode${c.name} =\n    D.string\n        |> D.andThen\n            (\\s ->\n                case ${lc}FromString s of\n                    Just v ->\n                        D.succeed v\n\n                    Nothing ->\n                        D.fail ("not a ${c.name}: " ++ s)\n            )\n\n\n`);
-    out.push(`encode${c.name} : ${c.name} -> J.Value\nencode${c.name} v =\n    J.string (${lc}ToString v)\n\n\n`);
+    out.push(`decode${c.name} : D.Decoder ${mangle(c.name)}\ndecode${c.name} =\n    D.string\n        |> D.andThen\n            (\\s ->\n                case ${lc}FromString s of\n                    Just v ->\n                        D.succeed v\n\n                    Nothing ->\n                        D.fail ("not a ${c.name}: " ++ s)\n            )\n\n\n`);
+    out.push(`encode${c.name} : ${mangle(c.name)} -> J.Value\nencode${c.name} v =\n    J.string (${lc}ToString v)\n\n\n`);
   }
   for (const r of app.records) {
     if (!r.fields.length) continue;
     const field = (f: { name: string; type: Type }) =>
       f.type.k === "Maybe" ? `(jsonOptional ${q(f.name)} ${elmDecoder(app, f.type.of)})` : `(D.field ${q(f.name)} ${elmDecoder(app, f.type)})`;
-    out.push(`decode${r.name} : D.Decoder ${r.name}\ndecode${r.name} =\n    D.succeed ${r.name}\n${r.fields.map((f) => `        |> jsonAndMap ${field(f)}`).join("\n")}\n\n\n`);
-    out.push(`encode${r.name} : ${r.name} -> J.Value\nencode${r.name} r =\n    J.object\n        [ ${r.fields.map((f) => `( ${q(f.name)}, ${elmEncoder(app, f.type, `r.${f.name}`)} )`).join("\n        , ")}\n        ]\n\n\n`);
+    out.push(`decode${r.name} : D.Decoder ${mangle(r.name)}\ndecode${r.name} =\n    D.succeed ${mangle(r.name)}\n${r.fields.map((f) => `        |> jsonAndMap ${field(f)}`).join("\n")}\n\n\n`);
+    out.push(`encode${r.name} : ${mangle(r.name)} -> J.Value\nencode${r.name} r =\n    J.object\n        [ ${r.fields.map((f) => `( ${q(f.name)}, ${elmEncoder(app, f.type, `r.${mangle(f.name)}`)} )`).join("\n        , ")}\n        ]\n\n\n`);
   }
   return out.join("");
 }
@@ -846,8 +893,8 @@ export function genElmCalls(app: App): string {
   const undos = undoables(app);
   const out: string[] = [];
   const callVariants = [
-    ...eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")} }` : ""}`),
-    ...undos.map((u) => `${u.tag} { answer : ${elmType(u.answer)}${u.usesArgs ? `, ${u.of.ep.params.map((p) => `${p.name} : ${elmType(p.type)}`).join(", ")}` : ""} }`),
+    ...eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${mangle(p.name)} : ${elmType(p.type)}`).join(", ")} }` : ""}`),
+    ...undos.map((u) => `${u.tag} { answer : ${elmType(u.answer)}${u.usesArgs ? `, ${u.of.ep.params.map((p) => `${mangle(p.name)} : ${elmType(p.type)}`).join(", ")}` : ""} }`),
   ];
   out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \`undo\` takes an effect back (\`undo @pay.charge\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \`undone by\`, answered as that endpoint's \`…Answered\`." : ""} -}\ntype Call\n    = ${callVariants.join("\n    | ")}\n\n\n`);
   for (const c of eps) {
@@ -857,31 +904,34 @@ export function genElmCalls(app: App): string {
   }
   const th = throughs(app);
   if (th.length) {
-    out.push(`{-| What the client layers need from the app's state, per api (\`through\` in \`uses\`): \`through model\` in the app module computes it. -}\ntype alias Through =\n    { ${th.map((t) => `${t.alias} : { ${t.state.map((x) => `${x.param} : ${elmType(x.type)}`).join(", ")} }`).join("\n    , ")}\n    }\n\n\n`);
-    out.push(`{-| A call as it leaves, with the config of its api's client layer. -}\ncallOut : Through -> Call -> J.Value\ncallOut th c =\n    let\n        v =\n            callToJson c\n\n        alias =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v) |> String.split "." |> List.head |> Maybe.withDefault ""\n\n        config =\n            case alias of\n${th.map((t) => `                ${q(t.alias)} ->\n                    J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${t.alias}.${x.param}`)} )`).join(", ")} ]\n`).join("\n")}\n                _ ->\n                    J.null\n    in\n    J.object [ ( "endpoint", D.decodeValue (D.field "endpoint" D.value) v |> Result.withDefault J.null ), ( "args", D.decodeValue (D.field "args" D.value) v |> Result.withDefault J.null ), ( "config", config ) ]\n\n\n`);
-    out.push(`{-| The client layers' config from the app's state, for the event streams. -}\nencodeThrough : Through -> J.Value\nencodeThrough th =\n    J.object [ ${th.map((t) => `( ${q(t.alias)}, J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${t.alias}.${x.param}`)} )`).join(", ")} ] )`).join(", ")} ]\n\n\n`);
+    out.push(`{-| What the client layers need from the app's state, per api (\`through\` in \`uses\`): \`through model\` in the app module computes it. -}\ntype alias Through =\n    { ${th.map((t) => `${mangle(t.alias)} : { ${t.state.map((x) => `${mangle(x.param)} : ${elmType(x.type)}`).join(", ")} }`).join("\n    , ")}\n    }\n\n\n`);
+    out.push(`{-| A call as it leaves, with the config of its api's client layer. -}\ncallOut : Through -> Call -> J.Value\ncallOut th c =\n    let\n        v =\n            callToJson c\n\n        alias =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v) |> String.split "." |> List.head |> Maybe.withDefault ""\n\n        config =\n            case alias of\n${th.map((t) => `                ${q(t.alias)} ->\n                    J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${mangle(t.alias)}.${mangle(x.param)}`)} )`).join(", ")} ]\n`).join("\n")}\n                _ ->\n                    J.null\n    in\n    J.object [ ( "endpoint", D.decodeValue (D.field "endpoint" D.value) v |> Result.withDefault J.null ), ( "args", D.decodeValue (D.field "args" D.value) v |> Result.withDefault J.null ), ( "config", config ) ]\n\n\n`);
+    out.push(`{-| The client layers' config from the app's state, for the event streams. -}\nencodeThrough : Through -> J.Value\nencodeThrough th =\n    J.object [ ${th.map((t) => `( ${q(t.alias)}, J.object [ ${t.state.map((x) => `( ${q(x.param)}, ${elmEncoder(app, x.type, `th.${mangle(t.alias)}.${mangle(x.param)}`)} )`).join(", ")} ] )`).join(", ")} ]\n\n\n`);
   }
   const callCases = [
     ...eps.map((c) => {
-      const args = c.ep.params.map((p) => `( ${q(p.name)}, ${elmEncoder(app, p.type, `a.${p.name}`)} )`);
+      const args = c.ep.params.map((p) => `( ${q(p.name)}, ${elmEncoder(app, p.type, `a.${mangle(p.name)}`)} )`);
       return `        ${c.tag}${c.ep.params.length ? " a" : ""} ->\n            J.object [ ( "endpoint", J.string ${q(c.name)} ), ( "args", J.object [ ${args.join(", ")} ] ) ]\n`;
     }),
     ...undos.map((u) => {
       const args = u.args.map((a) => {
-        const v = a.from === "answer" ? ["u.answer", ...a.path].join(".") : `u.${a.path[0]}`;
+        const v = a.from === "answer" ? ["u.answer", ...a.path.map(mangle)].join(".") : `u.${mangle(a.path[0])}`;
         return `( ${q(a.name)}, ${elmEncoder(app, a.type, v)} )`;
       });
       return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ), ( "undo", J.bool True ), ( "of", J.object [ ( "endpoint", J.string ${q(u.of.name)} ), ( "answer", ${elmEncoder(app, u.answer, "u.answer")} ) ] ) ]\n`;
     }),
   ];
   out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${callCases.join("\n")}\n\n`);
-  out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault ("unexpected answer " ++ String.fromInt status) (D.decodeValue (D.field "error" D.string) v)\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n${clientEndpoints(app).some((c) => gated(app, c)) ? '        held =\n            Result.withDefault False (D.decodeValue (D.field "held" D.bool) v)\n\n        rejected =\n            Result.withDefault False (D.decodeValue (D.field "rejected" D.bool) v)\n\n' : ""}        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err e ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit: " ++ D.errorToString e)\n    in\n    case endpoint of\n${eps
+  out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault "no answer" (D.decodeValue (D.field "error" D.string) v)\n\n        errored =\n            Result.withDefault False (Result.map (\\_ -> True) (D.decodeValue (D.field "error" D.string) v))\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n${clientEndpoints(app).some((c) => gated(app, c)) ? '        held =\n            Result.withDefault False (D.decodeValue (D.field "held" D.bool) v)\n\n        rejected =\n            Result.withDefault False (D.decodeValue (D.field "rejected" D.bool) v)\n\n' : ""}        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err _ ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit the contract")\n\n        noBody ok bad =\n            case ( D.decodeValue (D.field "body" (D.null ())) v, D.decodeValue (D.field "body" D.value) v ) of\n                ( Err _, Ok _ ) ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit the contract")\n\n                _ ->\n                    ok\n    in\n    case endpoint of\n${eps
     .map((c) => {
-      const cases = (c.ep.answers ?? []).map((a) => `                        ${a.status} ->\n                            ${a.type ? `body ${elmDecoder(app, a.type)} ${c.tag}${a.status} ${c.tag}Failed` : `${c.tag}${a.status}`}\n`);
-      // The same message TypeScript's `conforms` gives: an answer the contract does not declare.
-      const statuses = (c.ep.answers ?? []).map((a) => a.status).join(", ");
+      const cases = (c.ep.answers ?? []).map((a) => `                        ${a.status} ->\n                            ${a.type ? `body ${elmDecoder(app, a.type)} ${c.tag}${a.status} ${c.tag}Failed` : `noBody ${c.tag}${a.status} ${c.tag}Failed`}\n`);
+      // The same message TypeScript's `conforms` gives: an answer the contract does not declare, its
+      // statuses in ascending order (as \`Object.keys\` lists a record's number keys).
+      const statuses = (c.ep.answers ?? []).map((a) => Number(a.status)).sort((a, b) => a - b).join(", ");
       const fallback = `${c.tag}Failed (if status == 0 then failure else endpoint ++ " answered " ++ String.fromInt status ++ ", which the contract does not declare (${statuses})")`;
-      const byStatus = `(case status of\n${cases.join("\n")}\n                        _ ->\n                            ${fallback}\n                    )`;
+      // An answer with an error (status 0, or a call still in progress after its last attempt) is a
+      // failure with that error, before its status is read: TypeScript's \`fromAnswer\` does the same.
+      const byStatus = `(if errored then\n                        ${c.tag}Failed failure\n\n                     else\n                        case status of\n${cases.map((x) => x.replace(/^(?=.)/gm, "    ")).join("\n")}\n                            _ ->\n                                ${fallback}\n                    )`;
       const inner = c.ep.effect ? `(if unknown then\n                        ${c.tag}Unknown failure\n\n                     else\n                        ${byStatus.replace(/\n/g, "\n    ")}\n                    )` : byStatus;
       const answer = gated(app, c) ? `(if held then\n                        ${c.tag}Held\n\n                     else if rejected then\n                        ${c.tag}Rejected\n\n                     else\n                        ${inner.replace(/\n/g, "\n    ")}\n                    )` : inner;
       return `        ${q(c.name)} ->\n            Just\n                (${c.tag}Answered\n                    ${answer}\n                )\n`;
@@ -1201,6 +1251,7 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
   let made: CallOut[] = [];
   let through: Record<string, Record<string, unknown>> = {};
   let data: unknown;
+  let restored: unknown;
   let go: string | null = null;
   let waiting: ((v: any) => void) | undefined;
   app.ports.observe.subscribe((v: any) => {
@@ -1208,6 +1259,7 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
     if (v && v.screen) {
       made.push(...(v.calls ?? []));
       if (v.data !== undefined) data = v.data;
+      if (v.restored != null) restored = v.restored;
       if (v.through) through = v.through;
       if (v.go) go = v.go;
       v = v.screen;
@@ -1244,6 +1296,7 @@ async function openElm(dir: string, clock?: { now: string; today: string }): Pro
     },
     through: async () => through,
     data: async () => data,
+    restored: async () => restored,
     nav: async () => {
       const g = go;
       go = null;
@@ -1283,11 +1336,15 @@ Fmt.weekday : Date -> String                     -- weekday "2026-09-24" == "Thu
 Fmt.dateOf : DateTime -> Date                    -- dateOf "2026-09-24T09:30" == "2026-09-24"
 Fmt.timeOf : DateTime -> String                  -- timeOf "2026-09-24T09:30" == "09:30"
 Fmt.addMinutes : DateTime -> Int -> DateTime     -- addMinutes "2026-09-24T23:50" 15 == "2026-09-25T00:05"
-Fmt.minutesBetween : DateTime -> DateTime -> Int
+Fmt.minutesBetween : DateTime -> DateTime -> Int -- \`the minutes between A and B\`: negative when B comes first
+Fmt.hoursBetween : DateTime -> DateTime -> Int   -- \`the hours between A and B\`: whole hours, toward zero: 09:00 → 10:59 is 1
 Fmt.formatDate : Date -> String                  -- formatDate "2026-09-04" == "4 Sep 2026"
 Fmt.formatDateTime : DateTime -> String          -- formatDateTime "2026-09-04T09:05" == "4 Sep 2026 09:05"
 Fmt.parseDate : String -> Maybe Date             -- only a date that exists
-Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-MM-DDTHH:MM"`,
+Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-MM-DDTHH:MM"
+-- An order the spec writes (\`, earliest @due first, then lowest @id first\`) is Fmt.sortBy, never a sort of your own:
+Fmt.sortBy : List ( a -> Fmt.SortKey, Fmt.SortOrder ) -> List a -> List a  -- stable; SortNothing last either way; SortInt / SortFloat / SortText; a choice: SortInt of its place
+--   Fmt.sortBy [ ( \\r -> Maybe.withDefault Fmt.SortNothing (Maybe.map Fmt.SortText r.due), Fmt.Ascending ), ( \\r -> Fmt.SortInt r.id, Fmt.Ascending ) ] rows`,
     skeleton: (calls, through) => (calls ? (through ? ELM_APP_SKELETON_CALLS.replace("exposing (Model, init, update, view)", "exposing (Model, init, through, update, view)") + ELM_APP_SKELETON_THROUGH : ELM_APP_SKELETON_CALLS) : ELM_APP_SKELETON),
     calls: `Calls (this app uses an API):
 - \`init\` and \`update\` also return the calls to make, in the order the steps say: \`( model, [ TicketsCreateTicket { subject = …, customer = …, priority = … } ] )\`. No step says "call": return \`[]\`.
@@ -1300,6 +1357,7 @@ Fmt.parseDateTime : String -> Maybe DateTime     -- "YYYY-MM-DD HH:MM" or "YYYY-
     data: "Data (this spec has sentences in `always`, stored state, lists a reference points into, or lists inside rows): also expose `data : Model -> Data` (the `Data` record in Spec: every state field, with the value the model holds now). The harness checks the `always` sentences, and that the keys of those lists stay unique, on it after every step; keep it exact, never computed differently from the model.",
     screens: "Screens (this spec has several): `update` and `view` also get where the app is, a `Route` (in Spec: `TicketRoute { id }` for `screen ticket`; `@id` is that field), right before the message or model: `update : Route -> Msg -> Model -> ( Model, Go )` (with calls: `( Model, List Call, Go )`), `view : Route -> Model -> Screen`, which returns the current screen's variant (`TicketScreen { … }`). `Go` is `GoTo (TicketRoute { id = … })` for a `go to` step, `GoBack` for `go back`, or `Stay`. When a screen is shown (a link, an address, going back), the harness sends `ScreenOpened route`: do what `on open <that screen>` says, and nothing for a screen without one. The route is the harness's: never keep a copy in the model. With a clock, it comes first: `update : Clock -> Route -> Msg -> Model -> …`, `view : Clock -> Route -> Model -> Screen`.",
     stored: "Stored state (this spec has `stored` fields): also expose `data : Model -> Data` and `restore : Stored -> Model -> Model`. `restore saved model` gets a freshly started model and puts the saved values of the stored fields into it; everything else stays as it starts. Anything the model keeps that depends on stored fields (a next id, a cache) must be brought in line with the restored values. The harness saves `data` after every update and restores it when the app starts again.",
+    started: "On start (this spec has `stored` fields and `on start`): `on start` is the message `Started`, handled in `update` like any other; it is not `init`. `init` is the app as it starts from the spec's defaults and does nothing else (with calls: `( model, [] )`). The harness starts the app with `init`, puts the stored fields back with `restore`, and then sends `Started`, so `on start` sees what the app remembered. It does this every time the app starts, a restart too.",
     platform: "Platform functions (this spec imports one): a sentence that names a function (`the @sha256 of the given @text`) calls exactly that function, from `Spec` (`sha256 : String -> String`). It is the installation's reviewed code: never write your own version of what it does.",
     draws: `Draws (this spec draws random values): \`update\` takes the event's draws (the \`Draws\` record in Spec) right before the message, after the clock and the route when there are: \`update : Draws -> Msg -> Model -> …\`, \`update : Clock -> Draws -> Msg -> Model -> …\`, \`update : Clock -> Route -> Draws -> Msg -> Model -> …\`. Each place a sentence draws (\`a random @Die\`, \`a random @Code not among …\`, \`3 random @Die\`, \`a random one of @xs\`, \`@xs shuffled\`) is one function of \`Draws\`, named after its handler and its place there (\`draws.roll1 ()\`, \`draws.roll2 ()\`, \`draws.deal1 xs\`): call exactly that function where that sentence runs, once per value the sentence needs, in the order the steps say (write the \`let\` bindings in step order), and nowhere else (not in \`view\`, not ahead of time). Pass what the sentence reads: the list to shuffle or pick from, the values taken, how many; inside a \`for each\`, the row's index first (0 for the first row the loop visits). A value that later steps use again is kept (a \`let\`, the model), never drawn again. There is no \`Random\`: the harness makes every value.`,
   },

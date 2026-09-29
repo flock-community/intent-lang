@@ -1,9 +1,10 @@
 app SizeChecks {
   "Sizes: the host shows the app compact or standard."
 }
+language 1
 
-sizes compact | standard
-sizes small | large                     # expect: DUPLICATE
+sizes Compact | Standard
+sizes Small | Large                     # expect: DUPLICATE
 
 state {
   count: Int = 0
@@ -16,7 +17,7 @@ screen {
 }
 
 example "sizes" {
-  size standard
+  size Standard
   see count = "0"
-  size huge                             # expect: UNKNOWN_NAME
+  size Huge                             # expect: UNKNOWN_NAME
 }

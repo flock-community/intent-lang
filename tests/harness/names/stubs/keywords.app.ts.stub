@@ -1,0 +1,24 @@
+// A hand-written app module (a .stub, not type-checked in place) for tests/harness/names/build.ts: it proves the generated interface of a spec
+// whose names are target keywords compiles, and that its examples pass (no model involved).
+import type { Msg, Screen, Model_, Msg_ } from "./spec.ts";
+
+export type Model = { type: string; new: number; val: Msg_; object: boolean; is: Model_[]; as: string | null; fun: number };
+
+export function init(): Model {
+  return { type: "", new: 0, val: "Fun", object: false, is: [], as: null, fun: 1 };
+}
+
+export function update(msg: Msg, m: Model): Model {
+  switch (msg.tag) {
+    case "TypeTyped": return { ...m, type: msg.text };
+    case "ValChosen": return { ...m, val: msg.value };
+    case "ObjectToggled": return { ...m, object: !m.object };
+    case "ClassClicked": return { ...m, is: [...m.is, { id: m.is.length + 1, in: m.type, of: 0, class: false, when: "" }], new: m.new + 1 };
+    case "IsClassToggled": return { ...m, is: m.is.map((r) => (String(r.id) === msg.key ? { ...r, class: !r.class } : r)) };
+    case "IsBumpClicked": return { ...m, is: m.is.map((r) => (String(r.id) === msg.key ? { ...r, of: r.of + 1 } : r)) };
+  }
+}
+
+export function view(m: Model): Screen {
+  return { type: m.type, val: m.val, object: m.object, class: { enabled: true }, new: String(m.new), when: String(m.is.length), is: m.is.map((r) => ({ key: String(r.id), in: r.in, of: String(r.of), class: r.class, bump: { enabled: true } })) };
+}

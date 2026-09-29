@@ -109,7 +109,7 @@ export interface ScreenDecl {
 export type Stmt =
   | { k: "step"; text: string; line: number }
   | { k: "if"; branches: { cond?: string; body: Stmt[]; line: number }[] } // cond undefined: `else`
-  | { k: "for"; name: string; list: string; where?: string; body: Stmt[]; line: number } // `for each @x in @xs where … { … }`
+  | { k: "for"; name: string; list: string; where?: string; whose?: boolean; body: Stmt[]; line: number } // `for each @x in @xs whose … { … }` (`where` holds the condition; `whose` false: the older `where` spelling)
   | { k: "answer"; text: string; line: number } // `answer 404 "No such ticket"`, `answer 200 with the ticket`
   | { k: "stop"; line: number };
 
@@ -138,7 +138,7 @@ export type Step =
   | { do: "toggle"; target: string; at?: RowRef; line: number }
   | { do: "choose"; value: string; target: string; at?: RowRef; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
-  | { do: "size"; size: string; line: number } // the host shows the app at another size (`size standard`)
+  | { do: "size"; size: string; line: number } // the host shows the app at another size (`size Standard`)
   | { do: "snapshot"; name: string; line: number } // a visual checkpoint: builds must look the same here
   // `steer random PickupCode = "308122", "555001"`: the next draws of that type take these values, in
   // order; `steer random shuffle keeps order` / `reverses order`; `steer random pick 3` (the third item).
@@ -245,14 +245,14 @@ export interface App {
   actsAs?: { header: string; list: string; secret: string; owner: string; line: number };
   // An api's access block (v70): who may call which endpoint and hear which event; default deny.
   access?: AccessBlock;
-  // An api app: the layers it runs behind, in order (`use cors = std.http.cors`).
+  // An api app: the layers it runs behind, in order (`layer cors = std.http.cors`).
   layers?: LayerUse[];
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
-  language?: string; // `language v70`: the language version the spec was written for
+  language?: string; // `language 1`, `language 1.2`: the lowest language version the spec needs (a pre-1 `language vNN` is "1")
   endpoints?: Endpoint[];
   events?: EventDecl[];
   startsAt?: string; // `examples start at 2026-09-24 09:00`: the clock at the start of every example and session
-  sizes?: string[]; // `sizes compact | standard`: the sizes a host may show the screen at (as choice values, `Compact`); the first is the default
+  sizes?: string[]; // `sizes Compact | Standard`: the sizes a host may show the screen at (as choice values, `Compact`); the first is the default
   jobs?: { every: number; name: string; steps: string[]; stepLines?: number[]; body?: Stmt[]; line: number }[]; // api: `every 15m { … }`
   everyAnswer?: { status: number; type?: Type; line: number }[]; // `every endpoint answers 401 Problem`: added to every endpoint's answers // what an api (or contract) announces: `event ticketCreated: Ticket`
   name: string;
@@ -261,7 +261,7 @@ export interface App {
   implements?: { name: string; line: number }; // an api app that implements a published contract
   uses?: { contract: string; alias: string; testedWith?: string; through?: LayerUse; only?: string[]; line: number }[]; // clients of contracts
   // resolved by the loader. providerCallers: whom a test may act as against the provider (`call x.y as "Sam"`), its key owners.
-  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse; only?: string[]; line?: number; providerCallers?: string[]; providerAccess?: Record<string, string[]> }[];
+  clients?: { alias: string; contract: App; testedWith?: string; providerDigest?: string; through?: LayerUse; only?: string[]; line?: number; providerCallers?: string[]; providerAccess?: Record<string, string[]>; providerDraws?: { what: string; space?: import("./draws.ts").Space }[]; providerClock?: boolean }[];
   refinements?: import("./refine.ts").Refinement[];
   // Every source file that made up this app; lines of file i (i > 0) are encoded as i * LINE_BASE + line.
   sources?: { file: string; text: string }[];
@@ -348,6 +348,7 @@ export interface LayerUse {
   line: number;
   spec?: App; // resolved by the loader
   digest?: string; // the layer spec's canonical hash: its build is reused by every app
+  spelledUse?: boolean; // written with the older \`use cors = …\` (SPELLING: \`layer cors = …\`)
 }
 
 /** Lines from imported files are offset by their file index × LINE_BASE (see App.sources). */

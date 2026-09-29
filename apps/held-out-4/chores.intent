@@ -1,0 +1,405 @@
+app Chores {
+  "The household's chores on one screen: whose turn it is, what is overdue, each chore's checklist, and who did what when."
+  "Only the person a chore is assigned to can tick its checklist and mark it done; the service refuses everyone else, and the screen shows why."
+}
+language 1
+
+uses home.choresApi as chores only me, listChores, listHistory, markDone, tickItem, pickSomeone, choreDone, choreChanged {
+  tested with "apps/held-out-4/chores-api.intent"
+  through std.http.sendKey {
+    key = apiKey
+  }
+}
+
+examples start at 2026-09-24 09:00
+
+design {
+  look "A calm family planner: warm light background, white cards, friendly rounded corners."
+  brand: teal
+  neutral: stone
+  danger: rose
+  radius: large
+  density: comfortable
+}
+
+choice ChoreFilter: AllChores "All" | OverdueOnly "Overdue" | MineOnly "Mine" | UnassignedOnly "Unassigned"
+
+state {
+  keyDraft: Text = ""
+  stored apiKey: Text = ""                # the key of the person signed in on this device
+  me: Text or nothing = nothing           # who the service says the key belongs to
+  rows: List Chore = []                   # the chores, as the service lists them: earliest due first
+  history: List Completion = []           # who did what when, newest first
+  filter: ChoreFilter = AllChores
+  problem: Text or nothing = nothing      # the last refusal or failure, as the service worded it
+}
+
+derive {
+  overdue = the @rows whose @due is before @today
+  mine = the @rows whose @assignee is @me
+  unassigned = the @rows whose @assignee is nothing
+  shown = @overdue when @filter is @OverdueOnly; @mine when @filter is @MineOnly; @unassigned when @filter is @UnassignedOnly; @rows when @filter is @AllChores
+}
+
+screen {
+  section top as header {
+    heading "Chores" as title
+    text whoami = "Signed in as {@me}" {
+      visible when there is a @me
+    }
+    button signOut "Sign out" as ghost {
+      visible when there is a @me
+    }
+  }
+  section signIn as card {
+    visible when there is no @me
+    field keyDraft "Your key" as password
+    button signInButton "Sign in" as primary {
+      enabled when @keyDraft is not blank
+    }
+  }
+  text problem as alert {
+    visible when there is a @problem
+  }
+  section board as main {
+    visible when there is a @me
+    text overdueCount = "{the number of @overdue} overdue" as badge
+    select filter as tabs
+    list shown of Chore as cards {
+      text title
+      text due = "Overdue since {its @due as a date}" when its @due is before @today; "Due today" when its @due is @today, otherwise "Due {its @due as a date}" {
+        as badge
+      }
+      text turn = "Turn: {its @assignee, or "nobody yet" when there is none}"
+      text next = "Next: {the next in turn after its @assignee in its @rotation}" {
+        visible when there is an @assignee
+      }
+      list items of Item {
+        text mark = "✓" when its @done is true, otherwise "○"
+        text label
+        button tick "Tick" as ghost
+      }
+      button pick "Pick someone at random" as secondary {
+        visible when there is no @assignee
+      }
+      button done "Done" as primary {
+        visible when there is an @assignee
+      }
+    }
+    section log as card {
+      heading "History" as subtitle
+      list history of Completion as timeline {
+        text entry = "{who} did {title}"
+        text doneAt = "{its @at as a moment}" as caption
+      }
+    }
+  }
+}
+
+on start {
+  if @apiKey is blank {
+    stop
+  }
+  - call @chores.me
+  - call @chores.listChores
+  - call @chores.listHistory
+}
+
+on click signInButton {
+  if @keyDraft is blank {
+    stop
+  }
+  - set @apiKey to @keyDraft, trimmed
+  - clear @keyDraft
+  - set @problem to nothing
+  - call @chores.me
+  - call @chores.listChores
+  - call @chores.listHistory
+}
+
+on click signOut {
+  - set @apiKey to ""
+  - set @me to nothing
+  - set @rows to []
+  - set @history to []
+  - set @problem to nothing
+  - set @filter to @AllChores
+}
+
+on answer chores.me {
+  if its status is 200 {
+    - set @me to its body's @who
+  } else {
+    - set @me to nothing
+    - set @problem to the error
+  }
+}
+
+on answer chores.listChores {
+  if its status is 200 {
+    - set @rows to its body
+  } else {
+    - set @rows to []
+    - set @problem to the error
+  }
+}
+
+on answer chores.listHistory {
+  if its status is 200 {
+    - set @history to its body
+  } else {
+    - set @history to []
+    - set @problem to the error
+  }
+}
+
+on click done {
+  - set @problem to nothing
+  - call @chores.markDone with @id = that chore's @id
+}
+
+on answer chores.markDone {
+  if its status is 200 {
+    - set @problem to nothing
+  } else {
+    - set @problem to the error
+  }
+}
+
+on click tick {
+  - set @problem to nothing
+  - call @chores.tickItem with @id = that chore's @id and @item = that item's @id
+}
+
+on answer chores.tickItem {
+  if its status is 200 {
+    - set @problem to nothing
+  } else {
+    - set @problem to the error
+  }
+}
+
+on click pick {
+  - set @problem to nothing
+  - call @chores.pickSomeone with @id = that chore's @id
+}
+
+on answer chores.pickSomeone {
+  if its status is 200 {
+    - set @problem to nothing
+  } else {
+    - set @problem to the error
+  }
+}
+
+# The service announces every change to everyone in the household; the lists are reloaded here, in one place.
+on event chores.choreDone {
+  - call @chores.listHistory
+}
+
+on event chores.choreChanged {
+  - call @chores.listChores
+}
+
+rules {
+  - The next in turn after a person is the one after them in the chore's @rotation; after the last one it is the first one again.
+}
+
+always {
+  - no two @rows have the same @id
+  - no @Completion in @history has an @at after @now
+  see overdueCount is at least 0
+}
+
+# --- signing in ---
+
+example "before signing in, nothing is shown" {
+  see signInButton is disabled
+  see board is hidden
+  see whoami is hidden
+  see problem is hidden
+}
+
+example "signing in shows the chores, earliest due first" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  see whoami = "Signed in as Ann"
+  see problem is hidden
+  see shown has 5 rows
+  see title on row 1 = "Hoover"
+  see due on row 1 = "Overdue since 20 Sep 2026"
+  see title on row 2 = "Dishes"
+  see due on row 2 = "Overdue since 23 Sep 2026"
+  see title on row 3 = "Bins out"
+  see due on row 3 = "Due today"
+  see title on row 4 = "Bathroom"
+  see due on row 4 = "Due 26 Sep 2026"
+  see title on row 5 = "Windows"
+  see turn on row 5 = "Turn: nobody yet"
+  see next on row 5 is hidden
+  see done on row 5 is hidden
+  see pick on row 5 is shown
+  see turn on row 2 = "Turn: Ann"
+  see next on row 2 = "Next: Ben"
+  see next on row 3 = "Next: Ann"
+  see overdueCount = "2 overdue"
+  see items on row 4 has 3 rows
+  see mark on row 3 on row 4 = "✓"
+  see mark on row 1 on row 4 = "○"
+  see label on row 1 on row 4 = "Sink"
+  see history has 2 rows
+  see entry on row 1 = "Cas did Dishes"
+  see doneAt on row 1 = "22 Sep 2026 20:00"
+  snapshot "the board"
+}
+
+example "a wrong key" {
+  type "nope" into keyDraft
+  click signInButton
+  see problem is shown
+  see whoami is hidden
+  see board is hidden
+}
+
+example "a key of someone outside the household" {
+  type "k-dee-4444" into keyDraft
+  click signInButton
+  see problem = "Not allowed"
+  see whoami is hidden
+  see board is hidden
+}
+
+example "still signed in after a restart, with the filter back to all" {
+  type "k-ben-2222" into keyDraft
+  click signInButton
+  choose OverdueOnly in filter
+  see shown has 2 rows
+  restart
+  see whoami = "Signed in as Ben"
+  see filter = AllChores
+  see shown has 5 rows
+}
+
+example "signing out" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  click signOut
+  see whoami is hidden
+  see board is hidden
+  see signInButton is disabled
+}
+
+# --- overdue ---
+
+example "the overdue filter" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  choose OverdueOnly in filter
+  see shown has 2 rows
+  see title on row 1 = "Hoover"
+  see title on row 2 = "Dishes"
+}
+
+example "a day later, today's chore is overdue too" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  wait 1d
+  see overdueCount = "3 overdue"
+  see due on row 3 = "Overdue since 24 Sep 2026"
+  see due on row 4 = "Due 26 Sep 2026"
+}
+
+example "mine and unassigned" {
+  type "k-ben-2222" into keyDraft
+  click signInButton
+  choose MineOnly in filter
+  see shown has 2 rows
+  see title on row 1 = "Hoover"
+  see title on row 2 = "Bathroom"
+  choose UnassignedOnly in filter
+  see shown has 1 row
+  see title on row 1 = "Windows"
+}
+
+# --- done, only by the assignee ---
+
+example "the assignee marks a chore done and it passes to the next in turn" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  click done on row with "Dishes"
+  see problem is hidden
+  see history has 3 rows
+  see entry on row 1 = "Ann did Dishes"
+  see doneAt on row 1 = "24 Sep 2026 09:00"
+  see title on row 3 = "Dishes"
+  see turn on row 3 = "Turn: Ben"
+  see next on row 3 = "Next: Cas"
+  see due on row 3 = "Due 25 Sep 2026"
+  see overdueCount = "1 overdue"
+}
+
+example "someone else cannot mark it done" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  click done on row with "Hoover"
+  see problem = "Only the person this chore is assigned to can mark it done"
+  see history has 2 rows
+  see turn on row 1 = "Turn: Ben"
+}
+
+example "another person's done chore arrives" {
+  type "k-ann-1111" into keyDraft
+  click signInButton
+  call chores.markDone as "Ben" with id = 5
+  see history has 3 rows
+  see entry on row 1 = "Ben did Hoover"
+  see title on row 4 = "Hoover"
+  see turn on row 4 = "Turn: Ann"
+  see due on row 4 = "Due 27 Sep 2026"
+}
+
+# --- the checklist ---
+
+example "every checklist item is ticked before the chore is done" {
+  type "k-ben-2222" into keyDraft
+  click signInButton
+  click done on row with "Bathroom"
+  see problem = "Tick every checklist item first"
+  click tick on row with "Sink" on row with "Bathroom"
+  see problem is hidden
+  see mark on row 1 on row 4 = "✓"
+  click tick on row with "Mirror" on row with "Bathroom"
+  click done on row with "Bathroom"
+  see problem is hidden
+  see history has 3 rows
+  see entry on row 1 = "Ben did Bathroom"
+  see title on row 5 = "Bathroom"
+  see turn on row 5 = "Turn: Cas"
+  see due on row 5 = "Due 1 Oct 2026"
+  see mark on row 1 on row 5 = "○"
+  see mark on row 3 on row 5 = "○"
+}
+
+example "only the assignee ticks the checklist" {
+  type "k-cas-3333" into keyDraft
+  click signInButton
+  click tick on row with "Sink" on row with "Bathroom"
+  see problem = "Only the person this chore is assigned to can tick its checklist"
+  see mark on row 1 on row 4 = "○"
+}
+
+# --- a random pick ---
+
+example "a random pick for an unassigned chore" {
+  type "k-cas-3333" into keyDraft
+  click signInButton
+  choose UnassignedOnly in filter
+  click pick on row with "Windows"
+  see problem is hidden
+  see shown has 0 rows
+  choose AllChores in filter
+  see title on row 5 = "Windows"
+  see turn on row 5 is shown
+  see pick on row 5 is hidden
+  see done on row 5 is shown
+}

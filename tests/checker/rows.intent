@@ -1,6 +1,7 @@
 app RowChecks {
   "A select inside a list row chooses among the values of the row item's field."
 }
+language 1
 
 choice Status: Open | Done
 choice Color: Red | Banana

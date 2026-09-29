@@ -180,7 +180,7 @@ export function actionText(a: Action): string {
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}${at}` : `choose ${a.value} in ${a.target}${at}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
     case "restart": return "restart";
-    case "size": return `size ${a.target[0].toLowerCase()}${a.target.slice(1)}`;
+    case "size": return `size ${a.target}`;
     case "open": return `open ${JSON.stringify(a.target)}`;
     case "back": return "go back";
     case "steer": return `steer ${a.target} ${a.value}${a.value === "fail" ? ` ${a.times}` : ""}`;

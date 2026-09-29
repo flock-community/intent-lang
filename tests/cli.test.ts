@@ -34,7 +34,28 @@ const spec = join(dir, "left.intent");
 writeFileSync(spec, readFileSync(join(ROOT, "tests/fix/noaccess.intent"), "utf8"));
 const f = intent("fix", spec);
 assert.equal(f.status, 0);
-assert.match(f.stdout, /needs you — language v\d+ makes this an error/);
+assert.match(f.stdout, /left\.intent:4: language v69 → 1$/m, "a pre-1 language line is rewritten to `language 1`");
 assert.match(f.stdout, /1 error\(s\) left after fixing:\n  .*left\.intent:8: NO_ACCESS: /);
+
+// A changed model pin (STABILITY.md §5): \`intent check\` warns (LOCK), \`intent build\` and
+// \`intent converge\` refuse before any model is called, until \`intent lock\` pins the new model.
+{
+  const proj = mkdtempSync(join(tmpdir(), "cli-pin-"));
+  const at = (...args: string[]) => spawnSync(process.execPath, [join(ROOT, "compiler/cli.ts"), ...args], { cwd: proj, encoding: "utf8" });
+  writeFileSync(join(proj, "counter.intent"), 'app Counter {\n  "A counter."\n}\nlanguage 1\n\nstate {\n  count: Int = 0\n}\n\nscreen {\n  text count\n  button up "Up"\n}\n\non click up {\n  - increase @count by 1\n}\n\nexample "counting" {\n  click up\n  see count = 1\n}\n');
+  assert.equal(at("lock", "counter.intent").status, 0);
+  writeFileSync(join(proj, "intent.lock"), readFileSync(join(proj, "intent.lock"), "utf8").replace(/^@model\s+\S+/m, "@model    some-older-model"));
+  const c = at("check", "counter.intent");
+  assert.equal(c.status, 0, "a changed model is a warning for check");
+  assert.match(c.stdout, /warning LOCK: the compiler model is .*, but intent\.lock pins some-older-model/);
+  for (const cmd of ["build", "converge"]) {
+    const b = at(cmd, "counter.intent");
+    assert.equal(b.status, 1, `intent ${cmd} refuses a changed model pin`);
+    assert.match(b.stdout, /intent\.lock pins some-older-model: review the change, then run `intent lock`/);
+  }
+  assert.match(readFileSync(join(proj, "intent.lock"), "utf8"), /^@model\s+some-older-model$/m, "the refused build leaves the pin as it was");
+  assert.equal(at("lock", "counter.intent").status, 0);
+  assert.ok(!/LOCK/.test(at("check", "counter.intent").stdout), "after `intent lock` the pin is the model's again");
+}
 
 console.log("ok cli: a missing file or a directory is one line on stderr for every command; expand writes only the spec; fix lists what it leaves");

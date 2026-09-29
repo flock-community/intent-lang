@@ -1,6 +1,7 @@
 app NothingChecks {
   "A value that may be absent is handled where it is used."
 }
+language 1
 
 record Book {
   id: Int
@@ -16,7 +17,7 @@ state {
 
 derive {
   shown = the item equal to @picked                    # expect: NOTHING
-  safe = the item equal to @picked, or 0 when there is no @picked
+  safe = the item equal to @picked, or 0 when there is none
   rated = the @rating of the book whose @id is 1       # expect-not: NOTHING  (a derived value may be nothing: Int or nothing)
   ratedSafe = the @rating of the book whose @id is 1, or 0 when there is none
   lookedUp: Int = the @rating of the book whose @id is 2    # expect: NOTHING

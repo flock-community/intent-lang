@@ -1,6 +1,7 @@
 bundle lockers.lockers {
   "Parcel lockers in a building: each locker has a number and a size; a parcel waits in one until it is picked up with its code."
 }
+language 1
 
 choice Size: Small | Medium | Large
 

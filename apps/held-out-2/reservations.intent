@@ -3,6 +3,7 @@ app Reservations {
   "Staff book a party into a fixed time slot; the system gives the smallest free table that fits."
   "A reservation holds its table for its own slot and the next one. Staff can cancel and mark arrivals."
 }
+language 1
 
 import ui.admin
 import std.feedback
@@ -68,7 +69,7 @@ state {
   guestName: Text = ""
   phoneNumber: Text = ""
   partyText: Text = ""
-  slotChoice: Text = ""    # the label of the chosen slot; empty until one is chosen
+  slotChoice: Text or nothing = nothing   # the label of the chosen slot; nothing until one is chosen
 }
 
 derive {
@@ -165,7 +166,7 @@ on click book {
     - set @toast.message to "Party size must be a whole number from 1 to 6"
     stop
   }
-  if @slotChoice is empty {
+  if there is no @slotChoice {
     - set @toast.message to "Choose a time slot"
     stop
   }

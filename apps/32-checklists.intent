@@ -2,7 +2,7 @@ app Checklists {
   "Tasks, each with its own checklist: add, tick off and remove items inside a task."
   "Each task says how many of its items are left, and when all are done."
 }
-language v68
+language 1
 record Item {
   id: Int
   label: Text
@@ -47,7 +47,7 @@ on click addItem {
   if that task's @newItem, trimmed, is blank {
     stop
   }
-  - add an @Item to the end of that task's @items with @id = the highest @id in that task's @items + 1 (1 when there are none), @label = that task's @newItem, trimmed
+  - add an @Item to the end of that task's @items with @id = the highest @id in that task's @items + 1, or 1 when there is none, @label = that task's @newItem, trimmed
   - clear that task's @newItem
 }
 

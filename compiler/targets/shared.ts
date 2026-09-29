@@ -35,8 +35,10 @@ export const hasCodes = (app: App) => (app.refined ?? []).some((r) => r.code);
 
 /** Words a generated identifier cannot be: the keywords of the targets (Elm, TypeScript and
  *  JavaScript, and Kotlin for the targets to come) and the names the harness generates. A spec may
- *  use them as names (only Intent's own words are reserved): the harness writes such a name with a
- *  trailing `_` wherever it is an identifier (`type` → `type_`, a record `Model` → `Model_`), and as
+ *  use them as names (only Intent's own words are reserved, parse.ts RESERVED): the harness writes
+ *  such a name with a trailing `_` wherever it would be an identifier the target refuses — in Elm a
+ *  record field, a type, a constructor (`type` → `type_`, a record `Model` → `Model_`); in TypeScript a
+ *  type name (a property may be a keyword there, so records stay as they are on the wire) — and as
  *  itself wherever it is data (JSON keys, `data-el`, the source map, examples). A spec name never has
  *  an `_`, so a mangled name meets no other. Every other name is written as it is. */
 export const TARGET_WORDS = new Set([
@@ -53,13 +55,37 @@ export const TARGET_WORDS = new Set([
   "Model", "Msg", "Screen", "Button", "LabeledButton", "Pick", "Node", "Wire", "Ui", "Fmt", "Spec", "App", "Main", "Worker",
   "String", "Float", "Just", "Nothing", "True", "False", "Tick", "Ok", "Err", "Result",
   "Html", "Sub", "Cmd", "Json", "Dict", "Set", "Array", "Char", "Basics", "Debug", "Platform", "Time", "Browser",
+  "Program", "Tuple", "Regex", "Url", "Draw", "Crypto", "Data", "Stored", "Route", "Go", "Stay", "GoTo", "GoBack", "NoOp",
+  "ScreenOpened", "Started", "Call", "Through", "Draws", "Clock", "Source", "Request", "Response", "Handlers", "Published", "Jobs",
+  "Config", "Provided", "TypeDesc", "EndpointDesc", "Record", "Map", "Promise", "Error", "Object", "Boolean", "Symbol",
+  "JSON", "Math", "RegExp", "Extract", "Partial",
 ]);
 /** A spec name as a generated identifier (see TARGET_WORDS). */
 export const mangle = (name: string) => (TARGET_WORDS.has(name) ? `${name}_` : name);
 
+/** The spec's names a target's generated interface writes mangled (for the prompt): in Elm every
+ *  name that is an identifier there, in TypeScript the type names. */
+export function mangledNames(app: App, target: "elm" | "ts"): string[] {
+  const types = [...app.records.map((r) => r.name), ...app.choices.map((c) => c.name), ...(app.refined ?? []).map((r) => r.name)];
+  const walk = (els: Element[]): string[] => els.flatMap((e) => [e.name.slice(e.name.lastIndexOf(".") + 1), ...walk(e.children ?? [])]);
+  const values =
+    target === "ts"
+      ? types
+      : [
+          ...types,
+          ...app.choices.flatMap((c) => c.values),
+          ...app.records.flatMap((r) => r.fields.map((f) => f.name)),
+          ...app.state.map((f) => f.name),
+          ...walk(app.screen),
+          ...(app.screens ?? []).flatMap((s) => s.params.map((p) => p.name)),
+          ...(app.clients ?? []).map((c) => c.alias),
+        ];
+  return [...new Set(values.filter((n) => TARGET_WORDS.has(n)))].sort();
+}
+
 // Names of component instances are qualified (`pager.next`): a record field uses the last part,
 // a type or event tag joins all parts (`PagerNext`).
-export const ident = (name: string) => mangle(name.slice(name.lastIndexOf(".") + 1));
+export const ident = (name: string) => name.slice(name.lastIndexOf(".") + 1);
 
 export const typeName = (name: string) => name.split(".").map(cap).join("");
 
@@ -146,6 +172,13 @@ export const hasScreens = (app: App) => !!app.screens?.length;
 
 /** State that survives a restart (`stored name: T = …`). */
 export const hasStored = (app: App) => app.state.some((f) => f.stored);
+
+/**
+ * `on start` in an app with stored fields: the harness owns the order. It starts the app from the
+ * defaults (`init`, no `on start` in it), puts back what was kept, and then sends `Started`, the
+ * message for `on start`, so `on start` sees what the app remembered (§9).
+ */
+export const startsAfterRestore = (app: App) => hasStored(app) && app.handlers.some((h) => h.verb === "start");
 
 /** Lists a reference points into, and lists inside rows: the harness checks that their keys stay unique (on the app's data). */
 export const hasHomes = (app: App) => keyedLists(app).length > 0;

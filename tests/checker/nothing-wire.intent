@@ -1,0 +1,53 @@
+app NothingOnTheWire {
+  "Nothing on the wire is null: a declared `T or nothing` is in every answer, so an example asks `= nothing`."
+}
+language 1
+
+profile api
+
+record Note {
+  id: Int
+  text: Text
+  due: Date or nothing
+}
+
+record Refusal {
+  error: Text
+}
+
+event noteMade: Note
+
+state {
+  notes: List Note = table {
+    id | text
+    1  | "Milk"
+  }
+}
+
+endpoint note GET "/notes/{id}" {
+  path id: Int
+  answers 200 Note
+  answers 404 Refusal
+  if there is no note in @notes whose @id is @id {
+    answer 404 "No such note"
+  }
+  - publish @noteMade with the note in @notes whose @id is @id
+  answer 200 with the note in @notes whose @id is @id
+}
+
+example "a note without a due date" {
+  call note with id = 1
+  see note.status = 200
+  see note.body.due = nothing
+  see note.body.due is absent               # expect: STEP
+  see note.body.text = nothing              # expect: STEP
+  see note.body.error is absent             # expect-not: STEP
+  see noteMade.body.due = nothing
+  see noteMade.body.due is absent           # expect: STEP
+}
+
+example "an unknown note" {
+  call note with id = 9
+  see note.status = 404
+  see noteMade is absent
+}

@@ -1,7 +1,7 @@
 app Recipes {
   "Recipes from the recipe service, each shown with its ingredients inside it, and a search by name."
 }
-language v68
+language 1
 import kitchen.recipes
 
 uses kitchen.recipesApi as kitchen {

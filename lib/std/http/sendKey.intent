@@ -2,6 +2,7 @@ layer std.http.sendKey {
   "Every call a screen makes carries the user's API key in a header, and so does its event stream."
   "The service side is std.http.apiKey."
 }
+language 1
 
 param key: Text                              # the key; bind it to the screen's state (what the user signed in with)
 param keyHeader: Text = "x-api-key"          # the header the service reads the key from

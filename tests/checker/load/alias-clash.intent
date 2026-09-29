@@ -1,4 +1,5 @@
 app AliasClash
+language 1
 
 import support.tickets
 import support.tickets.Ticket as Comment   # expect: DUPLICATE

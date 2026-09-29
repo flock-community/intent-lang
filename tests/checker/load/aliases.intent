@@ -1,4 +1,5 @@
 app AliasChecks
+language 1
 
 import support.tickets.Ticket as Issue
 

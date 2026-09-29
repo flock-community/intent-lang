@@ -1,6 +1,7 @@
 platform std.crypto {
   "Hashes that need exact, reviewed code: never written per app."
 }
+language 1
 
 function sha256(text: Text): Text          # the SHA-256 of the text's UTF-8 bytes, as 64 lower-case hex digits
 

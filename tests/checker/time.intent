@@ -1,6 +1,7 @@
 app TimeChecks {
   "Dates and the clock: wrong literals, and waits without a clock, are errors."
 }
+language 1
 
 state {
   due: Date = 2026-09-24

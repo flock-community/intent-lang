@@ -2,6 +2,7 @@ layer std.http.cors {
   "Lets web pages on other origins call the API: only the origins you allow, with the methods and headers you allow."
   "Pages served from the API's own origin need none of this."
 }
+language 1
 
 param origins: List Text = []                      # origins that may call, exactly as browsers send them ("https://desk.example"); empty: any origin
 param headers: List Text = "content-type"          # request headers a page may send

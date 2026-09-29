@@ -1,4 +1,4 @@
-module Fmt exposing (addDays, addMinutes, cents, clock, dateOf, daysBetween, decimal, fixed, formatDate, formatDateTime, int, minutesBetween, money, parseDate, parseDateTime, parseDecimal, parseInt, roundDownTo, roundTo, roundUpTo, timeOf, weekday)
+module Fmt exposing (SortKey(..), SortOrder(..), addDays, addMinutes, cents, clock, dateOf, daysBetween, decimal, fixed, formatDate, formatDateTime, hoursBetween, int, minutesBetween, money, parseDate, parseDateTime, parseDecimal, parseInt, roundDownTo, roundTo, roundUpTo, sortBy, timeOf, weekday)
 
 {-| Standard formatting and parsing helpers. Must behave exactly like runtime/ts/fmt.ts.
 -}
@@ -433,6 +433,21 @@ minutesBetween from to =
     minuteNumber to - minuteNumber from
 
 
+{-| Whole hours from one moment to another, counted toward zero (the hours between 09:00 and 10:59 are 1; between 10:59 and 09:00, -1).
+-}
+hoursBetween : String -> String -> Int
+hoursBetween from to =
+    let
+        m =
+            minutesBetween from to
+    in
+    if m < 0 then
+        negate (negate m // 60)
+
+    else
+        m // 60
+
+
 monthName : Int -> String
 monthName m =
     Maybe.withDefault "" (List.head (List.drop (m - 1) [ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" ]))
@@ -497,3 +512,105 @@ parseDateTime text =
 
     else
         Nothing
+
+
+{-| A row's value to sort by: a number, a text (a Date or DateTime too: they sort as text), or nothing.
+A Bool is SortInt 0 or 1; a choice value is SortInt of its place in the choice.
+-}
+type SortKey
+    = SortInt Int
+    | SortFloat Float
+    | SortText String
+    | SortNothing
+
+
+{-| Which way one key sorts.
+-}
+type SortOrder
+    = Ascending
+    | Descending
+
+
+{-| A stable sort by keys, the first key first (`, earliest @due first, then lowest @id first`).
+Nothing (SortNothing) sorts last in either direction; text compares character by character by the
+characters' codes (never by locale); rows equal on every key keep their order.
+sortBy [ ( \r -> SortText r.due, Ascending ), ( \r -> SortInt r.id, Ascending ) ] rows
+-}
+sortBy : List ( a -> SortKey, SortOrder ) -> List a -> List a
+sortBy keys xs =
+    List.indexedMap Tuple.pair xs
+        |> List.sortWith
+            (\( i, a ) ( j, b ) ->
+                case compareKeys keys a b of
+                    EQ ->
+                        compare i j
+
+                    o ->
+                        o
+            )
+        |> List.map Tuple.second
+
+
+compareKeys : List ( a -> SortKey, SortOrder ) -> a -> a -> Order
+compareKeys keys a b =
+    case keys of
+        [] ->
+            EQ
+
+        ( key, dir ) :: rest ->
+            case ( key a, key b ) of
+                ( SortNothing, SortNothing ) ->
+                    compareKeys rest a b
+
+                ( SortNothing, _ ) ->
+                    GT
+
+                ( _, SortNothing ) ->
+                    LT
+
+                ( p, q ) ->
+                    case compareKey p q of
+                        EQ ->
+                            compareKeys rest a b
+
+                        o ->
+                            if dir == Ascending then
+                                o
+
+                            else
+                                flipOrder o
+
+
+compareKey : SortKey -> SortKey -> Order
+compareKey p q =
+    case ( p, q ) of
+        ( SortInt x, SortInt y ) ->
+            compare x y
+
+        ( SortFloat x, SortFloat y ) ->
+            compare x y
+
+        ( SortInt x, SortFloat y ) ->
+            compare (toFloat x) y
+
+        ( SortFloat x, SortInt y ) ->
+            compare x (toFloat y)
+
+        ( SortText x, SortText y ) ->
+            compare x y
+
+        _ ->
+            EQ
+
+
+flipOrder : Order -> Order
+flipOrder o =
+    case o of
+        LT ->
+            GT
+
+        GT ->
+            LT
+
+        EQ ->
+            EQ

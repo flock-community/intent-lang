@@ -38,6 +38,7 @@ So the same spec gives the same app, and a vague spec is caught instead of guess
 app Counter {
   "Count things up and down, never below zero."
 }
+language 1
 
 state {
   count: Int = 0
@@ -90,6 +91,9 @@ Reading it top to bottom:
   sentence is plain English. Declarations and example steps need no `@` (`button up`, `click up`).
 - **`app`** gives the app a name and a purpose (the quoted line). The compiler reads the
   purpose too.
+- **`language 1`** says which version of Intent the spec is written in. Intent 1 is stable: a spec
+  that passes under `language 1` keeps passing, with the same meaning, under every `1.x` compiler
+  ([`STABILITY.md`](STABILITY.md)). A spec without the line means `language 1`; `intent fix` adds it.
 - **`state`** is what the app remembers, with a type and a starting value.
 - **`screen`** lists what the user sees. `text count` shows the state `count`. A button has a
   name (`down`) and a label (`"−"`). `enabled when …` is a condition, written as a sentence.
@@ -224,6 +228,17 @@ app's code, so the app's compiler cannot bend a check to its own reading. Every 
 after every step. A sentence in `rules` is only guidance; the checker points out rules that read
 like they should be in `always`.
 
+Some rules are about what a step may *change*. They have fixed forms the harness checks itself,
+comparing the data before and after every step (`apps/31-frozen-approvals.intent`):
+
+```
+always {
+  - an @Expense whose @status was @Approved never changes
+  - an @Expense's @status only changes from @Pending to @Approved or @Rejected
+  - an @Expense is never removed
+}
+```
+
 ## 4. Reuse: bundles, components and a design
 
 Specs reuse specs. A **bundle** is a library under `lib/`. `lib/std/list.intent` offers a
@@ -352,8 +367,9 @@ requires {
 ```
 
 `intent install` downloads them and pins exact versions and hashes in `intent.lock`.
-`intent publish` computes a bundle's version from its names *and* the behaviour of its demo
-app, so a change that breaks users is a new major version.
+`intent publish` computes a bundle's version from its names and types, a contract's events, its
+`always` and change rules, *and* the behaviour of its demo app, so a change that breaks users is a
+new major version.
 
 ---
 
@@ -371,10 +387,11 @@ import support.tickets
 implements support.ticketsApi
 
 state {
-  tickets: List Ticket = table {
+  stored tickets: List Ticket = table {
     id | subject                        | customer        | priority | status  | assignee
     1  | "Cannot log in after reset"    | "Mara Jansen"   | Urgent   | Open    | "Sam"
     …
+    8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | nothing
   }
 }
 
@@ -385,9 +402,21 @@ endpoint createTicket {
   if @customer, trimmed, is blank {
     answer 400 "Customer is required"
   }
-  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, @subject and @customer trimmed, the given @priority, @status @Open and @assignee ""
+  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, or 1 when there is none, @subject and @customer trimmed, the given @priority, @status @Open and @assignee = nothing
   - publish @ticketCreated with the new ticket
   answer 201 with the new ticket
+}
+
+endpoint solveTicket {
+  if that ticket does not exist {
+    answer 404 "No such ticket"
+  }
+  if that ticket is @Solved {
+    answer 409 "Already solved"
+  }
+  - set its @status to @Solved
+  - publish @ticketSolved with the ticket
+  answer 200 with the ticket
 }
 
 example "creating a ticket" {
@@ -405,6 +434,11 @@ example "creating a ticket" {
   `if <condition> { … } else { … }` and `answer 400 "…"`, which ends the endpoint. A refusal's
   body is always `{ "error": "…" }`, and the checker reports an endpoint that does not answer
   on every path.
+- **"That ticket"** is the row the request names: the contract says `path id: ref Ticket`, so
+  `if that ticket does not exist { … }` asks for it, and after that check the steps may use it.
+- **Nothing** is a value: a ticket nobody has taken has `assignee` nothing (`Text or nothing` in
+  the record), and `the highest @id …, or 1 when there is none` says what happens when a lookup
+  finds nothing. Using a value that may be nothing without saying so is an error.
 - The harness routes requests and checks their input before your steps run, with fixed
   messages (`400 "priority must be one of Urgent, High, Normal, Low"`).
 - Examples `call` endpoints and `see` the answer: `status`, `body.<path>`, and headers.
@@ -434,7 +468,7 @@ endpoint createTicket POST "/tickets" {
 }
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
-  path id: Int
+  path id: ref Ticket
   answers 200 Ticket
   answers 404 Problem
   answers 409 Problem               # already solved
@@ -453,38 +487,55 @@ their own in `lib/std/http/`, built and verified once, reused by every API
 (`apps/api/desk-api.intent`):
 
 ```
-app DeskApi
+app DeskApi {
+  "The support desk's API for agents, called from the desk's web pages."
+}
+
 import support.tickets
+
 implements support.deskApi
 
 # The first layer sees every request first and every answer last.
-use secure = std.http.secure
-use cors = std.http.cors {
+layer secure = std.http.secure
+layer cors = std.http.cors {
   origins = "https://desk.example"
   headers = "content-type", "x-api-key"
 }
-use auth = std.http.apiKey {
+layer auth = std.http.apiKey {
   keys = table {
     secret         | owner
     "k-ann-7f3a"   | "Ann"
     "k-sam-91bc"   | "Sam"
+    "k-lin-44d0"   | "Lin"
+    …
   }
-  public = "/health"
 }
 
-endpoint solveTicket {
-  if no ticket has that @id {
-    answer 404 "No such ticket"
-  }
-  if that ticket's @assignee is not the @caller {
-    answer 403 "Only the assignee can solve this ticket"
-  }
-  - …
+choice Role: Agent | Lead
+
+record Grant {
+  who: Text                             # a caller, as the key layer names them
+  role: Role
+}
+…
+access {
+  roles = grants
+  - anyone, without a key, may call @health
+  - an @Agent may call @myTickets, @takeTicket and @addComment
+  - an @Agent may call @solveTicket when that ticket's @assignee is the @caller: "Only the assignee can solve this ticket"
+  - a @Lead may call every endpoint
+  - an @Agent may hear @ticketAssigned and @ticketSolved when its body's @assignee is the @caller
+  - a @Lead may hear every event
 }
 ```
 
 `std.http.apiKey` **provides** `caller` (the owner of the key) to every endpoint, so steps can
-say "the caller". Examples send headers: `call solveTicket with header x-api-key = "k-sam-91bc", id = 4`.
+say "the caller". The **`access`** block says who may call which endpoint and hear which event.
+Once an api has one, everything it does not permit is refused. The harness checks the rules before
+an endpoint runs: a refusal is a 403 with the rule's message, and every decision is written to an
+audit log. Who holds a role is data (`grants`), so a revoked role counts from the next request. An
+api with a key layer and no `access` block is an error (`NO_ACCESS`): every key holder could call
+every endpoint. Examples call as someone: `call solveTicket as "Ann" with id = 4`.
 
 A layer is a small spec too. The whole of `lib/std/http/secure.intent`:
 
@@ -549,12 +600,12 @@ on answer tickets.createTicket {
   if its status is 201 {
     - clear @draft and @problem
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
 }
 
 on event tickets.ticketCreated {
-  if no row in @rows has the @id of its body {
+  if no row in @rows has its body's @id {
     - add its body at the start of @rows
   }
 }
@@ -614,7 +665,7 @@ on answer desk.myTickets {
   if its status is 200 {
     - set @mine to its body and clear @problem
   } else if its status is 401 {
-    - clear @mine and set @problem to the error in its body
+    - clear @mine and set @problem to the error
   } else {
     - set @problem to "Could not load your tickets"
   }
@@ -627,7 +678,7 @@ example "a wrong key" {
 }
 
 example "before signing in, nothing arrives" {
-  call desk.takeTicket with header x-api-key = "k-ann-7f3a", id = 4
+  call desk.takeTicket as "Ann" with id = 4
   see mine has 0 rows
   see problem is hidden
 }
@@ -673,7 +724,10 @@ when its time is up:
 
 ```
 every 1m {
-  - every notice whose @expiresAt is at or before @now is removed from @notices, in the order of @notices, and for each one publish @noticeExpired with that notice
+  for each @notice in @notices whose @expiresAt is at or before @now {
+    - remove @notice from @notices
+    - publish @noticeExpired with @notice
+  }
 }
 
 example "a notice lives for its minutes" {
@@ -744,7 +798,7 @@ screen ticket "/tickets/{id}" {
   text state = "{the @status of the ticket whose @id is @id, or "" when there is none}"
   text seen = "Ticket pages opened: {@visits}"
   button solve "Solve" {
-    enabled when the ticket whose @id is @id is @Open
+    enabled when there is a ticket whose @id is @id and that ticket is @Open
   }
   button back "Back"
 }
@@ -776,7 +830,8 @@ wait 3s / wait 1d / tick 5 times    snapshot "queue"               restart   (sc
 steer pay lose answer / lose request / duplicate / fail 3               (a screen's api)
 open "/tickets/3"   go back   see screen = ticket   see path = "/tickets/3"   (several screens)
 call createTicket with a = 1        see createTicket.body.id = 9   see ticketCreated is absent   (apis)
-call x with header x-api-key = "…"  see x.header.vary = "origin"   request OPTIONS "/tickets" with header origin = "…"
+call x as "Ann" with id = 4          call x with header x-api-key = "…"   see x.header.vary = "origin"
+request OPTIONS "/tickets" with header origin = "…"                 steer random Die = 6, 6   (draws)
 ```
 
 Write examples you could compute by hand. They are the only thing that says what "right" is:
@@ -800,8 +855,9 @@ node compiler/cli.ts build apps/api/desk-api.intent  # → runs/single/desk-api/
 - **When a build stops**, it says why in terms of your spec: an example that fails (with the
   screen at that moment), a rule a session broke (with the steps), or an ambiguity (the two
   readings, and the sentence or example that would settle it).
-- **Open a UI build** by opening its `index.html`. A screen that uses an API reads its address
-  from the URL: `index.html?api.desk=http://localhost:3000`.
+- **Open a UI build** by opening its `index.html`. A screen that uses an API sends its calls to
+  the page's origin, or where a tag in the page says: `<meta name="intent-api"
+  content="desk=http://localhost:3000">`.
 
 ## 15. Where to look next
 
@@ -816,12 +872,18 @@ node compiler/cli.ts build apps/api/desk-api.intent  # → runs/single/desk-api/
 | `apps/12-helpdesk-bundled.intent` | the same app built from bundles |
 | `apps/14-supportdesk.intent` | refinement: `extends`, `override`, `add to`, `drop` |
 | `apps/17-habits.intent` | dates, `@today`, and `wait` in examples |
+| `apps/31-frozen-approvals.intent` | rules over changes |
+| `apps/32-checklists.intent` | a list inside each row |
+| `apps/34-ref-navigation.intent` | references to other records, followed with `'s` |
+| `apps/36-table.intent` | random values: dice and a shuffled deck |
 | `apps/api/notices-api.intent` | `@now` in an API, and recurring work (`every 1m`) |
 | `apps/api/tickets-api.intent` | an API implementing a contract, publishing events |
-| `apps/api/desk-api.intent` | an API behind layers, with rules per caller |
+| `apps/api/desk-api.intent` | an API behind layers, with `access` rules per caller |
 | `apps/15-tickets-ui.intent` | a screen calling an API, following events |
 | `apps/16-desk-ui.intent` | signing in with a key through a client layer |
 | `lib/` | bundles, contracts and layers to reuse |
 | [`LANGUAGE.md`](LANGUAGE.md) | the full reference (also the compiler's prompt) |
+| [`TOOLS.md`](TOOLS.md) | the commands, locking, the registry and the checker's codes |
+| [`STABILITY.md`](STABILITY.md) | what language 1 promises |
 | [`CHANGELOG.md`](CHANGELOG.md) | how the language grew, and the next candidates |
 | [`../skills/intent-spec/SKILL.md`](../skills/intent-spec/SKILL.md) | how an LLM should write specs with you |

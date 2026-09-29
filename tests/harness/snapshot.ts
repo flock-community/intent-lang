@@ -19,6 +19,7 @@ const { scaffoldLayer } = await import(R + "layer.ts");
 const { hasClients, hasThrough } = await import(R + "calls.ts");
 const { usesClock } = await import(R + "refs.ts");
 const { usesDraws } = await import(R + "draws.ts");
+const { mangledNames } = await import(R + "targets/shared.ts");
 const { changePlan, hasChangeRules } = await import(R + "changes.ts");
 const { invariantsPrompt, stageSentences } = await import(R + "invariants.ts");
 
@@ -58,7 +59,7 @@ for (const spec of specs.sort()) {
         out.push(`${spec} ${target} ${relative(dir, f)} ${h(text)}`);
       }
       for (const probe of [false, true]) {
-        const p = layer ? layerPrompt(spec, text, specSource, probe, !!app.beforeCall) : buildPrompt(target, spec, text, specSource, probe, api, hasClients(app), hasThrough(app), usesClock(app), gen.hasData(app), gen.hasStored(app), undefined, undefined, undefined, usesDraws(app), !!app.access);
+        const p = layer ? layerPrompt(spec, text, specSource, probe, !!app.beforeCall) : buildPrompt(target, spec, text, specSource, probe, api, hasClients(app), hasThrough(app), usesClock(app), gen.hasData(app), gen.hasStored(app), undefined, undefined, undefined, usesDraws(app), !!app.access, mangledNames(app, api ? "ts" : target), gen.startsAfterRestore(app));
         for (const where of [ROOT, homedir()]) if (p.includes(where)) placed.push(`${spec} ${target} prompt names ${where}`);
         out.push(`${spec} ${target} prompt${probe ? "-probe" : ""} ${h(p)} repair ${h(repairPrompt(p, target, "code", "problems"))}`);
       }

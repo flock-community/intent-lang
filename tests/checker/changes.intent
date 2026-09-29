@@ -1,6 +1,7 @@
 app Changes {
   "Change rules: `always` sentences about the data before a step and after it."
 }
+language 1
 
 choice Status: Open | Solved | Closed
 choice Priority: Low | Urgent

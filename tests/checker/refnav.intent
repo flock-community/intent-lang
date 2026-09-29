@@ -1,6 +1,7 @@
 app RefNav {
   "Following a reference: `its @ticket's @subject` reads the row the key points at, in the record's home list."
 }
+language 1
 
 choice Status: Open | Closed
 choice Level: Low | High

@@ -104,7 +104,11 @@ const providerBuilds = new Map<string, Promise<TwinResult>>();
  * Apps that make calls are tested against the real provider: build each \`tested with\` app first
  * (twin-verified and cached like any build; once per provider spec, shared by every target).
  */
-async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: Record<string, string> } | { problem: string; costUsd: number }> {
+/** The dependency builds whose cost was counted already in this process (a provider two apps share is paid once). */
+const counted = new Set<string>();
+const costOnce = (dir: string, r: TwinResult) => (counted.has(dir) ? 0 : (counted.add(dir), r.costUsd));
+
+async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: Record<string, string>; costUsd: number } | { problem: string; costUsd: number }> {
   const providers: Record<string, string> = {};
   let costUsd = 0;
   for (const c of app.clients ?? []) {
@@ -119,17 +123,17 @@ async function ensureProviders(app: App, o: TwinOptions): Promise<{ providers: R
       providerBuilds.set(dir, withLock(dir, () => compileApp(loaded.app!, c.testedWith!, text, "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, repairs: o.repairs, log: (m) => o.log(`provider ${c.alias}: ${m}`) })));
     }
     const r = await providerBuilds.get(dir)!;
-    costUsd += r.cached ? 0 : r.costUsd;
+    costUsd += costOnce(dir, r);
     if (!r.ok) return { problem: `the provider ${c.testedWith} did not build`, costUsd };
     providers[c.alias] = dir;
   }
-  return { providers };
+  return { providers, costUsd };
 }
 
 const layerBuilds = new Map<string, Promise<TwinResult>>();
 
 /** An api behind layers: each layer spec is built once (twin-verified, cached) and its module reused. */
-async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<string, string> } | { problem: string; costUsd: number }> {
+async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<string, string>; costUsd: number } | { problem: string; costUsd: number }> {
   const layers: Record<string, string> = {};
   let costUsd = 0;
   for (const l of [...(app.layers ?? []), ...(app.clients ?? []).flatMap((c) => (c.through?.spec ? [c.through] : []))]) {
@@ -139,11 +143,11 @@ async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<
       layerBuilds.set(dir, withLock(dir, () => compileApp(l.spec!, `${l.layer}.intent`, printApp(l.spec!), "ts", dir, { twin: o.twin, sessions: o.sessions, length: o.length, repairs: o.repairs, log: (m) => o.log(`layer ${l.alias}: ${m}`) })));
     }
     const r = await layerBuilds.get(dir)!;
-    costUsd += r.cached ? 0 : r.costUsd;
+    costUsd += costOnce(dir, r);
     if (!r.ok) return { problem: `the layer ${l.layer} did not build${r.ambiguous ? " (its spec is ambiguous)" : ""}`, costUsd };
     layers[l.alias] = dir;
   }
-  return { layers };
+  return { layers, costUsd };
 }
 
 /**
@@ -151,28 +155,38 @@ async function ensureLayers(app: App, o: TwinOptions): Promise<{ layers: Record<
  * a screen that makes calls) and the layers its api runs behind. `converge` resolves the same ones
  * `build` does, so a screen-with-calls or an api behind layers converges too.
  */
-export async function buildDeps(app: App, o: TwinOptions): Promise<{ providers?: Record<string, string>; layers?: Record<string, string> } | { problem: string }> {
+export async function buildDeps(app: App, o: TwinOptions): Promise<{ providers?: Record<string, string>; layers?: Record<string, string>; costUsd: number } | { problem: string; costUsd: number }> {
+  // What building them cost (the twin builds of its providers and of its service and client layers): counted once per process.
+  let costUsd = 0;
   let layerDirs: Record<string, string> | undefined;
   if (app.layers?.length || app.clients?.some((c) => c.through)) {
     const r = await ensureLayers(app, o);
-    if ("problem" in r) return { problem: r.problem };
+    costUsd += r.costUsd;
+    if ("problem" in r) return { problem: r.problem, costUsd };
     layerDirs = r.layers;
   }
   let providers: Record<string, string> | undefined;
   if (hasClients(app)) {
     const p = await ensureProviders(app, o);
-    if ("problem" in p) return { problem: p.problem };
+    costUsd += p.costUsd;
+    if ("problem" in p) return { problem: p.problem, costUsd };
     providers = p.providers;
   }
-  return { providers, layers: layerDirs };
+  return { providers, layers: layerDirs, costUsd };
 }
 
 export async function compileApp(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions): Promise<TwinResult> {
   const deps = await buildDeps(app, o);
   if ("problem" in deps) {
     o.log(deps.problem);
-    return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: 0 };
+    return { target, ok: false, dir: out, cached: false, verified: "none", builds: [], costUsd: deps.costUsd };
   }
+  // The cost of a build includes the builds it is tested against (its providers and layers), once.
+  const r = await compileWith(app, specFile, specText, target, out, o, deps);
+  return deps.costUsd ? { ...r, costUsd: r.costUsd + deps.costUsd } : r;
+}
+
+async function compileWith(app: App, specFile: string, specText: string, target: Target, out: string, o: TwinOptions, deps: { providers?: Record<string, string>; layers?: Record<string, string> }): Promise<TwinResult> {
   const { providers, layers: layerDirs } = deps;
   const key = cacheKey(specText, target, o);
   const cached = join(CACHE, key);

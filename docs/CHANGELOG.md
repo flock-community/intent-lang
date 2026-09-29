@@ -6,9 +6,11 @@ and this repository's files stay here.
 
 ## Next candidates
 
-Intent is a language in progress. When a spec needs something the language cannot say
-yet, the checker reports `NOT_YET`. That is a candidate for the next version, not a rule.
-A version is added when specs need it; each should serve many apps, not one. Next candidates:
+When a spec needs something the language cannot say yet, the checker reports `NOT_YET`. That is
+a candidate for a later version, not a rule. Each should serve many apps, not one. Since language 1
+(docs/STABILITY.md), a candidate that only adds (a new form, a lifted `NOT_YET`) is a candidate for
+a `1.x` release; one that would change what a checked spec means waits for an edition, `language 2`.
+The candidates, for 1.x unless marked:
 
 - a third level of rows, and trees (a record that holds a list of its own kind: comment threads),
   with a tree or treegrid presentation (ARIA tree; expand and collapse);
@@ -30,8 +32,20 @@ A version is added when specs need it; each should serve many apps, not one. Nex
   (`choice Prize: Car 1 | Nothing 99`) and other distributions; `secret` types (constant-time
   comparison, kept out of logs); an attempt limit as a layer (`std.http.limit`), the honest answer to
   `GUESSABLE`; a draw in a loop inside a loop; `Int` ranges above 2^32 values;
-- explicit layout sizes (`look` is still words; a closed size vocabulary could replace them);
-- a terminal target: a second renderer of the same screens (sizes are the first step);
+- explicit layout sizes (`look` is still words; a closed size vocabulary next to them is 1.x,
+  replacing them would be `language 2`);
+- a terminal target: a second renderer of the same screens (sizes are the first step), and Kotlin
+  as a second target for apis (a target is a module and must pass the same examples, STABILITY.md §7);
+- from held-out round 4 (runs/r1-held-out-4/report.md), each a 1.x addition: a rule for some roles
+  only (G8: a deadline for patients, not the desk: `no one may call @cancel when … unless the caller is
+  a @Desk`, which needs `@now` in a condition and an exception by role in the access plan); viewport
+  breakpoints for `sizes` (G9: `sizes Compact below 640px | Standard`, the host's choice now); next in
+  turn, wrapping (G10: `the one after @x in @xs, from the first after the last`); a date input (a
+  `field` that edits a `Date`, read with `Fmt.parseDate`); `enabled when` on a checkbox (the harness's
+  checkbox has no disabled state yet, on either target); comparing a `ref` with the caller (a `ref
+  Person` whose key is the key layer's owner); frozen but deletable (`…, unless it is removed`, below);
+  grants with several roles per person (G11: `roles: List Role` in one grant). An alphabet without
+  0/O/1/I/L is already `Text of 6 from "23456789ABCDEFGHJKMNPQRSTUVWXYZ"`;
 - access beyond v70 (`docs/design/v1-access.md`, "Not in v1"): field-level access (which fields of an
   answer a caller may see or change), lists filtered by access, role hierarchies, a server-side hold
   until approved, tenants and bearer tokens (a token layer that `provides caller`), `@now` in a
@@ -41,6 +55,171 @@ A version is added when specs need it; each should serve many apps, not one. Nex
   std.http.sendKey` (one `through` per `uses` so far).
 
 ## Changelog
+
+Versions v1–v73 are the development history before the first stable version: specs said
+`language vNN`, and any version could change what a spec meant. From language 1 on, versions are
+`1`, `1.1`, `1.2`, … (additions only) and editions (`language 2`); docs/STABILITY.md is the promise.
+
+- 1 — the first stable version (stamped on v73's language). **What language 1 is:** a spec says
+  what an app must be — its records, choices and refined types (`ref` references with declared
+  keys, `T or nothing` with nothing-safety, random values drawn from types), its state (`stored`
+  state survives a restart), derived values, one or several screens with elements and
+  presentations, handlers written as structured steps (`if`/`else`, `for each`, `answer`,
+  `stop`) with English only in the leaves, `always` rules (checks, sentences over the data, and
+  rules over changes), access rules, and examples that prove it. The same language describes
+  services (`profile api`: endpoints, events, contracts with declared effects, layers such as
+  CORS and API keys, access with default deny and an audit), jobs (`profile job`), bundles that
+  carry their own examples and rules, and refinement of a published app (`extends` with named
+  overrides). §9 of the reference gives a default wherever a spec is silent. What a `language 1`
+  spec means, the harness contracts (`data-el`, `sourcemap.json`, `manifest.json`, `job.mjs`, the
+  wire, the audit, stored data) and the compiler's error codes stay the same across 1.x.
+  **What this round changed:** the version line is `language 1` (later `language 1.2`, or
+  `language 2` for an edition), with no `v`; it is the lowest version the spec needs, and a newer
+  one than the compiler's is an error (`NEWER_LANGUAGE`). A spec without the line means `language
+  1` (v71 read it as "the current language"). A pre-1 `language vNN` reads as `language 1`, with a
+  `LANGUAGE` warning that `intent fix` rewrites. Every version-conditional rule collapses to its
+  language 1 behaviour: an api with a key layer and no `access` block is a `NO_ACCESS` error
+  whatever its line says (std.quality's `NO_ACCESS` hint for older specs is gone). The reference's
+  header is `language reference (1)` and intent.lock pins `@language 1 sha256:…`. A changed
+  `@model` in intent.lock stays a `LOCK` warning for `intent check`, and `intent build` and
+  `intent converge` refuse until `intent lock` (tests/cli.test.ts). `intent publish` refuses a
+  spec without a `language` line. A bundle's computed version now also counts every record field's
+  type (not only a contract's), each choice value's wire name, the bundle's `always` and change
+  rules (a component's too), and a contract's events: removing or changing one is a major
+  version (compiler/registry.ts `apiOf`, tests/registry.test.ts). An `answer` message is a
+  template like any other: `answer 409 "Already taken by {that ticket's @assignee}"` is a
+  `NOTHING` error when the hole can be nothing (tests/checker/holes.intent,
+  tests/checker/holes-screen.intent); it found one in apps/api/desk-api.intent, which now says
+  `{that ticket's @assignee, or "someone" when there is none}` (the same answer, since the
+  condition asks for an assignee). Every spec in apps/, lib/ and the checker, harness and ambiguity
+  fixtures says `language 1`; tests/fix/ keeps its inputs as they are (they test the migration).
+  runs/openouros stays at `language v21`: it is the v21 snapshot the OurOS review
+  (docs/reviews/openouros.md) was written from, and after `intent fix` it still has ten errors that
+  need judgement (docs/STABILITY.md §4 lists them), so it is history, not part of the
+  compatibility suite. docs/STABILITY.md is final; docs/TOOLS.md, the skill, README.md, AGENTS.md,
+  docs/PLAN.md and docs/GUIDE.md say `language 1`.
+  **From held-out round 4** (runs/r1-held-out-4/report.md: three independent authors wrote a chores
+  app, a clinic booking app and a to-do list from the reference alone; codes H/K/R/G are the
+  report's). *Harness:* a screen's examples run against a provider that draws and reads the clock
+  (H1, G5): every request the driver sends a provider carries the example's clock (the screen's, or
+  the provider's `examples start at` when the screen reads none) and the provider's own draws,
+  seeded from the example's name and the alias; `steer random T` in a screen's example goes to the
+  provider when only the provider draws a T (a type both draw is a `STEP` error), a steered value
+  the provider never draws fails the example, random sessions write the provider's draws down, and
+  a screen's `wait` moves the provider's clock and runs its recurring work (compiler/exec.ts,
+  compiler/drawer.ts `routed`; tests/provider-draws.test.ts, with the new pair apps/38-raffle.intent
+  and apps/api/raffle-api.intent over lib/raffle/raffleApi.intent). The incremental store is keyed
+  by the spec file, not the app's name (two specs named `app Todo` shared one), and a build logs
+  why it reuses nothing (H2; compiler/incremental.ts, tests/units.test.ts). Elm and TypeScript word
+  an answer that does not fit the contract the same way: "<endpoint> answered <status>, but the body
+  does not fit the contract", also for a body where the contract declares none
+  (tests/answers-parity.test.ts). `intent converge`'s cost column includes the twin builds of an
+  app's providers and of its service and client layers, each counted once per run
+  (compiler/twin.ts `buildDeps`, compiler/converge.ts). *Where a contract lives* (G1, G2, K4): like
+  a bundle, in `lib/<area>/<name>.intent`, named and never given as a path, locked, and never
+  imported (its names come with `uses` / `implements`); the errors say so exactly (`implements
+  "./x.intent"`, `uses "lib/…"`, `uses x` without `as`, importing a contract, a contract not
+  found). The authors' chores and clinic contracts moved to lib/home/choresApi.intent and
+  lib/clinic/bookingsApi.intent (content unchanged), and every apps/held-out-4 file checks clean in
+  the repository (tests/heldout4.test.ts). *Checker:* the hint for `its @due exists` on a `T or
+  nothing` names the form that works, `there is a @due` (K1); a click on a button that is disabled at
+  that step is a `STEP` error wherever the checker can tell (K2, R1: §4 and §9.6 now agree that an
+  example may not click it; compiler/disabled.ts); no `ACCESS` cascade from a provider with errors
+  (K3); `GUESSABLE` for a drawn code a contract takes back as input (K5); `UNSTEERED` only for a
+  value the example drew, never a seeded one (K6); `UNENFORCED` reads `only the @owner … may` (K7);
+  `the minutes between @now and that booking's @start is below 1440` compares the minutes (K8);
+  `used to be`, `the previous @x` and `was` on an unmarked field outside `always` are `CHANGE`, and
+  an order on a `T or nothing` row field in a filter is `NOTHING` (K9; apps/held-out-4/todo.intent
+  says `whose … there is a @due and @due is before @today`). *Language:* an order is typed, `<list>
+  sorted by @due, earliest first, then by @id` (G3; §2, §9.19: a stable sort, nothing last, text by
+  character codes), sorted by the harness (`Fmt.sortBy`, the same on both targets,
+  tests/fmt-parity); `, highest @id first` and `, @name from A to Z` are `SPELLING` that `intent fix`
+  rewrites (it rewrote apps/api/{desk,expenses,payouts,tickets}-api, held-out-3/approvals and
+  held-out-4/clinic-api). `for each` is a step of an endpoint too, also over a row's inner list (G4).
+  Time is typed in words (G6, §3b): `N minutes / hours / days / weeks after (before) A`, `the minutes
+  / hours between two moments` (whole, toward zero: `Fmt.hoursBetween`), `the days between two
+  days`; months and years are not units. A new id comes from a counter in state (G14, §5: `@id =
+  @nextId`, `increase @nextId by 1`); std.quality's new `REUSED_KEY` warns where `the highest @id + 1`
+  hands out a removed row's id while something keeps ids (apps/held-out-4/todo.intent, which has an
+  undo, now counts). `any caller with a role may call …` is a permit (G11). Alternatives without
+  `otherwise` must name every value of one choice (`TYPE`), and a choice value named like a refined
+  type is `DUPLICATE` (G12, G13). Documented (G7, G12, G13): the key layer's 401 messages and the
+  other std layers' answers (§4j), the std library's params (TOOLS §7), where `language 1` goes after
+  a header with a purpose, one namespace for types and choice values, a `ref` param in the body
+  (`body slotId: ref Slot`, then "that slot"), refined path params, `there is a booking in @xs whose
+  …` naming "that booking", an inner row reading `that task's @f`, `ref X or nothing`, plain lists in
+  table cells, `answers 200 List T`, `every endpoint answers 401 Problem` in an api without a
+  contract. The skill's interview covers apis, roles, deadlines and generated codes, says which edge
+  cases the interviewer decides and which it asks, and points at no file of this repository (G15,
+  G16). *Found by the builds after these fixes:* the harness ran `init` (the spec's `on start`)
+  before it put the stored fields back, on both targets and in the browser, so the chores screen's
+  `on start { if @apiKey is blank { stop } … }` saw the default after a restart and loaded nothing.
+  Now the rule is stated (§4 Stored state, `on start` in §4i and §5, §9.20: stored fields are
+  restored before `on start` runs; `on start` sees what the app remembered) and the harness owns
+  the order: in an app with stored fields and `on start`, `on start` is the message `Started`, not
+  `init` (which is the app from its defaults); every entry (the Elm browser entry and test worker,
+  the TypeScript browser entry and test entry, with several screens too, the job entry, the styled
+  entries) starts with `init`, puts the stored fields back and then sends `Started`, whose calls go
+  out after `init`'s. The driver's restart check reads the data right after the restore (the test
+  entries' `restored`), since `on start` may change a stored field. An api has no `on start`
+  (`NOT_YET`; it was accepted and ignored). Apps without both are unchanged
+  (tests/start.test.ts: stand-ins on both targets, the drivers and a real browser).
+
+- v73: the language review's round before the v1 freeze: one spelling per form, and two meanings
+  made exact. Every old spelling still reads, as a `SPELLING` warning that `intent fix` rewrites
+  (a generic rewrite: a diagnostic worded "`A` is written `B` … (`intent fix` rewrites it)"), and
+  every spec in apps/, lib/ and the test fixtures (not the deliberate `# expect:` lines) was
+  migrated with it, by hand where it reported a judgement.
+  **Nothing.** Asking is only `there is a @x` / `there is no @x` (`@x is set`, `@x is not nothing`,
+  `@x is nothing` are spellings); `nothing` is only a value (`set @x to nothing`, `from nothing to
+  @A`, `= nothing` in examples); the fallback is only `…, or B when there is none` (`A (B when there
+  are none)` and `, or B when there is no @x` are spellings; `(none when there is no @x)` on a list
+  is dropped: the list is empty anyway). A cast from `visible when` reaches values shown inside the
+  element, never the handlers of its buttons. `Maybe T` and `@newToken` left the reference (`intent
+  fix` still rewrites them). **Nothing on the wire:** a `T or nothing` is always written as `null`,
+  never left out; on input `null` and a missing key are both nothing; for a `T`, a missing key is
+  "is required" and `null` "must be <type>" — the TS runtime (api input and output, calls, the
+  typed client) and the Elm decoders (`jsonOptional`: a wrongly typed value is no longer read as
+  `Nothing`) do exactly that. `see x.body.f = nothing` is allowed in examples; `is absent` is for
+  headers, events and paths outside the declared type, and on a declared field a `STEP` error that
+  `intent fix` rewrites. **Access and nothing:** in an access condition a value that is nothing (a
+  `T or nothing` field, an absent param, a hop to a gone row, a request without a key) makes the
+  condition undecided — a permit does not hold, a forbid does — the one place Kotlin's `==` does
+  not apply, so `is not the @caller` on an unassigned ticket refuses; an order on a `T or nothing`
+  in a condition is `NOTHING`; the missing-root 404 exception stays. support.tickets' `assignee` is a
+  `Text or nothing` now (desk-api proves the unassigned case). **The endpoint's row:** `path id: ref
+  Ticket`, then `if that ticket does not exist { answer 404 "…" }`, and "that ticket" is the row
+  (a smart cast, as in access rules; a read before asking is `NOTHING`); `if no ticket has that
+  @id` is the spelling, and the tickets and payments contracts take `ref` params. **Loops:** `for
+  each @notice in @notices whose @expiresAt is …`, and `@notice's @expiresAt` inside (`where` and
+  `.` are spellings). **Other spellings:** `answers <status> <Type>` everywhere (`returns T` is
+  rewritten to one `answers` line per status the endpoint answers, 401/403 included where access
+  can refuse); a server's layers are `layer auth = std.http.apiKey { … }` (`use` stays for
+  components and `intent.project`, `uses` for clients); `the error` and `its body's @f` (not `the
+  error in its body`, `the @f in its body`); `that ticket's @status is @Archived` in access;
+  `anyone, without a key, may call`; `sizes Compact | Standard` and `size Standard`; `14 days
+  after @today` (not `@today + 14`). **Selects without a sentinel:** `select x from list.f` edits a
+  `Text or nothing` (nothing: none chosen; `clear @x` / `set @x to nothing` un-picks); the
+  harness's `Pick.selected` is optional on both targets; a select that always has a choice may keep
+  a `Text` with a default of its own. **Derived draws** are drawn once per event (request, click,
+  tick, recurring run) and keep that value for the whole event, also after what they exclude
+  changed; the harness keeps the value (`drawsFrom`), never the build. **Names:** the reserved set
+  is Intent's own words (`key`, `nothing`, `true`, `false`, `random`, the type words); the harness
+  mangles an identifier that is a target's keyword or a generated name (`type_`, `Model_`), and
+  tests/harness/compile.ts builds and runs specs with fields `type`, `in`, `of`, `new`, `class`,
+  `when`, `fun`, `val`, `object`, `is`, `as` and records `Model`, `Msg`. Qualified declared names
+  (`pager.page: Int = 1`) read only in an expanded spec (its first line says so); an author gets a
+  `SYNTAX` error. A change rule through a reference is `CHANGE` (write it on the record it belongs
+  to); `COLLISION` for a key unique within its row suggests `not among that task's @items's @code`.
+  **The reference** is renumbered in order (§4a…§4j); tooling moved out of the compiler's prompt
+  into docs/TOOLS.md (commands, locking, projects and the registry, `intent fix`, settings and
+  `INTENT_*` variables, the checker's code tables — tests/diagnostics.test.ts reads them there);
+  rules stated twice are stated once (§9 keeps the default and a pointer); §8 and §9 say behaviour,
+  not helper names; row counts moved to the example steps; every `app` example has its purpose;
+  one step per line. Its examples are checked: a block tagged `intent-excerpt` must use the
+  language's syntax and one spelling (tests/docs/snippets.ts, 41 excerpts, and docs/TOOLS.md
+  too). A new §5 idiom says which phrase names which row ("the ticket", "the new ticket", "that
+  ticket"). The prompt: LANGUAGE.md from 120,496 to 106,045 bytes (docs/TOOLS.md: 23,991).
 
 - v72: robustness. No language change: the reference stays at v71. Offline soundness tests (a fuzz
   driver over mutated and generated specs, and `intent fix` on six old snapshots of this repository

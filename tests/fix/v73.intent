@@ -1,0 +1,60 @@
+app Spellings {
+  "v73: the old spellings of nothing, fallbacks, sizes, dates and selects, each rewritten by intent fix."
+}
+
+sizes compact | standard
+
+record Person {
+  id: Int
+  name: Text
+}
+
+state {
+  people: List Person = table {
+    id | name
+    1  | "Ann"
+    2  | "Bob"
+  }
+  payer: Text = ""
+  picked: Int or nothing = nothing
+  due: Text = ""
+}
+
+derive {
+  nextId = the highest @id in @people + 1 (1 when there are none)
+  shown = @picked plus 1, or 0 when there is no @picked
+}
+
+screen {
+  select payer "Paid by" from people.name
+  text next = "{nextId}"
+  text count = "{shown}"
+  button clearPayer "Clear"
+  button pick "Pick"
+  button due "Due"
+}
+
+on click clearPayer {
+  - set @payer to ""
+}
+
+on click pick {
+  if @picked is not nothing {
+    - set @picked to nothing
+  } else {
+    - set @picked to 1
+  }
+}
+
+on click due {
+  - set @due to "{@today + 14}"
+}
+
+example "paying" {
+  choose "Ann" in payer
+  see payer = "Ann"
+  click clearPayer
+  see next = "3"
+  size standard
+  see count = "0"
+}

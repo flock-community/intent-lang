@@ -2,7 +2,7 @@ app Approval {
   "A payment that goes out only after a person allows it: without a permission the call waits, a one-time permission lets one payment through, Reject drops that payment (the next one waits for approval again), and Stop blocks every external call."
   "This is a brake in the screen (std.actions), against an agent acting too fast; it is not access control: the payment service decides who may pay, refund and look up charges."
 }
-language v60
+language 1
 import pay.payments
 
 uses pay.paymentsApi as pay {
@@ -66,7 +66,7 @@ on answer pay.charge {
   if its status is rejected {
     - set @message to "Payment rejected"
   } else if its status is 201 {
-    - set @message to "Paid: charge {the @id in its body}"
+    - set @message to "Paid: charge {its body's @id}"
   } else if its status is unknown {
     - set @message to "We could not confirm the payment yet."
   } else {

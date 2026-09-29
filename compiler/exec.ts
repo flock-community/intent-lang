@@ -18,7 +18,7 @@ import type { Target } from "./gen.ts";
 import { difference, stable } from "./diff.ts";
 import { duplicateKey, harnessKey } from "./keys.ts";
 import { coveredKeys, loadChanges, type ChangeBroken, type ChangeWatch } from "./changes.ts";
-import { canonicalValues, drawer, literalOf, loadDrawTable, splitLiterals, steerSteps, type Drawer } from "./drawer.ts";
+import { canonicalValues, drawer, literalOf, loadDrawTable, providerDrawTables, routed, splitLiterals, steerSteps, type Drawer } from "./drawer.ts";
 import { sha256 } from "../runtime/ts/platform/std.crypto.ts";
 import { actingAs, type ActsAs } from "../runtime/ts/access.ts";
 import { createRequire } from "node:module";
@@ -128,7 +128,12 @@ async function openSession(dir: string, target: string, run: { name: string; edg
   // Draws (draws.json): every event gets its seed from the run and its number, and the run's steering.
   const sites = loadDrawTable(dir);
   const draws = Object.keys(sites).length ? drawer(sites, run.name, run.edges) : undefined;
-  const session = { ...(await changed(box, await keyed(dir, await restartable(dir, await navigable(dir, await openSessionInner(dir, target, watch ? { watch, box } : undefined, draws)))))), watch, drawer: draws };
+  // A provider that draws gets its own draws per request, seeded from the run and its alias; the
+  // example steers them as it steers the screen's (\`steer random BookingCode = …\`).
+  const theirs = Object.fromEntries(Object.entries(providerDrawTables(dir)).map(([alias, t]) => [alias, { drawer: drawer(t, `${run.name}|${alias}`, run.edges), sites: t }]));
+  const all = routed(draws, sites, theirs);
+  const providerDraws = Object.fromEntries(Object.entries(theirs).map(([alias, p]) => [alias, p.drawer]));
+  const session = { ...(await changed(box, await keyed(dir, await restartable(dir, await navigable(dir, await openSessionInner(dir, target, watch ? { watch, box } : undefined, draws, providerDraws, all)))))), watch, drawer: all };
   if (!existsSync(join(dir, "invariants.mjs")) || !existsSync(join(dir, "invariants.json"))) return session;
   const loadChecks = async (file: string) => ((await import(pathToFileURL(join(dir, file)).href + `?t=${Date.now()}`)).invariants ?? []) as { line: number; holds: (d: unknown, c: unknown) => boolean }[];
   const checks = await loadChecks("invariants.mjs");
@@ -238,7 +243,8 @@ async function restartable(dir: string, session: Session): Promise<Session> {
       if ((w as { on?: string }).on !== "restart") return session.send(w);
       const saved = pick(await session.data?.());
       await session.send({ ...w, saved });
-      const back = pick(await session.data?.());
+      // With `on start`, it runs after the stored fields are put back and may change them: what came back is the data before it ran.
+      const back = pick((await session.restored?.()) ?? (await session.data?.()));
       const wrong = stored.find((s) => stable(saved[s.field]) !== stable(back[s.field]));
       if (wrong) lost = { line: wrong.line, restart: true, message: `after a restart, stored \`${wrong.field}\` did not come back as it was saved: ${difference(saved[wrong.field], back[wrong.field])}`, data: { saved: saved[wrong.field], afterRestart: back[wrong.field] } };
     },
@@ -305,15 +311,20 @@ async function navigable(dir: string, session: Session): Promise<Session> {
 /** Every event the app gets carries its draws (the seed of this event, and the run's steering). */
 const drawing = (session: Session, d?: Drawer): Session => (!d ? session : { ...session, send: (w) => session.send({ ...w, draw: d.next() }) });
 
-async function openSessionInner(dir: string, target: string, changes?: { watch: ChangeWatch; box: { broken?: ChangeBroken & { event: string } } }, draws?: Drawer): Promise<Session> {
+async function openSessionInner(dir: string, target: string, changes?: { watch: ChangeWatch; box: { broken?: ChangeBroken & { event: string } } }, draws?: Drawer, providerDraws: Record<string, Drawer> = {}, all?: Drawer): Promise<Session> {
   // Apps that read the clock (clock.json): the driver owns it. It starts at `examples start at`,
   // moves with every tick and every `wait`, and comes with every event (and every call to a provider).
-  const clockSpec: { start: string; tickMs: number; sizes?: string[] } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
+  const ownClock: { start: string; tickMs: number; sizes?: string[] } | undefined = existsSync(join(dir, "clock.json")) ? JSON.parse(readFileSync(join(dir, "clock.json"), "utf8")) : undefined;
+  // A screen that does not read the clock, over a provider that does: the driver still keeps the
+  // time (from the provider's \`examples start at\`), moved by \`wait\`, for the provider's requests only.
+  const providerDirs: Record<string, string> = existsSync(join(dir, "providers.json")) ? JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")).providers : {};
+  const theirClock = Object.values(providerDirs).map((p) => (existsSync(join(p, "clock.json")) ? (JSON.parse(readFileSync(join(p, "clock.json"), "utf8")) as { start: string }) : undefined)).find(Boolean);
+  const clockSpec: { start: string; tickMs: number; sizes?: string[] } | undefined = ownClock ?? (theirClock ? { start: theirClock.start, tickMs: 0 } : undefined);
   let elapsed = 0; // ms since the start
   // The size the host shows the app at (`sizes` in the spec): the first, until an example says `size …`.
   let size = clockSpec?.sizes?.[0];
   const clockNow = () => (clockSpec ? { ...clockAt(addMinutes(clockSpec.start, Math.floor(elapsed / 60000))), ...(size ? { size } : {}) } : undefined);
-  const opened = drawing(await openRawSession(dir, target, clockNow()), draws);
+  const opened = drawing(await openRawSession(dir, target, ownClock ? clockNow() : undefined), draws);
   const inner = changes ? watching(opened, changes, () => clockNow() ?? clockAt("2026-01-05T09:00")) : opened;
   const raw: Session = !clockSpec
     ? inner
@@ -322,6 +333,11 @@ async function openSessionInner(dir: string, target: string, changes?: { watch: 
         clock: async () => clockNow()!,
         send: async (w) => {
           const wire = w as { on?: string; ms?: number };
+          // Only the provider reads the clock: time moves for it, and the screen gets its wires as they are.
+          if (!ownClock) {
+            if (wire.on === "wait") elapsed += wire.ms ?? 0;
+            return inner.send(w);
+          }
           if (wire.on === "wait") {
             // Time passes without an event: the screen is shown again at the new time.
             elapsed += wire.ms ?? 0;
@@ -337,19 +353,20 @@ async function openSessionInner(dir: string, target: string, changes?: { watch: 
         },
       };
   // `steer random …`: the next draws of that type take these values (the app never sees this step).
-  const steered: Session = !draws
+  const steerer = all ?? draws;
+  const steered: Session = !steerer
     ? raw
     : {
         ...raw,
         send: async (w) => {
           const r = w as { on?: string; target?: string; value?: string };
-          if (r.on === "random") return draws.steer(r.target!, r.target === "shuffle" || r.target === "pick" ? [r.value!] : splitLiterals(r.value ?? ""));
+          if (r.on === "random") return steerer.steer(r.target!, r.target === "shuffle" || r.target === "pick" ? [r.value!] : splitLiterals(r.value ?? ""));
           return raw.send(w);
         },
       };
   if (!existsSync(join(dir, "providers.json"))) return steered;
   const { endpoints, providers, events: eventTypes = {} } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { endpoints: CallDesc[]; providers: Record<string, string>; events?: Record<string, TypeDesc> };
-  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number; hear?: (h: Record<string, string>, q: Record<string, string>, ev: { event: string; body: unknown }) => boolean; data?: () => unknown }> = {};
+  const clients: Record<string, { send: (m: string, p: string, q: Record<string, string>, b: unknown, h?: Record<string, string>, clock?: unknown, draw?: unknown) => any; stream?: (h: Record<string, string>, q: Record<string, string>) => number; hear?: (h: Record<string, string>, q: Record<string, string>, ev: { event: string; body: unknown }) => boolean; data?: () => unknown }> = {};
   // How another client in a test acts as a caller against each provider (\`call desk.solveTicket as "Sam"\`).
   const acting: Record<string, ActsAs | undefined> = Object.fromEntries(Object.entries(providers).map(([alias, pdir]) => [alias, existsSync(join(pdir, "acting.json")) ? JSON.parse(readFileSync(join(pdir, "acting.json"), "utf8")) : undefined]));
   // The client layers (\`through\` under \`uses\`), as the build composed them: calls and event streams go through them.
@@ -378,7 +395,8 @@ async function openSessionInner(dir: string, target: string, changes?: { watch: 
     const events: { event: string; body: unknown }[] = [];
     const notes: string[] = [];
     const deliver = () => {
-      const res = client.send(h.method, h.path, h.query, h.body, h.headers);
+      // The provider's request carries the example's clock and its own draws (steered by the example).
+      const res = client.send(h.method, h.path, h.query, h.body, h.headers, clockNow(), providerDraws[alias]?.next());
       if (res.contractError) throw new Error(`the provider broke the contract: ${res.contractError}`);
       events.push(...(res.events ?? [])); // events travel on their own stream: they arrive even when the answer is lost
       return res;
@@ -518,6 +536,32 @@ async function openSessionInner(dir: string, target: string, changes?: { watch: 
       }
       // \`steer random …\`: queued for the draws, not an event.
       if ((w as { on?: string }).on === "random") return steered.send(w);
+      // \`wait\`: a provider's recurring work runs when the wait passes its time (start + k × its
+      // interval, in time order), as in the api's own examples; what it publishes reaches the screen.
+      const waited = (w as { on?: string; ms?: number }).on === "wait" ? ((w as { ms?: number }).ms ?? 0) : 0;
+      if (waited && clockSpec) {
+        const from = elapsed;
+        const fires: { at: number; order: number; alias: string; name: string }[] = [];
+        for (const [alias, pdir] of Object.entries(providers)) {
+          const jobs: { name: string; every: number }[] = existsSync(join(pdir, "clock.json")) ? (JSON.parse(readFileSync(join(pdir, "clock.json"), "utf8")).jobs ?? []) : [];
+          jobs.forEach((j, order) => {
+            for (let at = (Math.floor(from / j.every) + 1) * j.every; at <= from + waited; at += j.every) fires.push({ at, order, alias, name: j.name });
+          });
+        }
+        fires.sort((a, b) => a.at - b.at || a.order - b.order);
+        const heard: { alias: string; events: { event: string; body: unknown }[] }[] = [];
+        for (const f of fires) {
+          const c = clients[f.alias] as { runJob?: (name: string, clock: unknown, draw?: unknown) => { event: string; body: unknown }[] };
+          const events = c.runJob?.(f.name, clockAt(addMinutes(clockSpec.start, Math.floor(f.at / 60000))), providerDraws[f.alias]?.next()) ?? [];
+          log.push(`(${f.alias} ${f.name})`);
+          heard.push({ alias: f.alias, events });
+        }
+        await raw.send(w);
+        for (const h of heard) await settle(await deliverEvents(h.alias, h.events));
+        await release();
+        await settle();
+        return;
+      }
       // \`steer <api> …\`: the next attempts to that api go wrong in this way.
       const steer = w as { on?: string; target?: string; value?: string; times?: number };
       if (steer.on === "steer") {
@@ -836,7 +880,7 @@ function mulberry32(seed: number) {
 function heardActions(s: { drawer?: Drawer }, dir: string): Action[] {
   const heard = s.drawer?.heard() ?? [];
   if (!heard.length) return [];
-  const sites = loadDrawTable(dir);
+  const sites = loadDrawTable(dir, true);
   return steerSteps(heard).map((x) => ({ on: "random" as const, target: x.what, value: x.what === "shuffle" || x.what === "pick" ? x.values[0] : x.values.map((v) => literalOf(x.what, v, sites)).join(", ") }));
 }
 
@@ -912,7 +956,7 @@ export async function runJobs(dir: string, target: string, jobs: Job[]): Promise
         }
         // A steered value still queued: the draw it was meant for did not happen (or not where the example expected it).
         const left = failure ? [] : (s.drawer?.pending() ?? []);
-        if (left.length) failure = { line: left[0].line ?? ex.line, message: `steered ${left[0].what === "shuffle" || left[0].what === "pick" ? `${left[0].what} ${left[0].value}` : `${left[0].what} ${literalOf(left[0].what, left[0].value, loadDrawTable(dir))}`} was never drawn: no step after it drew ${left[0].what === "shuffle" ? "a shuffle" : left[0].what === "pick" ? "a random one of a list" : `a ${left[0].what}`}${left.length > 1 ? ` (${left.length} steered values are left)` : ""}`, screen: describe(obs) };
+        if (left.length) failure = { line: left[0].line ?? ex.line, message: `steered ${left[0].what === "shuffle" || left[0].what === "pick" ? `${left[0].what} ${left[0].value}` : `${left[0].what} ${literalOf(left[0].what, left[0].value, loadDrawTable(dir, true))}`} was never drawn: no step after it drew ${left[0].what === "shuffle" ? "a shuffle" : left[0].what === "pick" ? "a random one of a list" : `a ${left[0].what}`}${left.length > 1 ? ` (${left.length} steered values are left)` : ""}`, screen: describe(obs) };
       } catch (e) {
         failure = { line: ex.line, message: `crashed: ${(e as Error).message}`, screen: obs ? describe(obs) : "" };
       }

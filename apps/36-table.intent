@@ -1,7 +1,7 @@
 app Table {
   "Roll two dice, deal five cards from a shuffled deck, or draw one card at random."
 }
-language v69
+language 1
 
 type Die = Int from 1 to 6
 

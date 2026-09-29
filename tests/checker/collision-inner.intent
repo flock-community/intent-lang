@@ -1,0 +1,42 @@
+app Inner {
+  "v73: a key unique within its row is drawn not among that row's keys."
+}
+language 1
+
+type Code = Text of 4 digits
+
+record Item {
+  key code: Code
+  label: Text
+}
+
+record Task {
+  id: Int
+  items: List Item = []
+}
+
+state {
+  tasks: List Task = table {
+    id | items
+    1  | []
+  }
+}
+
+screen {
+  list tasks of Task {
+    list items of Item {
+      text label
+    }
+    button addItem "Add"
+    button addBare "Add bare"
+  }
+}
+
+on click addItem {
+  - add an @Item to the end of that task's @items with @code = a random @Code not among that task's @items's @code, or "0000" when there is none, @label = "x"
+}
+
+
+on click addBare {
+  - add an @Item to the end of that task's @items with @code = a random @Code, @label = "y"       # expect: COLLISION
+}

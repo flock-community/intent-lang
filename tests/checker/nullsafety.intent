@@ -1,6 +1,7 @@
 app NullSafety {
   "`T or nothing` works like Kotlin's `T?`: it is not a T, and a sentence handles nothing before it uses one."
 }
+language 1
 
 record Item {
   id: Int
@@ -97,10 +98,10 @@ on click casts {
   if there is a @maybeN {
     - set @count to @maybeN                                                      # expect-not: NOTHING
   }
-  if @maybeN is not nothing {
+  if there is a @maybeN {
     - set @count to @maybeN                                                      # expect-not: NOTHING
   }
-  if @maybeN is nothing {
+  if there is no @maybeN {
     - set @draft to "none"
   } else {
     - set @count to @maybeN                                                      # expect-not: NOTHING

@@ -1,0 +1,40 @@
+contract raffle.raffleApi {
+  "A prize draw: people enter by name and get a ticket code to read out when they collect a prize; an entry can be withdrawn."
+}
+language 1
+
+# 6 of Crockford's 32 (no I, L, O or U): easy to read out, and read back forgivingly.
+type TicketCode = Text of 6 unambiguous letters and digits
+
+record Entry {
+  id: Int
+  name: Text
+  code: TicketCode
+  enteredOn: Date
+}
+
+endpoint listEntries GET "/entries" {
+  answers 200 List Entry       # oldest first
+}
+
+endpoint enter POST "/entries" {
+  body name: Text
+  answers 201 Entry
+  answers 400 Problem          # a blank name
+  answers 409 Problem          # no ticket code is free
+}
+
+endpoint withdraw DELETE "/entries/{id}" {
+  path id: ref Entry
+  answers 204
+  answers 404 Problem
+}
+
+example "an entry is listed, and withdrawn once" {
+  call enter with name = "Zoë"
+  see enter.status = 201
+  call withdraw with id = {enter.body.id}
+  see withdraw.status = 204
+  call withdraw with id = {enter.body.id}
+  see withdraw.status = 404
+}

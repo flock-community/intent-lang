@@ -3,7 +3,7 @@ app DeskUi {
   "The list follows changes made elsewhere: a ticket taken in another tab shows up here."
   "The desk tells each agent only about their own tickets; a lead hears about every ticket."
 }
-language v47
+language 1
 import support.tickets
 
 uses support.deskApi as desk {
@@ -47,7 +47,7 @@ on answer desk.myTickets {
   if its status is 200 {
     - set @mine to its body and clear @problem
   } else if its status is 401 {
-    - clear @mine and set @problem to the error in its body
+    - clear @mine and set @problem to the error
   } else {
     - set @problem to "Could not load your tickets"
   }
@@ -61,7 +61,7 @@ on answer desk.solveTicket {
   if its status is 200 {
     - clear @problem
   } else if its status is 401, 403, 404 or 409 {
-    - set @problem to the error in its body
+    - set @problem to the error
   } else {
     - set @problem to "Could not solve the ticket"
   }

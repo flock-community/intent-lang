@@ -1,6 +1,7 @@
 app Once {
   "Each mistake is said once, however often it is repeated on its line (v72)."
 }
+language 1
 
 choice Status: Open | Closed | Open | Open    # expect: DUPLICATE
 choice Size: Small | |                         # expect: SYNTAX

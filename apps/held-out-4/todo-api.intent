@@ -1,0 +1,254 @@
+app TodoApi {
+  "The to-do list over HTTP. Everyone with a key sees the list and works on it; only an item's owner may delete it. A done item never changes."
+}
+
+language 1
+
+profile api
+
+examples start at 2026-09-24 09:00
+
+layer auth = std.http.apiKey {
+  keys = table {
+    secret    | owner
+    "k-ann-1" | "Ann"
+    "k-bob-2" | "Bob"
+  }
+}
+
+record Subtask {
+  id: Int
+  label: Text
+  finished: Bool = false
+}
+
+record Item {
+  id: Int
+  title: Text
+  owner: Text                # the caller who added it
+  done: Bool = false
+  due: Date or nothing = nothing
+  subtasks: List Subtask = []
+}
+
+state {
+  stored items: List Item = table {
+    id | title      | owner | due        | subtasks
+    1  | "Buy milk" | "Ann" | 2026-09-25 | [{ id = 1, label = "Oat milk" }, { id = 2, label = "Whole milk" }]
+    2  | "Call mum" | "Bob" | nothing    | []
+  }
+}
+
+every endpoint answers 401 Problem
+every endpoint answers 403 Problem
+
+access {
+  - any caller may call @listItems, @addItem, @finishItem, @addSubtask, @setSubtask and @removeSubtask
+  - any caller may call @deleteItem when that item's @owner is the @caller: "Only the owner may delete this item"
+}
+
+endpoint listItems GET "/items" {
+  answers 200 List Item
+  answer 200 with @items
+}
+
+endpoint addItem POST "/items" {
+  body title: Text
+  body due: Date or nothing
+  answers 201 Item
+  answers 400 Problem
+  if @body.title is blank {
+    answer 400 "Title is required"
+  }
+  - add an @Item to the end of @items with @id = the highest @id in @items + 1, or 1 when there is none, @title = @body.title, trimmed, @owner = the @caller, @due = @body.due
+  answer 201 with the new item
+}
+
+endpoint finishItem POST "/items/{id}/done" {
+  path id: ref Item
+  answers 200 Item
+  answers 404 Problem
+  if that item does not exist {
+    answer 404 "No such item"
+  }
+  if that item's @done is true {
+    answer 200 with that item
+  }
+  - set that item's @done to true
+  answer 200 with that item
+}
+
+endpoint deleteItem DELETE "/items/{id}" {
+  path id: ref Item
+  answers 204
+  answers 404 Problem
+  answers 409 Problem
+  if that item does not exist {
+    answer 404 "No such item"
+  }
+  if that item's @done is true {
+    answer 409 "A done item cannot change"
+  }
+  - remove that item from @items
+  answer 204
+}
+
+endpoint addSubtask POST "/items/{id}/subtasks" {
+  path id: ref Item
+  body label: Text
+  answers 201 Item
+  answers 400 Problem
+  answers 404 Problem
+  answers 409 Problem
+  if that item does not exist {
+    answer 404 "No such item"
+  }
+  if that item's @done is true {
+    answer 409 "A done item cannot change"
+  }
+  if @body.label is blank {
+    answer 400 "Label is required"
+  }
+  - add a @Subtask to the end of that item's @subtasks with @id = the highest @id in that item's @subtasks + 1, or 1 when there is none, @label = @body.label, trimmed
+  answer 201 with that item
+}
+
+endpoint setSubtask POST "/items/{id}/subtasks/{subtaskId}" {
+  path id: ref Item
+  path subtaskId: Int
+  body finished: Bool
+  answers 200 Item
+  answers 404 Problem
+  answers 409 Problem
+  if that item does not exist {
+    answer 404 "No such item"
+  }
+  if there is no subtask in that item's @subtasks whose @id is @subtaskId {
+    answer 404 "No such subtask"
+  }
+  if that item's @done is true {
+    answer 409 "A done item cannot change"
+  }
+  - set that subtask's @finished to @body.finished
+  answer 200 with that item
+}
+
+endpoint removeSubtask DELETE "/items/{id}/subtasks/{subtaskId}" {
+  path id: ref Item
+  path subtaskId: Int
+  answers 200 Item
+  answers 404 Problem
+  answers 409 Problem
+  if that item does not exist {
+    answer 404 "No such item"
+  }
+  if there is no subtask in that item's @subtasks whose @id is @subtaskId {
+    answer 404 "No such subtask"
+  }
+  if that item's @done is true {
+    answer 409 "A done item cannot change"
+  }
+  - remove that subtask from that item's @subtasks
+  answer 200 with that item
+}
+
+always {
+  - an @Item whose @done was true never changes
+}
+
+example "anyone with a key sees the list" {
+  call listItems as "Bob"
+  see listItems.status = 200
+  see listItems.body has 2 rows
+  see listItems.body[1].title = "Buy milk"
+  see listItems.body[2].due = nothing
+}
+
+example "no key, no list" {
+  call listItems
+  see listItems.status = 401
+}
+
+example "adding an item makes the caller its owner" {
+  call addItem as "Bob" with title = "  Water plants ", due = 2026-09-26
+  see addItem.status = 201
+  see addItem.body.id = 3
+  see addItem.body.title = "Water plants"
+  see addItem.body.owner = "Bob"
+  see addItem.body.due = 2026-09-26
+}
+
+example "a blank title is refused" {
+  call addItem as "Ann" with title = "   ", due = nothing
+  see addItem.status = 400
+  see addItem.body.error = "Title is required"
+}
+
+example "the owner deletes their item" {
+  call deleteItem as "Ann" with id = 1
+  see deleteItem.status = 204
+  call listItems as "Ann"
+  see listItems.body has 1 row
+  see listItems.body[1].title = "Call mum"
+}
+
+example "someone else may not delete it" {
+  call deleteItem as "Bob" with id = 1
+  see deleteItem.status = 403
+  see deleteItem.body.error = "Only the owner may delete this item"
+  see audit[1].decision = "refused"
+  call listItems as "Bob"
+  see listItems.body has 2 rows
+}
+
+example "deleting an item that is not there" {
+  call deleteItem as "Ann" with id = 9
+  see deleteItem.status = 404
+}
+
+example "a done item stays as it is" {
+  call finishItem as "Bob" with id = 1
+  see finishItem.status = 200
+  see finishItem.body.done = true
+  call deleteItem as "Ann" with id = 1
+  see deleteItem.status = 409
+  see deleteItem.body.error = "A done item cannot change"
+  call addSubtask as "Ann" with id = 1, label = "Skimmed"
+  see addSubtask.status = 409
+  call setSubtask as "Ann" with id = 1, subtaskId = 1, finished = true
+  see setSubtask.status = 409
+  call removeSubtask as "Ann" with id = 1, subtaskId = 1
+  see removeSubtask.status = 409
+}
+
+example "finishing an item that is not there" {
+  call finishItem as "Ann" with id = 9
+  see finishItem.status = 404
+}
+
+example "subtasks" {
+  call addSubtask as "Bob" with id = 2, label = "Ask about Sunday"
+  see addSubtask.status = 201
+  see addSubtask.body.subtasks has 1 row
+  see addSubtask.body.subtasks[1].label = "Ask about Sunday"
+  call setSubtask as "Bob" with id = 2, subtaskId = 1, finished = true
+  see setSubtask.status = 200
+  see setSubtask.body.subtasks[1].finished = true
+  call removeSubtask as "Ann" with id = 1, subtaskId = 1
+  see removeSubtask.status = 200
+  see removeSubtask.body.subtasks has 1 row
+  see removeSubtask.body.subtasks[1].label = "Whole milk"
+}
+
+example "a blank subtask and a missing subtask" {
+  call addSubtask as "Ann" with id = 1, label = " "
+  see addSubtask.status = 400
+  see addSubtask.body.error = "Label is required"
+  call setSubtask as "Ann" with id = 1, subtaskId = 7, finished = true
+  see setSubtask.status = 404
+  see setSubtask.body.error = "No such subtask"
+  call removeSubtask as "Ann" with id = 1, subtaskId = 7
+  see removeSubtask.status = 404
+  call addSubtask as "Ann" with id = 9, label = "Anything"
+  see addSubtask.status = 404
+}

@@ -1,6 +1,7 @@
 app JobChecks {
   "A job has no screen: the harness shows its state, and examples see it by name."
 }
+language 1
 profile job
 
 record Task {

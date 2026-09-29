@@ -3,7 +3,7 @@ app ExpensesUi {
   "Who may decide is the expense service's to say: this screen shows what the service answers. It leaves out the pending list for someone who is not a manager, as a convenience: the service is what protects."
 }
 
-language v70
+language 1
 
 import expenses.expenses
 
@@ -86,7 +86,7 @@ on answer exp.me {
       - call @exp.pendingExpenses
     }
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
 }
 
@@ -118,7 +118,7 @@ on answer exp.submitExpense {
       - call @exp.pendingExpenses
     }
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
 }
 
@@ -134,7 +134,7 @@ on answer exp.approveExpense {
   if its status is 200 {
     - clear @problem
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
   - call @exp.pendingExpenses
 }
@@ -143,7 +143,7 @@ on answer exp.rejectExpense {
   if its status is 200 {
     - clear @problem
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
   - call @exp.pendingExpenses
 }

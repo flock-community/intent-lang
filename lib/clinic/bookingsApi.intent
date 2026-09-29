@@ -1,0 +1,100 @@
+contract clinic.bookingsApi
+language 1
+
+choice Role: Patient | Receptionist
+
+choice BookingStatus: Booked | Cancelled
+
+type BookingCode = Text of 6 unambiguous letters and digits
+
+record Slot {
+  id: Int
+  start: DateTime            # when the appointment begins, in the clinic's local time
+  doctor: Text
+}
+
+record Booking {
+  id: Int
+  code: BookingCode          # what the patient reads out at the desk or on the phone
+  slot: ref Slot
+  start: DateTime            # the slot's start, copied when booked (a slot's start never changes)
+  doctor: Text               # the slot's doctor, copied when booked
+  patient: Text              # the patient the booking is for, as the key layer names them
+  status: BookingStatus = Booked
+}
+
+every endpoint answers 401 Problem
+every endpoint answers 403 Problem
+
+endpoint openSlots GET "/slots/open" {
+  answers 200 List Slot
+}
+
+endpoint allSlots GET "/slots" {
+  answers 200 List Slot
+}
+
+endpoint addSlot POST "/slots" {
+  body start: DateTime
+  body doctor: Text
+  answers 201 Slot
+  answers 400 Problem
+}
+
+endpoint removeSlot DELETE "/slots/{id}" {
+  path id: ref Slot
+  answers 204
+  answers 404 Problem
+  answers 409 Problem
+}
+
+endpoint book POST "/bookings" {
+  body slotId: ref Slot
+  answers 201 Booking
+  answers 404 Problem
+  answers 409 Problem
+}
+
+endpoint bookFor POST "/desk/bookings" {
+  body slotId: ref Slot
+  body patient: Text
+  answers 201 Booking
+  answers 400 Problem
+  answers 404 Problem
+  answers 409 Problem
+}
+
+endpoint myBookings GET "/bookings/mine" {
+  answers 200 List Booking
+}
+
+endpoint allBookings GET "/bookings" {
+  answers 200 List Booking
+}
+
+endpoint findBooking GET "/bookings/by-code/{code}" {
+  path code: BookingCode
+  answers 200 Booking
+  answers 404 Problem
+}
+
+endpoint cancelBooking POST "/bookings/{id}/cancel" {
+  path id: ref Booking
+  answers 200 Booking
+  answers 404 Problem
+  answers 409 Problem
+}
+
+endpoint deskCancel POST "/desk/bookings/{id}/cancel" {
+  path id: ref Booking
+  answers 200 Booking
+  answers 404 Problem
+  answers 409 Problem
+}
+
+example "nothing is shown without a key" {
+  call openSlots
+  see openSlots.status = 401
+  call myBookings
+  see myBookings.status = 401
+}

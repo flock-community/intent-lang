@@ -1,4 +1,5 @@
 app ThroughChecks
+language 1
 
 uses support.deskApi as desk {
   tested with "apps/api/desk-api.intent"

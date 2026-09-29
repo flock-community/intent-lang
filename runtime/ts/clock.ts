@@ -4,7 +4,7 @@
 export type Clock = { now: string; today: string; size?: string };
 
 /**
- * The size the host shows the app at (`sizes compact | standard` in the spec), as a value of the
+ * The size the host shows the app at (`sizes Compact | Standard` in the spec), as a value of the
  * choice `Size` (`"Compact"`): `globalThis.__intentSize` when a host (OurOS) sets it, else `?size=…`
  * in the address, else the first size. A host that changes it dispatches `intentsize` on window.
  */

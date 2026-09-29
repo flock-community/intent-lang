@@ -1,7 +1,7 @@
 app Habits {
   "Small daily habits: tick each one off once a day, and keep a streak going."
 }
-language v47
+language 1
 examples start at 2026-09-24 08:00
 
 record Habit {
@@ -45,7 +45,7 @@ screen {
 }
 
 on click add {
-  - add a @Habit to the end of @habits with @id = the highest @id in @habits + 1 (1 when there are none) and @name = @draft trimmed
+  - add a @Habit to the end of @habits with @id = the highest @id in @habits + 1, or 1 when there is none and @name = @draft trimmed
   - clear @draft
 }
 

@@ -1,0 +1,89 @@
+app Raffle {
+  "Enter the prize draw by name and see your ticket code; every entry is listed, oldest first."
+}
+language 1
+
+uses raffle.raffleApi as raffle only listEntries, enter {
+  tested with "apps/api/raffle-api.intent"
+}
+
+state {
+  draft: Text = ""
+  entries: List Entry = []
+  message: Text or nothing = nothing   # what the last entry gave, or why it was refused
+}
+
+screen {
+  heading "Prize draw"
+  field draft "Your name"
+  button enter "Enter the draw" as primary {
+    enabled when @draft is not blank
+  }
+  text message {
+    visible when there is a @message
+  }
+  list entries of Entry as table {
+    text name
+    text code
+    text day = "{its @enteredOn as a date}"
+  }
+}
+
+on start {
+  - call @raffle.listEntries
+}
+
+on answer raffle.listEntries {
+  if its status is 200 {
+    - set @entries to its body
+  }
+}
+
+on click enter {
+  - call @raffle.enter with @name = @draft
+}
+
+on answer raffle.enter {
+  if its status is 201 {
+    - set @message to "Your ticket code is {its body's @code}"
+    - clear @draft
+    - call @raffle.listEntries
+  } else {
+    - set @message to the error
+  }
+}
+
+example "the entries so far" {
+  see message is hidden
+  see entries has 1 row
+  see name on row 1 = "Ann"
+  see code on row 1 = "K7MQ2R"
+  see day on row 1 = "30 Sep 2026"
+  see enter is disabled
+}
+
+example "Bob enters and sees his code" {
+  steer random TicketCode = "M8TX3Q"
+  type "Bob" into draft
+  click enter
+  see message = "Your ticket code is M8TX3Q"
+  see draft = ""
+  see entries has 2 rows
+  see code on row 2 = "M8TX3Q"
+  see day on row 2 = "1 Oct 2026"
+}
+
+example "a code someone holds is skipped" {
+  steer random TicketCode = "K7MQ2R", "Z2Y6FA"
+  type "Cas" into draft
+  click enter
+  see message = "Your ticket code is Z2Y6FA"
+}
+
+example "an entry the next day" {
+  wait 1d
+  steer random TicketCode = "W5RD9E"
+  type "Dee" into draft
+  click enter
+  see day on row 2 = "2 Oct 2026"
+}

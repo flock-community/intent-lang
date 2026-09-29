@@ -1,7 +1,7 @@
 app RowAssign {
   "Assign a task to a person: a select whose options come from a list, inside the row."
 }
-language v55
+language 1
 design {
   look "A calm, modern list. White surfaces on a light neutral background, one brand color, muted secondary text."
   brand: indigo
@@ -18,7 +18,7 @@ record Person {
 record Task {
   id: Int
   title: Text
-  assignee: Text
+  assignee: Text or nothing
 }
 
 state {

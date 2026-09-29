@@ -1,6 +1,7 @@
 app Handlers {
   "`on event` and `on answer` without the client's event or endpoint, and a design key an object already has: said plainly (v72)."
 }
+language 1
 
 design {
   constructor: sans                   # expect: UNKNOWN_NAME

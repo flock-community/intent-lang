@@ -1,6 +1,7 @@
 bundle kitchen.recipes {
   "Recipes and their ingredients. A recipe owns its ingredients: they are a list inside each recipe, and an ingredient's id is unique within its recipe."
 }
+language 1
 
 record Ingredient {
   id: Int

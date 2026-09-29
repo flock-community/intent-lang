@@ -1,6 +1,7 @@
 bundle std.list {
   "Showing long lists in pieces."
 }
+language 1
 
 component Pager as footer "The page info on the left; the previous and next buttons on the right." {
   param items "the list to show one page at a time: a state or derived list"

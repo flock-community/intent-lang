@@ -1,7 +1,8 @@
 app LayerChecks
+language 1
 profile api
 
-use cors = std.http.cors {
+layer cors = std.http.cors {
   origin = "https://desk.example"          # expect: UNKNOWN_NAME
   maxAge = 1, 2                           # expect: BAD_BINDING
 }
@@ -13,7 +14,7 @@ state {
 }
 
 endpoint hello GET "/hello" {
-  returns Int
+  answers 200 Int
   - answer 200 with count
 }
 

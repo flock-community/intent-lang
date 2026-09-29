@@ -1,6 +1,7 @@
 contract notify.alertsApi {
   "Raising alerts and listing them, over HTTP. The levels travel as the service already names them: info and urgent."
 }
+language 1
 
 import notify.alerts
 

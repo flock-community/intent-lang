@@ -1,7 +1,7 @@
 app Storefront {
   "A small online shop: browse products by category, fill a cart, apply a code and check out."
 }
-language v47
+language 1
 design {
   look "A fresh grocery shop: warm off-white page, white product cards with a hairline border, compact spacing, dark stone text, emerald as the brand for prices and main actions."
   brand: emerald
@@ -52,7 +52,7 @@ state {
 derive {
   visibleProducts = the @products whose @category is @category (@AllProducts shows all), in table order
   left: Int = for a product: its @stock minus the @qty of its line in @cart (its full @stock when it is not in @cart)
-  lineTotal: Decimal = for a line: the @price of the product whose @name is the @name of that line (0 when there is none) × @qty
+  lineTotal: Decimal = for a line: the @price of the product whose @name is the @name of that line, or 0 when there is none × @qty
   itemCount = the sum of @qty over @cart
   subtotal: Decimal = the sum of all line totals
   discount: Decimal = when @appliedCode is "FRESH10" and @subtotal is at least 10.00: 10% of @subtotal, rounded to cents; otherwise 0

@@ -1,6 +1,7 @@
 app Components {
   "A same-file behaviour component, `use` with modifiers, `as` on its own line, and names that used to be reserved."
 }
+language 1
 
 component Counter as card "A small counter." {
   param start = 0

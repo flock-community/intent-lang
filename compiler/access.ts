@@ -85,11 +85,13 @@ export function parseRule(raw: string, line: number): { rule: AccessRule } | { c
   let effect: AccessRule["effect"] = "permit";
   if (whoText === "anyone" || /^anyone,\s*without\s+a\s+key\s*,?$/.test(whoText)) who = { k: "anyone" };
   else if (whoText === "any caller") who = { k: "caller" };
+  // `any caller with a role` (held-out round 4, G11): a caller who holds any grant; the checker puts every role in.
+  else if (/^any\s+caller\s+with\s+a\s+role$/.test(whoText)) who = { k: "roles", roles: [ANY_ROLE] };
   else if (whoText === "no one") (who = { k: "all" }), (effect = "forbid");
   else {
     const parts = whoText.split(/\s*,\s*|\s+or\s+/);
     const roles = parts.map((p) => p.match(/^an?\s+@([A-Z]\w*)$/)?.[1]);
-    if (roles.some((r) => !r)) return { code: "SYNTAX", message: `\`${whoText}\`: who may is \`anyone, without a key,\` (no key needed), \`any caller\` (any known key), \`a @Role\` (\`a @Clerk or an @Approver\`, \`a @Clerk, an @Approver or a @Lead\`), or \`no one\` (a forbid, with \`when …\`)` };
+    if (roles.some((r) => !r)) return { code: "SYNTAX", message: `\`${whoText}\`: who may is \`anyone, without a key,\` (no key needed), \`any caller\` (any known key), \`any caller with a role\` (a key whose owner holds a grant), \`a @Role\` (\`a @Clerk or an @Approver\`, \`a @Clerk, an @Approver or a @Lead\`), or \`no one\` (a forbid, with \`when …\`)` };
     who = { k: "roles", roles: roles as string[] };
   }
   const on = verb as "call" | "hear";
@@ -115,7 +117,7 @@ export function parseRule(raw: string, line: number): { rule: AccessRule } | { c
 /** A rule back in words (the canonical print). */
 export function ruleText(r: AccessRule): string {
   const roles = r.who.k === "roles" ? r.who.roles.map((x) => `${/^[AEIOU]/.test(x) ? "an" : "a"} @${x}`) : [];
-  const who = r.who.k === "anyone" ? "anyone, without a key," : r.who.k === "caller" ? "any caller" : r.who.k === "all" ? "no one" : roles.length > 2 ? `${roles.slice(0, -1).join(", ")} or ${roles[roles.length - 1]}` : roles.join(" or ");
+  const who = r.who.k === "anyone" ? "anyone, without a key," : r.who.k === "caller" ? "any caller" : r.who.k === "all" ? "no one" : r.who.roles.includes(ANY_ROLE) ? "any caller with a role" : roles.length > 2 ? `${roles.slice(0, -1).join(", ")} or ${roles[roles.length - 1]}` : roles.join(" or ");
   const targets = r.targets === "every" ? `every ${r.on === "call" ? "endpoint" : "event"}` : r.targets.length === 1 ? `@${r.targets[0]}` : `${r.targets.slice(0, -1).map((t) => `@${t}`).join(", ")} and @${r.targets[r.targets.length - 1]}`;
   return `${who} may ${r.on} ${targets}${r.conds.length ? ` when ${r.conds.map((c) => c.text).join(" and ")}` : ""}${r.message !== undefined ? `: ${JSON.stringify(r.message)}` : ""}`;
 }
@@ -130,6 +132,17 @@ const strip = (t: Type): Type => (t.k === "Maybe" ? t.of : t);
 const recordNamed = (app: App, word: string) => app.records.find((r) => lowerFirst(r.name) === word || r.name.toLowerCase() === word)?.name;
 
 /** The endpoints (or events) a rule covers. */
+/** The refusals the access block can give an endpoint: 403 (a caller the rules do not permit), 401 (no key). */
+export function refusalsOf(app: App, endpoint: string): number[] {
+  const a = app.access;
+  if (!a) return [];
+  const rules = a.rules.filter((r) => r.on === "call" && covered(app, r).includes(endpoint));
+  const open = rules.some((r) => r.effect === "permit" && r.who.k === "anyone");
+  const anyKnown = rules.some((r) => r.effect === "permit" && (r.who.k === "anyone" || r.who.k === "caller") && !r.conds.length);
+  const refusesKnown = !anyKnown || rules.some((r) => r.effect === "forbid");
+  return [...(refusesKnown ? [403] : []), ...(!open ? [401] : [])];
+}
+
 export const covered = (app: App, r: AccessRule): string[] => (r.targets === "every" ? (r.on === "call" ? (app.endpoints ?? []).map((e) => e.name) : (app.events ?? []).map((e) => e.name)) : r.targets);
 
 /** The layer that provides `caller` (the authenticating layer). */
@@ -225,15 +238,18 @@ function walkPath(app: App, rec: string, path: string[], asList: boolean): { hop
 }
 
 /** The checks of an `access` block (and of `as "…"` and `see audit…` in examples). */
+/** `any caller with a role`, until the checker knows the roles (every value of the grants' choice). */
+const ANY_ROLE = "*any role*";
+
 export function checkAccess(app: App, err: Err, warn: Err) {
   const own = (line: number) => line < LINE_BASE;
   checkActing(app, err);
   const a = app.access;
-  // From language v70 on, an api that says who calls also says what they may do: without an
-  // \`access\` block every key holder may call every endpoint (earlier specs get std.quality's hint).
-  if (!a && app.profile === "api" && app.kind !== "contract" && app.kind !== "layer" && (app.language === undefined || Number(app.language.slice(1)) >= 70)) {
+  // An api that says who calls also says what they may do: without an \`access\` block every key
+  // holder may call every endpoint.
+  if (!a && app.profile === "api" && app.kind !== "contract" && app.kind !== "layer") {
     const auth = authLayer(app);
-    if (auth && own(auth.line)) err(auth.line, "NO_ACCESS", `\`${auth.alias}\` says who is calling, but nothing says what they may do: every key holder may call every endpoint. Say it in an \`access\` block (default deny); from language v70 on this is an error`);
+    if (auth && own(auth.line)) err(auth.line, "NO_ACCESS", `\`${auth.alias}\` says who is calling, but nothing says what they may do: every key holder may call every endpoint. Say it in an \`access\` block (default deny): \`access { - any caller may call @… }\``);
   }
   if (!a) return;
   // A refinement (`extends`) adds its rules to the base's block, which keeps the base's line: the
@@ -245,7 +261,7 @@ export function checkAccess(app: App, err: Err, warn: Err) {
   if (app.kind === "contract" || app.kind === "layer" || app.kind === "bundle") return err(blockLine, "ACCESS", `a ${app.kind} cannot hold an \`access\` block: access is decided by the app that serves the endpoints`);
   if (app.profile !== "api") return err(blockLine, "ACCESS", "a screen cannot enforce access (whoever controls the browser controls the screen): put the rule on the service it calls, in that api's `access` block");
   const auths = (app.layers ?? []).filter((l) => l.spec?.provides?.some((p) => p.name === "caller"));
-  if (!auths.length) err(blockLine, "ACCESS", "an `access` block needs a layer that says who is calling (`provides caller`): `use auth = std.http.apiKey { … }`");
+  if (!auths.length) err(blockLine, "ACCESS", "an `access` block needs a layer that says who is calling (`provides caller`): `layer auth = std.http.apiKey { … }`");
   if (auths.length > 1) err(auths[1].line, "ACCESS", `two layers provide \`caller\` (${auths.map((l) => l.alias).join(", ")}): an \`access\` block decides on one caller`);
   const auth = auths[0];
   // One spelling for "public": the harness binds the key layer's `public` from the `anyone` rules.
@@ -270,6 +286,14 @@ export function checkAccess(app: App, err: Err, warn: Err) {
     }
   }
 
+  // `any caller with a role`: every role of the grants' choice.
+  for (const r of a.rules)
+    if (r.who.k === "roles" && r.who.roles.includes(ANY_ROLE)) {
+      if (!roleChoice) {
+        if (own(r.line)) err(r.line, "ACCESS", "`any caller with a role` reads the grants: say where they are, `roles = <a state list of grants>` in the block");
+      } else r.who = { k: "roles", roles: app.choices.find((c) => c.name === roleChoice)!.values };
+    }
+
   const eps = new Map((app.endpoints ?? []).map((e) => [e.name, e]));
   const evs = new Map((app.events ?? []).map((e) => [e.name, e]));
   for (const r of mine) {
@@ -281,7 +305,7 @@ export function checkAccess(app: App, err: Err, warn: Err) {
         if (!known) say("UNKNOWN_NAME", r.on === "call" ? (evs.has(t) ? `\`@${t}\` is an event: an event is heard (\`may hear @${t}\`)` : `no endpoint \`${t}\`${suggest(t, [...eps.keys()])}`) : eps.has(t) ? `\`@${t}\` is an endpoint: an endpoint is called (\`may call @${t}\`)` : `no event \`${t}\`${suggest(t, [...evs.keys()])}`);
       }
     if (r.who.k === "roles") {
-      for (const role of r.who.roles) {
+      for (const role of r.who.roles.filter((x) => x !== ANY_ROLE)) {
         const owner = (roleChoice ? app.choices.find((c) => c.name === roleChoice && c.values.includes(role)) : undefined) ?? app.choices.find((c) => c.values.includes(role));
         if (!owner) say("UNKNOWN_NAME", `no role \`${role}\`${suggest(role, roleChoice ? app.choices.find((c) => c.name === roleChoice)!.values : app.choices.flatMap((c) => c.values))}`);
         else if (!a.roles) say("ACCESS", `\`@${role}\` is a role: say where the grants are, \`roles = <a state list of grants>\` in the block`);
@@ -412,12 +436,8 @@ export function checkAccess(app: App, err: Err, warn: Err) {
   // CONTRACT: a restricted endpoint declares the refusals it can give.
   for (const ep of app.endpoints ?? []) {
     if (!ep.answers?.length) continue;
-    const rules = a.rules.filter((r) => r.on === "call" && covered(app, r).includes(ep.name));
-    const open = rules.some((r) => r.effect === "permit" && r.who.k === "anyone");
-    const anyKnown = rules.some((r) => r.effect === "permit" && (r.who.k === "anyone" || r.who.k === "caller") && !r.conds.length);
-    const refusesKnown = !anyKnown || rules.some((r) => r.effect === "forbid");
     const has = (s: number) => ep.answers!.some((x) => x.status === s);
-    const missing = [...(refusesKnown && !has(403) ? [403] : []), ...(!open && !has(401) ? [401] : [])];
+    const missing = refusalsOf(app, ep.name).filter((s) => !has(s));
     if (missing.length) err(own(ep.line) ? ep.line : blockLine, "CONTRACT", `endpoint ${ep.name} can be refused (${missing.map((s) => (s === 403 ? "403: a caller the rules do not permit" : "401: without a key")).join("; ")}), but its contract does not declare ${missing.join(" and ")}: add \`answers ${missing[0]} Problem\` (or \`every endpoint answers ${missing[0]} Problem\`)`);
   }
 }
@@ -431,6 +451,9 @@ function checkActing(app: App, err: Err) {
       if (s.do === "call" && s.as !== undefined) {
         if (s.headers?.some((h) => /key|authorization/i.test(h.name))) err(s.line, "STEP", `\`as ${JSON.stringify(s.as)}\` already sends ${s.as}'s key: give the call one caller (\`as …\`, or a key header to test a wrong key)`);
         const other = s.endpoint.includes(".") ? app.clients?.find((c) => c.alias === s.endpoint.split(".")[0]) : undefined;
+        // Another client's call whose api or provider did not load: that error is said already (UNKNOWN_NAME,
+        // PROVIDER, LOCK, STEP); who the provider's keys belong to cannot be known, so nothing more is said here.
+        if (s.endpoint.includes(".") && (!other || !other.testedWith || !other.providerDigest)) continue;
         const owners = other ? { owners: other.providerCallers, problem: other.providerCallers ? undefined : `the provider of \`${other.alias}\` has no key layer that says how a test acts as a caller` } : keyOwners(app);
         if (owners.problem) err(s.line, "ACCESS", `\`as ${JSON.stringify(s.as)}\`: ${owners.problem}`);
         else if (!owners.owners!.includes(s.as)) err(s.line, "ACCESS", `\`as ${JSON.stringify(s.as)}\`: no key belongs to ${s.as} (${owners.owners!.length ? `the keys are ${owners.owners!.join(", ")}'s` : "there are no keys"})${suggest(s.as, owners.owners!)}`);

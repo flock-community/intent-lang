@@ -1,6 +1,7 @@
 app FitChecks {
   "References fit where they are used: the pairs a phrase relates are held to their types."
 }
+language 1
 
 type Email = Text matching /[^@]+@[^@]+/
 choice Status: Open | Done
@@ -82,7 +83,7 @@ on click a {
   if there is a @picked {
     - set @draft to @picked's @title
   }
-  for each @t in @tickets where @t's @status is @Open {
+  for each @t in @tickets whose @t's @status is @Open {
     - set @draft to @t's @title
   }
 }
@@ -172,7 +173,7 @@ on click ops {
   if @draft is 3 or more {   # expect: TYPE
     stop
   }
-  - set @count to the highest @id in @tickets + 1 (1 when there are none)
+  - set @count to the highest @id in @tickets + 1, or 1 when there is none
   - set @draft to the @title of the ticket whose @id is 1, or "none" when there is none
   - set @total to the sum of the @id of all @tickets
   - set @total to the sum of the @title of all @tickets   # expect: TYPE

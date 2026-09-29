@@ -2,7 +2,7 @@ app Checkout {
   "Buy a class pass: one payment per click, never two, even when the connection drops."
   "Anyone pays; a refund is given by a member of staff, who types the shop's key."
 }
-language v50
+language 1
 import pay.payments
 
 uses pay.paymentsApi as pay {
@@ -43,7 +43,7 @@ on answer pay.charge {
   - set @paying to false
   if its status is 201 {
     - set @charge to its body
-    - set @message to "Paid: charge {the @id in its body}"
+    - set @message to "Paid: charge {its body's @id}"
   } else if its status is unknown {
     - set @message to "We could not confirm the payment yet. Please don't pay again; we will let you know."
   } else {
@@ -62,7 +62,7 @@ on answer pay.refund {
   - set @refunding to false
   if its status is 200 {
     - set @charge to nothing
-    - set @message to "Refunded: charge {the @id in its body}"
+    - set @message to "Refunded: charge {its body's @id}"
   } else {
     - set @message to "Refund failed: {the error}"
   }

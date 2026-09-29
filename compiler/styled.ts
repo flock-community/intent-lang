@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { App } from "./ast.ts";
 import type { Target } from "./gen.ts";
 import { kitElm, kitTs } from "./kit.ts";
-import { escapeHtml } from "./targets/shared.ts";
+import { escapeHtml, startsAfterRestore } from "./targets/shared.ts";
 import { usesDraws } from "./draws.ts";
 
 const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
@@ -87,7 +87,7 @@ type Msg
 main : Program () App.Model Msg
 main =
     Browser.element
-        { init = \\_ -> ( App.init, Task.perform (\\_ -> Ready) (Process.sleep 0) )
+        { init = \\_ -> ( ${startsAfterRestore(app) ? "App.update Spec.Started App.init" : "App.init"}, Task.perform (\\_ -> Ready) (Process.sleep 0) )
         , update =
             \\msg m ->
                 let
@@ -105,13 +105,14 @@ main =
         }
 `;
 
-const TS_STYLED_MAIN = `import { render } from "preact";
+const TS_STYLED_MAIN = (app: App) => `import { render } from "preact";
 import * as App from "./app.ts";
 import { render as look } from "./look.tsx";
 import { toNode, type Msg } from "./spec.ts";
 
 const w = window as any;
-let model = App.init();
+// A styled page keeps nothing yet: with on start, it runs on the app as it starts (Started).
+let model = ${startsAfterRestore(app) ? 'App.update({ tag: "Started" }, App.init())' : "App.init()"};
 const root = document.getElementById("app")!;
 w.__n = 0;
 function draw() {
@@ -163,7 +164,7 @@ export function scaffoldStyled(app: App, target: Target, dir: string, useKit = f
     return { lookFile: join(dir, "src/Look.elm") };
   }
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "main.tsx"), TS_STYLED_MAIN);
+  writeFileSync(join(dir, "main.tsx"), TS_STYLED_MAIN(app));
   if (useKit) writeFileSync(join(dir, "kit.ts"), kitTs(app));
   writeFileSync(join(dir, "theme.css"), useKit ? themeCss(app, "./look.tsx", "./kit.ts") : themeCss(app, "./look.tsx"));
   writeFileSync(

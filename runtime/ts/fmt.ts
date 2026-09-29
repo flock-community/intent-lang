@@ -152,6 +152,11 @@ export function minutesBetween(from: string, to: string): number {
   return minuteNumber(to) - minuteNumber(from);
 }
 
+/** Whole hours from one moment to another, counted toward zero (the hours between 09:00 and 10:59 are 1; between 10:59 and 09:00, -1). */
+export function hoursBetween(from: string, to: string): number {
+  return Math.trunc(minutesBetween(from, to) / 60);
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** A date for people: formatDate("2026-09-04") === "4 Sep 2026" */
 export function formatDate(date: string): string {
@@ -175,4 +180,30 @@ export function parseDateTime(text: string): string | null {
   const m = text.trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})$/);
   if (!m || parseDate(m[1]) === null || num(m[2]) > 23 || num(m[3]) > 59) return null;
   return `${m[1]}T${m[2]}:${m[3]}`;
+}
+
+/**
+ * A stable sort by keys, the first key first (\`, earliest @due first, then lowest @id first\`): each key
+ * is a row's value and "asc" or "desc". Nothing (null) sorts last in either direction; text compares
+ * character by character by the characters' codes, as \`<\` does (never by locale); rows equal on
+ * every key keep their order. sortBy(rows, [(r) => r.due, "asc"], [(r) => r.id, "asc"])
+ */
+export function sortBy<T>(xs: readonly T[], ...keys: [(x: T) => number | string | boolean | null | undefined, "asc" | "desc"][]): T[] {
+  return xs
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => {
+      for (const [key, dir] of keys) {
+        const [p, q] = [key(a.x), key(b.x)];
+        const [pn, qn] = [p === null || p === undefined, q === null || q === undefined];
+        if (pn || qn) {
+          if (pn && qn) continue;
+          return pn ? 1 : -1;
+        }
+        if (p === q) continue;
+        const c = (p as number | string) < (q as number | string) ? -1 : 1;
+        return dir === "asc" ? c : -c;
+      }
+      return a.i - b.i;
+    })
+    .map((w) => w.x);
 }

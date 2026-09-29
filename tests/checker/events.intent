@@ -1,4 +1,5 @@
 app EventChecks
+language 1
 profile api
 
 state {
@@ -14,7 +15,7 @@ event counted: Int                        # expect: DUPLICATE
 event thing: Thing
 
 endpoint bump POST "/bump" {
-  returns Int
+  answers 200 Int
   - increase @count by 1
   - publish @bumped with @count           # expect: UNKNOWN_NAME
   - answer 200 with count

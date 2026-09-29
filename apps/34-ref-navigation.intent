@@ -1,7 +1,7 @@
 app RefNavigation {
   "A comment feed: each comment follows its reference to the ticket it is about, and still reads well when that ticket is removed."
 }
-language v66
+language 1
 design {
   look "A calm, modern admin. White surfaces on a light neutral background, one brand color, muted secondary text."
   brand: indigo

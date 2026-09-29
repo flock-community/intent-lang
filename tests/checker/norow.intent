@@ -1,6 +1,7 @@
 app NoRowChecks {
   "`that ticket` and `its` need a row introduced before them: the clicked row, a loop row, a lookup, a new record."
 }
+language 1
 
 record Ticket {
   id: Int

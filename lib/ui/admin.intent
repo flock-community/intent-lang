@@ -1,6 +1,7 @@
 bundle ui.admin {
   "A calm, modern admin look for internal tools."
 }
+language 1
 
 design {
   look "A calm, modern SaaS admin. Light neutral page background; white surfaces with a thin neutral border and a subtle shadow; comfortable spacing; dark neutral headings and muted neutral secondary text; the brand color for primary actions and the active navigation item."

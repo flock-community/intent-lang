@@ -1,7 +1,7 @@
 app Expenses {
   "Share costs within a group and see who should pay whom."
 }
-language v47
+language 1
 record Person {
   name: Text
 }
@@ -26,7 +26,7 @@ state {
   newName: Text = ""
   what: Text = ""
   amount: Text = ""
-  payer: Text = ""
+  payer: Text or nothing = nothing
   expenses: List Expense = []
 }
 
@@ -55,7 +55,7 @@ screen {
     field amount "Amount"
     select payer "Paid by" from people.name
     button addExpense "Add expense" {
-      enabled when @what is not blank, @amount reads as a decimal above 0, and @payer is the @name of one of the @people
+      enabled when @what is not blank, @amount reads as a decimal above 0, and there is a @payer
     }
   }
   list expenses of Expense {
@@ -84,11 +84,14 @@ on click addPerson {
 on click removePerson {
   - remove that person from @people
   if @payer is that person's @name {
-    - set @payer to ""
+    - set @payer to nothing
   }
 }
 
 on click addExpense {
+  if there is no @payer {
+    stop
+  }
   - add an @Expense to the end of @expenses with @what = @what trimmed, @payer = @payer, and @amount = @amount read as a decimal, rounded to @cents
   - clear @what and @amount; @payer stays as it is
 }

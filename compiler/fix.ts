@@ -1,20 +1,21 @@
 // `intent fix`: apply the mechanical fixes a diagnostic names, so an author does not retype them.
 // Deliberately narrow — an old `Maybe T` type, an unmarked declared name (`UNMARKED`), a lookup's
-// other spelling (`SPELLING`), a missing `import`, and the `language vN` line. Anything that needs
+// other spelling (`SPELLING`), a missing `import`, and the `language 1` line. Anything that needs
 // judgement is reported, never guessed.
 //
 // Each fix is checked before it is kept: a fix may not add any error (a code on a line that did not
 // have it), even one that removes another. Fixes are tried per kind, and one by one when a kind as a
 // whole would add an error; the safe ones are kept, the others are reported with the error they would
-// add. The `language vN` line is always written unless it breaks the spec's syntax: the errors the
-// newer language adds (a rule a later version made an error) are reported as needing the author.
+// add. The `language` line is always written unless it breaks the spec's syntax (a missing line and a
+// pre-1 `language vNN` both mean `language 1`, so writing it changes no meaning; should a later edition
+// add errors, they are reported as needing the author).
 // Running `intent fix` twice changes nothing the second time.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { App, Diagnostic } from "./ast.ts";
 import { PROJECT_ROOT } from "./gen.ts";
-import { compilerPins, load, LOCK } from "./load.ts";
+import { BASE_LANGUAGE, load, LOCK } from "./load.ts";
 import { parseSyntax } from "./parse.ts";
 import { sentences } from "./refs.ts";
 
@@ -96,7 +97,7 @@ export function markWord(line: string, word: string): string | undefined {
   return i === undefined ? undefined : line.slice(0, i) + "@" + line.slice(i);
 }
 
-/** Text fixes that need no diagnostics: the old `Maybe T`, and the `language vN` line. */
+/** Text fixes that need no diagnostics: the old `Maybe T`, and the `language 1` line. */
 export function fixSource(src: string, language: string): { out: string; fixes: Fix[] } {
   const fixes: Fix[] = [];
   const lines = src.split("\n");
@@ -125,11 +126,12 @@ function fixMaybe(line: string): { line: string; whats: string[] } {
   return { line: result + line.slice(last), whats };
 }
 
-/** The `language vN` line: replaced when older, added after the header when missing. */
+/** The `language` line: a pre-1 `language vNN` is rewritten, a missing line is added after the
+ *  header. A `language 1.x` line stays: it is the lowest version the spec needs. */
 function languageEdit(src: string, language: string): { out: string; line: number; what: string; inserted: boolean } | undefined {
-  const declared = src.match(/^language\s+(v\d+)\s*$/m);
+  const declared = src.match(/^language\s+(\S+)\s*$/m);
   if (declared) {
-    if (declared[1] === language) return undefined;
+    if (!/^v\d+$/.test(declared[1]) || declared[1] === language) return undefined;
     return { out: src.replace(/^language\s+v\d+\s*$/m, `language ${language}`), line: src.slice(0, declared.index).split("\n").length, what: `language ${declared[1]} → ${language}`, inserted: false };
   }
   const at = afterHeader(src);
@@ -236,7 +238,10 @@ export function fixFile(file: string): FixResult {
   return { ...r, bundle: r.bundle || locked };
 }
 
-export function fixText(src: string, language = compilerPins().languageVersion): FixResult {
+/** `only`: keep just the candidates it accepts (a migration that applies one kind of fix). */
+export function fixText(src: string, language = BASE_LANGUAGE, only?: (c: { code: string; what: string; line: string }) => boolean): FixResult {
+  // A profile (`profile ui { element … }`) is the vocabulary, not a spec: nothing to fix, no `language` line.
+  if (/^profile\s+[a-z]\w*\s*\{?\s*$/.test(src.split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "")) return { out: src, fixes: [], refused: [], judgements: [], left: [], main: "", bundle: false };
   let text: Text = { lines: src.split("\n"), inserts: new Map() };
   let state = errorKeys(text);
   const fixes: { orig: number | "inserted"; at: number; code: string; what: string }[] = [];
@@ -244,7 +249,7 @@ export function fixText(src: string, language = compilerPins().languageVersion):
   const judgements: { orig: number; code: string; what: string }[] = [];
 
   // 1. The language line. What the newer language adds is the author's to settle; a line in the wrong place is refused.
-  const lang = languageEdit(src, language);
+  const lang = only && !only({ code: "LANGUAGE", what: "language", line: "" }) ? undefined : languageEdit(src, language);
   if (lang) {
     const t = clone(text);
     if (lang.inserted) {
@@ -264,7 +269,8 @@ export function fixText(src: string, language = compilerPins().languageVersion):
   }
 
   /** Keep the candidates that add no error: all at once when they can, else one by one. */
-  const settle = (cands: Candidate[]): number => {
+  const settle = (all0: Candidate[]): number => {
+    const cands = only ? all0.filter((c) => only({ code: c.code, what: c.what, line: text.lines[c.line - 1] ?? "" })) : all0;
     if (!cands.length) return 0;
     const all = clone(text);
     const applied = cands.filter((c) => c.apply(all));
@@ -406,15 +412,35 @@ function rewriteCandidates(diags: Diagnostic[], origOf: (line: number) => number
   const out: Candidate[] = [];
   for (const d of diags) {
     if (d.code === "SPELLING" && (/looks up the row a reference points at/.test(d.message) || / in a change rule /.test(d.message) || /^`@newToken`/.test(d.message))) continue; // spellingCandidates'
-    const m = REWRITE.exec(d.message);
+    const drop = /^`((?:[^`]|``)+)` is not needed[^]*\(`intent fix` removes it\)/.exec(d.message);
+    const m = REWRITE.exec(d.message) ?? (drop ? [drop[0], drop[1], ""] : null);
     if (!m) continue;
     const line = origOf(d.line);
     if (line === undefined) continue;
     const [from, to] = [m[1], m[2]];
+    // `returns T` → `answers 201 T`, and a line for each other status it answers (`answers 400 Problem`).
+    const more = /^returns\s/.test(from) ? [...d.message.matchAll(/`(answers [1-5]\d\d[^`]*)`/g)].map((x) => x[1]).filter((x) => x !== to) : [];
+    if (more.length) {
+      out.push({
+        code: d.code,
+        line,
+        what: `\`${from}\` → \`${[to, ...more].join("`, `")}\``,
+        apply: (t) => {
+          const l = t.lines[line - 1] ?? "";
+          const at = l.indexOf(from);
+          if (at < 0 || !outsideString(l, at)) return false;
+          const indent = l.slice(0, l.length - l.trimStart().length);
+          t.lines[line - 1] = l.slice(0, at) + to + l.slice(at + from.length);
+          t.inserts.set(line, [...(t.inserts.get(line) ?? []), ...more.map((x) => indent + x)]);
+          return true;
+        },
+      });
+      continue;
+    }
     out.push({
       code: d.code,
       line,
-      what: `\`${from}\` → \`${to}\``,
+      what: to ? `\`${from}\` → \`${to}\`` : `\`${from}\` removed`,
       apply: applyLine(line, (l) => {
         for (let at = l.indexOf(from); at >= 0; at = l.indexOf(from, at + 1)) if (outsideString(l, at)) return l.slice(0, at) + to + l.slice(at + from.length);
         return undefined;

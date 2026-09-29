@@ -1,7 +1,7 @@
 app InvitesApi {
   "A team owner invites people with a code they can read over the phone. A code works once, and no two invitations share one."
 }
-language v69
+language 1
 
 profile api
 
@@ -24,7 +24,9 @@ derive {
 
 endpoint invite POST "/invites" {
   body email: Text
-  returns Invite
+  answers 201 Invite
+  answers 400 Problem
+  answers 503 Problem
   if @email, trimmed, is blank {
     answer 400 "An email is required"
   }
@@ -37,7 +39,9 @@ endpoint invite POST "/invites" {
 
 endpoint accept POST "/invites/{code}/accept" {
   path code: InviteCode
-  returns Invite
+  answers 200 Invite
+  answers 404 Problem
+  answers 409 Problem
   if there is no invite in @invites whose @code is @path.code {
     answer 404 "No such invitation"
   }

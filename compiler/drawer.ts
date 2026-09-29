@@ -17,8 +17,41 @@ export type SiteDesc = { form: "one" | "notAmong" | "many" | "pick" | "shuffle";
 /** The sites of an app, for its build's draws.json. */
 export const drawTable = (app: App): Record<string, SiteDesc> => Object.fromEntries(buildSites(app).map((s, at) => [s.id, { form: s.form, ...(s.type ? { type: s.type } : {}), ...(s.space ? { space: s.space } : {}), at }]));
 
-/** The sites of a build (none when it draws nothing). */
-export const loadDrawTable = (dir: string): Record<string, SiteDesc> => (existsSync(join(dir, "draws.json")) ? JSON.parse(readFileSync(join(dir, "draws.json"), "utf8")) : {});
+/** The sites of a build (none when it draws nothing); \`withProviders\`: also its providers' (keyed \`alias/site\`), for what a steered value is. */
+export const loadDrawTable = (dir: string, withProviders = false): Record<string, SiteDesc> => {
+  const own: Record<string, SiteDesc> = existsSync(join(dir, "draws.json")) ? JSON.parse(readFileSync(join(dir, "draws.json"), "utf8")) : {};
+  if (!withProviders) return own;
+  const theirs = Object.entries(providerDrawTables(dir)).flatMap(([alias, sites]) => Object.entries(sites).map(([id, d]) => [`${alias}/${id}`, d] as const));
+  return { ...own, ...Object.fromEntries(theirs) };
+};
+
+/** The draw sites of each provider a screen's examples run against (providers.json), by alias. */
+export function providerDrawTables(dir: string): Record<string, Record<string, SiteDesc>> {
+  if (!existsSync(join(dir, "providers.json"))) return {};
+  const { providers } = JSON.parse(readFileSync(join(dir, "providers.json"), "utf8")) as { providers: Record<string, string> };
+  return Object.fromEntries(Object.entries(providers).map(([alias, pdir]) => [alias, loadDrawTable(pdir)] as const).filter(([, t]) => Object.keys(t).length));
+}
+
+/**
+ * A screen's drawer and its providers' as one, for the steps: \`steer random T\` goes to whoever draws
+ * a T (the screen first; the checker refuses a type both draw), and what is pending or heard is theirs
+ * together. Each keeps its own seed, so a provider's unsteered draws are the same in every build.
+ */
+export function routed(own: Drawer | undefined, ownSites: Record<string, SiteDesc>, providers: Record<string, { drawer: Drawer; sites: Record<string, SiteDesc> }>): Drawer | undefined {
+  const others = Object.values(providers);
+  if (!others.length) return own;
+  const draws = (sites: Record<string, SiteDesc>, what: string) => Object.values(sites).some((d) => queueOf(d) === what);
+  const all = [...(own ? [own] : []), ...others.map((p) => p.drawer)];
+  return {
+    next: () => (own ?? others[0].drawer).next(),
+    steer(what, values, line) {
+      const to = own && draws(ownSites, what) ? own : (others.find((p) => draws(p.sites, what))?.drawer ?? own ?? others[0].drawer);
+      to.steer(what, values, line);
+    },
+    pending: () => all.flatMap((d) => d.pending()),
+    heard: () => all.flatMap((d) => d.heard()),
+  };
+}
 
 /** What a steered value is for: a type's name, or `shuffle` / `pick`. */
 const queueOf = (d: SiteDesc | undefined) => (!d ? "" : d.form === "shuffle" ? "shuffle" : d.form === "pick" ? "pick" : (d.type ?? ""));

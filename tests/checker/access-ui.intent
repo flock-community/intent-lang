@@ -1,6 +1,7 @@
 app AccessInAScreen {
   "A screen cannot enforce access: whoever controls the browser controls the screen."
 }
+language 1
 
 state {
   count: Int = 0

@@ -175,21 +175,21 @@ example "solving" {
   assert.equal(at("apps/api/members-api.intent", "NO_ACCESS").length + at("apps/api/members-api.intent", "ACCESS_UNPROVEN").length, 0, "members-api says what callers may do (keys in state count as callers)");
   assert.equal(at("apps/api/desk-api.intent", "NO_ACCESS").length + at("apps/api/desk-api.intent", "ACCESS_UNPROVEN").length + at("apps/api/desk-api.intent", "HAND_ACCESS").length, 0, "the desk api says what callers may do, proves every rule, and checks nothing by hand");
   const dir = mkdtempSync(join(tmpdir(), "access-quality-"));
-  const spec = (hand: string, extra = "", language = "") => `app Hand {\n  "Tickets behind keys."\n}\n${language}\nprofile api\n\nuse auth = std.http.apiKey {\n  keys = table {\n    secret    | owner\n    "k-ann-1" | "Ann"\n    "k-sam-2" | "Sam"\n  }\n}\n\nrecord Ticket {\n  id: Int\n  assignee: Text\n}\n\nstate {\n  tickets: List Ticket = table {\n    id | assignee\n    1  | "Sam"\n  }\n}\n${extra}\nendpoint solve POST "/tickets/{id}/solve" {\n  path id: ref Ticket\n  if no ticket has that @id {\n    answer 404 "No such ticket"\n  }\n${hand}  answer 200 with the ticket\n}\n\nexample "solving" {\n  call solve as "Sam" with id = 1\n  see solve.status = 200\n  call solve as "Ann" with id = 1\n  see solve.status = 403\n}\n`;
+  const spec = (hand: string, extra = "", language = "") => `app Hand {\n  "Tickets behind keys."\n}\n${language}\nprofile api\n\nlayer auth = std.http.apiKey {\n  keys = table {\n    secret    | owner\n    "k-ann-1" | "Ann"\n    "k-sam-2" | "Sam"\n  }\n}\n\nrecord Ticket {\n  id: Int\n  assignee: Text\n}\n\nstate {\n  tickets: List Ticket = table {\n    id | assignee\n    1  | "Sam"\n  }\n}\n${extra}\nendpoint solve POST "/tickets/{id}/solve" {\n  path id: ref Ticket\n  if that ticket does not exist {\n    answer 404 "No such ticket"\n  }\n${hand}  answer 200 with the ticket\n}\n\nexample "solving" {\n  call solve as "Sam" with id = 1\n  see solve.status = 200\n  call solve as "Ann" with id = 1\n  see solve.status = 403\n}\n`;
   const block = "\naccess {\n  - any caller may call @solve\n}\n";
   const write = (name: string, text: string) => (writeFileSync(join(dir, name), text), join(dir, name));
   const byHand = write("hand.intent", spec(`  if that ticket's @assignee is not the @caller {\n    answer 403 "Only the assignee"\n  }\n`, block));
   assert.equal(at(byHand, "HAND_ACCESS").length, 1, "a 403 on a condition about the caller, next to an access block");
   const conflict = write("conflict.intent", spec(`  if that ticket's @assignee is not the @caller {\n    answer 404 "No such ticket"\n  }\n`, block));
   assert.equal(at(conflict, "HAND_ACCESS").length, 0, "near miss: a condition on the caller that answers something else is the endpoint's own business");
-  // Without the block the same api gets NO_ACCESS: a warning for a spec written for an older language,
-  // the compiler's error from v70 on, and without a \`language\` line (the current language).
-  const old = write("old.intent", spec("", "", "language v60\n"));
-  assert.deepEqual(at(old, "NO_ACCESS").map((d) => d.level), ["warning"]);
+  // Without the block the same api gets NO_ACCESS: the compiler's error in language 1, with a
+  // \`language 1\` line, without one (it means \`language 1\`), and with a pre-1 line (read as \`language 1\`).
   const bare = write("bare.intent", spec(""));
-  assert.deepEqual(at(bare, "NO_ACCESS").map((d) => [d.level, d.line]), [["error", 7]], "no language line: the current language, an error (once)");
-  const v70 = write("v70.intent", spec("", "", "language v70\n"));
-  assert.equal(at(v70, "NO_ACCESS").find((d) => d.level === "error")?.line, 8, "from v70 on, an error at the key layer");
+  assert.deepEqual(at(bare, "NO_ACCESS").map((d) => [d.level, d.line]), [["error", 7]], "no language line: language 1, an error (once)");
+  const one = write("one.intent", spec("", "", "language 1\n"));
+  assert.deepEqual(at(one, "NO_ACCESS").map((d) => [d.level, d.line]), [["error", 8]], "language 1: an error at the key layer");
+  const old = write("old.intent", spec("", "", "language v60\n"));
+  assert.deepEqual(at(old, "NO_ACCESS").map((d) => [d.level, d.line]), [["error", 8]], "a pre-1 line reads as language 1: an error, never a hint");
   // ACCESS_UNPROVEN: \`any caller may call @solve\` is proven the permitted way only (Ann's 403 is the hand check's).
   const unproven = at(byHand, "ACCESS_UNPROVEN");
   assert.equal(unproven.length, 1, `one rule, unproven one way (got ${unproven.map((d) => d.message).join("; ")})`);

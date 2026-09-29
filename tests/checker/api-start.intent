@@ -1,0 +1,22 @@
+app ApiStart {
+  "An api that would do something when it starts."
+}
+language 1
+profile api
+
+state {
+  stored n: Int = 0
+}
+
+on start {                     # expect: NOT_YET
+  - increase @n by 1
+}
+
+endpoint count {
+  answer 200 with @n
+}
+
+example "the count" {
+  call count
+  see count.status = 200
+}

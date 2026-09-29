@@ -1,6 +1,7 @@
 app RecipesApi {
   "A small recipe service for tests and demos: recipes with their ingredients inside them, read-only."
 }
+language 1
 
 import kitchen.recipes
 

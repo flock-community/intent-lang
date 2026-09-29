@@ -1,6 +1,7 @@
 app Hints {
   "std.quality's hints on a small app: each on the line it is about, with a near miss next to it."
 }
+language 1
 
 record Item {
   name: Text

@@ -3,12 +3,12 @@ app PayoutsApi {
   "A clerk is never also an approver (separation of duty), and a role that is granted or revoked counts from the next request on."
 }
 
-language v70
+language 1
 
 profile api
 
-use secure = std.http.secure
-use auth = std.http.apiKey {
+layer secure = std.http.secure
+layer auth = std.http.apiKey {
   keys = table {
     secret        | owner
     "k-cy-4f1a"   | "Cy"
@@ -50,7 +50,7 @@ state {
 }
 
 derive {
-  nextId: Int = the highest @id in @payouts + 1 (1 when there are none)
+  nextId: Int = the highest @id in @payouts + 1, or 1 when there is none
 }
 
 access {
@@ -59,14 +59,17 @@ access {
   - a @Clerk, an @Approver or a @Lead may call @listPayouts
   - an @Approver or a @Lead may call @approvePayout
   - no one may call @approvePayout when that payout's @requester is the @caller: "A second person must approve"
-  - no one may call @approvePayout when that payout is not @Requested: "This payout is not waiting for approval"
+  - no one may call @approvePayout when that payout's @status is not @Requested: "This payout is not waiting for approval"
   - an @Admin may call @grantRole and @revokeRole
 }
 
 endpoint requestPayout POST "/payouts" {
   body payee: Text
   body amount: Int
-  returns Payout
+  answers 201 Payout
+  answers 400 Problem
+  answers 401 Problem
+  answers 403 Problem
   if @payee, trimmed, is blank {
     answer 400 "Payee is required"
   }
@@ -81,14 +84,19 @@ endpoint requestPayout POST "/payouts" {
 }
 
 endpoint listPayouts GET "/payouts" {
-  returns List Payout
-  answer 200 with the @payouts, highest @id first
+  answers 200 List Payout
+  answers 401 Problem
+  answers 403 Problem
+  answer 200 with the @payouts sorted by @id, highest first
 }
 
 endpoint approvePayout POST "/payouts/{id}/approve" {
   path id: ref Payout
-  returns Payout
-  if no payout has that @id {
+  answers 200 Payout
+  answers 401 Problem
+  answers 403 Problem
+  answers 404 Problem
+  if that payout does not exist {
     answer 404 "No such payout"
   }
   - set its @status to @Paid
@@ -99,7 +107,10 @@ endpoint approvePayout POST "/payouts/{id}/approve" {
 endpoint grantRole POST "/grants" {
   body person: Text
   body role: Role
-  returns Grant
+  answers 201 Grant
+  answers 401 Problem
+  answers 403 Problem
+  answers 409 Problem
   if there is a grant in @grants whose @who is @person and whose @role is @role {
     answer 409 "Already granted"
   }

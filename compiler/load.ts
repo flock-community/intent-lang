@@ -3,8 +3,8 @@
 // Lines of imported files are encoded as fileIndex * LINE_BASE + line (see App.sources).
 import { parseChange } from "./changes.ts";
 import { accessSources, keyOwners, rulesByTarget } from "./access.ts";
-import { drawMap } from "./draws.ts";
-import { bareWords, refsIn, sentences } from "./refs.ts";
+import { buildSites, drawMap, type Space } from "./draws.ts";
+import { bareWords, refsIn, sentences, usesClock } from "./refs.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -80,7 +80,25 @@ export function readLockVersions(): Map<string, string> {
 export function compilerPins(): { language: string; languageVersion: string; model: string; probeLlm: string; probeModel: string } {
   const doc = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
   const c = config();
-  return { language: sha(doc), languageVersion: doc.match(/language reference \((v\d+)/)?.[1] ?? "?", model: model(), probeLlm: c.probeLlm, probeModel: c.probeModel };
+  return { language: sha(doc), languageVersion: doc.match(/language reference \((\d+(?:\.\d+)?)\)/)?.[1] ?? "?", model: model(), probeLlm: c.probeLlm, probeModel: c.probeModel };
+}
+
+/** A build reads the model intent.lock pins: a changed model is a warning for \`intent check\`, but
+ *  \`intent build\` and \`intent converge\` refuse until \`intent lock\` pins the new one. */
+export function modelPinProblem(): string | undefined {
+  const locked = readCompilerLock();
+  const now = compilerPins().model;
+  if (locked.model && locked.model !== now) return `the compiler model is ${now}, but intent.lock pins ${locked.model}: review the change, then run \`intent lock\` (a build never picks up a new model silently)`;
+}
+
+/** What a spec without a \`language\` line means, and what a pre-1 \`language vNN\` line reads as. */
+export const BASE_LANGUAGE = "1";
+
+/** Is language version `a` (`1.2`) newer than `b` (`1`)? */
+export function versionAbove(a: string, b: string): boolean {
+  const [a1, a2 = 0] = a.split(".").map(Number);
+  const [b1, b2 = 0] = b.split(".").map(Number);
+  return !Number.isNaN(b1) && (a1 > b1 || (a1 === b1 && a2 > b2));
 }
 
 export function readCompilerLock(): { language?: string; model?: string } {
@@ -127,9 +145,15 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     const locked = readCompilerLock();
     if (locked.language && locked.language !== pins.language)
       warn(1, "LOCK", `the language reference changed since intent.lock was written (now ${pins.languageVersion}); builds will read the new version. Review docs/CHANGELOG.md, then run \`intent lock\``);
-    if (locked.model && locked.model !== pins.model) warn(1, "LOCK", `the compiler model is ${pins.model}, but intent.lock pins ${locked.model}`);
-    if (main.language && main.language !== pins.languageVersion)
-      warn(main.languageLine, "LANGUAGE", `this spec was written for language ${main.language}; the language is now ${pins.languageVersion}. Read the changelog in docs/CHANGELOG.md for what changed`);
+    if (locked.model && locked.model !== pins.model) warn(1, "LOCK", `the compiler model is ${pins.model}, but intent.lock pins ${locked.model}: \`intent build\` and \`intent converge\` refuse until you run \`intent lock\``);
+  }
+  if (!opts.ignoreLock && main.language?.startsWith("v"))
+    warn(main.languageLine, "LANGUAGE", `\`language ${main.language}\` is a version from before language 1, and reads as \`language 1\`: write \`language 1\` (\`intent fix\` rewrites it)`);
+  {
+    // The `language` line is the lowest version the spec needs: a newer one needs a newer compiler.
+    const now = compilerPins().languageVersion;
+    if (app.language && versionAbove(app.language, now))
+      err(main.languageLine, "NEWER_LANGUAGE", `this spec needs language ${app.language}; this compiler reads language ${now}: install a newer \`intent\``);
   }
   const bundles: Loaded["bundles"] = [];
 
@@ -169,14 +193,15 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
   if (app.implements) {
     const c = app.implements;
     const path = bundlePath(c.name);
-    if (!existsSync(path)) err(c.line, "UNKNOWN_NAME", `no contract \`${c.name}\` (looked for ${shown(path)})`);
+    if (!existsSync(path)) err(c.line, "UNKNOWN_NAME", `no contract \`${c.name}\` (looked for ${shown(path)}): a contract lives in \`lib/<area>/<name>.intent\` and starts with \`contract ${c.name}\`; run \`intent lock\` after writing it`);
     else {
       const text = readFileSync(path, "utf8");
       const idx = sources.push({ file: shown(path), text }) - 1;
       const parsed = parseSyntax(text);
       offsetLines(parsed.app, idx * LINE_BASE);
       diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-      if (parsed.app.kind !== "contract") err(c.line, "BAD_BINDING", `${shown(path)} is not a contract`);
+      if (parsed.app.kind !== "contract") err(c.line, "BAD_BINDING", `${shown(path)} is not a contract (it starts with \`${parsed.app.kind ?? "?"}\`): \`implements\` names a file that starts with \`contract ${c.name}\``);
+      else if (parsed.app.name !== c.name) err(c.line, "BAD_BINDING", `${shown(path)} must declare \`contract ${c.name}\` (it declares \`contract ${parsed.app.name}\`)`);
       const digest = sha(text);
       bundles.push({ name: c.name, file: shown(path), sha: digest });
       if (!opts.ignoreLock) {
@@ -188,7 +213,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     }
   }
 
-  // Layers: `use cors = std.http.cors` in an api app. Each layer is a checked, locked spec of its
+  // Layers: `layer cors = std.http.cors` in an api app. Each layer is a checked, locked spec of its
   // own; the app binds its params. Its build is reused by every app (keyed by its canonical text).
   for (const l of app.layers ?? []) {
     if (app.profile !== "api") err(l.line, "BAD_BINDING", "layers wrap an api: add `profile api`");
@@ -238,7 +263,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
   for (const u of app.uses ?? []) {
     const path = bundlePath(u.contract);
     if (!existsSync(path)) {
-      err(u.line, "UNKNOWN_NAME", `no contract \`${u.contract}\` (looked for ${shown(path)})`);
+      err(u.line, "UNKNOWN_NAME", `no contract \`${u.contract}\` (looked for ${shown(path)}): a contract lives in \`lib/<area>/<name>.intent\` and starts with \`contract ${u.contract}\`; run \`intent lock\` after writing it`);
       continue;
     }
     const text = readFileSync(path, "utf8");
@@ -246,7 +271,8 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     const parsed = parseSyntax(text);
     offsetLines(parsed.app, idx * LINE_BASE);
     diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-    if (parsed.app.kind !== "contract") err(u.line, "BAD_BINDING", `${shown(path)} is not a contract`);
+    if (parsed.app.kind !== "contract") err(u.line, "BAD_BINDING", `${shown(path)} is not a contract (it starts with \`${parsed.app.kind ?? "?"}\`): \`uses\` names a file that starts with \`contract ${u.contract}\``);
+    else if (parsed.app.name !== u.contract) err(u.line, "BAD_BINDING", `${shown(path)} must declare \`contract ${u.contract}\` (it declares \`contract ${parsed.app.name}\`)`);
     const digest = sha(text);
     bundles.push({ name: u.contract, file: shown(path), sha: digest });
     if (!opts.ignoreLock) {
@@ -257,6 +283,8 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     let providerDigest: string | undefined;
     let providerCallers: string[] | undefined;
     let providerAccess: Record<string, string[]> | undefined;
+    let providerDraws: { what: string; space?: Space }[] | undefined;
+    let providerClock = false;
     if (u.testedWith && !existsSync(join(PROJECT_ROOT, u.testedWith))) err(u.line, "UNKNOWN_NAME", `no provider spec at ${u.testedWith}`);
     else if (u.testedWith) {
       // The provider the examples run against: it must implement this contract, and build.
@@ -268,10 +296,15 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
         // Whom a test may act as against it (its key owners), and its access rules per endpoint (the source map's).
         providerCallers = keyOwners(p.app).owners;
         if (p.app.access) providerAccess = rulesByTarget(p.app);
+        // What the provider draws: a screen's example may steer it (`steer random BookingCode = …` reaches the provider).
+        const drawn = buildSites(p.app).map((s) => ({ what: s.form === "shuffle" ? "shuffle" : s.form === "pick" ? "pick" : (s.type ?? ""), ...(s.space ? { space: s.space } : {}) })).filter((d) => d.what);
+        if (drawn.length) providerDraws = drawn;
+        // A provider that reads the clock: the screen's \`wait\` moves it on.
+        providerClock = usesClock(p.app);
       }
     }
     app.imports = [...(parsed.app.imports ?? []), ...(app.imports ?? [])];
-    for (const r of parsed.app.refined ?? []) (app.refined ??= []).push(r);
+    for (const r of parsed.app.refined ?? []) if (!(app.refined ?? []).some((x) => sameDecl(x, r))) (app.refined ??= []).push(r); // an expanded app prints them: the same one again is no second declaration
     app.records.push(...parsed.app.records.filter((r) => !app.records.some((x) => x.name === r.name)));
     app.choices.push(...parsed.app.choices.filter((c) => !app.choices.some((x) => x.name === c.name)));
     // A client's layer (`through std.http.sendKey`): checked and locked like a service's layer; its params bind to state or literals.
@@ -312,7 +345,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
         for (const p of params.values()) if (p.default === undefined && !l.bindings.some((b) => b.name === p.name)) err(l.line, "BAD_BINDING", `layer ${l.layer} needs \`${p.name}\`: bind it in an indented line (\`${p.name} = <state or literal>\`)`);
       }
     }
-    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through, ...(u.only ? { only: u.only } : {}), line: u.line, ...(providerCallers ? { providerCallers } : {}), ...(providerAccess ? { providerAccess } : {}) });
+    (app.clients ??= []).push({ alias: u.alias, contract: parsed.app, testedWith: u.testedWith, providerDigest, through: u.through, ...(u.only ? { only: u.only } : {}), line: u.line, ...(providerCallers ? { providerCallers } : {}), ...(providerAccess ? { providerAccess } : {}), ...(providerDraws ? { providerDraws } : {}), ...(providerClock ? { providerClock } : {}) });
   }
 
   // Load bundles depth-first; every bundle once.
@@ -329,7 +362,8 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     const parsed = parseSyntax(text);
     offsetLines(parsed.app, idx * LINE_BASE);
     diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-    if (parsed.app.kind !== "bundle" && parsed.app.kind !== "platform") err(fromLine, "BAD_BINDING", `${shown(path)} is not a bundle or a platform (it starts with \`${parsed.app.kind ?? "?"}\`)`);
+    if (parsed.app.kind === "contract") err(fromLine, "BAD_BINDING", `\`${name}\` is a contract, not a bundle: its records and choices come with it where you name it — \`uses ${name} as <alias>\` in a screen or job that calls it, \`implements ${name}\` in the service; drop this \`import\` (import a domain bundle the contract imports, when you use its names)`);
+    else if (parsed.app.kind !== "bundle" && parsed.app.kind !== "platform") err(fromLine, "BAD_BINDING", `${shown(path)} is not a bundle or a platform (it starts with \`${parsed.app.kind ?? "?"}\`)`);
     else if (parsed.app.name !== name) err(idx * LINE_BASE + 1, "BAD_BINDING", `this file must declare \`${parsed.app.kind} ${name}\` (it declares \`${parsed.app.kind} ${parsed.app.name}\`)`);
     const digest = sha(text);
     bundles.push({ name, file: shown(path), sha: digest });

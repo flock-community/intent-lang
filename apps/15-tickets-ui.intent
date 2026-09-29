@@ -2,7 +2,7 @@ app TicketsUi {
   "A small front end for the tickets API: list, add and solve tickets."
   "The list stays up to date when other agents add or solve tickets."
 }
-language v47
+language 1
 import support.tickets
 
 uses support.ticketsApi as tickets {
@@ -50,7 +50,7 @@ on answer tickets.createTicket {
   if its status is 201 {
     - clear @draft and @problem
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
 }
 
@@ -62,12 +62,12 @@ on answer tickets.solveTicket {
   if its status is 200 {
     - clear @problem
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
 }
 
 on event tickets.ticketCreated {
-  if no row in @rows has the @id of its body {
+  if no row in @rows has its body's @id {
     - add its body at the start of @rows
   }
 }

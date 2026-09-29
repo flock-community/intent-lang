@@ -1,0 +1,95 @@
+app RaffleApi {
+  "The prize draw's entries over HTTP: anyone enters by name and gets a ticket code no other entry holds. An entry can be withdrawn, and an id is never handed out twice."
+}
+language 1
+
+implements raffle.raffleApi
+
+examples start at 2026-10-01 09:00
+
+state {
+  stored entries: List Entry = table {
+    id | name  | code     | enteredOn
+    1  | "Ann" | "K7MQ2R" | 2026-09-30
+  }
+  stored nextId: Int = 2          # the id the next entry gets; never goes down, so a withdrawn entry's id is not reused
+}
+
+derive {
+  freeCode = a random @TicketCode not among the @code of @entries
+}
+
+endpoint listEntries {
+  answer 200 with @entries
+}
+
+endpoint enter {
+  if @name, trimmed, is blank {
+    answer 400 "A name is required"
+  }
+  if there is no @freeCode {
+    answer 409 "No ticket code is free"
+  }
+  - add an @Entry to the end of @entries with @id = @nextId, @name = @name trimmed, @code = @freeCode, @enteredOn = @today
+  - increase @nextId by 1
+  answer 201 with the new entry
+}
+
+endpoint withdraw {
+  if that entry does not exist {
+    answer 404 "No such entry"
+  }
+  - remove that entry from @entries
+  answer 204
+}
+
+always {
+  - no two @entries have the same @code
+  - @nextId never goes down
+}
+
+example "entering gives a code" {
+  steer random TicketCode = "M8TX3Q"
+  call enter with name = " Bob "
+  see enter.status = 201
+  see enter.body.id = 2
+  see enter.body.name = "Bob"
+  see enter.body.code = "M8TX3Q"
+  see enter.body.enteredOn = 2026-10-01
+}
+
+example "a taken code is skipped" {
+  steer random TicketCode = "K7MQ2R", "Z2Y6FA"
+  call enter with name = "Cas"
+  see enter.body.code = "Z2Y6FA"
+}
+
+example "a blank name" {
+  call enter with name = "  "
+  see enter.status = 400
+  see enter.body.error = "A name is required"
+}
+
+example "a withdrawn entry's id is not handed out again" {
+  call withdraw with id = 1
+  see withdraw.status = 204
+  steer random TicketCode = "M8TX3Q"
+  call enter with name = "Dee"
+  see enter.body.id = 2
+  call listEntries
+  see listEntries.body has 1 row
+  see listEntries.body[1].name = "Dee"
+}
+
+example "withdrawing an entry that is not there" {
+  call withdraw with id = 7
+  see withdraw.status = 404
+  see withdraw.body.error = "No such entry"
+}
+
+example "an entry made the next day" {
+  wait 1d
+  steer random TicketCode = "W5RD9E"
+  call enter with name = "Eve"
+  see enter.body.enteredOn = 2026-10-02
+}

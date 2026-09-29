@@ -1,0 +1,213 @@
+app ClinicBooking {
+  "The clinic's booking page for patients: sign in with your key, book an open slot, see your own bookings with their codes, and cancel one up to 24 hours before the appointment."
+}
+
+language 1
+
+uses clinic.bookingsApi as clinic only openSlots, book, myBookings, cancelBooking {
+  tested with "apps/held-out-4/clinic-api.intent"
+  through std.http.sendKey {
+    key = apiKey
+  }
+}
+
+examples start at 2026-09-28 09:00
+
+design {
+  look "A calm, friendly clinic page: white surfaces on a light neutral page, one centered column."
+  brand: teal
+  neutral: slate
+  danger: rose
+  font: sans
+  radius: large
+  density: comfortable
+}
+
+state {
+  keyDraft: Text = ""
+  apiKey: Text = ""
+  open: List Slot = []
+  mine: List Booking = []
+  message: Text = ""
+  problem: Text = ""
+}
+
+screen {
+  heading "Book an appointment" as title
+  section signIn "Sign in" as card {
+    visible when @apiKey is blank
+    field keyDraft "Your key" as password
+    button signInButton "Sign in" as primary {
+      enabled when @keyDraft is not blank
+    }
+  }
+  text message as toast {
+    visible when @message is not blank
+  }
+  text problem as alert {
+    visible when @problem is not blank
+  }
+  section booking "Open appointments" as card {
+    visible when @apiKey is not blank
+    list open of Slot as table {
+      text when = "{start as a moment}"
+      text doctor
+      button bookSlot "Book" as primary
+    }
+    text noOpen = "No open appointments right now." as caption {
+      visible when @open is empty
+    }
+  }
+  section bookingsCard "My appointments" as card {
+    visible when @apiKey is not blank
+    list mine of Booking as table {
+      text myWhen = "{start as a moment}"
+      text myDoctor = "{doctor}"
+      text code as code
+      text state = "Cancelled" when its @status is @Cancelled, otherwise "Booked" {
+        as badge
+      }
+      button cancel "Cancel" as secondary {
+        visible when its @status is @Booked
+      }
+    }
+    text noMine = "You have no appointments." as caption {
+      visible when @mine is empty
+    }
+  }
+}
+
+on click signInButton {
+  - set @apiKey to @keyDraft, trimmed
+  - clear @keyDraft
+  - clear @problem
+  - call @clinic.openSlots
+  - call @clinic.myBookings
+}
+
+on answer clinic.openSlots {
+  if its status is 200 {
+    - set @open to its body
+  } else {
+    - set @problem to the error
+  }
+}
+
+on answer clinic.myBookings {
+  if its status is 200 {
+    - set @mine to its body
+  } else {
+    - set @problem to the error
+  }
+}
+
+on click bookSlot {
+  - clear @message
+  - clear @problem
+  - call @clinic.book with @slotId = that slot's @id
+}
+
+on answer clinic.book {
+  if its status is 201 {
+    - set @message to "Booked. Your code is {its body's @code}"
+    - call @clinic.openSlots
+    - call @clinic.myBookings
+  } else {
+    - set @problem to the error
+    - call @clinic.openSlots
+  }
+}
+
+on click cancel {
+  - clear @message
+  - clear @problem
+  - call @clinic.cancelBooking with @id = that booking's @id
+}
+
+on answer clinic.cancelBooking {
+  if its status is 200 {
+    - set @message to "Cancelled the appointment with code {its body's @code}"
+    - call @clinic.openSlots
+    - call @clinic.myBookings
+  } else {
+    - set @problem to the error
+  }
+}
+
+example "before signing in, nothing is shown" {
+  see signIn is shown
+  see booking is hidden
+  see bookingsCard is hidden
+  see signInButton is disabled
+  snapshot "signed out"
+}
+
+example "a wrong key shows the refusal" {
+  type "k-nobody" into keyDraft
+  click signInButton
+  see problem is shown
+  see booking is shown
+  see open has 0 rows
+}
+
+example "Ann signs in and sees open slots and her own appointments" {
+  type "k-ann-4c1e" into keyDraft
+  click signInButton
+  see signIn is hidden
+  see open has 3 rows
+  see when on row 1 of open = "29 Sep 2026 09:00"
+  see doctor on row 2 of open = "Dr. Peters"
+  see mine has 2 rows
+  see code on row 1 of mine = "H3NB8D"
+  see code on row 2 of mine = "K7MQ2R"
+  see every row of mine: state = "Booked"
+  snapshot "signed in"
+}
+
+example "Bob books Tuesday 11:00 and sees his code" {
+  type "k-bob-9d2a" into keyDraft
+  click signInButton
+  click bookSlot on row with "Dr. Peters"
+  see message is shown
+  see open has 2 rows
+  see mine has 3 rows
+  see state on row 1 of mine = "Cancelled"
+  see cancel on row 1 is hidden
+  see state on row 2 of mine = "Booked"
+  see myWhen on row 2 of mine = "29 Sep 2026 11:00"
+  see myDoctor on row 2 of mine = "Dr. Peters"
+  see cancel on row 2 is shown
+}
+
+example "a slot someone else just took shows why" {
+  type "k-ann-4c1e" into keyDraft
+  click signInButton
+  call clinic.book as "Bob" with slotId = 2
+  click bookSlot on row 1
+  see problem = "This slot is already booked"
+  see open has 2 rows
+}
+
+example "Ann cancels in time and the slot opens again" {
+  type "k-ann-4c1e" into keyDraft
+  click signInButton
+  click cancel on row with "K7MQ2R"
+  see message = "Cancelled the appointment with code K7MQ2R"
+  see state on row 2 of mine = "Cancelled"
+  see open has 4 rows
+}
+
+example "too late to cancel online" {
+  type "k-ann-4c1e" into keyDraft
+  click signInButton
+  click cancel on row with "H3NB8D"
+  see problem = "Too late to cancel online: call the clinic"
+  see state on row 1 of mine = "Booked"
+}
+
+example "a receptionist has no patient appointments" {
+  type "k-rita-77b0" into keyDraft
+  click signInButton
+  see open has 3 rows
+  see problem = "Not allowed"
+}

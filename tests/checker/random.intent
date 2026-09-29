@@ -1,6 +1,7 @@
 app RandomChecks {
   "Random values: drawn from a type that lists its values, unique only when asked, steered in examples."
 }
+language 1
 
 type Code = Text of 6 digits
 type Invite = Text of 8 unambiguous letters and digits

@@ -1,7 +1,7 @@
 app UrgentWatch {
   "A headless job: it watches alerts and, for every urgent one, tells the on-call person by raising an info alert."
 }
-language v60
+language 1
 profile job
 import notify.alerts
 
@@ -27,7 +27,7 @@ on answer alerts.raise {
   if its status is 201 {
     - clear @problem
   } else {
-    - set @problem to the error in its body
+    - set @problem to the error
   }
 }
 

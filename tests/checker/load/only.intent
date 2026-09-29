@@ -1,6 +1,7 @@
 app OnlyChecks {
   "A manifest: `only` names what the app may use of an api, and the checker holds it to that."
 }
+language 1
 
 import support.tickets
 

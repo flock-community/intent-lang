@@ -1,6 +1,7 @@
 contract support.deskApi {
   "The support desk's API for agents: every call carries an agent's API key (std.http.sendKey)."
 }
+language 1
 
 import support.tickets
 
@@ -23,7 +24,7 @@ endpoint myTickets GET "/tickets/mine" {
 }
 
 endpoint takeTicket POST "/tickets/{id}/take" {
-  path id: ref Ticket                    # a ticket's id, as before
+  path id: ref Ticket                    # a ticket's id on the wire
   answers 200 Ticket
   answers 404 Problem
   answers 409 Problem                    # someone else has it

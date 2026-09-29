@@ -1,7 +1,7 @@
 app Helpdesk {
   "A support desk for a small team: see what needs attention, triage tickets and answer customers."
 }
-language v47
+language 1
 import ui.admin
 import std.list
 import std.feedback
@@ -26,9 +26,9 @@ state {
     3  | "Feature request: dark mode"   | "Lena Smit"     | Low      | Pending | "Sam"
     4  | "App crashes on upload"        | "Joost Bakker"  | Urgent   | Pending | "Alex"
     5  | "Change billing address"       | "Eva Visser"    | Normal   | Solved  | "Sam"
-    6  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | ""
+    6  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | nothing
     7  | "Password rules unclear"       | "Iris de Boer"  | Normal   | Open    | "Alex"
-    8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | ""
+    8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | nothing
   }
   comments: List Comment = table {
     ticket | author         | body
@@ -54,8 +54,8 @@ derive {
   matching = the @tickets whose @subject or @customer contains @search (trimmed, ignoring case), and whose @status fits @statusFilter (@AllTickets fits every @status)
   sorted = @matching in the order of @sort: @Newest is highest @id first; @Oldest is lowest @id first; @ByPriority is @Urgent, @High, @Normal, @Low, and within one @priority highest @id first
   urgentOpen = the number of @Urgent @tickets that are not @Solved
-  current = the ticket whose @id is @selected, or nothing when there is no @selected
-  thread = the @comments whose @ticket is @selected, in their order (none when there is no @selected)
+  current = the ticket whose @id is @selected, or nothing when there is none
+  thread = the @comments whose @ticket is @selected, in their order
   byPriority = one @Bar per @priority, in the order @Urgent, @High, @Normal, @Low: @label is the @priority's name, @count is the number of @tickets with that @priority that are not @Solved, and @share is @count × 100 divided by the largest @count of the four, rounded down (0 when all counts are 0)
 }
 
@@ -112,7 +112,7 @@ screen {
         text customer
         text priority as PriorityBadge
         text status as StatusBadge
-        text assignee = the @assignee, or "Unassigned" when it is empty
+        text assignee = the @assignee, or "Unassigned" when there is none
         button open "View" as link
       }
       section empty as EmptyState {
@@ -229,7 +229,7 @@ on click newTicket {
 }
 
 on click create {
-  - add a @Ticket to the end of @tickets with @id = the highest @id + 1, @subject = @newSubject trimmed, @customer = @newCustomer trimmed, @priority = @newPriority, @status @Open and @assignee ""
+  - add a @Ticket to the end of @tickets with @id = the highest @id + 1, @subject = @newSubject trimmed, @customer = @newCustomer trimmed, @priority = @newPriority, @status @Open and @assignee = nothing
   - set @showNew to false
   - set @toast.message to "Ticket #<new id> created", followed by " · customer notified" when @notifyCustomer
   - set @page to @Inbox, @search to "", @statusFilter to @AllTickets, @sort to @Newest and @pager.page to 1

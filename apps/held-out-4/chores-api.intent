@@ -1,0 +1,380 @@
+app ChoresApi {
+  "A household's shared chores: who is in turn, a checklist per chore, and a history of who did what when."
+  "A chore is marked done only by the person it is assigned to. A done chore passes to the next person in its rotation."
+}
+language 1
+
+profile api
+implements home.choresApi
+
+examples start at 2026-09-24 09:00
+
+layer secure = std.http.secure
+layer auth = std.http.apiKey {
+  keys = table {
+    secret       | owner
+    "k-ann-1111" | "Ann"
+    "k-ben-2222" | "Ben"
+    "k-cas-3333" | "Cas"
+    "k-dee-4444" | "Dee"
+  }
+}
+
+state {
+  stored people: List Person = table {
+    who   | role
+    "Ann" | Parent
+    "Ben" | Member
+    "Cas" | Member
+  }
+  stored chores: List Chore = table {
+    id | title      | rotation              | assignee | due        | everyDays | items
+    1  | "Dishes"   | ["Ann", "Ben", "Cas"] | "Ann"    | 2026-09-23 | 1         | []
+    2  | "Bathroom" | ["Ben", "Cas"]        | "Ben"    | 2026-09-26 | 7         | [{ id = 1, label = "Sink" }, { id = 2, label = "Mirror" }, { id = 3, label = "Floor", done = true }]
+    3  | "Bins out" | ["Ann", "Cas"]        | "Cas"    | 2026-09-24 | 7         | []
+    4  | "Windows"  | ["Ann", "Ben", "Cas"] | nothing  | 2026-09-30 | 30        | []
+    5  | "Hoover"   | ["Ben", "Ann"]        | "Ben"    | 2026-09-20 | 3         | []
+  }
+  stored completions: List Completion = table {
+    id | chore | title      | who   | at
+    1  | 3     | "Bins out" | "Ann" | 2026-09-17 08:00
+    2  | 1     | "Dishes"   | "Cas" | 2026-09-22 20:00
+  }
+}
+
+derive {
+  nextChoreId = the highest @id in @chores + 1, or 1 when there is none
+  nextCompletionId = the highest @id in @completions + 1, or 1 when there is none
+}
+
+access {
+  roles = people
+  - any caller may call @me
+  - a @Member or a @Parent may call @listChores, @listHistory and @pickSomeone
+  - a @Member or a @Parent may call @markDone when that chore's @assignee is the @caller: "Only the person this chore is assigned to can mark it done"
+  - a @Member or a @Parent may call @tickItem when that chore's @assignee is the @caller: "Only the person this chore is assigned to can tick its checklist"
+  - a @Parent may call @addChore and @addItem
+  - a @Member or a @Parent may hear @choreDone
+  - a @Member or a @Parent may hear @choreChanged
+}
+
+endpoint me {
+  if there is no person in @people whose @who is the @caller {
+    answer 404 "You are not in this household"
+  }
+  answer 200 with that person
+}
+
+endpoint listChores {
+  answer 200 with @chores sorted by @due, earliest first, then by @id
+}
+
+endpoint listHistory {
+  answer 200 with @completions sorted by @at, newest first, then by @id, highest first
+}
+
+endpoint addChore {
+  if @title, trimmed, is blank {
+    answer 400 "A chore needs a title"
+  }
+  if @rotation is empty {
+    answer 400 "A chore needs at least one person in its rotation"
+  }
+  if some name in @rotation is not the @who of a person in @people {
+    answer 400 "Everyone in the rotation must be in the household"
+  }
+  - add a @Chore to the end of @chores with @id = @nextChoreId, @title = @title, trimmed, @rotation = @rotation, @due = @due and @everyDays = @everyDays
+  - publish @choreChanged with the new chore
+  answer 201 with the new chore
+}
+
+endpoint addItem {
+  if that chore does not exist {
+    answer 404 "No such chore"
+  }
+  - add an @Item to the end of that chore's @items with @id = the highest @id in that chore's @items + 1, or 1 when there is none, @label = @label, trimmed
+  - publish @choreChanged with that chore
+  answer 201 with that chore
+}
+
+endpoint tickItem {
+  if that chore does not exist {
+    answer 404 "No such chore"
+  }
+  if there is no item in that chore's @items whose @id is @item {
+    answer 404 "No such checklist item"
+  }
+  - set that item's @done to false when that item's @done is true, otherwise true
+  - publish @choreChanged with that chore
+  answer 200 with that chore
+}
+
+endpoint markDone {
+  if that chore does not exist {
+    answer 404 "No such chore"
+  }
+  if there is an item in that chore's @items whose @done is false {
+    answer 409 "Tick every checklist item first"
+  }
+  - add a @Completion to the end of @completions with @id = @nextCompletionId, @chore = that chore's @id, @title = that chore's @title, @who = the @caller and @at = @now
+  - set that chore's @assignee to the next in turn after the @caller in that chore's @rotation
+  - set that chore's @due to that chore's @everyDays days after @today
+  - set the @done of every item in that chore's @items to false
+  - publish @choreDone with the new completion
+  - publish @choreChanged with that chore
+  answer 200 with the new completion
+}
+
+endpoint pickSomeone {
+  if that chore does not exist {
+    answer 404 "No such chore"
+  }
+  if there is a that chore's @assignee {
+    answer 409 "This chore is already assigned"
+  }
+  - set that chore's @assignee to a random one of that chore's @rotation
+  - publish @choreChanged with that chore
+  answer 200 with that chore
+}
+
+rules {
+  - The next in turn after a person is the one after them in the chore's @rotation; after the last one it is the first one again. When the person is not in the @rotation, it is the first one.
+}
+
+always {
+  - a @Completion never changes
+  - a @Completion is never removed
+  - no two @completions have the same @id
+  - no two @chores have the same @id
+  - no @Completion has an @at after @now
+  - every @Chore's @assignee is nothing or one of the names in its @rotation
+  - every name in every @Chore's @rotation is the @who of a person in @people
+}
+
+# --- reading ---
+
+example "the chores, earliest due first" {
+  call listChores as "Ben"
+  see listChores.status = 200
+  see listChores.body has 5 rows
+  see listChores.body[1].title = "Hoover"
+  see listChores.body[2].title = "Dishes"
+  see listChores.body[3].title = "Bins out"
+  see listChores.body[4].title = "Bathroom"
+  see listChores.body[5].title = "Windows"
+  see listChores.body[5].assignee = nothing
+}
+
+example "the history, newest first" {
+  call listHistory as "Cas"
+  see listHistory.status = 200
+  see listHistory.body has 2 rows
+  see listHistory.body[1].title = "Dishes"
+  see listHistory.body[1].who = "Cas"
+  see listHistory.body[2].title = "Bins out"
+}
+
+example "who am I" {
+  call me
+  see me.status = 401
+  call me as "Ann"
+  see me.status = 200
+  see me.body.who = "Ann"
+  see me.body.role = Parent
+}
+
+example "a key without a place in the household" {
+  call me as "Dee"
+  see me.status = 404
+  see me.body.error = "You are not in this household"
+  call listChores as "Dee"
+  see listChores.status = 403
+  see listChores.body.error = "Not allowed"
+}
+
+example "no key, or a wrong key" {
+  call listChores
+  see listChores.status = 401
+  call listChores with header x-api-key = "wrong"
+  see listChores.status = 401
+}
+
+# --- marking done: only the assignee ---
+
+example "the assignee marks a chore done" {
+  call markDone as "Ann" with id = 1
+  see markDone.status = 200
+  see markDone.body.id = 3
+  see markDone.body.title = "Dishes"
+  see markDone.body.who = "Ann"
+  see markDone.body.at = 2026-09-24 09:00
+  see choreDone.body.who = "Ann"
+  call listChores as "Ann"
+  see listChores.body[3].title = "Dishes"
+  see listChores.body[3].assignee = "Ben"
+  see listChores.body[3].due = 2026-09-25
+  call listHistory as "Ann"
+  see listHistory.body has 3 rows
+  see listHistory.body[1].title = "Dishes"
+  see listHistory.body[1].who = "Ann"
+}
+
+example "someone else cannot mark it done" {
+  call markDone as "Ben" with id = 1
+  see markDone.status = 403
+  see markDone.body.error = "Only the person this chore is assigned to can mark it done"
+  see choreDone is absent
+  see audit[1].decision = "refused"
+  see audit[1].caller = "Ben"
+  call listHistory as "Ben"
+  see listHistory.body has 2 rows
+}
+
+example "a parent cannot mark someone else's chore done either" {
+  call markDone as "Ann" with id = 5
+  see markDone.status = 403
+  see markDone.body.error = "Only the person this chore is assigned to can mark it done"
+}
+
+example "an unassigned chore cannot be marked done" {
+  call markDone as "Ann" with id = 4
+  see markDone.status = 403
+  see markDone.body.error = "Only the person this chore is assigned to can mark it done"
+}
+
+example "a chore that is not there" {
+  call markDone as "Ann" with id = 99
+  see markDone.status = 404
+  see markDone.body.error = "No such chore"
+}
+
+example "the turn wraps around to the first in the rotation" {
+  call markDone as "Cas" with id = 3
+  see markDone.status = 200
+  call listChores as "Cas"
+  see listChores.body[5].title = "Bins out"
+  see listChores.body[5].assignee = "Ann"
+  see listChores.body[5].due = 2026-10-01
+  call markDone as "Ann" with id = 3
+  see markDone.status = 200
+  call listChores as "Cas"
+  see listChores.body[5].title = "Bins out"
+  see listChores.body[5].assignee = "Cas"
+}
+
+example "the next day, the next person" {
+  call markDone as "Ann" with id = 1
+  wait 1d
+  call markDone as "Ben" with id = 1
+  see markDone.status = 200
+  see markDone.body.at = 2026-09-25 09:00
+  call listChores as "Ben"
+  see listChores.body[3].title = "Dishes"
+  see listChores.body[3].assignee = "Cas"
+  see listChores.body[3].due = 2026-09-26
+}
+
+# --- the checklist ---
+
+example "every checklist item is ticked before the chore is done" {
+  call markDone as "Ben" with id = 2
+  see markDone.status = 409
+  see markDone.body.error = "Tick every checklist item first"
+  call tickItem as "Ben" with id = 2, item = 1
+  see tickItem.status = 200
+  see tickItem.body.items[1].done = true
+  call tickItem as "Ben" with id = 2, item = 2
+  call markDone as "Ben" with id = 2
+  see markDone.status = 200
+  call listChores as "Ben"
+  see listChores.body[5].title = "Bathroom"
+  see listChores.body[5].assignee = "Cas"
+  see listChores.body[5].items[1].done = false
+  see listChores.body[5].items[3].done = false
+}
+
+example "ticking a ticked item unticks it" {
+  call tickItem as "Ben" with id = 2, item = 3
+  see tickItem.status = 200
+  see tickItem.body.items[3].done = false
+}
+
+example "only the assignee ticks the checklist" {
+  call tickItem as "Cas" with id = 2, item = 1
+  see tickItem.status = 403
+  see tickItem.body.error = "Only the person this chore is assigned to can tick its checklist"
+}
+
+example "an item that is not there" {
+  call tickItem as "Ben" with id = 2, item = 9
+  see tickItem.status = 404
+  see tickItem.body.error = "No such checklist item"
+  call tickItem as "Ben" with id = 99, item = 1
+  see tickItem.status = 404
+  see tickItem.body.error = "No such chore"
+}
+
+# --- a random pick ---
+
+example "a random pick for an unassigned chore" {
+  steer random pick 2
+  call pickSomeone as "Cas" with id = 4
+  see pickSomeone.status = 200
+  see pickSomeone.body.assignee = "Ben"
+  see choreChanged.body.assignee = "Ben"
+  call pickSomeone as "Cas" with id = 4
+  see pickSomeone.status = 409
+  see pickSomeone.body.error = "This chore is already assigned"
+}
+
+example "no random pick for a chore that is not there" {
+  call pickSomeone as "Ben" with id = 99
+  see pickSomeone.status = 404
+  see pickSomeone.body.error = "No such chore"
+}
+
+# --- a parent adds chores ---
+
+example "a parent adds a chore with a checklist" {
+  call addChore as "Ann" with title = "  Garden  ", rotation = ["Ben", "Cas"], due = 2026-09-27, everyDays = 14
+  see addChore.status = 201
+  see addChore.body.id = 6
+  see addChore.body.title = "Garden"
+  see addChore.body.assignee = nothing
+  call addItem as "Ann" with id = 6, label = "Mow"
+  see addItem.status = 201
+  see addItem.body.items[1].label = "Mow"
+  see addItem.body.items[1].done = false
+}
+
+example "a chore needs a household rotation" {
+  call addChore as "Ann" with title = "Garden", rotation = [], due = 2026-09-27, everyDays = 14
+  see addChore.status = 400
+  see addChore.body.error = "A chore needs at least one person in its rotation"
+  call addChore as "Ann" with title = "Garden", rotation = ["Ben", "Zed"], due = 2026-09-27, everyDays = 14
+  see addChore.status = 400
+  see addChore.body.error = "Everyone in the rotation must be in the household"
+  call addChore as "Ann" with title = "   ", rotation = ["Ben"], due = 2026-09-27, everyDays = 14
+  see addChore.status = 400
+  see addChore.body.error = "A chore needs a title"
+}
+
+example "only a parent adds chores" {
+  call addChore as "Ben" with title = "Garden", rotation = ["Ben"], due = 2026-09-27, everyDays = 14
+  see addChore.status = 403
+  see addChore.body.error = "Not allowed"
+  call addItem as "Ben" with id = 1, label = "Rinse"
+  see addItem.status = 403
+  call addItem as "Ann" with id = 99, label = "Rinse"
+  see addItem.status = 404
+  see addItem.body.error = "No such chore"
+}
+
+example "the history survives a restart" {
+  call markDone as "Ann" with id = 1
+  restart
+  call listHistory as "Ann"
+  see listHistory.body has 3 rows
+  call markDone as "Ben" with id = 1
+  see markDone.body.id = 4
+}

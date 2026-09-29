@@ -1,4 +1,5 @@
 app EffectOrder
+language 1
 
 import pay.payments
 

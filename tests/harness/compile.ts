@@ -65,5 +65,26 @@ const check = async (j: Job) => {
 };
 for (let i = 0; i < jobs.length; i += 4) await Promise.all(jobs.slice(i, i + 4).map(check));
 rmSync(fake, { recursive: true, force: true });
-console.log(failures ? `${failures} harness compile failure(s)` : `harness compiles: ${jobs.length} builds (${jobs.filter((j) => j.elm).length} Elm), every file that does not need the model's code`);
+
+// Names that are keywords of a target (`type`, `in`, `class`, `when`, `fun`, a record `Model`, a
+// choice `Msg`) build: the harness mangles them where they are identifiers (compiler/targets/shared.ts).
+// Each spec in tests/harness/names is built whole, with a hand-written app module (stubs/), on every
+// target it has, and its examples must pass: the data (`data-el`, JSON) keeps the spec's names. Each
+// build runs in a process of its own (a build's test entry takes over the process's randomness).
+let named = 0;
+for (const spec of readdirSync("tests/harness/names").filter((f) => f.endsWith(".intent")).sort().map((f) => join("tests/harness/names", f))) {
+  const { app, diagnostics } = load(spec, { ignoreLock: true });
+  const errors = diagnostics.filter((d: { level: string }) => d.level === "error");
+  if (errors.length) {
+    failures++;
+    console.log(`${spec}: does not check: ${errors.map((d: { line: number; code: string; message: string }) => `${d.line} ${d.code} ${d.message}`).join("; ")}`);
+    continue;
+  }
+  for (const target of app.profile === "api" ? ["api"] : ["elm", "ts"]) {
+    const r = await run(process.execPath, [join(ROOT, "tests/harness/names/build.ts"), spec, target], ROOT);
+    named++;
+    if (!r.ok) (failures++, console.log(`${spec} ${target}: a build with keyword names fails\n${r.out.split("\n").slice(0, 12).join("\n")}`));
+  }
+}
+console.log(failures ? `${failures} harness compile failure(s)` : `harness compiles: ${jobs.length} builds (${jobs.filter((j) => j.elm).length} Elm), every file that does not need the model's code; ${named} builds with keyword names pass their examples`);
 process.exit(failures ? 1 : 0);

@@ -1,4 +1,4 @@
-// Sizes (`sizes compact | standard`): the size the host shows the app at comes from
+// Sizes (`sizes Compact | Standard`): the size the host shows the app at comes from
 // `globalThis.__intentSize` (a host sets it), else `?size=` in the address, else the first size
 // (runtime/ts/clock.ts hostSize). A host that changes it dispatches `intentsize` on window, and both
 // targets' browser entries show the app again at once with the new size: they are generated for

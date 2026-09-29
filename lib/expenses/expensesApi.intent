@@ -1,6 +1,7 @@
 contract expenses.expensesApi {
   "Team expenses over HTTP: employees submit, a manager who did not submit an expense decides on it. Every call carries a key (std.http.sendKey)."
 }
+language 1
 
 import expenses.expenses
 

@@ -1,6 +1,7 @@
 app PlainList {
   "A list of plain values shows each value as a row; it has no row elements."
 }
+language 1
 
 state {
   tags: List Text = []

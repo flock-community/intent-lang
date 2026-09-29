@@ -13,6 +13,8 @@ export interface Session {
   calls?(): Promise<CallOut[]>;
   through?(): Promise<Record<string, Record<string, unknown>>>;
   data?(): Promise<unknown>;
+  /** Stored fields and \`on start\`: the data right after the last restart put them back, before \`on start\` ran. */
+  restored?(): Promise<unknown>;
   clock?(): Promise<{ now: string; today: string }>;
   /** Several screens: the address the app asked for since last asked (`go to`), "back", or null. */
   nav?(): Promise<string | null>;
@@ -41,6 +43,7 @@ export interface TargetModule {
     draws: string; // apps that draw random values
     data: string; // apps with sentences in `always`
     stored: string; // apps with stored state
+    started: string; // apps with stored state and `on start`: the harness restores, then sends `Started`
     platform?: string; // apps that use platform functions (a target without it cannot build them)
     screens?: string; // apps with several screens (a target without it cannot build them yet)
   };

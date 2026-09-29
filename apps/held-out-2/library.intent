@@ -3,6 +3,7 @@ app Library {
   "A member can borrow a book when a copy is available and they have fewer than 3 books out; otherwise the loan is refused with the reason."
   "There is no real clock: the librarian advances the day number by one. Loans are due 14 days after they were made; overdue loans stand out and are counted at the top."
 }
+language 1
 
 import ui.admin
 import std.list
@@ -66,13 +67,13 @@ state {
   }
   nextLoanId: Int = 7
   search: Text = ""
-  chosen: Text = ""         # the name of the picked member; empty means nobody is picked
+  chosen: Text or nothing = nothing   # the name of the picked member; nothing: nobody is picked
 }
 
 derive {
   matching = the @books whose @title or @author contains @search trimmed, ignoring upper and lower case, in list order; all @books when @search is blank
-  chosenMember = the member whose @name is @chosen, or nothing when @chosen is empty
-  chosenLoans = the @loans whose member is the @number of @chosenMember, earliest @due first, ties by lowest @id; none when there is no @chosenMember
+  chosenMember = the member whose @name is @chosen
+  chosenLoans = the @loans whose member is the @number of @chosenMember, earliest @due first, ties by lowest @id
   chosenCount = the number of @chosenLoans
   overdueLoans = the @loans whose @due is below @today, earliest @due first, ties by lowest @id
   overdueCount = the number of @overdueLoans
@@ -115,7 +116,7 @@ screen {
           look "Success-tinted when at least one copy is available; neutral when none are."
         }
         button lend "Lend" as secondary {
-          visible when @chosen is not empty
+          visible when there is a @chosen
         }
       }
       section noBooks as EmptyState {
@@ -134,10 +135,10 @@ screen {
       text memberPanelTitle = "Member" as title
       select chosen from members.name as dropdown
       button clearMember "Clear" as ghost {
-        visible when @chosen is not empty
+        visible when there is a @chosen
       }
       section noMember as EmptyState {
-        visible when @chosen is empty
+        visible when there is no @chosen
         text noMemberTitle = "No member picked"
         text noMemberHint = "Pick a member to see their loans and lend books."
       }
@@ -148,7 +149,7 @@ screen {
         text memberCount = "{chosenCount} of 3 books out"
       }
       list memberLoans of Loan = @chosenLoans as table {
-        visible when @chosen is not empty
+        visible when there is a @chosen
         look "Rows of overdue loans (its due below today) have a light danger background."
         text book
         text loanDue = "Overdue, was due day {its @due}" when its @due is below @today, otherwise "Due day {its @due}" {
@@ -158,7 +159,7 @@ screen {
       }
       text noLoans = "No books out." {
         as caption
-        visible when @chosen is not empty and @chosenLoans is empty
+        visible when there is a @chosen and @chosenLoans is empty
       }
     }
   }
@@ -187,7 +188,9 @@ on type search {
 }
 
 on choose chosen {
-  - set @toast.message to "Showing loans of {chosen}"
+  if there is a @chosen {
+    - set @toast.message to "Showing loans of {@chosen}"
+  }
 }
 
 on click clearMember {
@@ -200,7 +203,7 @@ on click lend {
     stop
   }
   if @chosenLoans has a loan whose book is that book's @title {
-    - set @toast.message to "Cannot lend {that book's @title}: {chosen} already has it"
+    - set @toast.message to "Cannot lend {that book's @title}: {@chosenMember's @name} already has it"
     stop
   }
   if that book's @copies minus the number of @loans whose book is that book's @title is 0 or less {
@@ -208,12 +211,12 @@ on click lend {
     stop
   }
   if @chosenCount is 3 or more {
-    - set @toast.message to "Cannot lend {that book's @title}: {chosen} already has 3 books out"
+    - set @toast.message to "Cannot lend {that book's @title}: {@chosenMember's @name} already has 3 books out"
     stop
   }
-  - add a @Loan to @loans with @id @nextLoanId, book that book's @title, member the @number of @chosenMember, @lentOn @today and @due @today + 14
+  - add a @Loan to @loans with @id @nextLoanId, book that book's @title, member the @number of @chosenMember, @lentOn @today and @due 14 days after @today
   - increase @nextLoanId by 1
-  - set @toast.message to "Lent {that book's @title} to {chosen}, due day {@today + 14}"
+  - set @toast.message to "Lent {that book's @title} to {@chosenMember's @name}, due day {14 days after @today}"
 }
 
 on click takeBack {

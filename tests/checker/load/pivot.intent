@@ -1,6 +1,7 @@
 app PivotOrder {
   "A call that cannot be undone goes last: a receipt (an email) cannot be unsent, a charge can be refunded."
 }
+language 1
 
 import pay.payments
 

@@ -1,4 +1,5 @@
 // Parser + checker for .intent files. Deterministic: same text in, same IR and diagnostics out.
+import { checkDisabledClicks } from "./disabled.ts";
 import { parseDate, parseDateTime } from "../runtime/ts/fmt.ts";
 import { expandUses } from "./expand.ts";
 import { uiProfile, verbKinds } from "./profile.ts";
@@ -27,19 +28,14 @@ const LOWER = "[a-z][A-Za-z0-9]*";
 const UPPER = "[A-Z][A-Za-z0-9]*";
 const STR = '"(?:[^"\\\\]|\\\\.)*"';
 
-// Names that clash with Elm/TypeScript keywords or with names the generators emit.
+// Intent's own words: a name cannot be one. Every other name is free: the harness writes a name that
+// is a target's keyword, or a name it generates, with a trailing `_` wherever it is an identifier
+// (compiler/targets/shared.ts, `mangle`), so `type`, `in`, `class`, `when` or a record `Model` build.
 export const RESERVED = new Set([
-  // Elm
-  "if", "then", "else", "case", "of", "let", "in", "type", "module", "where", "import", "exposing", "as", "port", "alias", "infix",
-  // TypeScript / JS
-  "break", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "enum", "export", "extends", "false", "finally",
-  "for", "function", "instanceof", "new", "null", "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "void",
-  "while", "with", "yield", "let", "static", "implements", "interface", "package", "private", "protected", "public", "await", "async",
-  // generated / runtime
-  "key", // the row key in generated row types
-  "Model", "Msg", "Screen", "Button", "LabeledButton", "Pick", "Node", "Wire", "Ui", "Fmt", "Spec", "App", "Main", "Worker", "Maybe",
-  "List", "Text", "Int", "Decimal", "Bool", "String", "Float", "Just", "Nothing", "True", "False", "Tick", "Ok", "Err", "Result",
-  "Html", "Sub", "Cmd", "Json", "Dict", "Set", "Array", "Char", "Basics", "Debug", "Platform", "Task", "Time", "Browser",
+  "key", // the row key in generated row types, and a record's `key` field
+  "nothing", "true", "false", "random",
+  // the type words
+  "Text", "Int", "Decimal", "Bool", "Date", "DateTime", "List", "Maybe",
 ]);
 // The element kinds and their presentations come from the UI profile (lib/profile/ui.intent),
 // a spec in its own right: docs/design/profiles.md.
@@ -55,9 +51,6 @@ const VERB_KINDS = verbKinds(PROFILE); // verb → element kind
 const VERBS = Object.keys(VERB_KINDS).join("|");
 const CLOCK_VERBS = PROFILE.clockVerbs.map((v) => v.name).join("|");
 
-// Task is a very natural record name; allow it (Elm's Task module is not imported by generated code).
-RESERVED.delete("Task");
-
 type Err = (l: number, c: string, m: string, col?: number) => void;
 
 interface Ctx {
@@ -72,6 +65,9 @@ const QN = `${LOWER}(?:\\.${LOWER}|\\[\\d+\\])*`;
  *  prints for an expanded component, so that the expanded spec reads back as it is printed. */
 const DECL = `${LOWER}(?:\\.${LOWER})*`; // a (possibly qualified) name: pager.next; in api examples a response path: createTicket.body.items[1].id
 const BUNDLE_NAME = `${LOWER}(?:\\.${LOWER})*`;
+/** The line \`intent expand\` writes first: the spec below is expanded, so qualified names read back. */
+export const EXPANDED_LINE = "# expanded by intent expand: components are inlined, their names qualified (pager.next)";
+const EXPANDED = /^# expanded by intent expand\b/m;
 const HEADER = "[a-z0-9][a-z0-9-]*"; // a header name, lower case: access-control-allow-origin
 
 export const emptyApp = (): App => ({ name: "", components: [], purpose: [], records: [], choices: [], state: [], derive: [], screen: [], handlers: [], rules: [], examples: [], always: [] });
@@ -131,9 +127,9 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
         } else err(c.line, "SYNTAX", 'under `uses`: `tested with "path/to/provider.intent"` or `through <client layer>`', c.indent + 1);
       }
       (app.uses ??= []).push({ contract: m[1], alias: m[2], testedWith, through, ...(only ? { only } : {}), line: node.line });
-    } else if ((m = t.match(new RegExp(`^use\\s+(${LOWER})\\s*=\\s*(${LOWER}(?:\\.${LOWER})+)$`)))) {
-      // An api app runs behind a layer: \`use cors = std.http.cors\`, params bound in indented lines.
-      (app.layers ??= []).push({ alias: m[1], layer: m[2], bindings: node.children.map((c) => parseBinding(c, err, true)).filter((b): b is Binding => !!b), line: node.line });
+    } else if ((m = t.match(new RegExp(`^(use|layer)\\s+(${LOWER})\\s*=\\s*(${LOWER}(?:\\.${LOWER})+)$`)))) {
+      // An api app runs behind a layer: \`layer cors = std.http.cors\` (\`use\` is the older word), params bound in its block.
+      (app.layers ??= []).push({ alias: m[2], layer: m[3], bindings: node.children.map((c) => parseBinding(c, err, true)).filter((b): b is Binding => !!b), line: node.line, ...(m[1] === "use" ? { spelledUse: true } : {}) });
     } else if (app.kind === "layer" && (m = t.match(new RegExp(`^param\\s+(${LOWER})\\s*:\\s*([^=]+?)\\s*(?:=\\s*(.+))?$`)))) {
       const f = parseField({ ...node, text: `${m[1]}: ${m[2]}` }, err, false);
       const def = m[3] !== undefined ? parseBinding({ ...node, text: `${m[1]} = ${m[3]}` }, err) : undefined;
@@ -216,10 +212,10 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       if (!type) err(node.line, "SYNTAX", `\`${m[2]}\` is not a type`);
       else (app.events ??= []).push({ name: m[1], type, line: node.line, note: node.note });
     } else if ((m = t.match(/^sizes\s+(.+)$/))) {
-      // The sizes a host shows the screen at, smallest first: \`sizes compact | standard\`. The app
+      // The sizes a host shows the screen at, smallest first: \`sizes Compact | Standard\` (choice values; the older lower-case spelling still reads). The app
       // reads \`@size\` (a value of the choice \`Size\`: \`@Compact\`) like it reads \`@now\`.
       const words = m[1].split(/\s*\|\s*/).map((w) => w.trim());
-      if (words.length < 2 || words.some((w) => !/^[a-z][a-zA-Z0-9]*$/.test(w))) err(node.line, "SYNTAX", "`sizes compact | standard`: two or more lower-case names, the default first");
+      if (words.length < 2 || words.some((w) => !/^[A-Za-z][a-zA-Z0-9]*$/.test(w))) err(node.line, "SYNTAX", "`sizes Compact | Standard`: two or more sizes, written like choice values, the default first");
       else if (app.sizes) err(node.line, "DUPLICATE", "one `sizes` line per app");
       else {
         app.sizes = words.map((w) => w[0].toUpperCase() + w.slice(1));
@@ -246,13 +242,23 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       err(node.line, "SYNTAX", "expected `event name: Type` (the payload), for example `event ticketCreated: Ticket`");
     } else if (t.startsWith("endpoint")) {
       err(node.line, "SYNTAX", 'expected `endpoint name GET|POST|PUT|PATCH|DELETE "/path/{id}"`, or `endpoint name` when the app implements a contract');
-    } else if ((m = t.match(/^language\s+(v\d+)$/))) {
-      // The language version the spec was written for: the checker says when the language moved on.
+    } else if ((m = t.match(/^language\s+(\d+(?:\.\d+)?|v\d+)$/))) {
+      // The lowest language version the spec needs (`language 1`, `language 1.2`). A pre-1 line
+      // (`language v73`) reads as `language 1`; the checker warns and `intent fix` rewrites it.
       language = m[1];
       languageLine = node.line;
-      app.language = m[1];
+      app.language = m[1].startsWith("v") ? "1" : m[1];
     } else if (t.startsWith("language")) {
-      err(node.line, "SYNTAX", "expected `language v12`");
+      err(node.line, "SYNTAX", "expected `language 1` (or `language 1.2`: the lowest version the spec needs)");
+    } else if ((m = t.match(/^(implements|uses|import|extends)\s+"([^"]*)"/))) {
+      // A file where a name belongs (held-out round 4): say where the file lives and how it is named.
+      const file = m[2].replace(/^\.\//, "").replace(/\.intent$/, "");
+      const name = /^lib\/[a-z]\w*\/[a-z]\w*$/i.test(file) ? file.slice(4).replace("/", ".") : "<area>.<name>";
+      const what = m[1] === "implements" || m[1] === "uses" ? "contract" : m[1] === "extends" ? "published app" : "bundle";
+      const how = m[1] === "uses" ? `uses ${name} as <alias>` : `${m[1]} ${name}`;
+      err(node.line, "SYNTAX", `\`${m[1]}\` takes a ${what}'s name, not a file: \`${how}\`. A ${what} lives in \`lib/<area>/<name>.intent\` and starts with \`${what === "contract" ? "contract" : what === "bundle" ? "bundle" : "app"} <area>.<name>\` (a name is found only there); run \`intent lock\` after writing it`);
+    } else if ((m = t.match(new RegExp(`^uses\\s+(${BUNDLE_NAME})$`)))) {
+      err(node.line, "SYNTAX", `\`uses\` names the contract and the name you call it by: \`uses ${m[1]} as <alias>\` (then \`call @<alias>.<endpoint>\`)`);
     } else if (t.startsWith("import")) {
       err(node.line, "SYNTAX", "expected `import std.list` or `import std.list.Pager [as Alias]`");
     } else if (!parseBlock(node, app, ctx, "top")) {
@@ -263,6 +269,16 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   });
 
   if (!app.name) err(1, "SYNTAX", "a spec starts with `app Name` (or a library with `bundle name`)");
+  // A qualified declared name (`pager.page: Int = 1`, `button pager.next`) is what `intent expand` prints
+  // for a component's own names; it reads back only in an expanded spec, which says so on a line of its own.
+  if (!EXPANDED.test(src)) {
+    const qualified = (name: string, line: number, what: string) =>
+      name.includes(".") && err(line, "SYNTAX", `\`${name}\` is a component's own name, as \`intent expand\` prints it: declare \`${name.split(".").pop()}\` inside its component, and write \`@${name}\` where the app uses it (the app's own ${what}s have plain names)`);
+    for (const f of app.state) qualified(f.name, f.line, "state field");
+    for (const d of app.derive) qualified(d.name, d.line, "derived value");
+    const els = (xs: Element[]) => xs.forEach((e) => (qualified(e.name, e.line, "element"), els(e.children)));
+    els(app.screen);
+  }
   for (const a of app.everyAnswer ?? [])
     for (const ep of app.endpoints ?? []) if (ep.answers?.length && !ep.answers.some((x) => x.status === a.status)) ep.answers.push({ ...a });
   if (app.kind === "bundle") {
@@ -542,8 +558,8 @@ function parseEndpoint(node: Line, name: string, method: Endpoint["method"], pat
       const type = parseType(m[1]);
       if (!type) err(c.line, "SYNTAX", `\`${m[1]}\` is not a type`, c.indent + 1);
       else ep.returns = type;
-    } else if (/^(- |if\s|else\b|answer\s|stop$)/.test(c.text)) stmts.push(c);
-    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `returns Type`, `answers 201 Type`, `effect external`, `undone by …`, `- step`, `if … {`, `answer …` or `stop`", c.indent + 1);
+    } else if (/^(- |if\s|else\b|for\s+each\s|answer\s|stop$)/.test(c.text)) stmts.push(c);
+    else err(c.line, "SYNTAX", "inside an endpoint: `path|query|body name: Type`, `answers 201 Type`, `effect external`, `undone by …`, `- step`, `if … {`, `for each @x in @xs whose … {`, `answer …` or `stop`", c.indent + 1);
   }
   if (stmts.length) {
     ep.body = parseStmts(stmts, err);
@@ -649,6 +665,8 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
   if (app.imports?.length) err(app.imports[0].line, "SYNTAX", "this file imports bundles; check it with `intent check` (which resolves imports), not `parse()`");
   // Semantic checks run even after syntax errors, so one pass reports as much as possible.
   else if (app.name && app.kind !== "bundle" && app.kind !== "platform") {
+    // `Problem` is the body of every refusal (`{ "error": "…" }`), built in for services and contracts, as load() has it.
+    if ((app.profile === "api" || app.kind === "contract") && !app.records.some((r) => r.name === "Problem")) app.records.push({ name: "Problem", fields: [{ name: "error", type: { k: "Text" }, line: 0 }], line: 0 });
     const used = expandUses(app, err, warn);
     jobScreen(app, err);
     check(app, err, warn, clockLine, used);
@@ -658,6 +676,7 @@ export function parse(src: string): { app?: App; diagnostics: Diagnostic[] } {
     checkFit(app, err, new Set(diagnostics.filter((d) => d.code === "SYNTAX").map((d) => d.line)));
     checkDraws(app, err);
     checkBodies(app, err);
+    checkDisabledClicks(app, err);
     checkEffects(app, err);
     checkScreens(app, err);
     checkAccess(app, err, warn);
@@ -681,6 +700,7 @@ export function checkApp(app: App, clockLine: number, used = new Set<string>(), 
   checkFit(app, err, syntaxLines);
   checkDraws(app, err);
   checkBodies(app, err);
+  checkDisabledClicks(app, err);
   checkEffects(app, err);
   checkScreens(app, err);
   checkAccess(app, err, warn);
@@ -971,12 +991,14 @@ function parseStmts(children: Line[], err: (l: number, c: string, m: string, col
       const prev = out[out.length - 1];
       if (!prev || prev.k !== "if" || prev.branches[prev.branches.length - 1].cond === undefined) err(c.line, "SYNTAX", "`else` belongs right after an `if` block: `} else {`", c.indent + 1);
       else prev.branches.push({ cond: m[1], body: parseStmts(c.children, err), line: c.line });
-    } else if ((m = c.text.match(/^for\s+each\s+@?([a-z]\w*)\s+in\s+@?([a-z]\w*(?:\.[a-z]\w*)*)(?:\s+where\s+(.+))?$/))) {
-      if (!c.children.length) err(c.line, "SYNTAX", "`for each …` needs a block: `for each @x in @xs where … {` with the steps inside, then `}`", c.indent + 1);
-      out.push({ k: "for", name: m[1], list: `@${m[2]}`, where: m[3], body: parseStmts(c.children, err), line: c.line });
+    } else if ((m = c.text.match(/^for\s+each\s+@?([a-z]\w*)\s+in\s+((?:its\s+@|(?:that|this)\s+[a-z]\w*['’]s\s+@|@)?[a-z]\w*(?:\.[a-z]\w*)*(?:['’]s\s+@[a-z]\w*)*)(?:\s+(where|whose)\s+(.+))?$/))) {
+      // The list: a state list or a derived one (\`@xs\`), or a row's inner list (\`that chore's @steps\`, \`its @items\`).
+      if (!c.children.length) err(c.line, "SYNTAX", "`for each …` needs a block: `for each @x in @xs whose … {` with the steps inside, then `}`", c.indent + 1);
+      const list = /^[a-z]/.test(m[2]) && !/^(?:its|that|this)\s/.test(m[2]) ? `@${m[2]}` : m[2];
+      out.push({ k: "for", name: m[1], list, where: m[4], ...(m[3] === "whose" ? { whose: true } : {}), body: parseStmts(c.children, err), line: c.line });
     } else if ((m = c.text.match(/^answer\s+(.+)$/))) out.push({ k: "answer", text: m[1], line: c.line });
     else if (c.text === "stop") out.push({ k: "stop", line: c.line });
-    else err(c.line, "SYNTAX", "a step is `- sentence`, `if <condition> {`, `for each @x in @xs where … {`, `} else {`, `answer …` or `stop`", c.indent + 1);
+    else err(c.line, "SYNTAX", "a step is `- sentence`, `if <condition> {`, `for each @x in @xs whose … {`, `} else {`, `answer …` or `stop`", c.indent + 1);
   }
   return out;
 }
@@ -989,7 +1011,7 @@ export function flattenBody(body: Stmt[]): { steps: string[]; lines: number[] } 
     for (const s of b) {
       if (s.k === "step") (steps.push(s.text), lines.push(s.line));
       else if (s.k === "answer") (steps.push(`answer ${s.text}`), lines.push(s.line));
-      else if (s.k === "for") (steps.push(`for each @${s.name} in ${s.list}${s.where ? ` where ${s.where}` : ""}`), lines.push(s.line), walk(s.body));
+      else if (s.k === "for") (steps.push(`for each @${s.name} in ${s.list}${s.where ? ` ${s.whose ? "whose" : "where"} ${s.where}` : ""}`), lines.push(s.line), walk(s.body));
       else if (s.k === "if")
         for (const br of s.branches) {
           if (br.cond !== undefined) (steps.push(`if ${br.cond}`), lines.push(br.line));
@@ -1474,7 +1496,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return;
   }
   if ((m = t.match(/^tick(?:\s+(\d+)\s+times?)?$/))) return { step: { do: "tick", times: Number(m[1] ?? 1), line } };
-  if ((m = t.match(/^size\s+([a-z][a-zA-Z0-9]*)$/))) return { step: { do: "size", size: m[1][0].toUpperCase() + m[1].slice(1), line } };
+  if ((m = t.match(/^size\s+([A-Za-z][a-zA-Z0-9]*)$/))) return { step: { do: "size", size: m[1][0].toUpperCase() + m[1].slice(1), line } };
   if ((m = t.match(/^wait\s+(\d+)\s+(seconds?|minutes?|hours?|days?)$/))) {
     err(line, "SYNTAX", `write the time as \`wait ${m[1]}${m[2][0] === "s" ? "s" : m[2][0]}\` (s, m, h or d)`, col);
     return;
@@ -1568,7 +1590,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       const times = c.values.filter((x) => x === v).length;
       if (times > 1) err(c.line, "DUPLICATE", `value \`${v}\` is listed ${times} times in choice ${c.name}; list each value once`);
       if (valueOwner.has(v)) err(c.line, "DUPLICATE", `value \`${v}\` is already used by choice ${valueOwner.get(v)!.name}; choice values must be unique across the app`);
-      else if (typeNames.has(v)) err(c.line, "DUPLICATE", `value \`${v}\` clashes with a type name`);
+      else if (typeNames.has(v) || app.refined?.some((r) => r.name === v)) err(c.line, "DUPLICATE", `value \`${v}\` clashes with a type name: choice values, records, choices and refined types share one namespace (\`@${v}\` must name one thing)`);
       valueOwner.set(v, c);
       checkReserved(v, c.line);
     }
@@ -1777,7 +1799,9 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       case "select":
         if (el.from) {
           const f = list ? rowField : st;
-          if (!f || f.type.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits \`${el.name}\` in ${where}, which must be Text${list ? ` (add \`${el.name}: Text\` to ${list.of})` : ""}`);
+          // What is chosen, or nothing: `Text or nothing` (a plain `Text` with "" for none is the older spelling).
+          const ft = f && (f.type.k === "Maybe" ? f.type.of : f.type);
+          if (!f || ft?.k !== "Text") err(el.line, "BAD_BINDING", `\`select ${el.name} from …\` edits \`${el.name}\` in ${where}, which must be \`Text or nothing\` (nothing: none is chosen)${list ? ` (add \`${el.name}: Text or nothing = nothing\` to ${list.of})` : ` (\`${el.name}: Text or nothing = nothing\` in state)`}`);
           const src = state.get(el.from.list);
           // Inside an inner row the options may also come from a list field of a row it is in (the outer row's).
           const rowSrc = path.slice(0, -1).map((l) => records.get(l.of!)?.fields.find((x) => x.name === el.from!.list)).find((x) => !!x);
@@ -1984,7 +2008,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     for (const s of ex.steps) {
       if (s.do === "tick") {
         // `tick` needs a clock tick; `wait` needs one, or an app that reads the clock (@now, @today).
-        if (!app.clockMs && !(s.ms && usesClock(app))) err(s.line, "STEP", s.ms ? "`wait` moves the clock on: it needs `clock every …`, or sentences that read `@now` or `@today`" : "`tick` needs a `clock every …` block");
+        if (!app.clockMs && !(s.ms && (usesClock(app) || app.clients?.some((c) => c.providerClock)))) err(s.line, "STEP", s.ms ? "`wait` moves the clock on: it needs `clock every …`, or sentences that read `@now` or `@today` (here or in a provider named in `tested with`)" : "`tick` needs a `clock every …` block");
         continue;
       }
       if (s.do === "call" && s.endpoint.includes(".")) {
@@ -2030,8 +2054,8 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       }
       if (s.do === "size") {
         if (ex.line === 0) err(s.line, "SYNTAX", "`always` holds only `see` checks");
-        else if (!app.sizes) err(s.line, "STEP", "`size …` shows the app at another size: declare them first, `sizes compact | standard`");
-        else if (!app.sizes.includes(s.size)) err(s.line, "UNKNOWN_NAME", `no size \`${s.size[0].toLowerCase() + s.size.slice(1)}\` (${app.sizes.map((x) => x[0].toLowerCase() + x.slice(1)).join(", ")})`);
+        else if (!app.sizes) err(s.line, "STEP", "`size …` shows the app at another size: declare them first, `sizes Compact | Standard`");
+        else if (!app.sizes.includes(s.size)) err(s.line, "UNKNOWN_NAME", `no size \`${s.size}\` (${app.sizes.join(", ")})`);
         continue;
       }
       if (s.do === "restart") {
@@ -2206,6 +2230,8 @@ function checkApi(
 ) {
   const eps = new Map<string, Endpoint>();
   if (app.screen.length) err(app.screen[0].line, "SYNTAX", "an api has endpoints, not a screen");
+  // An api starts from its state's defaults and what it stored; nothing runs when it starts (so far).
+  for (const h of app.handlers) if (h.verb === "start") err(h.line, "NOT_YET", "an api has no `on start` yet: it starts from its state's defaults and what it stored; write what it starts with as the state's default (seed data as a table)");
   if (!app.endpoints?.length) err(1, "SYNTAX", "an api needs at least one `endpoint`");
   const routes = new Set<string>();
   for (const ep of app.endpoints ?? []) {

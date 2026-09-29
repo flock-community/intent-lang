@@ -1,5 +1,6 @@
 app WordCount
   "Count the words in a piece of text."
+language 1
 
 state
   text: Text = ""

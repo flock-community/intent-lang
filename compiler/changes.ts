@@ -43,6 +43,20 @@ export function changeWords(text: string): string[] {
   return [...[...t.matchAll(BEFORE_RE)].map((m) => `${m[1]} before`), ...[...t.matchAll(WAS_RE)].map((m) => m[0]), ...[...t.matchAll(DELTA_RE)].map((m) => m[0])];
 }
 
+/**
+ * The same words written more loosely, for a condition outside \`always\` (held-out round 4, K9): a
+ * row's field without its \`@\` (\`that item's done was true\`, \`that item was done\`), \`used to be\`,
+ * \`the previous @x\`. Only \`always\` reads the state before a step, so each is a \`CHANGE\` there.
+ */
+export function looseChangeWords(text: string): string[] {
+  const t = codeOf(text);
+  const out = changeWords(text);
+  for (const m of t.matchAll(/\b(?:that|this|its)\s+@?[a-z]\w*(?:['’]s\s+@?[a-z]\w*)*\s+was\b/g)) out.push(m[0]);
+  for (const m of t.matchAll(/(?:@?[a-z][\w.]*(?:['’]s\s+@?[a-z]\w*)*\s+)?used\s+to\s+be\b/g)) out.push(m[0].trim());
+  for (const m of t.matchAll(/\bthe\s+previous\s+@?[a-z][\w.]*/g)) out.push(m[0]);
+  return [...new Set(out)];
+}
+
 const NAMED = /^(.+?)\s+(never\s+changes|never\s+goes\s+(down|up)|only\s+changes\s+from\s+(.+)|(?:is|are)\s+never\s+removed)$/;
 
 /** A sentence's change form: a named one (with its parts), or the general form, or none (a one-moment rule). */

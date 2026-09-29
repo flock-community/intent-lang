@@ -1,0 +1,92 @@
+contract home.choresApi
+language 1
+
+choice Role: Member | Parent
+
+type Title = Text of length 1 to 60
+type Days = Int from 1 to 365
+
+record Person {
+  who: Text                    # a person in the household, as the key layer names them
+  role: Role
+}
+
+record Item {
+  id: Int
+  label: Text
+  done: Bool = false
+}
+
+record Chore {
+  id: Int
+  title: Text
+  rotation: List Text          # the people who take turns at this chore, in turn order
+  assignee: Text or nothing = nothing  # whose turn it is now; nothing: nobody has it yet
+  due: Date
+  everyDays: Int               # when done, it is due again this many days after that day
+  items: List Item = []        # the checklist; every item is ticked before the chore is done
+}
+
+record Completion {
+  id: Int
+  chore: ref Chore
+  title: Text                  # the chore's title when it was done
+  who: Text
+  at: DateTime
+}
+
+every endpoint answers 401 Problem
+every endpoint answers 403 Problem
+
+endpoint me GET "/me" {
+  answers 200 Person
+  answers 404 Problem
+}
+
+endpoint listChores GET "/chores" {
+  answers 200 List Chore
+}
+
+endpoint listHistory GET "/history" {
+  answers 200 List Completion
+}
+
+endpoint addChore POST "/chores" {
+  body title: Title
+  body rotation: List Text
+  body due: Date
+  body everyDays: Days
+  answers 201 Chore
+  answers 400 Problem
+}
+
+endpoint addItem POST "/chores/{id}/items" {
+  path id: ref Chore
+  body label: Title
+  answers 201 Chore
+  answers 404 Problem
+}
+
+endpoint tickItem POST "/chores/{id}/items/{item}/tick" {
+  path id: ref Chore
+  path item: Int
+  answers 200 Chore
+  answers 404 Problem
+}
+
+endpoint markDone POST "/chores/{id}/done" {
+  path id: ref Chore
+  answers 200 Completion
+  answers 404 Problem
+  answers 409 Problem
+}
+
+endpoint pickSomeone POST "/chores/{id}/pick" {
+  path id: ref Chore
+  answers 200 Chore
+  answers 404 Problem
+  answers 409 Problem
+}
+
+event choreDone: Completion
+event choreChanged: Chore

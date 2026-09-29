@@ -58,18 +58,27 @@ todo list, `always` rules, reusable components and designs, improving someone el
 HTTP API with a contract, layers for CORS and API keys, a screen that talks to the API and
 follows other people's changes, and signing in with a key. Every snippet is from a real spec.
 
-What the language covers today:
+What the language covers (Intent 1):
 
 | | |
 |---|---|
-| Screens | state, derived values, lists of records and of plain values, records that refer to each other (`ref`, with declared keys), sections, templates, handlers, examples, `always` rules, a clock |
+| Screens | state, derived values, lists of records and of plain values, lists inside list rows, records that refer to each other (`ref`, followed with `'s`), `T or nothing` with checked handling, several screens, templates, handlers, a clock, random values drawn from a type |
+| Rules | examples, `always` rules on the screen, sentences over the data, rules over changes (`never goes down`, `only changes from @A to @B`) |
 | Looks | a `design`, presentations (`as table`, `as sidebar`), `look "…"` in words, styled builds checked in a browser |
-| Reuse | bundles, behaviour components (`use pager = Pager`), refinement (`extends`, `override`), a registry with versions |
-| APIs | `profile api`, endpoints, `@path.x`/`@body.x` to tell a param from a field, contracts with every answer and event, layers (`std.http.cors`, `std.http.apiKey`, `std.http.secure`) |
+| Reuse | bundles, behaviour components (`use pager = Pager`), refinement (`extends`, `override`), a registry with computed versions |
+| APIs | `profile api`, endpoints, contracts with every answer and event, layers (`std.http.cors`, `std.http.apiKey`, `std.http.secure`), `access` rules the harness enforces and audits, effects that happen once |
 | Screens + APIs | `uses <contract>`, calls and answers, events from other clients, client layers (`through std.http.sendKey`), agreement (`through std.actions`) |
+| Hosts | jobs without a screen (`profile job`), `sizes`, a manifest of what an app uses |
+
+**Intent 1 is the first stable version.** A spec says `language 1` (a spec without the line means
+the same). A spec that checks and passes its examples under `language 1` keeps doing so, with the
+same meaning, under every `1.x` compiler: [`docs/STABILITY.md`](docs/STABILITY.md) is the promise.
+The pre-1 versions v1–v73 are the development history in [`docs/CHANGELOG.md`](docs/CHANGELOG.md);
+a pre-1 `language vNN` line still reads, as `language 1`, and `intent fix` rewrites it.
 
 - Language reference: [`docs/LANGUAGE.md`](docs/LANGUAGE.md) (also the compiler's prompt: one source of truth).
-- Example specs of increasing difficulty: [`apps/`](apps) (21 screens) and [`apps/api/`](apps/api) (6 APIs).
+  The commands, locking, the registry and the checker's codes: [`docs/TOOLS.md`](docs/TOOLS.md).
+- Example specs of increasing difficulty: [`apps/`](apps) (37 screens and jobs) and [`apps/api/`](apps/api) (12 APIs).
 - `language.md` is the earlier, broader v0.1 design (in Dutch). This project is its app profile.
 
 ## For LLMs: the spec-writing skill
@@ -87,7 +96,7 @@ npm ci                                              # Node 22+; the compiler's t
 npx playwright install chromium                     # the browser the examples and browser tests run in
 node compiler/cli.ts doctor                         # is this machine and project ready to build?
 node compiler/cli.ts check apps/*.intent            # syntax + consistency checker (add --json for editors)
-node compiler/cli.ts fix apps/03-tipsplit.intent     # the checker's mechanical fixes (adds `language v39`)
+node compiler/cli.ts fix apps/03-tipsplit.intent     # the checker's mechanical fixes (adds `language 1`)
 node compiler/cli.ts review apps/09-board.intent    # what does the spec leave to defaults? (1 LLM call)
 node compiler/cli.ts expand apps/14-supportdesk.intent   # the spec exactly as the compiler reads it
 node compiler/cli.ts build apps/02-todo.intent      # → runs/single/02-todo/{elm,ts}/index.html
@@ -132,6 +141,10 @@ compiler {
   budget 0                   # stop calling the LLM after this many US dollars (0: no limit)
 }
 ```
+
+`intent.lock` pins the language (`@language 1 sha256:…`, the reference's hash) and the model. A
+changed model is a `LOCK` warning for `intent check`, and `intent build` and `intent converge`
+refuse until `intent lock` has pinned it again.
 
 Keys never go in a file. The `claude-cli` provider runs the Claude Code CLI with its own sign-in
 (`claude login`, or `ANTHROPIC_API_KEY` in the environment). The `anthropic` provider
@@ -205,24 +218,29 @@ in 20 of 40 sessions.
 
 ## Results
 
-Final run (r5): 9 apps × 2 targets × 5 independent builds = 90 builds, 80 sessions × 30 actions per app.
+Latest full run (v63, `runs/r63-converge/`): 12 apps × 2 targets × 3 independent builds = 72
+builds, 40 sessions × 25 actions per app.
 
 | App | Builds OK | First-try OK | `always` held | Same app: all | Elm | TS | Elm≡TS | Code sim. Elm / TS | Cost |
 |---|---|---|---|---|---|---|---|---|---|
-| Counter | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 100% / 100% | $0.58 |
-| Todo | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 75% / 53% | $0.81 |
-| TipSplit | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 69% / 72% | $0.88 |
-| Pomodoro | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 96% / 85% | $0.76 |
-| Wordle | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 49% / 53% | $1.04 |
-| Expenses | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 42% / 48% | $1.62 |
-| Shop | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 70% / 40% | $1.28 |
-| Calculator | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 48% / 63% | $1.23 |
-| Board | 10/10 | 10/10 | 10/10 | 100% | 100% | 100% | 100% | 45% / 46% | $0.97 |
+| Counter | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 85% / 100% | $1.84 |
+| Todo | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 74% / 58% | $2.00 |
+| Pomodoro | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 93% / 86% | $1.97 |
+| Wordle | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 62% / 60% | $2.12 |
+| Expenses | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 40% / 30% | $2.50 |
+| Shop | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 54% / 76% | $2.31 |
+| Calculator | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 58% / 78% | $2.21 |
+| Board | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 43% / 44% | $2.06 |
+| Crm | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 69% / 66% | $2.96 |
+| Habits | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 65% / 65% | $2.44 |
+| Library | 6/6 | 3/6 | 6/6 | 100% | 100% | 100% | 100% | 60% / 58% | $4.40 |
+| Reservations | 6/6 | 6/6 | 6/6 | 100% | 100% | 100% | 100% | 49% / 57% | $3.01 |
 
 *Same app* = share of random sessions in which every build showed identical screens after every action.
-Code similarity is only 40–75%: the builds are written differently but behave identically,
-which is the point. A build takes about 20–40 s and $0.06–0.16. The whole experiment
-(5 converge runs, about 200 builds) cost about $21.
+Three Library Elm builds forgot the clock argument on the first try; the repair fixed each. Code
+similarity is only 30–100%: the builds are written differently but behave identically, which is
+the point. The run cost $29.82. The first final run (r5, v4: 9 apps × 2 targets × 5 builds) was
+90/90 first try and 100% the same app, and the first five rounds (about 200 builds) cost about $21.
 
 What each round taught (all numbers are from `runs/history.jsonl`):
 
@@ -233,7 +251,11 @@ What each round taught (all numbers are from `runs/history.jsonl`):
 | r2 re-test | guided exploration from example prefixes | Blind sessions never reached a single debt settlement in Expenses (75% of actions unavailable). Guided: 0% unavailable, twice as many distinct screens. Still 100% same app. |
 | r3 (v3) | calculator (edge-case heavy), casually written board; `on row with "…"`, `Fmt.decimal` | Even the casual spec converged 100%, including states like **"Doing 4/3"**. **Stable is not correct:** a literal compiler turns a vague spec into consistent, unintended behaviour. |
 | r4 (v4) | `always` invariants, `intent review` | All 6 board builds refused to compile, each with the same `SPEC CONFLICT` pointing at the missing guard. After a one-line fix: 6/6 OK, invariant held. `review` then found all 5 remaining gaps for $0.07. |
-| r5 (v4) | final: 9 apps × 2 targets × 5 builds | see table above |
+| r5 (v4) | final: 9 apps × 2 targets × 5 builds | 90/90 first try, 100% same app, Elm≡TS 100%. |
+| r29 (v29) | 12 apps, control words as structure (`if`, `answer`, `stop`) | 72/72 first try, 100% same app (`runs/r29-converge/`). |
+| r35 (v35) | the same 12 apps after stored state, effects and effectively-once calls | 72/72 first try. One ambiguity: a trailing "." in a calculator number (90% same app). A spec fix and 6/6 again (`runs/r35-calculator-fix/`). |
+| r63 (v63) | the same 12 apps after typed references, typed operators and `NO_ROW` | see table above |
+| v68–v70 | new apps: checklists, order lines, recipes (lists inside rows), dice and cards (random values), the desk API with `access` | every build OK, 100% same app, Elm≡TS 100% where both targets apply (`runs/history.jsonl`). |
 
 ## Phase 2: styled apps (the hard part)
 
@@ -358,7 +380,7 @@ tuned for; both reuse `ui.admin`, `std.list` and `std.feedback`.
   A "local layout" metric (position relative to the parent) was added next to the absolute
   one; it is fairer but not perfect. The gap with tuned apps (87–99%) is real: more Kit
   recipes and layout defaults are needed before new specs converge as tightly.
-- **The authors' feedback became language v11:** reserved names listed and narrowed
+- **The authors' feedback became v11:** reserved names listed and narrowed
   (`Event` is free; the generated type is now `Msg`), `visible when` on `use`, `as` on its own
   line, handler idioms (`and stop`, `otherwise`, `its`), a Pager that never shows a page past
   the end, and the module system documented in the reference (they had to learn it from a
@@ -380,10 +402,25 @@ not. The language now says `""` is a placeholder, never an option, and observati
 it. Looks on new specs improved (Reservations 82–97%, against 40–64% in the first round), but
 still vary per spec.
 
+### Third held-out round (v63)
+
+Two new authors wrote an expense approvals screen and a parcel lockers API from the reference
+alone (`apps/held-out-3/`, `runs/r63-held-out-3/`).
+
+| App | First try | Same app | Elm≡TS |
+|---|---|---|---|
+| Expense approvals | 6/6 | 100% | 100% |
+| Parcel lockers (api, TypeScript only) | 3/3 | 100% | – |
+
+Behaviour held. What the authors could not say became language: typed conditions (v64), rules
+over changes (v67: the approvals wanted "an approved expense never changes"), random codes (v69: the
+lockers made a pickup code from the digits of a hash) and access rules (v70: the approvals promised
+"a manager approves", which only prose could say).
+
 ## Phase 4: refinement — improving someone else's app
 
 A spec can `extends` a published app and name its changes: `override`, `add to … after …`,
-`drop` (language v13, §4c). Test: the bundled helpdesk was published as
+`drop` (v13, §4e). Test: the bundled helpdesk was published as
 `lib/support/helpdesk.intent`, and `apps/14-supportdesk.intent` refines it. It gets a
 different title, triages by priority by default, and adds an SLA note.
 
@@ -428,8 +465,10 @@ again. `docs/design/incremental.md`.
 
 **Dependencies:** `intent.project` lists a registry and requirements. `intent install` resolves
 them with minimal version selection, downloads into `.intent/deps/` and pins versions and
-hashes in `intent.lock`. `intent publish` computes the version from the bundle's names and its
-demo's behaviour. `examples/consumer/` depends only on the published helpdesk (which pulls in
+hashes in `intent.lock`. `intent publish` computes the version from the bundle's names, its
+record field types, a contract's endpoints, events and choice wire names, its `always` and change
+rules, and its demo's examples: removing or changing any of them is a major version.
+`examples/consumer/` depends only on the published helpdesk (which pulls in
 four more bundles) and refines it, with no local `lib/`. `registry/` is a sample registry.
 
 ## Phase 6: APIs, contracts, layers, and screens that call them
@@ -591,7 +630,7 @@ has its own address in the browser (the page's `<meta name="intent-api" content=
 `std.http.secure` (safe headers), `std.http.cors` (which web pages may call) and
 `std.http.apiKey` (who calls; provides `caller` to every endpoint). Each is a spec of its own
 with examples, compiled once, twin-verified and cached. An api uses one with
-`use cors = std.http.cors` and binds its params, and the verified module is copied in, not
+`layer cors = std.http.cors` and binds its params, and the verified module is copied in, not
 recompiled. `apps/api/desk-api.intent` runs behind all three, and what an agent may do depends
 on the caller. All three layers and the desk API built on the first attempt and were
 twin-verified. Random sessions reached every status the spec names (401, 403, 404, 409 and the
@@ -603,10 +642,69 @@ not. The spec now says a blank header counts as absent, with an example. The sam
 off-by-one in the ambiguity report for api and layer sessions (it stopped one request before the
 request that differed), which is fixed.
 
+## Phase 7: toward language 1 (v59–v73)
+
+Two reviews (v59 of v38–v58, v73 before the freeze) cut the language to one spelling per form.
+Every old spelling still reads, as a `SPELLING` warning that `intent fix` rewrites. What came in:
+
+- **Typed references** (v49, reworked in v59; followed since v66). `ticket: ref Ticket` holds the
+  key of another record (its field marked `key`, or `id`); `its @ticket's @subject` follows it.
+  `T or nothing` works like Kotlin's `T?`: using it where a `T` is needed is a `NOTHING` error,
+  unless a guard or `…, or X when there is none` handles it. The common phrases and operators are
+  typed (v61, v62; `intent check --typed` shows what is left to judgement), and "that ticket" must
+  name a row introduced before it (`NO_ROW`, v63).
+- **Quality rule sets** (v63). Hints about completeness and style (`UNPROVEN`, `UNCHECKED`,
+  `SPELLING`, …) live apart from the compiler's checks, in `std.quality`
+  (`compiler/quality/std.ts`, run by `compiler/quality.ts`), or a team's own module; the level of
+  each rule is set in `intent.project`'s `quality` block.
+- **From a real host** (v60, OurOS): a manifest per api (`uses x as y only …`), `profile job` (an
+  app without a screen, `job.mjs`), `sizes`, wire names for choice values, bounded `Text`.
+- **Rules over changes** (v67): `… never changes`, `… never goes down`, `an @Expense's @status only
+  changes from @Pending to @Approved or @Rejected`, `an @Expense is never removed`, checked by the
+  harness itself after every step, with no LLM.
+- **Lists inside list rows** (v68): a task with its own checklist, an order with its lines.
+- **Random values** (v69): drawn from a type that lists its values (a choice, `Int from 1 to 6`,
+  `Text of 6 digits`), by the harness, never the build; examples `steer` them.
+- **Access control** (v70): an api's `access` block says who may call which endpoint and hear
+  which event. The harness enforces it before the endpoint runs (deny by default), refuses with 403
+  and the rule's message, and writes an audit line per decision. `intent mutate` drops each rule
+  in turn and names the rules no example misses. An api whose key layer says who calls but that
+  has no `access` block is `NO_ACCESS`, an error.
+- **Security and robustness** (v71, v72): an independent review of the compiler, harness and
+  runtime closed access and key holes; fuzzed and mutated specs no longer crash or hang the checker,
+  `intent fix` or the printer.
+- **Tools apart** (v73): the reference says only what the language is (106 KB as a prompt); the
+  commands, locking and the checker's codes moved to [`docs/TOOLS.md`](docs/TOOLS.md).
+
+**Language 1** stamps v73 as the first stable version (see the top of this file and
+[`docs/STABILITY.md`](docs/STABILITY.md)). The final measurements on language 1:
+
+| Round | Result |
+|---|---|
+| Converge, the r63 set (12 apps, 3 builds per target, 40 sessions; `runs/r1-converge/`) | 72/72 builds, 70/72 first try, 100% same app, Elm≡TS 100% |
+| Converge, every other spec (43, one build per target, two for services; `runs/r1-all/`) | 86/86 builds, 100% same app, Elm≡TS 100% after one fix (Elm read some call answers differently; `tests/answers-parity.test.ts`) |
+| Planted bugs (`runs/r1-planted/`) | 9 bugs in 8 apps (examples, `always`, change rules, draws, nested rows, references) and every access rule on 4 apis: all caught |
+| Second provider, DeepSeek (`runs/r1-deepseek/`) | 22/22 builds, 20/22 first try, 100% same app |
+| Held-out round 4, three new authors (`runs/r1-held-out-4/`) | todo grown in 8 small requests, a chores app and a clinic booking app; after the fixes they found, every spec builds and converges 100% the same (chores and clinic 4/4 first try) |
+
+Round 4's authors found a harness bug (a screen could not be tested against an api that draws),
+nine checker bugs and a set of reference gaps; they are fixed in language 1 (see the changelog),
+and the larger wishes are candidates for 1.x.
+
+**Reviews** (`docs/reviews/`): the language review at v10 (`language-review.md`, the source of the
+structured grammar, references, invariants and versioned bundles), openouros as a real app at v21
+(`openouros.md`, specs in `runs/openouros/`), what makes a modern language good at v29
+(`modern-languages.md`), why Intent has its own contracts instead of Wirespec (`wirespec.md`), and a
+fixed scorecard (`scorecard.md`) scored by independent reviewers: 70.4 at v26, 74.0 at v29 and 78.4
+at v36 (`scores/`).
+
 ## Layout
 
 ```
 docs/LANGUAGE.md      language reference (also sent to the LLM)
+docs/TOOLS.md         commands, locking, the registry, the checker's codes
+docs/STABILITY.md     what language 1 promises
+docs/CHANGELOG.md     v1–v73 and the next candidates
 apps/*.intent         example specs, easy → hard
 compiler/
   parse.ts            parser + checker (syntax checker, lints)
@@ -618,7 +716,7 @@ compiler/
     index.ts            the targets there are
   prompt.ts           the compiler prompt (language-neutral; each target adds its own part)
   llm.ts              the LLM as a provider module (INTENT_LLM, INTENT_MODEL)
-  providers/          one module per LLM provider: claude-cli.ts (the Claude Code CLI)
+  providers/          one module per LLM provider: claude-cli.ts, anthropic.ts, openai.ts
   tools.ts            the toolchains (elm, tsc, esbuild), from the installation
   build.ts            one build: scaffold → LLM → compile → examples → invariants, repair loop
   exec.ts             runs examples / sessions against a build (Elm worker or TS bundle)
@@ -636,12 +734,16 @@ compiler/
   api.ts              api profile: the test driver (examples, random requests, restarts)
   calls.ts            screens that call APIs: endpoints, events, client layers (targets write the types)
   layer.ts            layers: binding params, the driver around a stub app, random requests
+  quality.ts          quality rule sets (`std.quality` in quality/std.ts), apart from the checks
+  fix.ts              `intent fix`: the checker's mechanical rewrites, kept only when they add no error
+  changes.ts          rules over changes (`never goes down`, `only changes from`), checked by the harness
+  draws.ts            random values: the draw forms, where they are, their checks
   access.ts           an api's `access` block: the rule grammar, its checks, the plan the harness enforces
   mutate.ts           `intent mutate`: each access rule dropped, on existing builds; which ones no example misses
   registry.ts         `intent install` / `intent publish`
-lib/                  bundles: std.list, std.feedback, ui.admin, support.tickets
+lib/                  bundles, contracts and layers: std.*, std.http.*, ui.admin, support.*, pay, …
 runtime/{elm,ts}      Ui (renderer, node model) and Fmt, identical per target
-tests/                checker regression, Fmt parity
+tests/                checker regression, Fmt parity, the harness snapshot, doc snippets
 runs/                 build outputs and reports (history.jsonl is kept)
 ```
 
@@ -651,14 +753,20 @@ runs/                 build outputs and reports (history.jsonl is kept)
   `grid`, `row` and `sidebar`, but sizes are still words in `look`.
 - The Kit's drawer has no backdrop and overlaps the page: consistent in every build, but a
   design flaw. Stable is not the same as good.
-- No randomness yet (except `@newToken`). HTTP calls (v20) and stored state
-  (v32) show the pattern for each: the harness owns the effect, and the spec names it.
+- Chance is uniform draws from types that list their values (v69): weights and other
+  distributions are not in the language yet. As with HTTP calls (v20) and stored state (v32), the
+  harness owns the effect, and the spec names it.
 - Styled builds of screens that make calls are not in the harness yet.
 - Behaviour sentences are natural language. Stability comes from the typed interface,
   the defaults, the examples and the invariants, not from a formal semantics. The
   pipeline measures what that buys, and so far it buys a lot.
-- `always` holds `see` checks on the screen and sentences over the data (v31). Those sentences
-  are compiled by a separate stage, so a check is only as right as its reading of the sentence;
-  it is compiled once per spec and shared by every build, never by the app's own compiler.
-- Stability across *spec edits* (rebuild only what changed, keep the rest) is not tested.
-  Every build here is from scratch.
+- `always` holds `see` checks on the screen, rules over changes (read by the harness itself) and
+  sentences over the data (v31). Those sentences are compiled by a separate stage, twice (a probe
+  reading), so a check is only as right as its reading of the sentence; it is shared by every
+  build, never written by the app's own compiler.
+- Incremental builds (rebuild only what changed) are off by default. Measured on four apps, 10 of 10
+  recorded edits kept a verified build (`runs/incremental-edits.md`), but on a larger app the model
+  did not mark every handler and the build fell back to a full one. Every result above is from scratch.
+- What may come next, for `1.x` or `language 2`, is in [`docs/CHANGELOG.md`](docs/CHANGELOG.md),
+  "Next candidates": a terminal renderer of the same screens, trees and a third level of rows, access
+  beyond v1 (field-level access, tenants, bearer tokens) and weighted draws.

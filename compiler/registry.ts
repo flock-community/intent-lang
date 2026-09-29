@@ -10,7 +10,8 @@
 import { fromBraces } from "./braces.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import type { App } from "./ast.ts";
+import type { App, Type } from "./ast.ts";
+import { stepText } from "./print.ts";
 import { PROJECT_ROOT } from "./gen.ts";
 import { parseSyntax } from "./parse.ts";
 
@@ -159,11 +160,32 @@ export const depPath = (name: string, version: string) => join(DEPS, `${name}@${
 
 // ---------------------------------------------------------------- publishing
 
-/** The exported surface of a bundle: names, record fields, choice values, component params and elements. */
+/**
+ * The exported surface of a bundle: names, record fields and their types, choice values and their
+ * wire names, component params and elements, the `always` and change rules (a bundle's conformance
+ * tests), and for a contract the wire (endpoints, params, answers, events). Removing or changing any
+ * entry is a major version; adding one is a minor.
+ */
 export function apiOf(b: App): string[] {
   const out: string[] = [];
-  for (const r of b.records) for (const f of r.fields) out.push(`record ${r.name}.${f.name}${f.default ? "?" : ""}`);
-  for (const c of b.choices) for (const v of c.values) out.push(`choice ${c.name}.${v}`);
+  const ty = (t: Type): string => (t.k === "List" || t.k === "Maybe" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k === "Ref" ? `ref ${t.name}` : t.k);
+  const words = (x: string) => x.replace(/\s+/g, " ").trim();
+  for (const r of b.records)
+    for (const f of r.fields) {
+      out.push(`record ${r.name}.${f.name}${f.default ? "?" : ""}`);
+      out.push(`field ${r.name}.${f.name}: ${ty(f.type)}`);
+    }
+  for (const c of b.choices)
+    for (const v of c.values) {
+      out.push(`choice ${c.name}.${v}`);
+      out.push(`wire ${c.name}.${v} = ${c.wire?.[v] ?? v}`); // a value's name in JSON: the value itself unless the spec names it
+    }
+  // The rules every app that uses the bundle must pass: `see` checks and sentences (change rules included).
+  const rules = (a: App, owner: string) => {
+    for (const st of a.always ?? []) out.push(`always ${owner}${words(stepText(st))}`);
+    for (const inv of a.invariants ?? []) out.push(`always ${owner}${words(inv.text)}`);
+  };
+  rules(b, "");
   for (const c of b.components) {
     out.push(`component ${c.name}`);
     for (const p of c.params ?? []) out.push(`param ${c.name}.${p.name}${p.default !== undefined ? "?" : ""}`);
@@ -171,20 +193,20 @@ export function apiOf(b: App): string[] {
     walk(c.body?.screen ?? []);
     for (const f of c.body?.state ?? []) out.push(`state ${c.name}.${f.name}`);
     for (const d of c.body?.derive ?? []) out.push(`derive ${c.name}.${d.name}`);
+    if (c.body) rules(c.body, `${c.name}: `);
   }
   if (b.design) out.push("design");
   for (const r of b.refined ?? []) out.push(`type ${r.name} = ${r.base} ${r.pattern ?? ""}${r.min ?? ""}..${r.max ?? ""}${r.minLength !== undefined || r.maxLength !== undefined ? ` length ${r.minLength ?? ""}..${r.maxLength ?? ""}` : ""}`);
-  // A contract's surface is the wire: endpoint signatures, param and answer types, and field types.
+  for (const e of b.events ?? []) out.push(`event ${e.name}: ${ty(e.type)}`);
+  // A contract's surface is the wire: endpoint signatures, param and answer types.
   if (b.kind === "contract") {
-    const ty = (t: import("./ast.ts").Type): string => (t.k === "List" || t.k === "Maybe" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k);
-    for (const r of b.records) for (const f of r.fields) out.push(`field ${r.name}.${f.name}: ${ty(f.type)}`);
     for (const e of b.endpoints ?? []) {
       out.push(`endpoint ${e.name} ${e.method} ${e.path}`);
       for (const p of e.params) out.push(`param ${e.name}.${p.in}.${p.name}: ${ty(p.type)}${p.type.k === "Maybe" ? "?" : ""}`);
       for (const a of e.answers ?? []) out.push(`answers ${e.name} ${a.status}${a.type ? `: ${ty(a.type)}` : ""}`);
     }
   }
-  return out.sort();
+  return [...new Set(out)].sort();
 }
 
 /**
@@ -209,8 +231,10 @@ export function nextVersion(prev: IndexEntry | undefined, prevVersion: string | 
 export async function publish(bundleFile: string, registry: string, sha: (t: string) => string, demoExamples: string[]): Promise<{ name: string; version: string; why: string[] }> {
   if (/^https?:\/\//.test(registry)) throw new Error("publishing goes to a registry folder (upload that folder to your server)");
   const text = readFileSync(bundleFile, "utf8");
-  const { app } = parseSyntax(text);
+  const { app, language } = parseSyntax(text);
   if (app.kind !== "bundle" && app.kind !== "app" && app.kind !== "contract") throw new Error(`${bundleFile} is not a bundle, app or contract`);
+  // A published spec says the language it needs: its users check it under that line, whatever compiler they run.
+  if (!language) throw new Error(`${relative(process.cwd(), bundleFile)} has no \`language\` line: a published spec says the language version it needs (\`intent fix\` adds \`language 1\`)`);
   const name = app.name.includes(".") ? app.name : relative(join(PROJECT_ROOT, "lib"), bundleFile).replace(/\.intent$/, "").split("/").join(".");
   const index = await readIndex(registry);
   const versions = Object.keys(index.bundles[name]?.versions ?? {}).sort(cmpVersion);

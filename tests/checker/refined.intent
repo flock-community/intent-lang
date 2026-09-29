@@ -1,6 +1,7 @@
 app Refined {
   "Refined types: seed data and defaults must satisfy their rule."
 }
+language 1
 
 type Email = Text matching /[^@\s]+@[^@\s]+\.[^@\s]+/
 type Age = Int from 0 to 150

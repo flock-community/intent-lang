@@ -1,6 +1,7 @@
 app TicketsApi {
   "The support desk's tickets and comments, as an HTTP API."
 }
+language 1
 
 import support.tickets
 
@@ -14,9 +15,9 @@ state {
     3  | "Feature request: dark mode"   | "Lena Smit"     | Low      | Pending | "Sam"
     4  | "App crashes on upload"        | "Joost Bakker"  | Urgent   | Pending | "Alex"
     5  | "Change billing address"       | "Eva Visser"    | Normal   | Solved  | "Sam"
-    6  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | ""
+    6  | "Export to CSV is empty"       | "Tom Mulder"    | High     | Open    | nothing
     7  | "Password rules unclear"       | "Iris de Boer"  | Normal   | Open    | "Alex"
-    8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | ""
+    8  | "Refund for double charge"     | "Noah Peters"   | Urgent   | Open    | nothing
   }
   stored comments: List Comment = table {
     ticket | author         | body
@@ -26,11 +27,11 @@ state {
 }
 
 endpoint listTickets {
-  answer 200 with the @tickets whose @status is @status (every ticket when @status is absent), highest @id first
+  answer 200 with the @tickets whose @status is @status (every ticket when @status is absent) sorted by @id, highest first
 }
 
 endpoint getTicket {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   answer 200 with that ticket
@@ -43,13 +44,13 @@ endpoint createTicket {
   if @customer, trimmed, is blank {
     answer 400 "Customer is required"
   }
-  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1 (1 when there are none), @subject and @customer trimmed, the given @priority, @status @Open and @assignee ""
+  - add a @Ticket to the end of @tickets with @id = the highest @id in @tickets + 1, or 1 when there is none, @subject and @customer trimmed, the given @priority, @status @Open and @assignee = nothing
   - publish @ticketCreated with the new ticket
   answer 201 with the new ticket
 }
 
 endpoint solveTicket {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   if that ticket is @Solved {
@@ -61,7 +62,7 @@ endpoint solveTicket {
 }
 
 endpoint addComment {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   if @text, trimmed, is blank {
@@ -75,7 +76,7 @@ endpoint addComment {
 }
 
 endpoint listComments {
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   answer 200 with the @comments whose @ticket is @id, in their order

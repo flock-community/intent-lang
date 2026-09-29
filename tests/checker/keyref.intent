@@ -1,6 +1,7 @@
 app KeyRefs {
   "A key that refers to its own record, and two records whose keys refer to each other: an error each, never an endless check (v72)."
 }
+language 1
 
 record Item {
   key id: ref Item                    # expect: TYPE

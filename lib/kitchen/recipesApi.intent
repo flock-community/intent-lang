@@ -1,6 +1,7 @@
 contract kitchen.recipesApi {
   "Reading recipes with their ingredients, over HTTP: each recipe comes with its ingredients inside it."
 }
+language 1
 
 import kitchen.recipes
 

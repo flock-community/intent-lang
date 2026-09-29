@@ -1,5 +1,6 @@
 app Broken
   "Errors on purpose, in the old indentation form (no braces): every block is read by its indentation."
+language 1
 
 record Item
   title: Txt                    # expect: UNKNOWN_NAME

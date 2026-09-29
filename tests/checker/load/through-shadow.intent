@@ -1,6 +1,7 @@
 app ThroughShadowChecks {
   "A client layer's records are the app's: the app cannot declare its own with the same name."
 }
+language 1
 
 import pay.payments
 

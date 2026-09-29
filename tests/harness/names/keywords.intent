@@ -1,0 +1,62 @@
+app Keywords {
+  "Names that are keywords of Elm, TypeScript or Kotlin, or names the harness generates, build."
+}
+language 1
+
+record Model {
+  id: Int
+  in: Text
+  of: Int = 0
+  class: Bool = false
+  when: Text = ""
+}
+
+choice Msg: Fun | Val | Object
+
+state {
+  type: Text = ""
+  new: Int = 0
+  val: Msg = Fun
+  object: Bool = false
+  is: List Model = []
+  as: Text or nothing = nothing
+  fun: Int = 1
+}
+
+derive {
+  when = the number of @is
+}
+
+screen {
+  field type "Type"
+  select val "Kind"
+  checkbox object "Object"
+  button class "Add"
+  text new
+  text when
+  list is of Model {
+    text in
+    text of
+    checkbox class
+    button bump "Up"
+  }
+}
+
+on click class {
+  - add a @Model to the end of @is with @id = the highest @id in @is + 1, or 1 when there is none, @in = @type
+  - increase @new by 1
+}
+
+on click bump {
+  - increase the @of of that model by 1
+}
+
+example "adding" {
+  type "x" into type
+  click class
+  see new = 1
+  see when = 1
+  see in on row 1 = "x"
+  click bump on row 1
+  see of on row 1 = 1
+}

@@ -1,6 +1,7 @@
 app RandomApiChecks {
   "Draws in an api: a secret is kept and answered once; a short code taken as input can be guessed."
 }
+language 1
 
 profile api
 
@@ -25,20 +26,20 @@ state {
 
 endpoint signup POST "/signup" {
   body owner: Text
-  returns Key
+  answers 201 Key
   - add a @Key to the end of @keys with @secret = a random @Token and @owner = @owner
   answer 201 with a @Key with @secret = a random @Token and @owner = @owner            # expect: REDRAW
 }
 
 endpoint keep POST "/keep" {
   body owner: Text
-  returns Key
+  answers 201 Key
   - add a @Key to the end of @keys with @secret = a random @Token and @owner = @owner
   answer 201 with the new key                                                          # expect-not: REDRAW
 }
 
 endpoint deposit POST "/parcels" {
-  returns Parcel
+  answers 201 Parcel
   - add a @Parcel to the end of @parcels with @id = the number of @parcels plus 1 and @pin = a random @Pin
   answer 201 with the new parcel
 }

@@ -1,10 +1,11 @@
 app AccessChecks {
   "The access block's checks: names, roles, the typed forms of a condition, rows, contracts."
 }
+language 1
 
 profile api
 
-use auth = std.http.apiKey {
+layer auth = std.http.apiKey {
   keys = table {
     secret     | owner
     "k-ann-1"  | "Ann"
@@ -51,7 +52,7 @@ event ticketMoved: Ticket
 
 access {
   roles = grants
-  - anyone may call @health
+  - anyone, without a key, may call @health
   - an @Agnt may call @listTickets                                                        # expect: UNKNOWN_NAME
   - an @Agent may call @solveTicket when that ticket's @assignee is the @caller           # expect-not: ACCESS
   - an @Agent may call @health when the caller looks trustworthy                          # expect: ACCESS
@@ -88,7 +89,7 @@ endpoint listTickets GET "/tickets" {
 
 endpoint solveTicket POST "/tickets/{id}/solve" {
   path id: ref Ticket
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   - set its @status to @Archived
@@ -98,7 +99,7 @@ endpoint solveTicket POST "/tickets/{id}/solve" {
 endpoint moveTicket POST "/tickets/{id}/move" {
   path id: ref Ticket
   body weight: Int
-  if no ticket has that @id {
+  if that ticket does not exist {
     answer 404 "No such ticket"
   }
   - publish @ticketMoved with the ticket

@@ -53,50 +53,24 @@ thread, toast), a design system, an API resource.
 
 ## Direction
 
-Done: modules and bundles (v10), held-out testing (four independent authors), the
-language review (`docs/reviews/language-review.md`). Next, in this order:
+**Intent 1 is stamped:** `language 1`, the first stable version (the language of v73). It covers
+screens (several, with lists inside rows, typed references, `T or nothing`, time, stored state,
+random values), rules (examples, `always`, rules over the data and over changes), reuse (bundles,
+components, refinement, a registry with computed versions), APIs (contracts, events, layers,
+effects that happen once, `access`), screens that call them, and jobs. The promise is
+`docs/STABILITY.md`; the history (v1–v73, reviews, converge rounds) is `docs/CHANGELOG.md`,
+`docs/reviews/` and `runs/history.jsonl`.
 
-1. ~~**Refinement: `extends` + explicit `override` / `add` / `drop`.**~~ Done in v13
-   (`lib/support/helpdesk.intent` → `apps/14-supportdesk.intent`). Still open: upstreaming
-   tooling (which overrides do many specs share), refinement of bundles' components. Reuse someone's whole spec
-   and improve it. Overrides are named units (elements, derived values, handlers, texts,
-   design, seed data), never line ranges. The base's examples and `always` rules must still
-   pass unless explicitly dropped (Liskov for specs). The base is pinned, and upgrading it
-   re-applies the overrides with conflict detection. One level deep; compose beyond that.
-   Overrides that many apps share flow upstream into the base as params.
-2. **A small structured grammar for behaviour** (review #1): early exits, branches,
-   "A when C, otherwise B", list operations and templates as forms the parser knows, with
-   English only in the leaves.
-3. **Identity and references** (review #2): relations as declared references instead of text
-   columns with a comment, and defined behaviour when a selection points at nothing.
-4. ~~**Real invariants**~~ (review #3): per-row and numeric checks (v14), sentences in `always`
-   checked over the app's data (v31), `UNCHECKED` for rules that should be checks.
-5. **Bundles as versioned behavioural contracts** (review #4): a demo for every bundle, a
-   semantic version computed from names *and* examples, namespaced imports, immutable
-   versions.
-6. ~~An API profile~~ done (v17, profile as a spec), and **contracts** (v18: our own, in the
-   spirit of Wirespec; see `docs/reviews/wirespec.md` for what was learned from it), refined
-   types (v19) and screens that call APIs through contracts, tested against the real provider
-   (v20), and **layers** (v21: CORS, API keys and safe headers as reusable, separately verified
-   specs in `lib/std/http/`).
-7. **Lessons from a real app** (`docs/reviews/openouros.md`, three openouros slices written as
-   specs in `runs/openouros/`), kept general: every construct must serve many apps, not one. In
-   order: ~~v22 events and subscriptions~~ done, ~~v23 client layers (keys from screens)~~
-   done, ~~v24 blocks with braces~~ done, ~~v25 `@` references in sentences~~ done, ~~v26 import what
-   you use~~ done, ~~v27 traceability for apis~~ done, ~~v28 time and a steerable clock~~ done,
-   ~~v29 structure for control words~~ done, ~~v30 `T or nothing`~~ done, ~~v31 invariants over
-   the data, `UNGUARDED`~~ done (converge at v29: 72/72, `runs/r29-converge/`), ~~v32 stored
-   state (survives a restart)~~ done, ~~v33 effects declared on contracts~~ done, ~~v34 effectively once (keys, retries, `unknown`,
-   `steer` faults)~~ done, ~~v35 registry feedback~~ done, ~~v36 several screens~~ done (converge at
-   v35: 72/72, `runs/r35-converge/`), ~~the durable outbox, undo (v38), agreement (v40–v45,
-   `std.actions`)~~ done, ~~`intent fix` with pinned `language vN`~~ done, ~~references with
-   declared keys (v49, reworked in v59)~~ done. v59 reviewed v38–v58 (one spelling per form, no
-   stand-ins, per-screen traceability). Next, from OurOS: a host transport for calls and events
-   (built, `docs/design/effects.md`), a per-alias manifest (`uses x as y only …`, v60), `origin` on
-   rules (v60), wire names for choice values and bounded `Text` (v60), held calls seen by the
-   screen (v60), a headless job profile (v60, `profile job`) and `sizes` on a screen (v60). Next:
-   a terminal renderer of the same screens. Later: unions of records and several targets per app,
-   styled builds of screens that make calls, and Kotlin as a second API target.
+The final measurements on language 1 are done (README, "Phase 7"; `runs/r1-*`).
+
+Next:
+
+1. **The candidates in `docs/CHANGELOG.md`, "Next candidates"**, for `1.x` (additions) or
+   `language 2` (an edition). The main ones: a terminal renderer of the same screens (explicit
+   sizes first), trees and a third level of rows, access beyond v1 (field-level, tenants, bearer
+   tokens), type parameters and slots for components, weighted draws, liveness over changes, and,
+   from the earlier list, unions of records, several targets per app, styled builds of screens that
+   make calls, refinement of bundles' components and Kotlin as a second API target.
 
 ## Lessons from the experiments (keep applying them)
 

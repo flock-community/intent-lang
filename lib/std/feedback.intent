@@ -1,6 +1,7 @@
 bundle std.feedback {
   "Telling people what just happened."
 }
+language 1
 
 component Toast {
   "A short message that floats at the bottom right until it is dismissed."

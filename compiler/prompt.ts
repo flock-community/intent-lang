@@ -55,8 +55,10 @@ ${regions.map((r) => `- ${r}`).join("\n")}
 `
     : "";
 
-export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false, regions: string[] = [], draws = false, access = false): string {
+export function buildPrompt(target: Target, specFile: string, specText: string, specModule: string, probe = false, api = false, calls = false, through = false, clock = false, data = false, stored = false, screens = false, platforms = false, regions: string[] = [], draws = false, access = false, mangled: string[] = [], started = false): string {
   const language = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8");
+  // Names of the spec the generated interface writes with a trailing `_` (a keyword of the target, or a name the harness generates).
+  const names = mangled.length ? `# Names\n\nThese names of the spec are keywords of the target language or names the harness generates, so the generated interface writes them with a trailing \`_\`: ${mangled.map((n) => `\`${n}\` is \`${n}_\``).join(", ")}. Write them as the interface does; the spec, its examples and the screen keep the spec's names.\n\n` : "";
   const t = targetModule(target);
   const lang = t.fence;
   const svc = TARGETS.ts.service!; // services are built by the TypeScript target (so far)
@@ -77,7 +79,7 @@ ${TARGETS.ts.prompt.fmt}
 
 ${svc.prompt.coding}
 
-# Generated interface (spec.ts)
+${names}# Generated interface (spec.ts)
 
 \`\`\`ts
 ${specModule}\`\`\`
@@ -103,8 +105,8 @@ ${t.prompt.fmt}
 \`\`\`
 
 ${CODING_RULES}
-${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}${draws ? `\n${t.prompt.draws}\n` : ""}${platforms && t.prompt.platform ? `\n${t.prompt.platform}\n` : ""}
-# Generated interface (${t.specFile})
+${calls ? `\n${t.prompt.calls}${through ? `\n${t.prompt.through}` : ""}\n` : ""}${clock && !api ? `\n${t.prompt.clock}\n` : ""}${data && !api ? `\n${stored ? t.prompt.stored : t.prompt.data}\n` : ""}${started && !api ? `\n${t.prompt.started}\n` : ""}${screens && t.prompt.screens ? `\n${t.prompt.screens}\n` : ""}${draws ? `\n${t.prompt.draws}\n` : ""}${platforms && t.prompt.platform ? `\n${t.prompt.platform}\n` : ""}
+${names}# Generated interface (${t.specFile})
 
 \`\`\`${lang}
 ${specModule}\`\`\`

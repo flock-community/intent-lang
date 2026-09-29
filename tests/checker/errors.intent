@@ -1,6 +1,7 @@
 app Errors {
   "Each line marked `expect` must produce that diagnostic."
 }
+language 1
 
 record Item {
   title: Txt                          # expect: UNKNOWN_NAME
@@ -20,12 +21,12 @@ state {
   color: Color = Blue                 # expect: BAD_BINDING
   items: List Item = []
   label: Int = 0
-  type: Text = ""                     # expect: RESERVED
+  random: Text = ""                   # expect: RESERVED
   rows: List Row = table {
     name    | size                    # expect: UNKNOWN_NAME
     "a"     | 1
   }
-  pick: Text = ""
+  pick: Text or nothing = nothing
 }
 
 scren {  # expect: SYNTAX

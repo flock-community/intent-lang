@@ -1,6 +1,7 @@
 app TextDemo {
   "Proves std.text: which texts are a valid Email, and a valid Token."
 }
+language 1
 
 import std.text
 
