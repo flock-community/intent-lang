@@ -93,6 +93,10 @@ export interface Element {
   // 1.1: what the element's state means, for a host to render by (`tone danger when @overdue`):
   // the first tone whose condition holds; one without `when` is the default.
   tones?: { tone: string; when?: string; line: number }[];
+  // 1.1, set by expansion: the component an instance is (on its section), and an element's own
+  // name inside its component (`title` for `confirm.title`). A theme styles a component's parts.
+  instanceOf?: string;
+  part?: string;
   component?: string; // `use name = Component`: the component to instantiate
   bindings?: { name: string; value: string; line: number }[]; // its parameter values
   children: Element[];

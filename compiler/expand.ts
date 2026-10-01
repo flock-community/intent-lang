@@ -128,6 +128,7 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
     els.map((el) => ({
       ...el,
       name: el.kind === "heading" || inRow ? el.name : q(el.name),
+      part: el.kind === "heading" ? undefined : el.name, // its name in the component: the theme's handle
       label: el.label,
       expr: rwAll(el.expr),
       visibleWhen: rwAll(el.visibleWhen),
@@ -143,6 +144,7 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
     kind: "section",
     name: inst,
     as: comp.look || comp.base ? comp.name : undefined,
+    instanceOf: comp.name,
     visibleWhen: use.visibleWhen, // the app's condition: not rewritten
     look: use.look,
     children: renameEls(body.screen, false),

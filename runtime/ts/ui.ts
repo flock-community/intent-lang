@@ -12,7 +12,7 @@ export type Node = (
   | { k: "select"; n: string; label: string; options: string[]; v: string }
   | { k: "list"; n: string; rows: { key: string; c: Node[] }[] }
   | { k: "section"; n: string; label: string; c: Node[] }
-) & { as?: string; tone?: string };
+) & { as?: string; tone?: string; component?: string; part?: string };
 
 // `key`: the row's key; `keys`: a row inside a row's path of keys, the outer row's first (`key` is the last).
 export type Wire = { on: string; target: string; key?: string; keys?: string[]; text?: string; value?: string; answer?: unknown; event?: unknown; clock?: unknown };
@@ -52,6 +52,8 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
   const e = drawn(node, dispatch, keys, lists);
   if (node.as) e.dataset.as = node.as;
   if (node.tone) e.dataset.tone = node.tone;
+  if (node.component) e.dataset.component = node.component;
+  if (node.part) e.dataset.part = node.part;
   return e;
 }
 

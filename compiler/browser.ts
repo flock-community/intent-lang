@@ -340,7 +340,7 @@ function findList(obs: Obs, name: string): any {
 /** Differences between what the DOM shows and what the logic says, as readable lines. */
 export function fidelityDiff(dom: Obs, screen: Obs): string[] {
   // `as` and `tone` say what to render by (1.1); a page shows them in its look, not as data.
-  const noLook = (v: any): any => (Array.isArray(v) ? v.map(noLook) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([k]) => k !== "as" && k !== "tone").map(([k, x]) => [k, noLook(x)])) : v);
+  const noLook = (v: any): any => (Array.isArray(v) ? v.map(noLook) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([k]) => !["as", "tone", "component", "part"].includes(k)).map(([k, x]) => [k, noLook(x)])) : v);
   const a = JSON.parse(canonical(noLook(dom)));
   const b = JSON.parse(canonical(noLook(screen)));
   const out: string[] = [];

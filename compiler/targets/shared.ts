@@ -343,6 +343,8 @@ export function semanticsOf(app: App, el: Element): [string, string][] {
   // The checker allows a built-in presentation (lower case) or a component (UpperCamel) with a base.
   const as = el.as && (/^[a-z]/.test(el.as) ? el.as : app.components.find((c) => c.name === el.as)?.base);
   if (as) out.push(["as", as]);
+  if (el.instanceOf) out.push(["component", el.instanceOf]);
+  if (el.part) out.push(["part", el.part]);
   // A tone with no condition is a fact of the spec; one with conditions the app computes (`toneField`).
   if (el.tones?.length && !el.tones.some((t) => t.when)) out.push(["tone", el.tones[0].tone]);
   return out;

@@ -4,7 +4,7 @@
 // it is (meta), needs a clock, takes the size at start and from the host, and touches no global.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { load } from "../compiler/load.ts";
@@ -46,4 +46,19 @@ console.log(JSON.stringify(out));`;
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
-console.log("ok screen-host: screen.mjs runs with no platform global, says what it is (meta), needs its clock, takes the size at start and from the host");
+// The tree says what to draw by (1.1): an instance's component and each element's part in it, its
+// presentation and tone. A theme styles `Pager` / `next`; it never needs the app's names.
+{
+  const { app: demo } = load(new URL("../lib/std/list.demo.intent", import.meta.url).pathname, { ignoreLock: true });
+  const d = mkdtempSync(join(tmpdir(), "screen-anatomy-"));
+  try {
+    tsTarget.scaffold(demo!, d, {} as never);
+    const spec = readFileSync(join(d, "spec.ts"), "utf8");
+    assert.match(spec, /component: "Pager"/, "the instance says which component it is");
+    for (const part of ["pageInfo", "previous", "next"]) assert.match(spec, new RegExp(`part: "${part}"`), `its element says its part: ${part}`);
+    assert.match(spec, /n: "pager\.next".*?as: "secondary", part: "next"/, "with its presentation");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+console.log("ok screen-host: screen.mjs runs with no platform global, says what it is (meta), needs its clock, takes the size at start and from the host; the tree carries component, part, presentation");
