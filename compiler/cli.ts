@@ -10,7 +10,7 @@ import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { componentHosts } from "./hosts.ts";
-import { applySkin, buildTheme, parseTheme } from "./theme.ts";
+import { applySkins, buildTheme, parseTheme } from "./theme.ts";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
 import { fixFile } from "./fix.ts";
@@ -380,7 +380,7 @@ switch (cmd) {
     const results = await Promise.all(jobs.map((j) => j()));
     await closeBrowser();
     // `--skin <skin.css>`: the build looks as that theme says (its skin instead of the default look).
-    if (flags.skin) for (const r of results) if (r.ok) applySkin(r.dir, resolve(flags.skin));
+    if (flags.skin) for (const r of results) if (r.ok) applySkins(r.dir, flags.skin.split(",").map((f) => resolve(f.trim())));
     if (flags.json) {
       const targets = results.map((r) => {
         const last = r.builds[r.builds.length - 1];

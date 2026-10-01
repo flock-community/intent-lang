@@ -304,11 +304,23 @@ export async function buildTheme(file: string, out: string, log: (m: string) => 
 
 /** Give a built app a theme: its skin replaces the plain renderer's default style. */
 export function applySkin(buildDir: string, skinFile: string) {
-  copyFileSync(skinFile, join(buildDir, "skin.css"));
+  applySkins(buildDir, [skinFile]);
+}
+
+/**
+ * Give a built app several themes to switch between at run time (`--skin a.css,b.css`): each skin is
+ * a stylesheet named after its theme (the folder it was built in, else its file), all but the chosen
+ * one disabled. The theme is `?theme=<name>`, else the host's `globalThis.__intentTheme`, else the
+ * first; a host that changes `__intentTheme` dispatches `intenttheme` on window. No app code knows.
+ */
+export function applySkins(buildDir: string, skinFiles: string[]) {
   const index = join(buildDir, "index.html");
-  if (existsSync(index)) {
-    const html = readFileSync(index, "utf8");
-    // The skin instead of the default look (an Elm page has it inline; a TypeScript page adds it only without a skin).
-    if (!html.includes("data-intent-skin")) writeFileSync(index, html.replace(/<style>[\s\S]*?<\/style>/, "").replace("</head>", '<link rel="stylesheet" href="skin.css" data-intent-skin></head>'));
-  }
+  const names = skinFiles.map((f) => (/^skin\.css$/.test(f.split("/").pop()!) ? f.split("/").slice(-2)[0] : f.split("/").pop()!.replace(/\.css$/, "")));
+  skinFiles.forEach((f, i) => copyFileSync(f, join(buildDir, skinFiles.length === 1 ? "skin.css" : `skin-${names[i]}.css`)));
+  if (!existsSync(index)) return;
+  const html = readFileSync(index, "utf8").replace(/<link rel="stylesheet" href="skin[^"]*" data-intent-skin[^>]*>/g, "").replace(/<script data-intent-themes>[\s\S]*?<\/script>/, "");
+  const links = skinFiles.map((_, i) => `<link rel="stylesheet" href="${skinFiles.length === 1 ? "skin.css" : `skin-${names[i]}.css`}" data-intent-skin data-theme="${names[i]}"${i ? " disabled" : ""}>`).join("");
+  const pick = skinFiles.length > 1 ? `<script data-intent-themes>(()=>{const pick=()=>{const q=new URLSearchParams(location.search).get("theme");const want=globalThis.__intentTheme??q;const links=[...document.querySelectorAll("link[data-intent-skin]")];const on=links.find((l)=>l.dataset.theme===want)??links[0];for(const l of links)l.disabled=l!==on;document.documentElement.dataset.theme=on.dataset.theme;};pick();addEventListener("intenttheme",pick);})();</script>` : "";
+  // The skin instead of the default look (an Elm page has it inline; a TypeScript page adds it only without a skin).
+  writeFileSync(index, html.replace(/<style>[\s\S]*?<\/style>/, "").replace("</head>", `${links}${pick}</head>`));
 }

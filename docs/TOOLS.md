@@ -36,7 +36,8 @@ intent config                            the compiler's options for this project
   state in a real browser (everything drawn, text contrast per WCAG 1.4.3, presentations and tones
   told apart, a visible focus, a dialog over the page, colours only in tokens); what fails goes back
   to the model. Out: `skin.css` and `gallery.png`. `intent build <app> --skin skin.css` gives a build
-  that skin instead of the default look; a host switches themes by switching the stylesheet.
+  that skin instead of the default look; `--skin a/skin.css,b/skin.css` gives it both, switched at run
+  time: `?theme=b`, or the host sets `globalThis.__intentTheme` and dispatches `intenttheme`.
 - A **bundle** whose components have examples: `intent build lib/x/y.intent` builds each component's
   host app (its examples, its random sessions) on every target.
 - `--json` (`check`, `build`): stdout is one JSON report and nothing else; a build's log goes to

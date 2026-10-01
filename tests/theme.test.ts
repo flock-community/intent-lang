@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { flattenTokens, parseTheme, staticProblems, verifySkin } from "../compiler/theme.ts";
+import { applySkins, flattenTokens, parseTheme, staticProblems, verifySkin } from "../compiler/theme.ts";
 import { closeBrowser } from "../compiler/browser.ts";
 import { STYLE } from "../runtime/ts/ui.ts";
 
@@ -33,8 +33,24 @@ try {
   assert.ok(bare.some((p) => /look the same/.test(p)), "the bare default look does not tell buttons apart");
   assert.ok(bare.some((p) => /colour outside a token/.test(p)), "and has colours outside tokens");
   assert.ok(bare.some((p) => /dialog must be over the page/.test(p)), "and no dialog over the page");
+  // Several themes in one build: picked by ?theme=, or switched live by the host (`__intentTheme`, `intenttheme`).
+  writeFileSync(join(dir, "index.html"), "<!doctype html><html><head><style>body{background:red}</style></head><body><p>x</p></body></html>");
+  writeFileSync(join(dir, "light.css"), ":root{--bg:#ffffff}body{background:var(--bg)}");
+  writeFileSync(join(dir, "dark.css"), ":root{--bg:#000000}body{background:var(--bg)}");
+  applySkins(dir, [join(dir, "light.css"), join(dir, "dark.css")]);
+  const { getBrowser } = await import("../compiler/browser.ts");
+  const tab = await (await getBrowser()).newPage();
+  const bg = () => tab.evaluate(() => [document.documentElement.dataset.theme, getComputedStyle(document.body).backgroundColor]);
+  await tab.goto(`file://${join(dir, "index.html")}`);
+  assert.deepEqual(await bg(), ["light", "rgb(255, 255, 255)"], "the first theme, and no default style");
+  await tab.evaluate(() => { (globalThis as any).__intentTheme = "dark"; dispatchEvent(new Event("intenttheme")); });
+  await tab.waitForFunction(() => getComputedStyle(document.body).backgroundColor === "rgb(0, 0, 0)", null, { timeout: 3000 });
+  assert.deepEqual(await bg(), ["dark", "rgb(0, 0, 0)"], "the host switches it live");
+  await tab.goto(`file://${join(dir, "index.html")}?theme=dark`);
+  await tab.waitForFunction(() => getComputedStyle(document.body).backgroundColor === "rgb(0, 0, 0)", null, { timeout: 3000 });
+  await tab.close();
 } finally {
   await closeBrowser();
   rmSync(dir, { recursive: true, force: true });
 }
-console.log("ok theme: a theme spec and its W3C tokens; colours only in tokens; the gallery passes a good skin and refuses the bare default look");
+console.log("ok theme: a theme spec and its W3C tokens; colours only in tokens; the gallery passes a good skin and refuses the bare default look; several themes in one build, switched live");
