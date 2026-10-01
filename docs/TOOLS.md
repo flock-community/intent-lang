@@ -17,7 +17,7 @@ intent fmt <file.intent>... [--check]    rewrite specs in the canonical layout (
 intent fix <file.intent>... [--check]    apply the mechanical fixes the checker names
 intent expand <file.intent>              print the canonical, expanded spec the compiler reads
 intent review <file.intent>              list what the spec leaves to defaults (one LLM call)
-intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off]
+intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off] [--json]
 intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N]
 intent config                            the compiler's options for this project, and where each came from
 ```
@@ -29,6 +29,15 @@ intent config                            the compiler's options for this project
   (`# expanded by intent expand: …`): only such a spec may declare a component's qualified names
   (`pager.page: Int = 1`, `button pager.next`), so the expanded spec reads back as it is printed.
   An author who writes one gets a `SYNTAX` error.
+- `--json` (`check`, `build`): stdout is one JSON report and nothing else; a build's log goes to
+  stderr. `check --json`: `[{ file, diagnostics: [{ level, code, line, col, message, file }] }]`.
+  `build --json`: `{ file, ok, targets: [{ target, ok, dir, cached, verified, ambiguous?, examples,
+  attempts: [{ stage, detail }], compiler, costUsd }] }`; a spec that does not load gives
+  `{ file, ok: false, diagnostics, targets: [] }`, a pin or install problem `{ file, ok: false,
+  problems, targets: [] }`. Each built target's folder also holds its own `build.json`.
+- Exit codes: `0` done (for `check`: no errors), `1` failed (errors, a failed or ambiguous build, a
+  check that found something with `--check`), `2` a usage error (an unknown command, a missing file
+  or a directory where a file was meant).
 - `intent client support/ticketsApi.intent` writes the typed client of a contract (§4h), for a
   consumer outside Intent.
 
@@ -42,7 +51,8 @@ part the spec overrides: when the base changes, the check stops (`LOCK`) and mar
 whose base part changed (`BASE_CHANGED`). A changed language reference or model is a `LOCK` warning
 for `intent check`; `intent build` and `intent converge` refuse a changed model until `intent lock`
 pins it. A spec's `language` line (§4d) is the lowest version it needs: `language 1`, later
-`language 1.2`. A version newer than the compiler's is an error (`NEWER_LANGUAGE`); a line from
+`language 1.2`. A version newer than the compiler's is an error (`NEWER_LANGUAGE`), and so is a form
+newer than the spec's own line (`NEEDS_LANGUAGE`, which `intent fix` settles by raising the line); a line from
 before language 1 (`language v73`) reads as `language 1`, with a `LANGUAGE` warning that `intent
 fix` rewrites. A spec without the line means `language 1`.
 
@@ -131,6 +141,15 @@ defaults; `intent config` shows each and where it came from.
 | `repairs` | `INTENT_REPAIRS` | repair rounds, 0 or more |
 | `budget` | `INTENT_BUDGET` | US dollars, 0 for no limit (a run stops calling the LLM after this) |
 
+Providers (`llm`): `claude-cli` (the default), `anthropic` (`ANTHROPIC_API_KEY`), `openai` (any
+OpenAI-compatible API: `OPENAI_BASE_URL`, `OPENAI_API_KEY`) and `replay`. With
+`INTENT_RECORD=<folder>`, every answered call is kept there by its prompt (`<hash>.prompt.md`,
+`<hash>.response.md`). `llm replay` answers a call from what was recorded for exactly its prompt, in
+`INTENT_REPLAY` (a folder, default `.intent/recordings`, read with its subfolders): recordings, and
+build logs (`log/prompt-N.md` with `response-N.md`). A prompt with no recording is an error that
+names its hash. A recording replays while the prompts stay the same: a new compiler that words a
+prompt differently needs a new recording (STABILITY.md §8).
+
 A built service (§4f) reads these on the server:
 
 | Variable | Default | What |
@@ -140,6 +159,10 @@ A built service (§4f) reads these on the server:
 | `INTENT_AUDIT` | `audit.jsonl` | the access audit (§4f), appended together with the stored state of the same request |
 | `INTENT_MAX_BODY` | 1 MiB | the largest request body; a larger one is answered 413 (§9.16) |
 | `INTENT_TRACE` | off | `1`: every answer carries `x-intent-source`, the spec line that gave it. Leave it off in production: it names files |
+
+A TypeScript screen build also holds `screen.mjs`, the app for a host that runs it itself (in a
+sandbox, with no platform): `start({ clock, size, saved, seed })`, then `send` events and answers and
+read `observe()`, `calls()` and `stored()` (STABILITY.md §5, docs/design/screen-host.md).
 
 A build's `sourcemap.json` maps every element, handler, step, endpoint, event, layer, rule and
 example to its file and line, and its `manifest.json` lists, per api, the endpoints and events the
@@ -205,7 +228,7 @@ project's levels; `intent check` also runs the project's own rule sets. It adds 
 | `DUPLICATE` | error | a choice value named like a record, choice or refined type (they share one namespace); a name declared twice in one scope (a row and the rows of a list inside it are one scope); two seeded rows with one key in a list a reference points into; two items with one key in a seeded row's inner list; a pair listed twice in `only changes from … to …` |
 | `RESERVED` | error | a name that is one of Intent's own words (the reference's §7): `key`, `nothing`, `true`, `false`, `random`, a type word; in an api `path`, `query`, `body`; `random` as an api's alias (it is what `steer random` steers) |
 | `STEP` | error | an example step that does not match the element (click a text, …), or names another number of rows than the element is deep (one `on row` per level, innermost first); `steer random T` where no sentence draws a `T` (in the spec, or in a screen's provider), or where both the screen and its provider draw one, `steer random shuffle` / `pick` with nothing shuffled / picked; `click` on a button that is disabled at that step, where the checker can tell (its `enabled when` over what the example has set: defaults, seeded rows, fields typed into, selects chosen, boxes ticked; a step it cannot follow leaves it to the harness): prove it with `see x is disabled`; `wait` in an app that reads no clock and whose provider reads none; `see x.body.f is absent` on a declared `T or nothing` (it is written `= nothing`), `see x.body.f = nothing` on a `T` |
-| `NOT_YET` | error | a construct the language does not have yet: examples inside a component, a list inside a row of a list that is itself inside a row (a third level), a record field `List R` where `R` holds a list of records itself (or of its own kind: a tree), a `table` inside a `table` row, a base that extends another spec, a path param that is not an Int, Text, Date or DateTime, a draw in a loop inside a loop (docs/CHANGELOG.md lists the candidates for the next version) |
+| `NOT_YET` | error | a construct the language does not have yet: examples inside a component, a list inside a row of a list that is itself inside a row (a third level), a record field `List R` where `R` holds a list of records itself (or of its own kind: a tree), a `table` inside a `table` row, a path param that is not an Int, Text, Date or DateTime, a draw in a loop inside a loop (docs/CHANGELOG.md lists the candidates for the next version) |
 | `NO_HANDLER` | warning | a button without `on click` |
 | `UNPROVEN` | warning | a dynamic element never checked by any `see` |
 | `UNANCHORED` | warning | a rule or handler sentence that mentions no declared name |
@@ -238,6 +261,7 @@ project's levels; `intent check` also runs the project's own rule sets. It adds 
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name; inside a row of a list inside a row, a field of both rows' records (it shows the inner row's) |
 | `LANGUAGE` | warning | a `language` line from before language 1 (`language v73`): it reads as `language 1`, and `intent fix` rewrites it |
 | `NEWER_LANGUAGE` | error | the spec needs a newer language version (`language 1.2`) than the compiler reads |
+| `NEEDS_LANGUAGE` | error | the spec uses a form added after its own `language` line (a record without fields, a choice with one value, an api with only events, `Map T`, `Instant`, `union` and extending a base that extends another are 1.1); `intent fix` raises the line |
 | `NO_ACCESS` | error | an api with a layer that says who calls does not say what they may do: without an `access` block every key holder may call every endpoint |
 | `OVERRIDES_PROOF` | warning | a base example or `always` check is about something this spec overrides |
 | `BASE_CHANGED` | warning | the base changed a part this spec overrides (see §4e) |

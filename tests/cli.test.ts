@@ -3,7 +3,7 @@
 // report goes to stderr), so y reads back; `intent fix` lists every error it leaves.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { load } from "../compiler/load.ts";
@@ -18,6 +18,30 @@ for (const cmd of ["check", "fix", "expand", "fmt", "lock", "build", "review", "
     assert.match(r.stderr, says, `intent ${cmd} ${arg} says what is wrong`);
     assert.ok(!/\n\s+at |Error:|ENOENT|EISDIR/.test(r.stderr + r.stdout), `intent ${cmd} ${arg} prints no stack trace:\n${r.stderr}`);
   }
+}
+
+// `intent check --json` writes its whole report before it exits, also into a pipe (it was cut at 512 bytes).
+const j = spawnSync("sh", ["-c", `"${process.execPath}" compiler/cli.ts check --json apps/*.intent | cat`], { cwd: ROOT, encoding: "utf8" });
+assert.equal(j.status, 0, j.stderr);
+assert.ok(j.stdout.length > 4096, "a report long enough to have been cut");
+assert.equal(JSON.parse(j.stdout).length, readdirSync(join(ROOT, "apps")).filter((f) => f.endsWith(".intent")).length, "one entry per spec, and valid JSON");
+
+// `intent build --json`: stdout is one JSON report, the log goes to stderr. A spec with errors reports
+// its diagnostics; a build whose calls all miss (llm replay over no recordings) reports its attempts.
+{
+  const d = mkdtempSync(join(tmpdir(), "cli-build-"));
+  writeFileSync(join(d, "bad.intent"), 'app Bad {\n  "x"\n}\nlanguage 1\n\nscreen {\n  text t = @nope\n}\n');
+  const b = spawnSync(process.execPath, [join(ROOT, "compiler/cli.ts"), "build", join(d, "bad.intent"), "--json", "--out", join(d, "out")], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(b.status, 1);
+  const r = JSON.parse(b.stdout);
+  assert.equal(r.ok, false);
+  assert.ok(r.diagnostics.some((x: { level: string; code: string; line: number }) => x.level === "error" && x.line === 7 && x.code), `the diagnostics, with code and line: ${b.stdout}`);
+  const miss = spawnSync(process.execPath, [join(ROOT, "compiler/cli.ts"), "build", "apps/22-hash.intent", "--json", "--out", join(d, "miss")], { cwd: ROOT, encoding: "utf8", env: { ...process.env, INTENT_LLM: "replay", INTENT_REPLAY: join(d, "none"), INTENT_TARGETS: "ts", INTENT_TWIN: "always", INTENT_REPAIRS: "0" } });
+  assert.equal(miss.status, 1, miss.stderr);
+  const m = JSON.parse(miss.stdout);
+  assert.equal(m.ok, false);
+  assert.deepEqual(m.targets.map((t: { target: string; ok: boolean }) => [t.target, t.ok]), [["ts", false]]);
+  assert.match(m.targets[0].attempts[0].detail, /no recording for this prompt/, "the replay's miss is the attempt's detail");
 }
 
 // `intent expand` writes the spec, and only the spec, to stdout: it checks clean when read back.

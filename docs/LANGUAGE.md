@@ -1,4 +1,4 @@
-# Intent — language reference (1)
+# Intent — language reference (1.1)
 
 Intent describes **what an interactive app must be**: its data, what is on screen, what
 happens when the user acts, and examples that prove it. A compiler (an LLM held in place
@@ -169,9 +169,10 @@ app Name { "purpose" }      # first line of an app; its block holds the purpose 
 bundle std.name             # first line of a library file instead (§4d)
 import std.list             # reuse a bundle (§4d)
 extends support.helpdesk    # refine a published app (§4e): override, add to, drop
-record Name { … }           # a data shape: `field: Type [= default]` lines
-choice Name: A | B "Bee" | C  # a closed set of values; an optional "label" is what users see
+record Name { … }           # a data shape: `field: Type [= default]` lines (`record Ping`: none; its value is `{}`)
+choice Name: A | B "Bee" | C  # a closed set of values (one or more); an optional "label" is what users see
 choice Level: Info = "info" | Urgent = "urgent"   # a wire name: how the value is written in JSON (§4h)
+union Trigger: Daily = "daily" | Weekly = "weekly" # one of these records, told apart by `kind` (`union T by type: …`)
 type Email = Text matching /…/  # a refined type: a base type with one precise rule (§3a)
 design                      # optional: how the app looks (§4c)
 component Name "look"       # optional: a reusable look for sections/elements (§4c)
@@ -187,13 +188,36 @@ always { … }                # what must always hold, checked after every step:
 example "name" { … }        # proof (§6): steps
 ```
 
-Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `List T`, `T or nothing`, a
+Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `Instant`, `List T`, `Map T`, `T or nothing`, a
 record name, a choice name, and `ref X` — a field holding record `X`'s key (see the next
 paragraph). `T or nothing` is a value that may be absent, and works like Kotlin's `T?`: nothing
 is what other languages call null or none. Say so instead of using a stand-in such as `0` or `""`
 (`selected: Int or nothing = nothing`, then `visible when there is a @selected` and `set @selected
 to nothing`). A `T or nothing` is not a `T`: wherever a sentence needs a `T`, it says what happens
 when there is none (the rules are in §2). On the wire nothing is `null` (§9.18).
+`Instant` is a moment on the world's clock, to the second, in UTC: written `2026-09-24T07:00:00Z`
+(in JSON too). Use it for moments that other systems send or that people in other time zones share;
+use `DateTime` for the app's own local time. On input every ISO 8601 form with a zone is read into
+that one form (`2026-09-24T09:00:00+02:00` is `2026-09-24T07:00:00Z`; a fraction of a second is
+dropped), so instants compare and sort as they are written; one without a zone is refused. An
+`Instant` is not a `DateTime`: there is no conversion between them yet (it needs a time zone), and
+`@now` is a `DateTime`. A spec's own record, choice or type named `Instant` keeps its meaning.
+A **union** is a value that is one of several records: `union Trigger: Daily | Weekly`, with
+`record Daily { at: Clock }` and `record Weekly { day: Day; at: Clock }`. On the wire it is the
+record's JSON with a tag field, `kind` unless the union says `by <field>`, whose value is the
+variant's name, or its wire name when the union gives them (`Daily = "daily" | Weekly = "weekly"`;
+every variant or none). The app reads its own names, as for a choice. A value whose tag names no
+variant is refused (`trigger.kind must be one of daily, weekly`). Make one with `a @Weekly with
+@day = @Mon and @at = "02:00"` (in a `with` list of a call, put it in parentheses); say in words
+what a sentence does with each variant (`for a Daily trigger: …; for a Weekly trigger: …`). In an
+example: `call plan with trigger = { kind = "weekly", day = "mon", at = "02:00" }` and `see
+plan.body.trigger.kind = "Weekly"`. A variant is a record of its own; it has no field named like the
+tag, and a union of unions is not in the language yet (`NOT_YET`).
+`Map T` holds values by text keys that are not known ahead (a theme's colour per role name: `colors:
+Map Color = {}`); on the wire it is a JSON object. Say what a sentence does with it in words (`the
+colour for "primary" in @colors, or "none"`, `set the colour for @role in @colors to @color`, `the
+number of keys in @colors`); in an example, `see theme.body.primary = "#334466"` reads a key and
+`see theme.body = {}` an empty map. A screen shows what is read from a map, not the map itself.
 Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time). In JSON a Date is `"2026-09-24"` and a
 DateTime `"2026-09-24T09:00"`; an example compares them as written in the spec
@@ -903,7 +927,10 @@ example "paging in priority order" {
   a base example in a less direct way.
 - **The base is pinned**, with a fingerprint of every part you override. When the base changes,
   the check stops and marks each override whose base part changed, so you review exactly those.
-- One level deep: a base does not itself extend another spec. Compose components for more.
+- As deep as the chain (1.1): a base may extend another published app; its own refinement is applied
+  first, and every app in the chain is locked. A chain that comes back to itself is an error.
+- `override component` also replaces a component the base imports from a bundle: every `use` of it
+  in the base gets the override.
 - An override that many specs make is a sign that the base is missing something (a param,
   a rule); propose it to the base's author.
 
@@ -1208,7 +1235,9 @@ Contracts cannot fail silently:
 - **Events** are part of the contract: `event ticketCreated: Ticket` says the service announces
   that something happened, with a payload. An endpoint's step says when:
   `- publish @ticketCreated with the new ticket`. The implementation may publish only declared
-  events, and every payload is checked against its type in every test. In examples,
+  events, and every payload is checked against its type in every test. A contract may have only
+  events and no endpoints: a source that announces and is never called (its implementation
+  publishes from `every` blocks). In examples,
   `see ticketCreated.body.subject = "…"` checks what the latest call published, and
   `see ticketCreated is absent` checks that it published nothing of that kind. The server sends
   events to every open `GET /events` stream (Server-Sent Events, `{ "event": …, "body": … }`),
@@ -1989,3 +2018,6 @@ something when it wants different behaviour.
 20. **Starting.** Stored fields are restored before `on start` runs; `on start` sees what the app
     remembered, the first time (the defaults) and after every restart. Every other field starts from
     its default. An api has no `on start`: it starts from its defaults and what it stored.
+21. **Maps.** A `Map T` is written on the wire as a JSON object with its keys in order (by their
+    text, code point by code point), whatever order they were set in. Reading a key that is not
+    there gives nothing.

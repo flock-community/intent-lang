@@ -15,6 +15,7 @@ export function typeToString(t: Type): string {
   switch (t.k) {
     case "List": return `List ${typeToString(t.of)}`;
     case "Maybe": return `${typeToString(t.of)} or nothing`;
+    case "Map": return `Map ${typeToString(t.of)}`;
     case "Named": return t.name;
     case "Ref": return `ref ${t.name}${t.in ? ` in ${t.in}` : ""}`;
     default: return t.k;

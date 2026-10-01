@@ -11,7 +11,7 @@ import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, usesInstant, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -25,6 +25,7 @@ export function tsLiteral(l: Literal): string {
     case "value": return q(l.v);
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
+    case "instant": return q(l.v);
     case "table": return "[]";
     case "list": case "record": throw new Error("a list or record value needs its type: tsValue");
   }
@@ -34,6 +35,7 @@ export function tsLiteral(l: Literal): string {
 export function tsValue(app: App, l: Literal, t: Type): string {
   const inner = t.k === "Maybe" ? t.of : t;
   if (l.k === "list" && inner.k === "List") return `[${l.items.map((x) => tsValue(app, x, inner.of)).join(", ")}]`;
+  if (l.k === "record" && inner.k === "Map") return `{ ${l.fields.map((f) => `${q(f.name)}: ${tsValue(app, f.value, inner.of)}`).join(", ")} }`;
   if (l.k === "record" && inner.k === "Named") {
     const rec = app.records.find((r) => r.name === inner.name);
     if (rec) return `{ ${rec.fields.map((f) => `${f.name}: ${tsValue(app, l.fields.find((x) => x.name === f.name)?.value ?? f.default ?? { k: "nothing" }, f.type)}`).join(", ")} }`;
@@ -64,8 +66,10 @@ export function tsType(t: Type): string {
     case "Bool": return "boolean";
     case "Date": return "Date";
     case "DateTime": return "DateTime";
+    case "Instant": return "Instant";
     case "List": return `${tsAtom(t.of)}[]`;
     case "Maybe": return `${tsType(t.of)} | null`;
+    case "Map": return `Record<string, ${tsType(t.of)}>`;
     case "Named": return mangle(t.name);
     case "Ref": return t.key ? tsType(t.key) : "unknown";
   }
@@ -76,7 +80,8 @@ export const tsAtom = (t: Type) => (t.k === "Maybe" ? `(${tsType(t)})` : tsType(
 /** Records, choices and table seeds: the domain, shared by every profile. */
 export function tsDomain(app: App): string {
   const out: string[] = [];
-  out.push(`/** A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. */\nexport type Date = string;\nexport type DateTime = string;\n/** The clock: @now and @today in the spec. */\nexport type Clock = { now: DateTime; today: Date };\n\n`);
+  out.push(`/** A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. */\nexport type Date = string;\nexport type DateTime = string;\n/** The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. */\nexport type Clock = { now: DateTime; today: Date${app.sizes ? "; size: Size" : ""} };\n\n`);
+  if (usesInstant(app)) out.push(`/** An instant on the world's clock, in UTC to the second: "YYYY-MM-DDTHH:MM:SSZ". The harness reads every ISO 8601 form with a zone into this one, so compare and sort them as text. */\nexport type Instant = string;\n\n`);
   for (const r of app.refined ?? []) {
     if (r.code) {
       // A code: exactly n characters of its alphabet; read as the alphabet says (the harness's reader).
@@ -92,7 +97,11 @@ export function tsDomain(app: App): string {
     else if (r.base === "Text") out.push(`/** Whether a text is a valid ${r.name}: its length in characters. */\nexport function is${r.name}(s: string): boolean {\n  return ${[r.minLength !== undefined ? `[...s].length >= ${r.minLength}` : "", r.maxLength !== undefined ? `[...s].length <= ${r.maxLength}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
     else out.push(`/** Whether a number is a valid ${r.name}. */\nexport function is${r.name}(n: number): boolean {\n  return ${[r.min !== undefined ? `n >= ${r.min}` : "", r.max !== undefined ? `n <= ${r.max}` : ""].filter(Boolean).join(" && ") || "true"};\n}\n\n`);
   }
-  for (const r of app.records) out.push(`export type ${mangle(r.name)} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n\n`);
+  for (const r of app.records) {
+    // A union (1.1): one of its records, with the tag field saying which (the record's own name).
+    if (r.union) out.push(`/** One of ${r.union.variants.join(", ")}, told apart by \`${r.union.tag}\`. */\nexport type ${mangle(r.name)} = ${r.union.variants.map((v) => `({ ${r.union!.tag}: ${q(v)} } & ${mangle(v)})`).join(" | ")};\n\n`);
+    else out.push(`export type ${mangle(r.name)} = ${r.fields.length ? `{ ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} }` : "Record<string, never>"};\n\n`);
+  }
   // Following a reference: the row is found in its home list when it is read (null: it is gone).
   const refs = refLookups(app);
   for (const b of refs.byKey) out.push(`/** Following a \`ref ${b.record}\`: the ${b.record} in \`${b.list}\` whose \`${b.key}\` is the key, or null when there is none (it was removed). */\nexport function ${b.fn}(rows: ${mangle(b.record)}[], key: ${tsType(b.keyType)}): ${mangle(b.record)} | null {\n  return rows.find((r) => r.${b.key} === key) ?? null;\n}\n\n`);
@@ -449,7 +458,7 @@ stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, e
 import { callToJson, fromWire, toNode, type Call${sar ? ", type Stored" : ""} } from "./spec.ts";
 import type { CallOut } from "./calls.ts";
 import type { Wire } from "./ui.ts";
-${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "./clock.ts";\n` : ""}
+${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "${app.sizes ? "./spec.ts" : "./clock.ts"}";\n` : ""}
 /** A call as data, with the config its client layer gets from the state after the step that made it. */
 const out = (c: Call, current: App.Model): CallOut => {
   const j = callToJson(c);
@@ -556,7 +565,7 @@ ${sar ? tsStarted(app, "localClock()", "drawsFrom({ seed: freshSeed() })") : ""}
   const test = `import * as App from "./app.ts";
 import { fromWire, toNode${sar ? ", type Stored" : ""} } from "./spec.ts";
 import type { Wire } from "./ui.ts";
-${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "./clock.ts";\n` : ""}
+${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "${app.sizes ? "./spec.ts" : "./clock.ts"}";\n` : ""}
 /** The app under test. ${c ? "The driver owns the clock: it comes with every wire event." : ""} */
 export function start(${c ? "initial: Clock" : ""}) {
 ${c ? "  let clock = initial;\n" : ""}${sar ? tsStarted(app, "clock", `drawsFrom({ seed: "0".repeat(64) })`, true).replace(/^/gm, "  ").replace(/^  $/gm, "") : ""}  let m = ${sar ? "started(undefined)" : `App.init(${c ? "clock" : ""})`};
@@ -575,6 +584,85 @@ ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The
 }
 `;
   return { main, test };
+}
+
+/**
+ * The host entry (\`screen.mjs\`, docs/STABILITY.md §5, docs/design/screen-host.md): the same core the
+ * example driver runs (screen-core.ts, the test entry without its guards), for a host that runs the app
+ * itself, with no globals. The host gives the clock, the size, the saved data and a seed; it takes the
+ * screen, the calls and the data to keep; it performs the calls and sends their answers and events back.
+ */
+export function genTsScreenEntry(app: App): string {
+  const c = usesClock(app);
+  const st = hasStored(app);
+  const dw = usesDraws(app);
+  const meta = {
+    contract: "intent.screen/1",
+    name: app.name,
+    clock: c ? { tickMs: app.clockMs ?? 0 } : null,
+    sizes: app.sizes ?? null,
+    stored: app.state.filter((f) => f.stored).map((f) => f.name),
+    draws: dw,
+    screens: hasScreens(app) ? app.screens!.map((x) => ({ name: x.name, path: x.path })) : null,
+    uses: (app.clients ?? []).map((u) => ({ alias: u.alias, contract: u.contract.name, endpoints: (u.contract.endpoints ?? []).map((e) => e.name).filter((n) => !u.only || u.only.includes(n)), events: (u.contract.events ?? []).map((e) => e.name).filter((n) => !u.only || u.only.includes(n)) })),
+  };
+  return `// The host entry of ${app.name} (contract intent.screen/1): pure, no globals. Generated; do not edit.
+import { start as core } from "./screen-core.ts";
+${st ? `import { storedFields } from "./spec.ts";
+import { migrate } from "./api.ts";
+` : ""}${dw ? `import { eventSeed, isSeed, runBase } from "./draw.ts";
+` : ""}import type { Node, Wire } from "./ui.ts";
+
+/** What this app is, for its host: read it instead of guessing. */
+export const meta = ${JSON.stringify(meta, null, 2)} as const;
+
+export type Clock = { now: string; today: string };
+export interface Options {
+  /** The time the app starts at: \`{ now: "2026-09-24T09:00", today: "2026-09-24" }\` (local time, to the minute).${c ? " Required." : " Unused: this app reads no clock."} */
+  clock?: Clock;
+  /** The size the host shows the app at, one of meta.sizes (default: the first). */
+  size?: string;
+  /** What the host kept from \`stored()\` last time; migrated to this version's types. */
+  saved?: Record<string, unknown> | null;
+  /** 64 hex digits from the host's CSPRNG.${dw ? " Required: this app draws random values, each event from a seed derived from this one." : " Unused: this app draws nothing."} */
+  seed?: string;
+}
+
+export function start(o: Options = {}) {
+${c ? `  if (!o.clock) throw new Error("${app.name}: start needs { clock } (this app reads the clock)");
+  let clock: Record<string, unknown> = { ...o.clock${app.sizes ? `, size: meta.sizes!.find((x) => x.toLowerCase() === (o.size ?? "").toLowerCase()) ?? meta.sizes![0]` : ""} };
+` : ""}${dw ? `  if (!isSeed(o.seed)) throw new Error("${app.name}: start needs { seed }: 64 hex digits from the host's CSPRNG (this app draws random values)");
+  const base = runBase(o.seed);
+  let n = 0;
+` : ""}  const s = core(${c ? "clock as never" : ""}) as ReturnType<typeof core> & Partial<{ calls(): unknown[]; data(): Record<string, unknown>; nav(): string | null; through(): unknown }>;
+${st ? `  if (o.saved) {
+    // Start from what was kept: the app from its defaults, the stored fields put back, then \`on start\`.
+    s.calls?.(); // the start without the saved data made nothing anyone saw
+    const { data } = migrate(o.saved, storedFields);
+    s.send({ on: "restart", target: "", saved: data${c ? ", clock" : ""} } as Wire);
+  }
+` : ""}  return {
+    /** The screen now, as a tree of nodes (data-el names, rows with their keys). */
+    observe: (): Node => s.observe(),
+    /** An event: a user's (click, input, toggle, choose, navigate), an answer to a call, an event of an api, a tick, or the host's (size, clock). */
+    send(w: Wire & { size?: string }) {
+${c ? `      if (w.clock) clock = { ...clock, ...(w.clock as object) };
+${app.sizes ? `      if (w.on === "size") clock = { ...clock, size: meta.sizes!.find((x) => x.toLowerCase() === String(w.value ?? w.target).toLowerCase()) ?? clock.size };
+` : ""}` : ""}      s.send({ ...w${c ? ", clock" : ""}${dw ? ", ...((w as { draw?: unknown }).draw ? {} : { draw: { seed: eventSeed(base, n++) } })" : ""} } as Wire);
+    },
+    /** The calls the app made since last asked, in order: the host performs them (keys, retries, layers) and sends each answer back. */
+    calls: (): { endpoint: string; args: Record<string, unknown>; config?: unknown; undo?: boolean; of?: unknown }[] => (s.calls ? (s.calls() as never) : []),
+    /** What the host keeps for the next start (only the stored fields). */
+    stored: (): Record<string, unknown> => ${st ? "Object.fromEntries(Object.keys(storedFields).map((f) => [f, s.data!()[f]]))" : "({})"},
+    /** The address the app asked for since last asked (\`go to\`), "back", or null. */
+    nav: (): string | null => (s.nav ? s.nav() : null),
+    /** What the client layers get from the state, per api (\`through\` in \`uses\`). */
+    through: (): unknown => (s.through ? s.through() : {}),
+  };
+}
+
+export default { meta, start };
+`;
 }
 
 // ---------------------------------------------------------------- scaffold a build directory
@@ -607,14 +695,14 @@ function jobEntry(app: App, main: string): string {
 /** The clock import of a browser entry; with `sizes`, the clock also says the size the host shows the app at. */
 const clockImport = (app: App) =>
   app.sizes
-    ? `import { hostSize, localClock as clockOnly } from "./clock.ts";\n// The clock, with the size the host shows the app at (sizes in the spec).\nconst localClock = () => ({ ...clockOnly(), size: hostSize(${JSON.stringify(app.sizes)}) });\n`
+    ? `import { hostSize, localClock as clockOnly } from "./clock.ts";\n// The clock, with the size the host shows the app at (sizes in the spec).\nimport type { Size } from "./spec.ts";\nconst localClock = () => ({ ...clockOnly(), size: hostSize(${JSON.stringify(app.sizes)}) as Size });\n`
     : `import { localClock } from "./clock.ts";\n`;
 
 export function genTsCalls(app: App): string {
   const eps = clientEndpoints(app);
   const out: string[] = [];
   const undos = undoables(app);
-  out.push(`/** A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \\`undo\\` takes an effect back (\\`undo @pay.charge\\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \\`undone by\\`, answered as that endpoint's \\`…Answered\\`." : ""} */\nexport type Call =\n${[...eps.map((c) => `  | { call: ${q(c.name)}${c.ep.params.length ? `; args: { ${c.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`), ...undos.map((u) => `  | { undo: ${q(u.of.name)}; answer: ${tsType(u.answer)}${u.usesArgs ? `; args: { ${u.of.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`)].join("\n")};\n\n`);
+  out.push(`/** A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \\`undo\\` takes an effect back (\\`undo @pay.charge\\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \\`undone by\\`, answered as that endpoint's \\`…Answered\\`." : ""} */\nexport type Call =\n${[...eps.map((c) => `  | { call: ${q(c.name)}${c.ep.params.length ? `; args: { ${c.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`), ...undos.map((u) => `  | { undo: ${q(u.of.name)}; answer: ${tsType(u.answer)}${u.usesArgs ? `; args: { ${u.of.ep.params.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} }` : ""} }`)].join("\n") || "  never"};\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `{ status: ${a.status}; body: ${a.type ? tsType(a.type) : "null"} }`);
     const unknown = [...(c.ep.effect ? [`{ status: "unknown"; error: string }`] : []), ...(gated(app, c) ? [`{ status: "held" }`, `{ status: "rejected" }`] : [])];
@@ -625,7 +713,8 @@ export function genTsCalls(app: App): string {
   const th = throughs(app);
   if (th.length) out.push(`/** What the client layers need from the app's state, per api (through, under uses): through(model) in the app module computes it. */\nexport type Through = { ${th.map((t) => `${t.alias}: { ${t.state.map((x) => `${x.param}: ${tsType(x.type)} /* state ${x.field} */`).join("; ")} }`).join("; ")} };\n\n`);
   const undoCases = undos.map((u) => `    case ${q(u.of.name)}:\n      return { endpoint: ${q(`${u.of.alias}.${u.by.name}`)}, args: { ${u.args.map((a) => `${a.name}: ${a.from === "answer" ? ["c.answer", ...a.path].join(".") : `(c as { args: Record<string, unknown> }).args.${a.path[0]}`}`).join(", ")} }, undo: true, of: { endpoint: ${q(u.of.name)}, answer: c.answer } };\n`);
-  out.push(`export function callToJson(c: Call): CallOut {\n${undos.length ? `  // An undo is the call the contract names in \\\`undone by\\\`, with its args from the original answer.\n  if ("undo" in c)\n    switch (c.undo) {\n${undoCases.join("")}    }\n` : ""}  return { endpoint: ${undos.length ? "(c as { call: string }).call" : "c.call"}, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
+  if (!eps.length && !undos.length) out.push(`/** This app only hears events: it calls nothing. */\nexport function callToJson(c: Call): CallOut {\n  return c;\n}\n\n`);
+  else out.push(`export function callToJson(c: Call): CallOut {\n${undos.length ? `  // An undo is the call the contract names in \\\`undone by\\\`, with its args from the original answer.\n  if ("undo" in c)\n    switch (c.undo) {\n${undoCases.join("")}    }\n` : ""}  return { endpoint: ${undos.length ? "(c as { call: string }).call" : "c.call"}, args: ("args" in c ? c.args : {}) as Record<string, unknown> };\n}\n\n`);
   out.push(`const ANSWERED: Record<string, string> = { ${eps.map((c) => `${q(c.name)}: ${q(c.tag + "Answered")}`).join(", ")} };\n\n`);
   const evs = clientEvents(app);
   out.push(`/** The events this app handles, and their payload types: an event whose payload does not fit is dropped. */\nconst EVENTS: Record<string, { tag: string; type: TypeDesc }> = { ${evs.map((e) => `${q(e.name)}: { tag: ${q(e.tag)}, type: ${typeDesc(app, e.type)} }`).join(", ")} };\n\n`);
@@ -708,7 +797,10 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
   writeFileSync(join(dir, "main.ts"), main);
   // Tests: the app's own randomness throws (runtime/ts/norandom.ts, imported before the app module).
   copyFileSync(join(ROOT, "runtime/ts/norandom.ts"), join(dir, "norandom.ts"));
-  writeFileSync(join(dir, "test-entry.ts"), `import "./norandom.ts";\n${test}`);
+  // The core both entries share: the example driver's test entry (with the guards) and the host's screen entry.
+  writeFileSync(join(dir, "screen-core.ts"), test);
+  writeFileSync(join(dir, "test-entry.ts"), `import "./norandom.ts";\nexport * from "./screen-core.ts";\n`);
+  if (app.profile !== "job") writeFileSync(join(dir, "screen-entry.ts"), genTsScreenEntry(app));
   if (app.profile === "job") {
     copyFileSync(join(ROOT, "runtime/ts/headless.ts"), join(dir, "headless.ts"));
     writeFileSync(join(dir, "job.ts"), jobEntry(app, main));
@@ -730,6 +822,11 @@ async function compileTs(dir: string): Promise<string> {
   if (!b1.ok) return clean(b1.out);
   const b2 = await run(bin("esbuild"), ["test-entry.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=test.mjs", "--log-level=error"], dir);
   if (!b2.ok) return clean(b2.out);
+  if (existsSync(join(dir, "screen-entry.ts"))) {
+    // The host entry: an ES module with no platform (default export { meta, start }).
+    const h = await run(bin("esbuild"), ["screen-entry.ts", "--bundle", "--format=esm", "--platform=neutral", "--outfile=screen.mjs", "--log-level=error"], dir);
+    if (!h.ok) return clean(h.out);
+  }
   if (existsSync(join(dir, "job.ts"))) {
     // A job's entry for its host: an ES module whose default export is { run }.
     const j = await run(bin("esbuild"), ["job.ts", "--bundle", "--format=esm", "--outfile=job.mjs", "--log-level=error"], dir);

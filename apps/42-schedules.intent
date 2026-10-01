@@ -1,0 +1,54 @@
+app Schedules {
+  "Plan two jobs, one daily and one weekly, and see every job with when it runs."
+}
+language 1.1
+
+uses jobs.schedulesApi as plans only plan, schedules {
+  tested with "apps/api/schedules-api.intent"
+}
+
+state {
+  rows: List Schedule = []
+}
+
+screen {
+  button daily "Report every day at 09:00"
+  button weekly "Backup every Monday at 02:00"
+  list rows of Schedule {
+    text job
+    text when = "{for a Daily trigger: "daily, " and its @at; for a Weekly trigger: "every " and its @day and ", " and its @at}"
+  }
+}
+
+on start {
+  - call @plans.schedules
+}
+
+on click daily {
+  - call @plans.plan with @job = "Report" and @trigger = a @Daily with @at = "09:00"
+}
+
+on click weekly {
+  - call @plans.plan with @job = "Backup" and @trigger = (a @Weekly with @day = @Mon and @at = "02:00")
+}
+
+on answer plans.plan {
+  if its status is 201 {
+    - call @plans.schedules
+  }
+}
+
+on answer plans.schedules {
+  if its status is 200 {
+    - set @rows to its body
+  }
+}
+
+example "a daily and a weekly job" {
+  click weekly
+  click daily
+  see rows has 2 rows
+  see job on row 1 = "Backup"
+  see when on row 1 = "every Mon, 02:00"
+  see when on row 2 = "daily, 09:00"
+}

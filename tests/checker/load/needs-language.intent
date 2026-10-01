@@ -1,0 +1,21 @@
+app NeedsLanguage {
+  "A spec that uses 1.1 forms under a `language 1` line: each form says which line it needs."
+}
+language 1
+
+record Ping                          # expect: NEEDS_LANGUAGE
+choice Kind: Ask                     # expect: NEEDS_LANGUAGE
+choice Size: Small | Large           # expect-not: NEEDS_LANGUAGE
+
+state {
+  pings: List Ping = []
+  kind: Kind = Ask
+}
+
+screen {
+  text shown = "{@kind}"
+}
+
+example "one value" {
+  see shown = "Ask"
+}

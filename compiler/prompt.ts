@@ -17,7 +17,7 @@ const CODING_RULES = `Rules that keep every build identical:
 3. Built-in behaviour from §4 always applies: typing into a field sets that state field to the typed text (for a field inside a list row: that row's item's field, the item found by the row's key); choosing sets the select's state (for a select inside a list row: that row's item's field); toggling a checkbox flips its Bool. Handlers add to this; they do not replace it.
 4. \`view\` computes every Screen field from the Model; derived values are computed, not stored.
 5. Template strings "…{…}…" are exact: reproduce every character outside the braces literally.
-6. Row keys: a stable id per item, assigned when the item is created.
+6. Row keys: a stable id per item, assigned when the item is created; for a row that shows a record with a key (its \`key\` field, else \`id\`), that key as text. The host finds rows by it.
 7. Every example in the spec must pass. Walk through each one step by step before you answer.
 8. All rounding goes through Fmt (roundTo / roundUpTo / roundDownTo / cents). Never write your own rounding, epsilon or float tricks.
 9. A \`table\` default in the spec is available as \`<stateName>Initial\` in the generated interface; use it in init. For every refined type (\`type Email = Text matching …\`) the interface has a check, \`isEmail\`: "is a valid Email" in the spec means exactly that check. Never write your own.

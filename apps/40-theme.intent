@@ -1,0 +1,70 @@
+app Theme {
+  "Paint a role of the theme a colour, and see the colours of the primary and accent roles."
+}
+language 1.1
+
+uses prefs.themeApi as themes only theme, paint {
+  tested with "apps/api/theme-api.intent"
+}
+
+state {
+  colors: Map Color = {}
+  role: Text = ""
+  color: Text = ""
+  problem: Text = ""
+}
+
+screen {
+  field role "Role"
+  field color "Colour"
+  button paint "Paint" {
+    enabled when @role is not blank
+  }
+  text problem
+  text primary = "Primary: {the colour for "primary" in @colors, or "none"}"
+  text accent = "Accent: {the colour for "accent" in @colors, or "none"}"
+  text count = "{the number of keys in @colors} roles"
+}
+
+on start {
+  - call @themes.theme
+}
+
+on click paint {
+  - call @themes.paint with @role = @role and @color = @color
+}
+
+on answer themes.paint {
+  if its status is 200 {
+    - set @colors to its body
+    - clear @problem
+  } else {
+    - set @problem to its body's @error
+  }
+}
+
+on answer themes.theme {
+  if its status is 200 {
+    - set @colors to its body
+  }
+}
+
+example "painting the primary role" {
+  see primary = "Primary: none"
+  see count = "0 roles"
+  see paint is disabled
+  type "primary" into role
+  type "#334466" into color
+  click paint
+  see primary = "Primary: #334466"
+  see accent = "Accent: none"
+  see count = "1 roles"
+}
+
+example "a bad colour" {
+  type "accent" into role
+  type "red" into color
+  click paint
+  see problem = "color must be a valid Color"
+  see count = "0 roles"
+}

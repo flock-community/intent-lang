@@ -5,6 +5,9 @@
 import { claudeCli } from "./providers/claude-cli.ts";
 import { anthropic } from "./providers/anthropic.ts";
 import { openai } from "./providers/openai.ts";
+import { promptHash, replay } from "./providers/replay.ts";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { config } from "./config.ts";
 
 export interface LlmResult {
@@ -26,6 +29,7 @@ const PROVIDERS: Record<string, (model: string) => Provider> = {
   "claude-cli": claudeCli,
   anthropic,
   openai,
+  replay,
 };
 
 /** The model this run compiles with (pinned in intent.lock). */
@@ -57,6 +61,14 @@ export async function complete(system: string, prompt: string, probe = false): P
   }
   const r = await p.complete(system, prompt);
   spentUsd += r.costUsd;
+  // INTENT_RECORD=<folder>: every answered call is kept by its prompt, for `llm replay` (providers/replay.ts).
+  const rec = process.env.INTENT_RECORD;
+  if (rec && !r.error) {
+    mkdirSync(rec, { recursive: true });
+    const h = promptHash(prompt);
+    writeFileSync(join(rec, `${h}.prompt.md`), prompt);
+    writeFileSync(join(rec, `${h}.response.md`), r.text);
+  }
   // A budget cannot hold over a model whose price is unknown: say so instead of counting it as free.
   if (budget > 0 && r.unpriced && !r.error) return { ...r, text: "", error: `the price of ${p.name} model \`${p.model}\` is unknown, so the budget cannot be kept: add it to the provider's price table, or set budget 0` };
   return r;

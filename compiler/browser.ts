@@ -106,7 +106,7 @@ function pageExtract(arg: { shapes: Shape[]; title: string }) {
         }
         case "list": {
           const rows = Array.from(el.querySelectorAll("[data-row]")).filter((r) => rowOf(r.parentElement!) === row);
-          out.push({ k: "list", n: s.name, rows: rows.map((r) => ({ key: "", c: walk(s.children, r, r) })) });
+          out.push({ k: "list", n: s.name, rows: rows.map((r) => ({ key: r.getAttribute("data-row") ?? "", c: walk(s.children, r, r) })) });
           break;
         }
         case "section":
@@ -365,5 +365,21 @@ export function fidelityDiff(dom: Obs, screen: Obs): string[] {
     out.push(`${path}: the page shows ${JSON.stringify(x)}, the screen says ${JSON.stringify(y)}`);
   };
   cmp(a.c, b.c, "screen");
+  // Each row's data-row is its key, the one its events carry (a host finds a row by it).
+  if (!out.length) {
+    const keys = (o: Obs) => {
+      const acc: string[] = [];
+      const go = (ns: any[], path: string) => {
+        for (const n of ns ?? []) {
+          if (n?.k === "section") go(n.c, `${path}.${n.n}`);
+          if (n?.k === "list") n.rows.forEach((r: any, i: number) => { acc.push(`${path}.${n.n}[${i + 1}]=${JSON.stringify(String(r.key))}`); go(r.c, `${path}.${n.n}[${i + 1}]`); });
+        }
+      };
+      go(o.c, "screen");
+      return acc;
+    };
+    const [x, y] = [keys(dom), keys(screen)];
+    for (let i = 0; i < x.length && out.length < 12; i++) if (x[i] !== y[i]) out.push(`${x[i].split("=")[0]}: data-row is ${x[i].split("=").slice(1).join("=")}, the row's key is ${y[i]?.split("=").slice(1).join("=")}`);
+  }
   return out;
 }

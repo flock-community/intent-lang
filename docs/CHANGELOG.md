@@ -60,6 +60,48 @@ Versions v1–v73 are the development history before the first stable version: s
 `language vNN`, and any version could change what a spec meant. From language 1 on, versions are
 `1`, `1.1`, `1.2`, … (additions only) and editions (`language 2`); docs/STABILITY.md is the promise.
 
+- 1.1 (in progress) — from OurOS building on language 1 (its decision 0070: intentlang builds
+  OurOS). **Forms:** a record without fields (`record Ping`, its value `{}`), a choice with one
+  value (`choice Station: Main`), and an api or contract with only events (a source that announces
+  and is never called; its implementation publishes from `every` blocks), and a map with text keys
+  (`Map T`: a JSON object whose keys are not known ahead, written in key order on both targets, §9.21;
+  Elm `Dict String`, TypeScript `Record<string, T>`; checked and migrated value by value; examples
+  read a key with `see x.body.key = …` and an empty map with `= {}`; example: `lib/prefs/themeApi`,
+  `apps/api/theme-api.intent` and `apps/40-theme.intent`, twin-verified on both targets, first
+  attempt), and `Instant` (UTC, to the second, `2026-09-24T07:00:00Z`; every ISO 8601 form with a
+  zone is read into that form, one without a zone is refused; no conversion to `DateTime` until the
+  language knows time zones; `Instant` is read in its place, so a spec's own `Instant` keeps its
+  meaning; example: `lib/notes/remindersApi`, `apps/api/reminders-api.intent`,
+  `apps/41-reminders.intent`, twin-verified on both targets, first attempt), and unions of records
+  (`union Trigger: Daily = "daily" | Weekly = "weekly"`, told apart on the wire by a tag field,
+  `kind` unless `by <field>`; the app reads its own names, the wire carries the wire names, an
+  unknown tag is refused; Elm gets a custom type with prefixed constructors, TypeScript a
+  discriminated union; asked for since the OurOS review, G4, `docs/reviews/openouros.md`; example:
+  `lib/jobs/schedulesApi`, `apps/api/schedules-api.intent`, `apps/42-schedules.intent`,
+  twin-verified on both targets, first attempt). These were `SYNTAX` (or `UNKNOWN_NAME`) errors, so
+  no checked spec changes. **Refinement:** as deep as the chain (a base may extend another; each
+  is applied in turn and locked; a cycle is `BAD_BINDING`); this lifts a `NOT_YET`. `override
+  component` of a component the base imports from a bundle works (it was a `DUPLICATE` error, and
+  `intent lock` crashed on it). A spec that uses a form newer than its own `language` line
+  is an error (`NEEDS_LANGUAGE`, as Go's `go` line), and `intent fix` raises the line; an expanded
+  spec prints the line its forms need. Example: `apps/39-weather.intent` with
+  `lib/weather/*` and `apps/api/weather-api.intent` (twin-verified on both targets, first attempt).
+  **Harness contracts (STABILITY.md §5):** the plain (unstyled) renderers put `data-el` on every
+  element, as the styled ones did; every row carries `data-row="<its key>"` (the key its events
+  carry), and a styled build whose `data-row` is not the row's key is refused; options carry
+  `data-option`, the chosen one `aria-pressed`. The compiler asks for a record's key as the key of
+  a row that shows it. `intent check --json` and the new `intent build --json` are promised
+  formats, and so are the exit codes (`0` done, `1` failed, `2` a usage error). **A host entry:**
+  a TypeScript screen build holds `screen.mjs` (contract `intent.screen/1`): the same core the
+  examples run, with no platform; the host gives the clock, the size, the saved data and a seed,
+  and performs the calls (docs/design/screen-host.md). App code may not use the platform (`fetch`,
+  timers, storage, the DOM), checked like randomness. **Providers:**
+  `llm replay` answers each call from what was recorded for exactly its prompt (build logs, or
+  `INTENT_RECORD`'s files), so a recorded build replays in CI without a model. **Fixes:** the
+  TypeScript target's `Clock` has `size` when the spec has `sizes`, and the harness's own entries
+  type it with the spec's `Size` (a TypeScript build that read `@size` failed to compile); `intent
+  check --json` writes its whole report before it exits (into a pipe it was cut at 512 bytes); an
+  api's random sessions no longer need an endpoint.
 - 1 — the first stable version (stamped on v73's language). **What language 1 is:** a spec says
   what an app must be — its records, choices and refined types (`ref` references with declared
   keys, `T or nothing` with nothing-safety, random values drawn from types), its state (`stored`

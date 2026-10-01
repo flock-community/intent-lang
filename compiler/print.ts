@@ -19,8 +19,9 @@ function lit(l: Literal, ind: string): string {
     case "value": return l.v;
     case "date": return l.v;
     case "dateTime": return l.v.replace("T", " ");
+    case "instant": return l.v;
     case "list": return `[${l.items.map((x) => lit(x, "")).join(", ")}]`;
-    case "record": return `{ ${l.fields.map((f) => `${f.name} = ${lit(f.value, "")}`).join(", ")} }`;
+    case "record": return `{ ${l.fields.map((f) => `${/^[a-z]\w*$/.test(f.name) ? f.name : q(f.name)} = ${lit(f.value, "")}`).join(", ")} }`;
     case "table": {
       const rows = [l.columns, ...l.rows.map((r) => r.map((c) => lit(c, "")))];
       const w = l.columns.map((_, i) => Math.max(...rows.map((r) => r[i].length)));
@@ -155,6 +156,16 @@ export function printApp(app: App): string {
   const els = (xs: Element[]): boolean => xs.some((e) => e.name.includes(".") || els(e.children));
   if (app.state.some((f) => f.name.includes(".")) || app.derive.some((d) => d.name.includes(".")) || els(app.screen)) out.push(EXPANDED_LINE);
   block([`${app.kind ?? "app"} ${app.name}`, ...app.purpose.map((p) => `  ${q(p)}`)]);
+  // Forms added after language 1 (from this spec or a bundle it imports) need their version on the line.
+  const seen = new Set<object>();
+  const hasMap = (v: unknown): boolean => {
+    if (!v || typeof v !== "object" || seen.has(v)) return false;
+    seen.add(v);
+    return ((v as { k?: unknown }).k === "Map" && "of" in v) || Object.values(v).some(hasMap);
+  };
+  const since = app.records.some((r) => !r.fields.length) || app.choices.some((c) => c.values.length === 1) || (app.profile === "api" && !app.endpoints?.length && !!app.events?.length) || hasMap({ r: app.records, s: app.state, d: app.derive, e: app.endpoints, v: app.events });
+  const own = app.language && /^\d+\.\d+$/.test(app.language) ? app.language : undefined;
+  if (own || since) block([`language ${own ?? "1.1"}`]);
   if (app.profile && app.profile !== "ui" && app.kind !== "layer") block([`profile ${app.profile}`]);
   if (app.startsAt) block([`examples start at ${app.startsAt.replace("T", " ")}`]);
   if (app.sizes) block([`sizes ${app.sizes.join(" | ")}`]);
@@ -204,7 +215,8 @@ export function printApp(app: App): string {
   block((app.refined ?? []).map((r) => `type ${r.name} = ${r.base} ${r.code ? codeRule(r.code) : r.pattern !== undefined ? `matching /${r.pattern}/` : r.minLength !== undefined || r.maxLength !== undefined ? lengthRule(r) : [r.min !== undefined ? `from ${r.min}` : "", r.max !== undefined ? `to ${r.max}` : ""].filter(Boolean).join(" ")}${origin(app, r.line, r.code ? codeSize(r.code.n, r.code.chars) : undefined)}`));
   // `Size` comes from the `sizes` line, printed above.
   block(app.choices.filter((c) => !(app.sizes && c.name === "Size" && c.values.join() === app.sizes.join())).map((c) => `choice ${c.name}: ${c.values.map((v) => `${v}${c.labels[v] !== v ? ` ${q(c.labels[v])}` : ""}${c.wire?.[v] !== undefined ? ` = ${q(c.wire[v])}` : ""}`).join(" | ")}${origin(app, c.line)}`));
-  for (const r of app.records) block([`record ${r.name}${origin(app, r.line)}`, ...r.fields.map((f) => `  ${r.key === f.name ? "key " : ""}${f.name}: ${typeToString(f.type)}${f.default ? ` = ${lit(f.default, "  ")}` : ""}${origin(app, 0, f.note)}`)]);
+  for (const r of app.records.filter((x) => x.union)) block([`union ${r.name}${r.union!.tag === "kind" ? "" : ` by ${r.union!.tag}`}: ${r.union!.variants.map((v) => `${v}${r.union!.wire?.[v] !== undefined ? ` = ${q(r.union!.wire[v])}` : ""}`).join(" | ")}${origin(app, r.line)}`]);
+  for (const r of app.records.filter((x) => !x.union)) block([`record ${r.name}${origin(app, r.line)}`, ...r.fields.map((f) => `  ${r.key === f.name ? "key " : ""}${f.name}: ${typeToString(f.type)}${f.default ? ` = ${lit(f.default, "  ")}` : ""}${origin(app, 0, f.note)}`)]);
   if (app.kind === "layer") {
     block((app.params ?? []).map((f) => `param ${f.name}: ${typeToString(f.type)}${f.default ? ` = ${(Array.isArray(f.default) ? f.default : [f.default]).map((v) => lit(v, "")).join(", ")}` : ""}${origin(app, f.line, f.note)}`));
     block((app.provides ?? []).map((f) => `provides ${f.name}: ${typeToString(f.type)}${origin(app, f.line, f.note)}`));

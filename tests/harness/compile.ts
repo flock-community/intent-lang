@@ -24,8 +24,8 @@ for (const f of ["layer.ts", "spec.ts", "http.ts", "fmt.ts"]) writeFileSync(join
 const layerDirs = new Proxy({}, { get: () => fake });
 const tsc = join(ROOT, "node_modules/.bin/tsc"), elm = join(ROOT, "node_modules/.bin/elm");
 // Files that need the model's code or a layer's build: everything else must compile on its own.
-const MODEL = /from\s+"\.\/(app|main|test-entry|job|through|layers|pipeline|server)(\.ts)?"/;
-const SKIP = new Set(["app.ts", "main.ts", "test-entry.ts", "job.ts", "through.ts", "layers.ts", "pipeline.ts", "server.ts"]);
+const MODEL = /from\s+"\.\/(app|main|test-entry|screen-core|job|through|layers|pipeline|server)(\.ts)?"/;
+const SKIP = new Set(["app.ts", "main.ts", "test-entry.ts", "screen-core.ts", "screen-entry.ts", "job.ts", "through.ts", "layers.ts", "pipeline.ts", "server.ts"]);
 
 type Job = { spec: string; target: string; dir: string; ts: string[]; elm: boolean };
 const jobs: Job[] = [];

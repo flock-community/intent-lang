@@ -297,6 +297,11 @@ try {
   for (const bad of ['const r = Math["random"]();', "const { random } = Math; random();", "const r = Math . random();", "const c = globalThis[\"crypto\"];", "const r = crypto.subtle.generateKey;", 'const r = self.crypto["randomUUID"]();', 'const x = "http://a"; const r = Math.random();', "const s = `//`; const r = Math.random();", 'import("node:crypto").then((m) => m.randomInt(3));', "const t = performance.now() % 6;", "const t = Date.now() % 6;", 'import { freshSeed } from "./draw.ts";', 'import { newKey } from "./calls.ts";', 'const m = require("crypto");'])
     assert.ok(ownRandomness(`${bad}\n${TS_TABLE}`, "ts"), `rejected: ${bad}`);
   assert.equal(ownRandomness(`const label = "Math.random // crypto";\n${TS_TABLE}`, "ts"), undefined, "text in a string is not code");
+  // The platform (1.1): a host runs screen.mjs with none. Domain words that look like it are fine.
+  for (const bad of ['fetch("/x");', "setTimeout(() => 1, 5);", "const t = setInterval(f, 9);", 'localStorage.setItem("a", "b");', 'const e = new EventSource("/e");', 'document.getElementById("app");', "window.addEventListener('x', f);", "queueMicrotask(f);"])
+    assert.ok(ownRandomness(`${bad}\n${TS_TABLE}`, "ts"), `rejected: ${bad}`);
+  for (const ok of ["const location = model.location;", "const document = { title: \"x\" }; const t = document.title2;", "const h = model.history.length;", "const f = item.fetch;", "const w = model.window;"])
+    assert.equal(ownRandomness(`${ok}\n${TS_TABLE}`, "ts"), undefined, `allowed: ${ok}`);
   for (const bad of ["import Random as R", "import   Random.Extra", "import Time", "import Task"]) assert.ok(ownRandomness(ELM_TABLE.replace("import Spec exposing (..)", `${bad}\nimport Spec exposing (..)`), "elm"), `rejected: ${bad}`);
   assert.ok(!/"elm\/random"/.test((await import("node:fs")).readFileSync("runtime/elm/elm.json", "utf8")), "an Elm build has no elm/random");
   // In tests the module's own randomness throws, whatever the static reading missed.

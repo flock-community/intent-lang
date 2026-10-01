@@ -325,6 +325,24 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     if (w.ms % app.clockMs !== 0) err(w.step.line, "STEP", `wait duration is not a whole number of clock ticks (${app.clockMs}ms)`);
     else w.step.times = w.ms / app.clockMs;
   }
+  // Types added after language 1, wherever they appear (fields, state, params, answers, events).
+  // `Instant` is a word read in its place: a spec's own record, choice or type named so keeps it.
+  const ownInstant = app.records.some((r) => r.name === "Instant") || app.choices.some((c) => c.name === "Instant") || !!app.refined?.some((r) => r.name === "Instant");
+  const seen = new Set<object>();
+  const walk = (v: unknown, line: number) => {
+    if (!v || typeof v !== "object" || seen.has(v)) return;
+    seen.add(v);
+    const here = typeof (v as { line?: unknown }).line === "number" ? (v as { line: number }).line : line;
+    if ((v as { k?: unknown }).k === "Map" && "of" in v) (app.since ??= []).push({ line: here, version: "1.1", what: "a map (`Map T`)" });
+    if (!ownInstant && (v as { k?: unknown }).k === "Named" && (v as { name?: unknown }).name === "Instant") {
+      const t = v as { k: string; name?: string };
+      t.k = "Instant";
+      delete t.name;
+      (app.since ??= []).push({ line: here, version: "1.1", what: "an instant (`Instant`)" });
+    }
+    for (const x of Object.values(v)) walk(x, here);
+  };
+  walk({ records: app.records, state: app.state, derive: app.derive, endpoints: app.endpoints, events: app.events }, 1);
   return { app, diagnostics: diags, clockLine: ctx.clockLine, language, languageLine };
 }
 
@@ -378,7 +396,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       return true;
     }
     (app.refined ??= []).push(r);
-  } else if ((m = t.match(new RegExp(`^record\\s+(${UPPER})$`)))) {
+  } else if ((m = t.match(new RegExp(`^record\\s+(${UPPER})(?:\\s*\\{\\s*\\})?$`)))) {
     onlyTop("record");
     const rec: RecordDecl = { name: m[1], fields: [], line: node.line };
     for (const c of node.children) {
@@ -390,7 +408,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       if (key && rec.key) err(c.line, "DUPLICATE", `record ${rec.name} has one key: \`${rec.key}\` is already its key`);
       else if (key) rec.key = f.name;
     }
-    if (!rec.fields.length) err(node.line, "SYNTAX", `record ${rec.name} has no fields`);
+    if (!rec.fields.length) (app.since ??= []).push({ line: node.line, version: "1.1", what: `a record without fields (\`record ${rec.name}\`)` });
     app.records.push(rec);
   } else if ((m = t.match(new RegExp(`^choice\\s+(${UPPER})\\s*(?::\\s*(.*))?$`)))) {
     onlyTop("choice");
@@ -418,10 +436,35 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
     };
     if (m[2] !== undefined && m[2].trim()) for (const v of splitCells(m[2])) addValue(v, node.line);
     for (const c of node.children) addValue(c.text, c.line, c.indent + 1);
-    if (values.length < 2) err(node.line, "SYNTAX", `choice ${m[1]} needs at least two values, e.g. \`choice ${m[1]}: A | B\``);
+    if (!values.length) err(node.line, "SYNTAX", `choice ${m[1]} needs a value, e.g. \`choice ${m[1]}: A | B\``);
+    if (values.length === 1) (app.since ??= []).push({ line: node.line, version: "1.1", what: `a choice with one value (\`choice ${m[1]}\`)` });
     const some = Object.keys(wire).length;
     if (some && some < values.length) err(node.line, "SYNTAX", `choice ${m[1]}: give every value a wire name, or none (${values.filter((v) => !(v in wire)).join(", ")} has none)`);
     app.choices.push({ name: m[1], values, labels, ...(some ? { wire } : {}), line: node.line });
+  } else if ((m = t.match(new RegExp(`^union\\s+(${UPPER})(?:\\s+by\\s+(${LOWER}))?\\s*:\\s*(.*)$`)))) {
+    // 1.1: a value that is one of several records, told apart by a tag field on the wire.
+    onlyTop("union");
+    const variants: string[] = [];
+    const wire: Record<string, string> = {};
+    for (const raw of splitCells(m[3])) {
+      const vm = raw.trim().match(new RegExp(`^(${UPPER})(?:\\s*=\\s*(${STR}))?$`));
+      if (!vm) {
+        err(node.line, "SYNTAX", `union variant \`${raw.trim()}\` must be a record's name, optionally followed by \`= "wire name"\``);
+        continue;
+      }
+      if (variants.includes(vm[1])) err(node.line, "DUPLICATE", `union ${m[1]} lists \`${vm[1]}\` twice`);
+      variants.push(vm[1]);
+      if (vm[2] !== undefined) {
+        const w = parseString(vm[2])!;
+        if (Object.values(wire).includes(w)) err(node.line, "DUPLICATE", `the wire name "${w}" is already another variant's`);
+        wire[vm[1]] = w;
+      }
+    }
+    if (!variants.length) err(node.line, "SYNTAX", `union ${m[1]} needs its records: \`union ${m[1]}: Daily | Weekly\``);
+    const some = Object.keys(wire).length;
+    if (some && some < variants.length) err(node.line, "SYNTAX", `union ${m[1]}: give every variant a wire name, or none`);
+    app.records.push({ name: m[1], fields: [], line: node.line, union: { tag: m[2] ?? "kind", variants, ...(some ? { wire } : {}) } });
+    (app.since ??= []).push({ line: node.line, version: "1.1", what: `a union (\`union ${m[1]}\`)` });
   } else if (t === "design") {
     onlyTop("design");
     app.design = parseDesign(node, err);
@@ -1056,6 +1099,22 @@ function argShape(v: Literal, t: Type, app: App): string | undefined {
       if (w) return w;
     }
   }
+  if (v.k === "record" && inner.k === "Map") {
+    for (const f of v.fields) {
+      const w = argShape(f.value, inner.of, app);
+      if (w) return w;
+    }
+    return undefined;
+  }
+  if (v.k === "record" && inner.k === "Named" && app.records.find((x) => x.name === inner.name)?.union) {
+    // A union's value: the tag field names the variant (by its own name or its wire name), the rest is that record.
+    const u = app.records.find((x) => x.name === inner.name)!.union!;
+    const tag = v.fields.find((f) => f.name === u.tag)?.value;
+    const which = tag?.k === "text" ? u.variants.find((x) => x === tag.v || u.wire?.[x] === tag.v) : undefined;
+    if (!tag) return `a ${inner.name} needs \`${u.tag} = "…"\`, one of ${u.variants.map((x) => `"${u.wire?.[x] ?? x}"`).join(", ")}`;
+    if (!which) return undefined; // a kind the union does not have: an example that proves it is refused
+    return argShape({ k: "record", fields: v.fields.filter((f) => f.name !== u.tag) }, { k: "Named", name: which }, app);
+  }
   if (v.k === "record") {
     const r = inner.k === "Named" ? app.records.find((x) => x.name === inner.name) : undefined;
     if (!r) return `a record, but the param is ${typeToString(t)}`;
@@ -1102,13 +1161,16 @@ function parseArgValue(s: string): Literal | undefined {
     const items = splitTop(s.slice(1, -1)).map(parseArgValue);
     return items.every((x): x is Literal => !!x) ? { k: "list", items } : undefined;
   }
+  // A record without fields (1.1): `{}`.
+  if (/^\{\s*\}$/.test(s)) return { k: "record", fields: [] };
   if (s.startsWith("{") && s.endsWith("}") && s.includes("=")) {
     const fields: { name: string; value: Literal }[] = [];
     for (const part of splitTop(s.slice(1, -1))) {
-      const m = part.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`));
+      // A record's field, or a map's key in quotes (`{ "primary" = "#336" }`, 1.1).
+      const m = part.match(new RegExp(`^(${LOWER}|${STR})\\s*=\\s*(.+)$`));
       const v = m && parseArgValue(m[2]);
       if (!m || !v) return undefined;
-      fields.push({ name: m[1], value: v });
+      fields.push({ name: m[1].startsWith('"') ? parseString(m[1])! : m[1], value: v });
     }
     return { k: "record", fields };
   }
@@ -1127,6 +1189,11 @@ function parseType(s: string): Type | undefined {
   if ((m = s.match(/^List\s+(.+)$/))) {
     const of = parseType(m[1]);
     return of && { k: "List", of };
+  }
+  // `Map Text` (1.1): values by text keys, a JSON object whose keys are not known ahead.
+  if ((m = s.match(/^Map\s+(.+)$/))) {
+    const of = parseType(m[1]);
+    return of && { k: "Map", of };
   }
   // `Ticket or nothing` (and the older `Maybe Ticket`): a value that may be absent.
   if ((m = s.match(/^(.+?)\s+or\s+nothing$/)) || (m = s.match(/^Maybe\s+(.+)$/))) {
@@ -1150,9 +1217,11 @@ function parseLiteral(s: string): Literal | undefined {
   if (/^-?\d+(\.\d+)?$/.test(s)) return { k: "number", v: Number(s), raw: s };
   if (s === "true" || s === "false") return { k: "bool", v: s === "true" };
   if (s === "[]") return { k: "emptyList" };
+  if (/^\{\s*\}$/.test(s)) return { k: "record", fields: [] }; // a map with no keys (a record without fields)
   if (s === "nothing") return { k: "nothing" };
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { k: "date", v: s };
   if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}$/.test(s)) return { k: "dateTime", v: s.replace(" ", "T") };
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(s)) return { k: "instant", v: s }; // an Instant (1.1), as it is written
   if (new RegExp(`^${UPPER}$`).test(s)) return { k: "value", v: s };
   return undefined;
 }
@@ -1541,6 +1610,8 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     const lit = parseLiteral(m[3]);
     // `see x.body.f = nothing`: an answer's (or event's) value that is nothing, written as `null`.
     if (lit?.k === "nothing" && !m[2] && /(^|\.)body\b/.test(m[1])) return { step: { do: "see", target: m[1], check: { is: "eq", value: "nothing", nothing: true }, line } };
+    // `see x.body = {}`: an empty map (or a record without fields) in an answer or an event.
+    if (lit?.k === "record" && !lit.fields.length && !m[2] && /(^|\.)body\b/.test(m[1])) return { step: { do: "see", target: m[1], check: { is: "eq", value: "{}" }, line } };
     if (!lit || lit.k === "emptyList" || lit.k === "nothing" || lit.k === "table" || lit.k === "list" || lit.k === "record") {
       err(line, "SYNTAX", `\`${m[3]}\` is not a value to compare with; use a "string", a number or a choice value${lit?.k === "nothing" ? " (`= nothing` is for a value in an answer or an event: `see x.body.f = nothing`)" : ""}`, col);
       return;
@@ -1559,6 +1630,14 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   const choices = new Map(app.choices.map((c) => [c.name, c]));
   const valueOwner = new Map<string, ChoiceDecl>();
   const typeNames = new Set<string>([app.name]);
+  // A union's variants are records of their own, none of which has a field named like the tag.
+  for (const u of app.records)
+    for (const v of u.union?.variants ?? []) {
+      const r = records.get(v);
+      if (!r) err(u.line, "UNKNOWN_NAME", `union ${u.name}: no record \`${v}\`${suggest(v, [...records.keys()].filter((x) => !records.get(x)!.union))}`);
+      else if (r.union) err(u.line, "NOT_YET", `union ${u.name}: \`${v}\` is a union itself; a union of unions is not in the language yet`);
+      else if (r.fields.some((f) => f.name === u.union!.tag)) err(u.line, "DUPLICATE", `union ${u.name} is told apart by \`${u.union!.tag}\`, which is also a field of ${v}: name the tag otherwise (\`union ${u.name} by type: …\`)`);
+    }
 
   const reservedSaid = new Set<string>(); // a job's state is also its screen: one name, one line, said once
   const checkReserved = (name: string, line: number) => {
@@ -1605,7 +1684,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
   }
   const badKeys = new Set<string>();
   const checkType = (t: Type, line: number): boolean => {
-    if (t.k === "List" || t.k === "Maybe") return checkType(t.of, line);
+    if (t.k === "List" || t.k === "Maybe" || t.k === "Map") return checkType(t.of, line);
     if (t.k === "Ref") {
       const rec = records.get(t.name);
       if (!rec) {
@@ -2232,7 +2311,9 @@ function checkApi(
   if (app.screen.length) err(app.screen[0].line, "SYNTAX", "an api has endpoints, not a screen");
   // An api starts from its state's defaults and what it stored; nothing runs when it starts (so far).
   for (const h of app.handlers) if (h.verb === "start") err(h.line, "NOT_YET", "an api has no `on start` yet: it starts from its state's defaults and what it stored; write what it starts with as the state's default (seed data as a table)");
-  if (!app.endpoints?.length) err(1, "SYNTAX", "an api needs at least one `endpoint`");
+  // An api with only events (a contract a station publishes to, nothing to call) is an api too (1.1).
+  if (!app.endpoints?.length && !app.events?.length) err(1, "SYNTAX", "an api needs at least one `endpoint` or `event`");
+  else if (!app.endpoints?.length) (app.since ??= []).push({ line: 1, version: "1.1", what: "an api with only events" });
   const routes = new Set<string>();
   for (const ep of app.endpoints ?? []) {
     if (eps.has(ep.name)) err(ep.line, "DUPLICATE", `endpoint \`${ep.name}\` is declared twice`);
@@ -2287,7 +2368,17 @@ function checkApi(
         cur = cur.of;
         continue;
       }
-      const rec = cur.k === "Named" ? ctx.records.get(cur.name) : undefined;
+      // A map's key: its value, or nothing when the key is not there.
+      if (cur.k === "Map") {
+        cur = { k: "Maybe", of: cur.of };
+        continue;
+      }
+      const un = cur.k === "Named" ? ctx.records.get(cur.name)?.union : undefined;
+      if (un && p === un.tag) {
+        cur = { k: "Text" };
+        continue;
+      }
+      const rec = un ? (un.variants.map((v) => ctx.records.get(v)).find((r) => r?.fields.some((x) => x.name === p)) ?? undefined) : cur.k === "Named" ? ctx.records.get(cur.name) : undefined;
       const f = rec?.fields.find((x) => x.name === p);
       if (!f) return `${typeToString(cur)} has no \`${p}\`${rec ? ` (${rec.fields.map((x) => x.name).join(", ")})` : ""}`;
       cur = f.type;
@@ -2383,7 +2474,16 @@ function checkApi(
                   cur = cur.of;
                   continue;
                 }
-                const rec = cur.k === "Named" ? ctx.records.get(cur.name) : undefined;
+                if (cur.k === "Map") {
+                  cur = { k: "Maybe", of: cur.of };
+                  continue;
+                }
+                const un = cur.k === "Named" ? ctx.records.get(cur.name)?.union : undefined;
+                if (un && p === un.tag) {
+                  cur = { k: "Text" };
+                  continue;
+                }
+                const rec = un ? un.variants.map((v) => ctx.records.get(v)).find((r) => r?.fields.some((x) => x.name === p)) : cur.k === "Named" ? ctx.records.get(cur.name) : undefined;
                 const f = rec?.fields.find((x) => x.name === p);
                 if (!f) return `${typeToString(cur)} has no \`${p}\`${rec ? ` (${rec.fields.map((x) => x.name).join(", ")})` : ""}`;
                 cur = f.type;
@@ -2425,7 +2525,9 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
     case "Bool": return l.k === "bool";
     case "Date": return l.k === "date" && parseDate(l.v) === l.v;
     case "DateTime": return l.k === "dateTime" && parseDateTime(l.v) === l.v;
+    case "Instant": return l.k === "instant";
     case "List": return l.k === "emptyList" || l.k === "table";
+    case "Map": return l.k === "record" && l.fields.length === 0; // `{}`: a map with no keys
     case "Maybe": return l.k === "nothing" || literalFits(l, t.of, choices);
     case "Named": {
       const r = REFINED.get(t.name);
@@ -2448,8 +2550,10 @@ function valueFits(t: Type, v: string, choices: Map<string, ChoiceDecl>): boolea
   if (t.k === "Bool") return v === "true" || v === "false";
   if (t.k === "Date") return /^\d{4}-\d{2}-\d{2}$/.test(v);
   if (t.k === "DateTime") return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v);
+  if (t.k === "Instant") return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(v);
   if (t.k === "Named" && choices.has(t.name)) return choices.get(t.name)!.values.includes(v);
   if (t.k === "List") return v.startsWith("[");
+  if (t.k === "Map") return v.startsWith("{");
   return true; // text, and refined types (their rule is checked at run time)
 }
 

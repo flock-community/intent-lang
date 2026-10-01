@@ -10,9 +10,15 @@ makes the code. You never edit generated code: every change is a spec change. Th
 reference is `docs/LANGUAGE.md` — read it before writing, it is also exactly what the
 compiler reads. This skill is about using the language *well*.
 
-Language version this skill matches: **1**, Intent 1, the first stable version (`docs/STABILITY.md`
-says what stays the same across 1.x; `docs/CHANGELOG.md` holds the pre-1 history, v1–v73). If the
-changelog shows a newer version (1.1, …), read what it adds first.
+Language version this skill matches: **1.1** (Intent 1 plus additions; `docs/STABILITY.md` says
+what stays the same across 1.x; `docs/CHANGELOG.md` holds the history). 1.1 adds a record without
+fields, a choice with one value, a contract with only events and `Map T` (values by text keys not
+known ahead, such as a theme's colour per role; prefer a record whenever the keys are known), and
+`Instant` (a moment in UTC to the second, for moments other systems or other time zones send; keep
+`DateTime` for the app's own local time), and `union` (a value that is one of several records, such
+as a schedule that is daily or weekly: write each variant as its own record, never one record with
+optional fields that only some kinds use). If the changelog shows a newer
+version, read what it adds first.
 
 ## 1. Understand the intent (interview)
 
@@ -84,7 +90,8 @@ Order: `app` → `language 1` → `import` → `design` / `component` → `choic
 `derive` → `screen` → `on …` → `rules` → `always` → `example`s.
 
 Every spec says `language 1` on the line after its header: the lowest version it needs (write
-`language 1.2` only when it uses something 1.2 added). A spec without the line means `language 1`,
+`language 1.1` only when it uses something 1.1 added: the checker says so with `NEEDS_LANGUAGE`,
+and `intent fix` raises the line). A spec without the line means `language 1`,
 but `intent publish` refuses it, and `intent fix` adds it. An old `language v73` line reads as
 `language 1` with a `LANGUAGE` warning; `intent fix` rewrites it.
 
@@ -350,6 +357,9 @@ copying it (§4e of the reference):
   (keep it), or your change makes it wrong (`drop example "…"` and write your own version).
   The compiler reports `SPEC CONFLICT` for the less direct breaks; handle them the same way.
 - `intent lock` pins the base. After a base update, review every `BASE_CHANGED` override.
+- The base may itself be a refinement (1.1): extend the most specific app that fits, never a copy
+  of it. To change a component the base imports, `override component <Name>` with its whole
+  definition; every `use` of it in the base gets yours.
 - If your override would help everyone, propose it to the base (as a param or a rule)
   instead of keeping it private.
 
@@ -385,6 +395,10 @@ never give its path: `implements shop.ordersApi` in the service, `uses shop.orde
 the screen, and `tested with "<the service's file, from the project's root>"` under `uses`. Run
 `intent lock` after writing or changing it. Publish it. The service
 `implements` it and writes only steps. Consumers generate a typed client with `intent client`.
+A source that only announces (a station's readings, a ping) is a contract with events and no
+endpoints (1.1): its service publishes from `every` blocks, and a screen `uses` it and handles
+`on event`. A payload with nothing to say is a record without fields (`record Ping`); one kind of
+something, with more to come, is a choice with one value. Don't invent a dummy field or value.
 Inside one app (between components, or a screen and its logic), there is no wire and no
 contract to write: component params and the generated interfaces are the contract.
 

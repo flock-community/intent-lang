@@ -115,7 +115,7 @@ view lists keys node =
             Html.h2 [ A.class "heading" ] [ Html.text v ]
 
         NText n v ->
-            Html.p [ A.class "text", A.attribute "data-name" n ] [ Html.text v ]
+            Html.p [ A.class "text", A.attribute "data-name" n, A.attribute "data-el" n ] [ Html.text v ]
 
         NField n label v ->
             Html.label [ A.class "field" ]
@@ -125,23 +125,23 @@ view lists keys node =
                   else
                     [ Html.span [] [ Html.text label ] ]
                  )
-                    ++ [ Html.input [ A.value v, E.onInput (\t -> { noWire | on = "input", target = target n, key = key, keys = path, text = t }) ] [] ]
+                    ++ [ Html.input [ A.value v, A.attribute "data-el" n, E.onInput (\t -> { noWire | on = "input", target = target n, key = key, keys = path, text = t }) ] [] ]
                 )
 
         NButton n label enabled ->
-            Html.button [ A.class "button", A.disabled (not enabled), E.onClick (wire "click" n) ] [ Html.text label ]
+            Html.button [ A.class "button", A.disabled (not enabled), A.attribute "data-el" n, E.onClick (wire "click" n) ] [ Html.text label ]
 
         NCheckbox n label checked ->
             Html.label [ A.class "checkbox" ]
-                [ Html.input [ A.type_ "checkbox", A.checked checked, E.onClick (wire "toggle" n) ] []
+                [ Html.input [ A.type_ "checkbox", A.checked checked, A.attribute "data-el" n, E.onClick (wire "toggle" n) ] []
                 , Html.span [] [ Html.text label ]
                 ]
 
-        NProgress _ _ v ->
-            Html.progress [ A.class "progress", A.max "100", A.value (String.fromInt v) ] []
+        NProgress n _ v ->
+            Html.progress [ A.class "progress", A.max "100", A.value (String.fromInt v), A.attribute "data-el" n ] []
 
         NSelect n label options v ->
-            Html.div [ A.class "select" ]
+            Html.div [ A.class "select", A.attribute "data-el" n ]
                 ((if label == "" then
                     []
 
@@ -158,6 +158,14 @@ view lists keys node =
                                      else
                                         "option"
                                     )
+                                , A.attribute "data-option" o
+                                , A.attribute "aria-pressed"
+                                    (if o == v then
+                                        "true"
+
+                                     else
+                                        "false"
+                                    )
                                 , E.onClick { noWire | on = "choose", target = target n, key = key, keys = path, value = o }
                                 ]
                                 [ Html.text o ]
@@ -166,10 +174,10 @@ view lists keys node =
                 )
 
         NList n rows ->
-            Html.ul [ A.class "list" ] (List.map (\( k, c ) -> Html.li [ A.class "row" ] (List.map (view (lists ++ [ n ]) (keys ++ [ k ])) c)) rows)
+            Html.ul [ A.class "list", A.attribute "data-el" n ] (List.map (\( k, c ) -> Html.li [ A.class "row", A.attribute "data-row" k ] (List.map (view (lists ++ [ n ]) (keys ++ [ k ])) c)) rows)
 
-        NSection _ label c ->
-            Html.section [ A.class "section" ]
+        NSection n label c ->
+            Html.section [ A.class "section", A.attribute "data-el" n ]
                 ((if label == "" then
                     []
 

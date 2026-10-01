@@ -33,6 +33,7 @@ function valueOf(app: App, l: Literal | undefined, type?: Field["type"]): V | ty
       return l.v;
     case "date":
     case "dateTime":
+    case "instant":
       return l.v;
     case "list":
       return UNKNOWN;

@@ -1,0 +1,29 @@
+app WeatherApi {
+  "A weather station for tests and demos: every quarter of an hour it publishes a reading, one degree warmer than the last, and a ping."
+}
+language 1.1
+
+import weather.readings
+
+implements weather.updatesApi
+
+examples start at 2026-09-24 09:00
+
+state {
+  degrees: Int = 12
+}
+
+every 15m {
+  - increase @degrees by 1
+  - publish @updated with a @Reading with @city = "Utrecht", @degrees = @degrees and @station = @Main
+  - publish @pinged with a @Ping
+}
+
+example "a reading every quarter" {
+  wait 15m
+  see updated.body.degrees = 13
+  see updated.body.city = "Utrecht"
+  see updated.body.station = "Main"
+  wait 15m
+  see updated.body.degrees = 14
+}

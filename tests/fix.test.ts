@@ -158,4 +158,14 @@ for (const f of all) {
   assert.deepEqual(twice.fixes, [], `${f}: a second \`intent fix\` still fixes something`);
 }
 
+// NEEDS_LANGUAGE: a 1.1 form under `language 1` raises the line to 1.1, and nothing else changes.
+{
+  const src = readFileSync(new URL("checker/load/needs-language.intent", import.meta.url), "utf8").replace(/\s+# expect(-not)?: [A-Z_]+/g, "");
+  const r = fixText(src);
+  assert.match(r.out, /^language 1\.1$/m, `the line is raised:\n${r.out}`);
+  assert.equal(r.out.replace("language 1.1", "language 1"), src, "only the line changes");
+  assert.ok(r.fixes.some((f) => f.code === "NEEDS_LANGUAGE" && f.what === "language 1 → language 1.1"), JSON.stringify(r.fixes));
+  assert.deepEqual(r.left ?? [], [], "no error is left");
+}
+
 console.log(`ok fix: the v73 spellings (nothing, fallbacks, loops, answers, layers, access, the endpoint's row, sizes, dates, a select's none), @newToken as a draw, change rules in other words, Maybe T, @unmarked names, a lookup's where, a lookup of a reference's row as navigation, and the language line, only when no error is added; never a declaration, judgements reported, refusals said with their error, errors compared by line and code, idempotent on ${all.length} specs`);

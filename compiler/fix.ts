@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { App, Diagnostic } from "./ast.ts";
 import { PROJECT_ROOT } from "./gen.ts";
-import { BASE_LANGUAGE, load, LOCK } from "./load.ts";
+import { BASE_LANGUAGE, load, LOCK, versionAbove } from "./load.ts";
 import { parseSyntax } from "./parse.ts";
 import { sentences } from "./refs.ts";
 
@@ -336,7 +336,7 @@ export function fixText(src: string, language = BASE_LANGUAGE, only?: (c: { code
     const r = render(text);
     const origOf = (line: number) => r.orig(line);
     let kept = 0;
-    for (const group of [() => spellingCandidates(mine, origOf), () => rewriteCandidates(mine, origOf), () => unmarkedCandidates(mine, origOf, r.src, judgements, state.app), () => importCandidates(mine)]) kept += settle(group());
+    for (const group of [() => spellingCandidates(mine, origOf), () => rewriteCandidates(mine, origOf), () => unmarkedCandidates(mine, origOf, r.src, judgements, state.app), () => importCandidates(mine), () => languageCandidates(mine, text)]) kept += settle(group());
     if (!kept) break;
   }
 
@@ -356,6 +356,29 @@ export function fixText(src: string, language = BASE_LANGUAGE, only?: (c: { code
 }
 
 // ---------------------------------------------------------------- the fixes the diagnostics name
+
+/** `NEEDS_LANGUAGE`: a form newer than the spec's line raises the line to the newest version it needs. */
+function languageCandidates(diags: Diagnostic[], text: Text): Candidate[] {
+  const wants = diags.filter((d) => d.code === "NEEDS_LANGUAGE").map((d) => /write `language ([\d.]+)`/.exec(d.message)?.[1]).filter((x): x is string => !!x);
+  if (!wants.length) return [];
+  const want = wants.reduce((a, b) => (versionAbove(b, a) ? b : a));
+  const is = (l: string) => /^language\s+\S+\s*$/.test(l);
+  const set = (l: string) => l.replace(/^language\s+\S+/, `language ${want}`);
+  const i = text.lines.findIndex(is);
+  if (i >= 0) return [{ code: "NEEDS_LANGUAGE", line: i + 1, what: `${text.lines[i].trim()} → language ${want}`, apply: applyLine(i + 1, set) }];
+  // The line step 1 inserted (it was missing).
+  for (const [after, added] of text.inserts) {
+    const j = added.findIndex(is);
+    if (j >= 0)
+      return [{ code: "NEEDS_LANGUAGE", line: after + 1, what: `${added[j].trim()} → language ${want}`, apply: (t) => {
+        const xs = t.inserts.get(after);
+        if (!xs || !is(xs[j] ?? "") || xs[j] === set(xs[j])) return false;
+        t.inserts.set(after, xs.map((x, k) => (k === j ? set(x) : x)));
+        return true;
+      } }];
+  }
+  return [];
+}
 
 /** `SPELLING`: the language's own spelling of a lookup, a change rule, a reference's row, a draw. */
 function spellingCandidates(diags: Diagnostic[], origOf: (line: number) => number | undefined): Candidate[] {

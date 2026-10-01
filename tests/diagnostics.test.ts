@@ -1,5 +1,5 @@
 // Diagnostics a `# expect:` spec cannot show (tests/checker/run.ts loads with `ignoreLock` in this
-// repository): the lock (LOCK, LANGUAGE, BASE_CHANGED), refinement one level deep (NOT_YET), a
+// repository): the lock (LOCK, LANGUAGE, BASE_CHANGED), refinement as deep as the chain (1.1), a
 // contract endpoint left out (CONTRACT), a base's proof about an override (OVERRIDES_PROOF), and
 // JUDGEMENT (off by default). Projects with their own intent.lock and lib/ are temporary folders;
 // the project is the folder a command runs in, so those checks run in a child process there.
@@ -74,7 +74,11 @@ example "our title" {
   see title = "Our shop"
 }
 `);
-writeFileSync(join(dir, "grandchild.intent"), `app Grandchild {\n  "Two levels deep."\n}\nextends shop.mid\n\noverride text footer = "Closed"\n`);
+writeFileSync(join(dir, "grandchild.intent"), `app Grandchild {\n  "Two levels deep."\n}\nlanguage 1.1\nextends shop.mid\n\noverride text footer = "Closed"\n`);
+writeFileSync(join(dir, "grandchild1.intent"), `app GrandchildOne {\n  "Two levels deep, under language 1."\n}\nlanguage 1\nextends shop.mid\n\noverride text footer = "Closed"\n`);
+writeFileSync(join(dir, "lib/shop/loopa.intent"), `app LoopA {\n  "A cycle."\n}\nlanguage 1.1\nextends shop.loopb\n\noverride text title = "A"\n`);
+writeFileSync(join(dir, "lib/shop/loopb.intent"), `app LoopB {\n  "A cycle."\n}\nlanguage 1.1\nextends shop.loopa\n\noverride text title = "B"\n`);
+writeFileSync(join(dir, "loop.intent"), `app Loop {\n  "Extends a cycle."\n}\nlanguage 1.1\nextends shop.loopa\n\noverride text footer = "C"\n`);
 writeFileSync(join(dir, "uses.intent"), `app UsesItems {
   "An app that imports a bundle."
 }
@@ -93,6 +97,87 @@ screen {
 
 example "empty" {
   see items has 0 rows
+}
+`);
+
+// A base that imports a component, and a refinement that overrides that component (1.1).
+writeFileSync(join(dir, "lib/shop/page.intent"), `app Page {
+  "A paged list of numbers."
+}
+language 1
+import std.list
+
+record Number {
+  label: Text
+}
+
+state {
+  numbers: List Number = table {
+    label
+    "one"
+    "two"
+    "three"
+    "four"
+    "five"
+    "six"
+    "seven"
+  }
+}
+
+screen {
+  list shown of Number = @pager.visible {
+    text label
+  }
+  use pager = Pager {
+    items = numbers
+    size = 5
+  }
+}
+
+example "first page" {
+  see shown has 5 rows
+  see pager.pageInfo = "Page 1 of 2"
+}
+`);
+writeFileSync(join(dir, "paged.intent"), `app Child {
+  "The paged list, with the page info said shorter."
+}
+language 1
+extends shop.page
+
+override component Pager as footer "Compact." {
+  param items "the list"
+  param size = 3
+  state {
+    page: Int = 1
+  }
+  derive {
+    pageCount = the number of @items divided by @size, rounded up, but at least 1
+    current = the smaller of @page and @pageCount
+    visible = the @items from position (@current - 1) × @size + 1 on, at most @size of them
+  }
+  screen {
+    text pageInfo = "{current}/{pageCount}"
+    button previous "Previous" as secondary {
+      enabled when @current is above 1
+    }
+    button next "Next" as secondary {
+      enabled when @current is below @pageCount
+    }
+  }
+  on click previous {
+    - set @page to @current - 1
+  }
+  on click next {
+    - set @page to @current + 1
+  }
+}
+
+drop example "first page"
+
+example "the page info said shorter" {
+  see shown has 5 rows
+  see pager.pageInfo = "1/2"
 }
 `);
 
@@ -121,15 +206,15 @@ try {
   lock(dir, "uses.intent");
   // LANGUAGE is silent for the current version.
   const current = readFileSync(join(ROOT, "docs/LANGUAGE.md"), "utf8").match(/language reference \((\d+(?:\.\d+)?)\)/)![1];
-  assert.equal(current, "1", "the reference is language 1");
+  assert.equal(current, "1.1", "the reference is language 1.1");
   writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace("language v1", `language ${current}`));
   ds = check(dir, "uses.intent");
   assert.ok(!has(ds, "LANGUAGE") && !has(ds, "LOCK"), `the current language and a fresh lock: neither LANGUAGE nor LOCK (got ${codes(ds)})`);
   // NEWER_LANGUAGE: the line is the lowest version the spec needs; a newer one needs a newer compiler.
-  writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace(`language ${current}`, "language 1.1"));
+  writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace(`language ${current}`, "language 1.2"));
   ds = check(dir, "uses.intent");
-  assert.ok(ds.some((d) => d.code === "NEWER_LANGUAGE" && d.level === "error" && d.line === 4 && /needs language 1\.1; this compiler reads language 1/.test(d.message)), `a spec that needs 1.1 is an error for a 1 compiler (got ${codes(ds)})`);
-  writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace("language 1.1", `language ${current}`));
+  assert.ok(ds.some((d) => d.code === "NEWER_LANGUAGE" && d.level === "error" && d.line === 4 && /needs language 1\.2; this compiler reads language 1\.1/.test(d.message)), `a spec that needs 1.2 is an error for a 1.1 compiler (got ${codes(ds)})`);
+  writeFileSync(join(dir, "uses.intent"), readFileSync(join(dir, "uses.intent"), "utf8").replace("language 1.2", `language ${current}`));
 
   // BASE_CHANGED: the refinement is locked with a fingerprint of each part it overrides.
   ds = check(dir, "child.intent");
@@ -148,10 +233,27 @@ try {
   assert.ok(has(ds, "BASE_CHANGED", 6, "child.intent") && has(ds, "BASE_CHANGED", 8, "child.intent"), `the base changed overridden parts: BASE_CHANGED at each (got ${codes(ds)})`);
   assert.ok(has(ds, "LOCK", 4) && /2 part\(s\) you override/.test(ds.find((d) => d.code === "LOCK")!.message), "and LOCK says how many overridden parts changed");
 
-  // NOT_YET: refinement is one level deep.
+  // 1.1: a refinement of a refinement. The base's own base is applied first; every ancestor is locked.
   ds = check(dir, "grandchild.intent");
-  assert.ok(has(ds, "NOT_YET", 4, "grandchild.intent"), `a base that extends another spec is NOT_YET (got ${codes(ds)})`);
+  assert.ok(has(ds, "LOCK", 5, "grandchild.intent"), `the chain is locked (got ${codes(ds)})`);
+  lock(dir, "grandchild.intent");
+  ds = check(dir, "grandchild.intent");
+  assert.ok(!ds.some((d) => d.level === "error" && d.file?.endsWith("grandchild.intent")), `two levels deep checks (got ${codes(ds)})`);
+  const g: Record<string, unknown> = inProject(dir, `const a = load(${JSON.stringify(join(dir, "grandchild.intent"))}).app; console.log(JSON.stringify(Object.fromEntries(a.screen.map((e) => [e.name, e.expr ?? e.label]))));`);
+  assert.match(String(g.title), /Mid/, `the middle's override (${JSON.stringify(g)})`);
+  assert.match(String(g.footer), /Closed/, "and the grandchild's");
+  assert.ok(readFileSync(join(dir, "intent.lock"), "utf8").includes("shop.base"), "the base's base is pinned too");
+  lock(dir, "grandchild1.intent");
+  assert.ok(has(check(dir, "grandchild1.intent"), "NEEDS_LANGUAGE", 5, "grandchild1.intent"), "two levels deep is language 1.1");
+  lock(dir, "loop.intent");
+  assert.ok(check(dir, "loop.intent").some((d) => d.code === "BAD_BINDING" && /makes a cycle/.test(d.message)), "a cycle of bases is refused");
   assert.ok(!has(check(dir, "child.intent"), "NOT_YET"), "one level deep is fine");
+  // `override component` of a component the base imports: the override is the one, not a DUPLICATE.
+  lock(dir, "paged.intent");
+  ds = check(dir, "paged.intent");
+  assert.ok(!ds.some((d) => d.level === "error"), `an imported component is overridden (got ${codes(ds)})`);
+  const expanded: string = inProject(dir, `import { printApp } from ${JSON.stringify(join(ROOT, "compiler/print.ts"))}; console.log(JSON.stringify(printApp(load(${JSON.stringify(join(dir, "paged.intent"))}).app)));`);
+  assert.match(expanded, /text pager\.pageInfo = "\{pager\.current\}\/\{pager\.pageCount\}"/, "the override's elements are the instance's");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
@@ -215,4 +317,4 @@ try {
   assert.ok(emitted.size > 40, `the scan finds the codes (${emitted.size})`);
 }
 
-console.log("ok diagnostics: LOCK, LANGUAGE, BASE_CHANGED, NOT_YET (two levels), CONTRACT, OVERRIDES_PROOF, JUDGEMENT; every code tested and documented");
+console.log("ok diagnostics: LOCK, LANGUAGE, BASE_CHANGED, two levels and a cycle, CONTRACT, OVERRIDES_PROOF, JUDGEMENT; every code tested and documented");

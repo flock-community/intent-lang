@@ -168,12 +168,18 @@ export const depPath = (name: string, version: string) => join(DEPS, `${name}@${
  */
 export function apiOf(b: App): string[] {
   const out: string[] = [];
-  const ty = (t: Type): string => (t.k === "List" || t.k === "Maybe" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k === "Ref" ? `ref ${t.name}` : t.k);
+  const ty = (t: Type): string => (t.k === "List" || t.k === "Maybe" || t.k === "Map" ? `${t.k} ${ty(t.of)}` : t.k === "Named" ? t.name : t.k === "Ref" ? `ref ${t.name}` : t.k);
   const words = (x: string) => x.replace(/\s+/g, " ").trim();
   for (const r of b.records)
     for (const f of r.fields) {
       out.push(`record ${r.name}.${f.name}${f.default ? "?" : ""}`);
       out.push(`field ${r.name}.${f.name}: ${ty(f.type)}`);
+    }
+  // A union's variants, its tag and each variant's name on the wire: removing or renaming one is major.
+  for (const r of b.records.filter((x) => x.union))
+    for (const v of r.union!.variants) {
+      out.push(`union ${r.name}.${v}`);
+      out.push(`wire ${r.name}.${r.union!.tag} = ${r.union!.wire?.[v] ?? v}`);
     }
   for (const c of b.choices)
     for (const v of c.values) {

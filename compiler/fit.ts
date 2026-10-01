@@ -57,7 +57,9 @@ export interface Navigation {
 
 /** `skip`: lines with a SYNTAX error, whose sentences are not typed (what the parser read of them is not what was meant). */
 export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Coverage[] {
-  const records = new Map(app.records.map((r) => [r.name, r]));
+  // A union is not a record a sentence reads fields of (its variants are): sentences over it are left to the model.
+  const records = new Map(app.records.filter((r) => !r.union).map((r) => [r.name, r]));
+  const unions = new Map(app.records.filter((r) => r.union).map((r) => [r.name, r.union!]));
   const refined = new Map((app.refined ?? []).map((r) => [r.name, r]));
   const choiceOf = new Map<string, string[]>(); // value → the choices it belongs to
   for (const c of app.choices) for (const v of c.values) choiceOf.set(v, [...(choiceOf.get(v) ?? []), c.name]);
@@ -146,7 +148,7 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
     const b = base(from);
     if (a.k === "Decimal" && b.k === "Int") return true;
     if (a.k === "List" && b.k === "List") return fits(a.of, b.of);
-    if (a.k === "Named" && b.k === "Named") return a.name === b.name;
+    if (a.k === "Named" && b.k === "Named") return a.name === b.name || !!unions.get(a.name)?.variants.includes(b.name); // a variant is its union
     return a.k === b.k;
   }
   /** Can two values be compared (`@x is @y`)? */

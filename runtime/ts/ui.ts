@@ -68,12 +68,14 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
     case "text": {
       const e = h("p", "text", node.v);
       e.dataset.name = node.n;
+      e.dataset.el = node.n;
       return e;
     }
     case "field": {
       const wrap = h("label", "field");
       const input = h("input", "");
       input.value = node.v;
+      input.dataset.el = node.n;
       input.dataset.id = target(node.n) + keys.join("/");
       input.addEventListener("input", () => dispatch({ on: "input", target: target(node.n), key, ...path, text: input.value }));
       if (node.label) wrap.append(h("span", "", node.label));
@@ -83,6 +85,7 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
     case "button": {
       const b = h("button", "button", node.label);
       b.disabled = !node.enabled;
+      b.dataset.el = node.n;
       b.dataset.id = target(node.n) + keys.join("/");
       b.addEventListener("click", () => dispatch({ on: "click", target: target(node.n), key, ...path }));
       return b;
@@ -92,6 +95,7 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
       const box = h("input", "");
       box.type = "checkbox";
       box.checked = node.checked;
+      box.dataset.el = node.n;
       box.dataset.id = target(node.n) + keys.join("/");
       box.addEventListener("change", () => dispatch({ on: "toggle", target: target(node.n), key, ...path }));
       wrap.append(box);
@@ -102,13 +106,17 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
       const bar = h("progress", "progress");
       bar.max = 100;
       bar.value = node.v;
+      bar.dataset.el = node.n;
       return bar;
     }
     case "select": {
       const wrap = h("div", "select");
+      wrap.dataset.el = node.n;
       if (node.label) wrap.append(h("span", "", node.label));
       for (const o of node.options) {
         const b = h("button", o === node.v ? "option chosen" : "option", o);
+        b.dataset.option = o;
+        b.setAttribute("aria-pressed", String(o === node.v));
         b.addEventListener("click", () => dispatch({ on: "choose", target: target(node.n), key, ...path, value: o }));
         wrap.append(b);
       }
@@ -116,8 +124,10 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
     }
     case "list": {
       const ul = h("ul", "list");
+      ul.dataset.el = node.n;
       for (const r of node.rows) {
         const li = h("li", "row");
+        li.dataset.row = r.key;
         li.append(...r.c.map((c) => el(c, dispatch, [...keys, r.key], [...lists, node.n])));
         ul.append(li);
       }
@@ -125,6 +135,7 @@ function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: stri
     }
     case "section": {
       const s = h("section", "section");
+      s.dataset.el = node.n;
       if (node.label) s.append(h("h2", "", node.label));
       s.append(...node.c.map((c) => el(c, dispatch, keys, lists)));
       return s;

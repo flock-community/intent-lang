@@ -107,7 +107,10 @@ switch (cmd) {
         return { file, diagnostics: loadSpec(resolve(file), { quality: { sets, config: quality } }).diagnostics };
       });
       console.log(JSON.stringify(out, null, 2));
-      process.exit(out.some((f) => f.diagnostics.some((d) => d.level === "error")) ? 1 : 0);
+      // Exit once the report is written: exiting at once cuts it short when piped.
+      const code = out.some((f) => f.diagnostics.some((d) => d.level === "error")) ? 1 : 0;
+      process.stdout.write("", () => process.exit(code));
+      break;
     }
     // The compiler's checks, then the project's quality rule sets (std.quality unless intent.project says otherwise).
     const quality: QualityConfig = readProject()?.quality ?? DEFAULT_QUALITY;
@@ -286,22 +289,38 @@ switch (cmd) {
     process.exit(0);
   }
   case "build": {
+    // --json: stdout is one JSON report (docs/STABILITY.md §5), everything else goes to stderr.
+    const say = flags.json ? (m: string) => console.error(m) : (m: string) => console.log(m);
+    const report = (r: object, ok: boolean) => {
+      console.log(JSON.stringify({ file: args[0], ok, ...r }, null, 2));
+      process.stdout.write("", () => process.exit(ok ? 0 : 1));
+    };
+    const fail = (problems: string[]) => {
+      if (!flags.json) (console.log(problems.join("\n")), process.exit(1));
+      say(problems.join("\n"));
+      report({ problems, targets: [] }, false);
+      return true;
+    };
     // The model intent.lock pins, before anything rewrites the lock: a new model is locked on purpose.
     const pinProblem = modelPinProblem();
-    if (pinProblem) (console.log(pinProblem), process.exit(1));
+    if (pinProblem && fail([pinProblem])) break;
     // Dependencies first: a project's required bundles are downloaded and pinned.
     const project = readProject();
     if (project?.requires.length) {
       const { installed, problems } = await install(project);
-      if (problems.length) (console.log(problems.join("\n")), process.exit(1));
+      if (problems.length && fail(problems)) break;
       writeLock([], installed);
       writeLock([resolve(args[0])], installed);
     }
     // Twin compilation: a verified build of this exact spec is reused; anything new is compiled
     // twice, and the build stops when the two compilers disagree (the spec is ambiguous).
     const file = args[0];
-    const { app, src } = load(file);
-    if (!app) process.exit(1);
+    const { app, src } = load(file, say);
+    if (!app) {
+      if (!flags.json) process.exit(1);
+      report({ diagnostics: loadSpec(resolve(file)).diagnostics, targets: [] }, false);
+      break;
+    }
     const c = config();
     // A service (an api, a layer) is built by the configured targets that can build services.
     const service = app.profile === "api" || app.kind === "layer";
@@ -312,9 +331,21 @@ switch (cmd) {
     const targets = service || job ? (wanted.filter(able).length ? wanted.filter(able) : (["ts"] as Target[])) : wanted;
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
     const results = await Promise.all(
-      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, incremental: c.incremental === "auto", cleanCheck: c.cleanCheck === "always", sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => console.log(`[${t}] ${m}`) })),
+      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, incremental: c.incremental === "auto", cleanCheck: c.cleanCheck === "always", sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => say(`[${t}] ${m}`) })),
     );
     await closeBrowser();
+    if (flags.json) {
+      const targets = results.map((r) => {
+        const last = r.builds[r.builds.length - 1];
+        return {
+          target: r.target, ok: r.ok, dir: r.dir, cached: r.cached, verified: r.verified,
+          ...(r.ambiguous ? { ambiguous: { sessions: r.ambiguous.sessions, of: r.ambiguous.of, report: `${out}/ambiguity-${r.target}.md` } } : {}),
+          examples: last?.examples ?? null, attempts: last?.attempts ?? [], compiler: last?.compiler ?? compilerPins(), costUsd: r.costUsd,
+        };
+      });
+      report({ targets }, results.every((r) => r.ok));
+      break;
+    }
     for (const r of results) {
       const how = r.cached ? "from cache" : r.verified === "twin" ? "twin-verified" : r.verified === "single" ? "single build" : "";
       if (r.ambiguous) console.log(`${r.target}: STOPPED — the two compilers built different apps (${r.ambiguous.sessions} of ${r.ambiguous.of} sessions differ). The spec is ambiguous; see ${out}/ambiguity-${r.target}.md\n\n${r.ambiguous.report.split("## What the spec leaves open")[1]?.trim() ?? ""}`);

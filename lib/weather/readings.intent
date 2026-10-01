@@ -1,0 +1,14 @@
+bundle weather.readings {
+  "Weather readings as a station sends them, and a ping that says only that the station is alive."
+}
+language 1.1
+
+choice Station: Main                 # one station so far; more may come
+
+record Reading {
+  city: Text
+  degrees: Int
+  station: Station
+}
+
+record Ping

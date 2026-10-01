@@ -160,18 +160,42 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
   // Refinement: start from the published base app, apply the explicit overrides.
   if (app.extends) {
     const base = app.extends;
-    const path = bundlePath(base.name);
-    if (!existsSync(path)) err(base.line, "UNKNOWN_NAME", `no published app \`${base.name}\` (looked for ${shown(path)})`);
-    else {
+    /** A base, with its own base applied first (1.1: refinement is as deep as the chain; a cycle is an error). */
+    const resolveBase = (ref: { name: string; line: number }, chain: string[]): { app: App; text: string; digest: string; deep: boolean } | undefined => {
+      const path = bundlePath(ref.name);
+      if (!existsSync(path)) {
+        err(ref.line, "UNKNOWN_NAME", `no published app \`${ref.name}\` (looked for ${shown(path)})`);
+        return undefined;
+      }
       const text = readFileSync(path, "utf8");
       const idx = sources.push({ file: shown(path), text }) - 1;
       const parsed = parseSyntax(text);
       offsetLines(parsed.app, idx * LINE_BASE);
       diagnostics.push(...parsed.diagnostics.map((d) => ({ ...d, line: d.line + idx * LINE_BASE })));
-      if (parsed.app.kind !== "app") err(base.line, "BAD_BINDING", `${shown(path)} is a bundle; \`extends\` takes a published app`);
-      if (parsed.app.extends) err(base.line, "NOT_YET", "the base extends another spec itself; refinement is one level deep (compose components beyond that)");
+      if (parsed.app.kind !== "app") err(ref.line, "BAD_BINDING", `${shown(path)} is a bundle; \`extends\` takes a published app`);
       const digest = sha(text);
-      bundles.push({ name: base.name, file: shown(path), sha: digest });
+      bundles.push({ name: ref.name, file: shown(path), sha: digest });
+      let resolved = parsed.app;
+      const up = parsed.app.extends;
+      if (up) {
+        if ([...chain, ref.name].includes(up.name)) err(up.line, "BAD_BINDING", `\`extends ${up.name}\` makes a cycle (${[...chain, ref.name, up.name].join(" → ")}): a base cannot extend what extends it`);
+        else {
+          if (!opts.ignoreLock) {
+            const locked = lock.get(up.name);
+            const grandText = existsSync(bundlePath(up.name)) ? readFileSync(bundlePath(up.name), "utf8") : undefined;
+            if (grandText !== undefined && !locked) err(base.line, "LOCK", `the base's base \`${up.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
+            else if (grandText !== undefined && locked !== sha(grandText)) err(base.line, "LOCK", `the base's base \`${up.name}\` changed since it was locked; review it, then run \`intent lock ${sources[0].file}\``);
+          }
+          const grand = resolveBase(up, [...chain, ref.name]);
+          if (grand) resolved = refine(grand.app, parsed.app, parsed.app.refinements ?? [], err, warn);
+        }
+      }
+      return { app: resolved, text, digest, deep: !!up };
+    };
+    const got = resolveBase(base, [sources[0].file]);
+    if (got) {
+      const { app: resolvedBase, digest } = got;
+      const parsed = { app: resolvedBase };
       if (!opts.ignoreLock) {
         const locked = lock.get(base.name);
         if (!locked) err(base.line, "LOCK", `the base \`${base.name}\` is not locked; run \`intent lock ${sources[0].file}\``);
@@ -184,6 +208,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
         }
       }
       app = refine(parsed.app, app, app.refinements ?? [], err, warn);
+      if (got.deep) (app.since ??= []).push({ line: base.line, version: "1.1", what: `extending a base that extends another (\`${base.name}\`)` });
       baseApp = parsed.app;
     }
   } else if (app.refinements?.length) err(app.refinements[0].line, "SYNTAX", "`override`, `add to` and `drop` need an `extends <published app>` line");
@@ -413,7 +438,7 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
   // Rename the types a field or answer uses: an aliased record or choice, everywhere in the bundle.
   const renameType = (t: Type, m: Map<string, string>): Type => {
     if (t.k === "Named" || t.k === "Ref") return m.has(t.name) ? { ...t, name: m.get(t.name)! } : t;
-    if (t.k === "List" || t.k === "Maybe") return { ...t, of: renameType(t.of, m) };
+    if (t.k === "List" || t.k === "Maybe" || t.k === "Map") return { ...t, of: renameType(t.of, m) };
     return t;
   };
   const designs: Design[] = [];
@@ -441,6 +466,8 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
       const alias = m?.get(c.name);
       const comp: Component = { ...c, name: alias ?? c.name, from: name };
       if (app.components.some((x) => sameDecl(x, comp))) continue;
+      // A refinement overrode this imported component (`override component`): the override is the one.
+      if (app.components.some((x) => x.name === comp.name && x.from === "override")) continue;
       claim(comp.name, name, renamedAt.get(`${name}.${c.name}`) ?? c.line);
       app.components.push(comp);
     }
@@ -477,6 +504,13 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     // (a contract is checked as an api without behaviour)
     diagnostics.push(...checkApp(app, main.clockLine, used, new Set(diagnostics.filter((d) => d.code === "SYNTAX").map((d) => d.line))));
     checkDirectImports(app, sources, bundles, ownImports, err);
+  }
+  {
+    // A form added after the spec's own line needs that version on the line (as Go's \`go\` line);
+    // this file's own forms only (a bundle or base says its own line).
+    const own = main.language ?? app.language; // this file's line (a refinement holds its base's)
+    const says = own && !own.startsWith("v") ? own : "1";
+    for (const f of app.since ?? []) if (f.line < LINE_BASE && versionAbove(f.version, says)) err(f.line, "NEEDS_LANGUAGE", `${f.what} is language ${f.version}; this spec says \`language ${says}\`: write \`language ${f.version}\` (\`intent fix\` raises it)`);
   }
   // The compiler's checks, then std.quality's hints at the project's levels (`intent check` adds the
   // project's own rule sets: it loads with `quality: false` and applies them all).
@@ -520,7 +554,7 @@ function checkDirectImports(app: App, sources: { file: string }[], bundles: { na
     if (!m.names.includes(how)) m.names.push(how);
   };
   for (const s of sentences(app)) if (s.line < LINE_BASE) for (const r of refsIn(s.text)) check(r.split(".")[0], s.line, `\`@${r.split(".")[0]}\``);
-  const types = (t: Type): string[] => (t.k === "Named" || t.k === "Ref" ? [t.name] : t.k === "List" || t.k === "Maybe" ? types(t.of) : []);
+  const types = (t: Type): string[] => (t.k === "Named" || t.k === "Ref" ? [t.name] : t.k === "List" || t.k === "Maybe" || t.k === "Map" ? types(t.of) : []);
   for (const f of app.state) if (f.line < LINE_BASE) for (const n of types(f.type)) check(n, f.line, `\`${n}\``);
   for (const r of app.records) if (r.line < LINE_BASE && r.line > 0) for (const f of r.fields) for (const n of types(f.type)) check(n, r.line, `\`${n}\``);
   const walk = (els: Element[]) => els.forEach((el) => (el.line < LINE_BASE && el.of && check(el.of, el.line, `\`${el.of}\``), walk(el.children)));

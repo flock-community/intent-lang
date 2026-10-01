@@ -1,0 +1,22 @@
+app SmallTypes {
+  "1.1: a record without fields (in both spellings) and a choice with one value; a choice still needs a value."
+}
+language 1.1
+
+record Ping                          # expect-not: SYNTAX
+record Pong {}                       # expect-not: SYNTAX
+choice Kind: Ask                     # expect-not: SYNTAX
+choice Empty:                        # expect: SYNTAX
+
+state {
+  pings: List Ping = []
+  kind: Kind = Ask
+}
+
+screen {
+  text shown = "{@kind}"
+}
+
+example "one value" {
+  see shown = "Ask"
+}

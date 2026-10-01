@@ -1,0 +1,18 @@
+app InstantNeeds {
+  "An Instant or a Map under `language 1` needs `language 1.1`."
+}
+language 1
+
+state {
+  at: Instant or nothing = nothing    # expect: NEEDS_LANGUAGE
+  theme: Map Text = {}                # expect: NEEDS_LANGUAGE
+  count: Int = 0
+}
+
+screen {
+  text shown = "{@count}"
+}
+
+example "nothing yet" {
+  see shown = "0"
+}

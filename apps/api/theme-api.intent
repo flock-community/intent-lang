@@ -1,0 +1,34 @@
+app ThemeApi {
+  "Keeps a theme: a colour per role name."
+}
+language 1.1
+
+implements prefs.themeApi
+
+state {
+  stored colors: Map Color = {}
+}
+
+endpoint theme {
+  answer 200 with @colors
+}
+
+endpoint paint {
+  - set the colour for @role in @colors to the given @color
+  answer 200 with @colors
+}
+
+example "a bad colour changes nothing" {
+  call paint with role = "primary", color = "blue"
+  see paint.status = 400
+  see paint.body.error = "color must be a valid Color"
+  call theme
+  see theme.body = {}
+}
+
+example "a role painted twice keeps the last colour" {
+  call paint with role = "primary", color = "#111111"
+  call paint with role = "primary", color = "#222222"
+  call theme
+  see theme.body.primary = "#222222"
+}

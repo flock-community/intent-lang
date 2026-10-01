@@ -24,7 +24,8 @@ export function clientEndpoints(app: App): ClientEndpoint[] {
   return (app.clients ?? []).flatMap((c) => (c.contract.endpoints ?? []).map((ep) => ({ alias: c.alias, ep, name: `${c.alias}.${ep.name}`, tag: cap(c.alias) + cap(ep.name) })));
 }
 
-export const hasClients = (app: App) => clientEndpoints(app).length > 0;
+/** The app talks to an api: it calls one, or hears one's events (a contract may have only events). */
+export const hasClients = (app: App) => clientEndpoints(app).length > 0 || (app.clients ?? []).some((c) => !!c.contract.events?.length);
 
 /** An external endpoint behind `through std.actions`: it can be held for approval, and rejected. */
 export const gated = (app: App, c: ClientEndpoint) => !!c.ep.effect && app.clients?.find((x) => x.alias === c.alias)?.through?.layer === "std.actions";
@@ -105,8 +106,10 @@ export function callDescs(app: App): CallDesc[] {
   });
 }
 
-/** Does a type (read in the app that declares it) hold a choice with wire names? */
+/** Does a type (read in the app that declares it) hold a choice with wire names, or a map (its keys go out in order)? */
 export function wireType(app: App, t: Type): boolean {
+  if (t.k === "Map" || t.k === "Instant") return true; // an instant is read into its one form
+  if (t.k === "Named" && app.records.find((r) => r.name === t.name)?.union) return true; // a union's tag goes by its wire name
   return t.k === "List" || t.k === "Maybe" ? wireType(app, t.of) : t.k === "Named" ? !!app.choices.find((c) => c.name === t.name)?.wire || !!app.records.find((r) => r.name === t.name)?.fields.some((f) => wireType(app, f.type)) : false;
 }
 

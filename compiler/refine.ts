@@ -41,7 +41,8 @@ function findElement(els: Element[], name: string): { list: Element[]; index: nu
 
 /** The base's part that a refinement replaces or removes, without line numbers: its fingerprint. */
 export function baseTarget(base: App, r: Refinement): unknown {
-  const strip = (v: unknown) => JSON.parse(JSON.stringify(v, (k, x) => (k === "line" ? undefined : x)));
+  // Not in the base's own file (a component it imports: its bundle's lock covers it): nothing to fingerprint.
+  const strip = (v: unknown) => (v === undefined ? null : JSON.parse(JSON.stringify(v, (k, x) => (k === "line" ? undefined : x))));
   switch (r.op) {
     case "override-element":
     case "drop-element": {

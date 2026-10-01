@@ -1,0 +1,48 @@
+contract jobs.schedulesApi {
+  "When a job runs: every day at a time, or every week on a day at a time. On the wire a trigger says which by its kind."
+}
+language 1.1
+
+choice Day: Mon = "mon" | Tue = "tue" | Wed = "wed" | Thu = "thu" | Fri = "fri" | Sat = "sat" | Sun = "sun"
+
+type Clock = Text matching /([01][0-9]|2[0-3]):[0-5][0-9]/   # a time of day, "09:00"
+
+record Daily {
+  at: Clock
+}
+
+record Weekly {
+  day: Day
+  at: Clock
+}
+
+union Trigger: Daily = "daily" | Weekly = "weekly"
+
+record Schedule {
+  id: Int
+  job: Text
+  trigger: Trigger
+}
+
+endpoint plan POST "/schedules" {
+  body job: Text
+  body trigger: Trigger
+  answers 201 Schedule
+  answers 400 Problem
+}
+
+endpoint schedules GET "/schedules" {
+  answers 200 List Schedule
+}
+
+example "a weekly and a daily job" {
+  call plan with job = "Backup", trigger = { kind = "weekly", day = "mon", at = "02:00" }
+  see plan.status = 201
+  see plan.body.trigger.kind = "Weekly"
+  see plan.body.trigger.day = "Mon"
+  call plan with job = "Report", trigger = { kind = "daily", at = "09:00" }
+  call schedules
+  see schedules.body has 2 rows
+  see schedules.body[2].trigger.kind = "Daily"
+  see schedules.body[2].trigger.at = "09:00"
+}

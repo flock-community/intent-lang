@@ -1,7 +1,7 @@
 // The API runtime: routing, input validation and response helpers. Shared by every API build;
 // the LLM writes only the handlers. Messages are fixed, so every build answers bad input the same way.
 
-import { parseDate, parseDateTime } from "./fmt.ts";
+import { parseDate, parseDateTime, parseInstant } from "./fmt.ts";
 
 export type TypeDesc =
   | { k: "Text" }
@@ -10,10 +10,14 @@ export type TypeDesc =
   | { k: "Bool" }
   | { k: "Date" }
   | { k: "DateTime" }
+  | { k: "Instant" } // UTC, to the second: "2026-09-24T07:00:00Z" (read from any ISO 8601 form with a zone)
   | { k: "List"; of: TypeDesc }
   | { k: "Maybe"; of: TypeDesc }
+  | { k: "Map"; of: TypeDesc } // texts to values: a JSON object with any keys, written in key order
   | { k: "Choice"; name: string; values: string[]; wire?: string[] } // wire: each value's name in JSON (`Info = "info"`), in order
   | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] }
+  // 1.1: one of several records, told apart by a tag field whose value is the variant's wire name (or its name).
+  | { k: "Union"; name: string; tag: string; variants: { name: string; wire?: string; fields: { name: string; type: TypeDesc }[] }[] }
   | { k: "Refined"; name: string; base: TypeDesc; pattern?: string; min?: number; max?: number; minLength?: number; maxLength?: number; code?: { n: number; chars: string; unambiguous?: boolean } };
 
 export interface EndpointDesc {
@@ -48,7 +52,16 @@ export function conforms(answers: Record<number, TypeDesc | null> | undefined, r
 }
 
 const describe = (t: TypeDesc): string =>
-  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "List" ? "a list" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${(t.wire ?? t.values).join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : "an object";
+  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "Instant" ? "an instant with a zone (YYYY-MM-DDTHH:MM:SSZ)" : t.k === "List" ? "a list" : t.k === "Map" ? `an object of ${describe(t.of)} by key` : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${(t.wire ?? t.values).join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : t.k === "Union" ? `a ${t.name} (${t.tag}: ${t.variants.map((v) => v.wire ?? v.name).join(", ")})` : "an object";
+
+/** A map's entries in the wire's order: by key, as text (§9; Elm's Dict writes the same order). A key is
+ *  set as an own property, so no key (`__proto__`) can reach the object's prototype. */
+const entriesInOrder = (o: object): [string, unknown][] => Object.keys(o).sort().map((k) => [k, (o as Record<string, unknown>)[k]]);
+function mapOf(entries: [string, unknown][]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of entries) Object.defineProperty(out, k, { value: v, enumerable: true, writable: true, configurable: true });
+  return out;
+}
 
 /** Does a JSON value fit a type (kept data read back, for example)? */
 export const fits = (v: unknown, t: TypeDesc): boolean => !("error" in check(v, t, "the value"));
@@ -86,6 +99,16 @@ function coerce(v: unknown, t: TypeDesc): unknown {
       }
       return out;
     }
+    case "Map": {
+      if (typeof v !== "object" || Array.isArray(v)) return undefined;
+      const out: [string, unknown][] = [];
+      for (const [k, x] of entriesInOrder(v as object)) {
+        const c = coerce(x, t.of);
+        if (c === undefined) return undefined;
+        out.push([k, c]);
+      }
+      return mapOf(out);
+    }
     case "Record": {
       if (typeof v !== "object" || Array.isArray(v)) return undefined;
       const o = v as Record<string, unknown>;
@@ -97,6 +120,14 @@ function coerce(v: unknown, t: TypeDesc): unknown {
         else return undefined; // a new field with no default: this element cannot be migrated
       }
       return out;
+    }
+    case "Union": {
+      if (typeof v !== "object" || Array.isArray(v)) return undefined;
+      const o = v as Record<string, unknown>;
+      const variant = t.variants.find((x) => o[t.tag] === x.name || (x.wire !== undefined && o[t.tag] === x.wire));
+      if (!variant) return undefined;
+      const r = coerce(o, { k: "Record", name: variant.name, fields: variant.fields });
+      return r === undefined ? undefined : { [t.tag]: variant.name, ...(r as object) };
     }
     default:
       return fits(v, t) ? v : undefined;
@@ -120,6 +151,11 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
     case "DateTime": {
       const dt = typeof v === "string" ? parseDateTime(v) : null;
       return dt !== null ? { ok: dt } : bad;
+    }
+    // An instant arrives in any ISO 8601 form with a zone and is read in its one form (UTC, seconds).
+    case "Instant": {
+      const i = typeof v === "string" ? parseInstant(v) : null;
+      return i !== null ? { ok: i } : bad;
     }
     // A choice arrives by its wire name (or its own name) and is read as the spec's value.
     case "Choice": {
@@ -155,6 +191,16 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
       }
       return { ok: out };
     }
+    case "Map": {
+      if (typeof v !== "object" || Array.isArray(v)) return bad;
+      const out: [string, unknown][] = [];
+      for (const [k, x] of entriesInOrder(v as object)) {
+        const r = check(x, t.of, `${name}[${JSON.stringify(k)}]`);
+        if ("error" in r) return r;
+        out.push([k, r.ok]);
+      }
+      return { ok: mapOf(out) };
+    }
     case "Record": {
       if (typeof v !== "object" || Array.isArray(v)) return bad;
       const out: Record<string, unknown> = {};
@@ -164,6 +210,15 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
         out[f.name] = r.ok;
       }
       return { ok: out };
+    }
+    // A union: the tag says which record (by its wire name or its own); the app reads its own name.
+    case "Union": {
+      if (typeof v !== "object" || Array.isArray(v)) return bad;
+      const tag = (v as Record<string, unknown>)[t.tag];
+      const variant = t.variants.find((x) => tag === x.name || (x.wire !== undefined && tag === x.wire));
+      if (!variant) return { error: `${name}.${t.tag} must be one of ${t.variants.map((x) => x.wire ?? x.name).join(", ")}` };
+      const r = check(v, { k: "Record", name: variant.name, fields: variant.fields }, name);
+      return "error" in r ? r : { ok: { [t.tag]: variant.name, ...(r.ok as object) } };
     }
   }
 }
@@ -177,12 +232,22 @@ export function toWire(v: unknown, t: TypeDesc | null | undefined): unknown {
     case "Maybe": return toWire(v, t.of);
     case "Choice": return t.wire && typeof v === "string" && t.values.includes(v) ? t.wire[t.values.indexOf(v)] : v;
     case "List": return Array.isArray(v) ? v.map((x) => toWire(x, t.of)) : v;
+    case "Map": return typeof v === "object" && !Array.isArray(v) ? mapOf(entriesInOrder(v as object).map(([k, x]) => [k, toWire(x, t.of)])) : v;
     case "Record": {
       if (typeof v !== "object" || Array.isArray(v)) return v;
       const o = v as Record<string, unknown>;
       const out = Object.fromEntries(Object.entries(o).map(([k, x]) => [k, toWire(x, t.fields.find((f) => f.name === k)?.type)]));
       for (const f of t.fields) if (f.type.k === "Maybe" && o[f.name] === undefined) out[f.name] = null;
       return out;
+    }
+    case "Union": {
+      if (typeof v !== "object" || Array.isArray(v)) return v;
+      const o = v as Record<string, unknown>;
+      const variant = t.variants.find((x) => o[t.tag] === x.name || (x.wire !== undefined && o[t.tag] === x.wire));
+      if (!variant) return v;
+      // The tag first, then the variant's fields as declared: the same JSON whatever order a build set them in.
+      const r = toWire(o, { k: "Record", name: variant.name, fields: variant.fields }) as Record<string, unknown>;
+      return Object.fromEntries([[t.tag, variant.wire ?? variant.name], ...variant.fields.filter((f) => f.name in r).map((f) => [f.name, r[f.name]])]);
     }
     default: return v;
   }
@@ -197,7 +262,7 @@ export function fromWire(v: unknown, t: TypeDesc | null | undefined): unknown {
 
 /** Does a type carry wire names anywhere (so the harness must translate it)? */
 export const hasWire = (t: TypeDesc | null | undefined): boolean =>
-  !!t && (t.k === "Choice" ? !!t.wire : t.k === "List" || t.k === "Maybe" ? hasWire(t.of) : t.k === "Record" ? t.fields.some((f) => hasWire(f.type)) : false);
+  !!t && (t.k === "Choice" ? !!t.wire : t.k === "List" || t.k === "Maybe" || t.k === "Map" ? hasWire(t.of) : t.k === "Record" ? t.fields.some((f) => hasWire(f.type)) : t.k === "Union");
 
 /** A query or path value arrives as text: read it as its type. */
 function fromText(s: string | undefined, t: TypeDesc): unknown {

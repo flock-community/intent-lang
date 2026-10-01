@@ -53,6 +53,7 @@ export function literalJson(l: Literal): unknown {
     case "value": return l.v;
     case "date": return l.v;
     case "dateTime": return l.v;
+    case "instant": return l.v;
     case "list": return l.items.map(literalJson);
     case "record": return Object.fromEntries(l.fields.map((f) => [f.name, literalJson(f.value)]));
     default: return null;
@@ -431,6 +432,14 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
     if (t.k === "Bool") return rnd() < 0.5;
     if (t.k === "Text") return pick(TEXTS);
     if (t.k === "Ref") return t.key ? valueFor(name, t.key) : null;
+    // An instant, in its own form, with an offset, or without a zone (refused: it is not an instant).
+    if (t.k === "Instant") return pick(["2026-09-24T07:00:00Z", "2026-09-24T09:00:00+02:00", "2026-01-01T00:00:00.5Z", "2026-09-24T07:00:00", "1999-12-31T23:59:59Z"]);
+    // A map: a few keys (texts the sessions use, and `key`, which no comparison may drop), values of its type.
+    if (t.k === "Map") {
+      const out: Record<string, unknown> = {};
+      for (let i = Math.floor(rnd() * 3); i > 0; i--) out[pick(["primary", "accent", "key", "b", "a"])] = valueFor(name, t.of);
+      return out;
+    }
     if (t.k === "Named") {
       const c = app.choices.find((x) => x.name === t.name);
       if (c) return rnd() < 0.9 ? pick(c.values) : "Unknown";
@@ -475,6 +484,12 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
       const last = [...calls].reverse().find((c) => c.headers?.["idempotency-key"]);
       if (last && rnd() < 0.1) {
         calls.push(JSON.parse(JSON.stringify(last)));
+        continue;
+      }
+      // An api with only events (1.1): nothing to call; time passes, and its \`every\` blocks publish.
+      if (!eps.length) {
+        if (!waits.length) break;
+        calls.push({ endpoint: "(wait)", args: { ms: pick(waits) } });
         continue;
       }
       const ep = pick(eps);

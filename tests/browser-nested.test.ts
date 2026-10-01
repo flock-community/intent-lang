@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { build } from "esbuild";
 import { load } from "../compiler/load.ts";
 import { closeBrowser, fidelityDiff, openStyled } from "../compiler/browser.ts";
 
@@ -17,9 +18,9 @@ const item = (key: string, label: string, done: boolean) => ({ key, c: [{ k: "ch
 const task = (key: string, title: string, items: object[], left: string) => ({ key, c: [{ k: "text", n: "title", v: title }, { k: "list", n: "items", rows: items }, { k: "field", n: "newItem", label: "New item", v: "" }, { k: "button", n: "addItem", label: "Add", enabled: true }, { k: "text", n: "left", v: left }] });
 const screen = { k: "screen", title: "Checklists", c: [{ k: "heading", v: "Checklists" }, { k: "list", n: "tasks", rows: [task("1", "Groceries", [item("1", "Milk", false), item("2", "Eggs", true)], "1 left"), task("2", "Taxes", [], "0 left")] }] };
 
-const li = (t: string, k: string, label: string, done: boolean) => `<li data-row><input type="checkbox" data-el="done"${done ? " checked" : ""}><span data-el="label">${label}</span><button data-el="removeItem" onclick="hit('${t}/${k}')">Remove</button></li>`;
+const li = (t: string, k: string, label: string, done: boolean) => `<li data-row="${k}"><input type="checkbox" data-el="done"${done ? " checked" : ""}><span data-el="label">${label}</span><button data-el="removeItem" onclick="hit('${t}/${k}')">Remove</button></li>`;
 const outer = (t: string, title: string, inner: string, left: string, innerOutside = false) =>
-  `<div data-row><span data-el="title">${title}</span>${innerOutside ? "" : `<ul data-el="items">${inner}</ul>`}<label>New item<input data-el="newItem" value=""></label><button data-el="addItem" onclick="hit('${t}/add')">Add</button><span data-el="left">${left}</span></div>${innerOutside ? `<ul data-el="items">${inner}</ul>` : ""}`;
+  `<div data-row="${t}"><span data-el="title">${title}</span>${innerOutside ? "" : `<ul data-el="items">${inner}</ul>`}<label>New item<input data-el="newItem" value=""></label><button data-el="addItem" onclick="hit('${t}/add')">Add</button><span data-el="left">${left}</span></div>${innerOutside ? `<ul data-el="items">${inner}</ul>` : ""}`;
 const page = (innerOutside: boolean) => `<!doctype html><html><body><main><h2>Checklists</h2><div data-el="tasks">${outer("1", "Groceries", li("1", "1", "Milk", false) + li("1", "2", "Eggs", true), "1 left", innerOutside)}${outer("2", "Taxes", "", "0 left", innerOutside)}</div></main>
 <script>window.__screen = ${JSON.stringify(screen)}; window.__n = 1; window.hit = (k) => { window.__hit = k; window.__n++; };</script></body></html>`;
 
@@ -52,8 +53,26 @@ try {
   const b = await bad.observe();
   assert.ok(fidelityDiff(b.dom, b.screen).length > 0, "inner rows outside their outer row are refused");
   await bad.close();
+  // A row's data-row is its key (the one its events carry): swapped keys are refused.
+  const swapped = await openStyled(site(page(false).replace('data-row="1"><span data-el="title">Groceries', 'data-row="9"><span data-el="title">Groceries')), app!);
+  const w = await swapped.observe();
+  assert.match(fidelityDiff(w.dom, w.screen).join("\n"), /tasks\[1\]: data-row is "9", the row's key is "1"/, "a row whose data-row is not its key is refused");
+  await swapped.close();
+  // The harness's own (unstyled) renderer keeps the same DOM contract: data-el on every element,
+  // data-row with the row's key, data-option on options; the styled driver reads it back as the screen.
+  const plain = site("");
+  await build({
+    stdin: { contents: `import { mount } from ${JSON.stringify(join(process.cwd(), "runtime/ts/ui.ts"))};\nconst screen = (window as any).__screen;\nmount(document.getElementById("app")!, { init: () => 0, step: (_w, m) => m, render: () => screen });`, loader: "ts", resolveDir: process.cwd() },
+    bundle: true, format: "iife", outfile: join(plain, "app.js"), logLevel: "error",
+  });
+  writeFileSync(join(plain, "index.html"), `<!doctype html><html><body><div id="app"></div><script>window.__screen = ${JSON.stringify(screen)}; window.__n = 1;</script><script src="app.js"></script></body></html>`);
+  const p = await openStyled(plain, app!);
+  const o = await p.observe();
+  assert.deepEqual(o.errors, [], "the plain renderer meets the DOM contract");
+  assert.deepEqual(fidelityDiff(o.dom, o.screen), [], "the plain renderer shows the screen, row keys included");
+  await p.close();
 } finally {
   await closeBrowser();
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }
-console.log("ok browser-nested: rows inside rows read by the nearest data-row, acted on by the path of rows, rects keyed by it, and inner rows outside their row refused");
+console.log("ok browser-nested: rows inside rows read by the nearest data-row, acted on by the path of rows, rects keyed by it, inner rows outside their row refused, data-row is the row's key; the plain renderer meets the same contract");

@@ -1,0 +1,40 @@
+app Weather {
+  "Shows the latest reading a station sends, and how often it said it is alive. It calls nothing: it only listens."
+}
+language 1
+import weather.readings
+
+uses weather.updatesApi as weather only updated, pinged {
+  tested with "apps/api/weather-api.intent"
+}
+
+examples start at 2026-09-24 09:00
+
+state {
+  reading: Text = "No reading yet"
+  pings: Int = 0
+}
+
+screen {
+  text reading
+  text alive = "{@pings} pings"
+}
+
+on event weather.updated {
+  - set @reading to "{its body's @city}: {its body's @degrees}°"
+}
+
+on event weather.pinged {
+  - increase @pings by 1
+}
+
+example "readings arrive" {
+  see reading = "No reading yet"
+  see alive = "0 pings"
+  wait 15m
+  see reading = "Utrecht: 13°"
+  see alive = "1 pings"
+  wait 15m
+  see reading = "Utrecht: 14°"
+  see alive = "2 pings"
+}

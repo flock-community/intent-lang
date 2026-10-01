@@ -45,7 +45,10 @@ language 2        # opts into the second edition
 - Pre-1 lines (`language v12` … `language v73`) keep working. They are read as `language 1` with
   the `LANGUAGE` warning, and `intent fix` rewrites them to `language 1` (`compiler/parse.ts`, the
   `language` block).
-- In language 1 no rule depends on the line. The one pre-1 rule that did (`NO_ACCESS` was a hint
+- Since 1.1 one rule depends on the line, and only by adding: a form added after the spec's own
+  line is an error that names the version it needs (`NEEDS_LANGUAGE`), which `intent fix` settles
+  by raising the line. No spec that checked before gets it: the form did not exist.
+- In language 1 no other rule depends on the line. The one pre-1 rule that did (`NO_ACCESS` was a hint
   before v70 and an error from v70 on) collapsed to its language 1 behaviour: an api with a key
   layer and no `access` block is an error whatever its line says. An edition will be the first rule
   keyed to the line again, on purpose and on a schedule (§4).
@@ -167,10 +170,11 @@ is lost on the next build and breaks the trace back to the spec.
 
 | Contract | What is fixed |
 |---|---|
-| `data-el` | every element carries its spec name, qualified in a component instance (`pager.next`) |
+| `data-el` | every element carries its spec name, qualified in a component instance (`pager.next`), in plain and styled builds alike. Since 1.1 also: each row of a list is one element with `data-row="<the row's key>"`, the key its events carry (an element belongs to its nearest `data-row`); a select's options carry `data-option="<value>"`. The compiler asks for a record's key as the key of a row that shows that record; a styled build is refused when a row's `data-row` is not its key |
 | `sourcemap.json` | per build: element, handler, step, endpoint, event, layer, rule, example → file:line |
 | `manifest.json` | per api the app uses: its contract, endpoints and events (the `uses … only` list) |
 | `job.mjs` | ES module, default export `{ run }`; `run({ event: { event, body } })` or `run()`, resolving with the job's data |
+| `screen.mjs` (since 1.1) | a TypeScript screen build: ES module, no platform, default export `{ meta, start }`; `start({ clock?, size?, saved?, seed? })` returns `observe`, `send`, `calls`, `stored`, `nav`, `through`; it touches no platform global (docs/design/screen-host.md, contract `intent.screen/1`) |
 | `globalThis.__intentTransport` | the host transport a job or screen uses when calls do not go over HTTP |
 | `<meta name="intent-api" content="alias=url">` | where a browser build sends calls, else the page's origin |
 | the wire | JSON; nothing is `null`; a choice value is its wire name, or else its spec name; fixed answers `400/404/405/413 {"error": …}`, `401`/`403 {"error": …}` from access; `idempotency-key` kept 24 h; retries of lost/5xx/429 answers, three attempts |
@@ -178,6 +182,8 @@ is lost on the next build and breaks the trace back to the spec.
 | the audit | JSON lines in `INTENT_AUDIT` (default `audit.jsonl`): `at`, `caller`, `endpoint`, `decision` (`allowed`/`refused`), `rules` (`file:line`), `status`, `key?`; never a secret (`runtime/ts/access.ts`, `AuditEntry`) |
 | stored data | `INTENT_DATA` (default `data.json`) on a server, local storage in a browser; migrated, not reset, when records change (LANGUAGE.md §3) |
 | server | `node server.mjs`, `PORT`, `INTENT_MAX_BODY` |
+| `--json` (since 1.1) | `intent check --json` and `intent build --json`: one JSON report on stdout, fields as in TOOLS.md §1 (`level`, `code`, `line`, `col`, `message`, `file` per diagnostic; `ok`, `targets`, `verified`, `examples`, `attempts[].stage`, `compiler` per build). The message text stays outside the promise |
+| exit codes (since 1.1) | every command: `0` done, `1` failed, `2` a usage error |
 
 A field may be added to any of these files. Removing or renaming one needs an edition.
 
@@ -218,7 +224,7 @@ correct (`compiler/targets/target.ts`). Dropping a target is announced one minor
   promised; the words may be sharpened.
 - The model's choices where the spec is silent and §9 has no default, and cost, speed and the
   number of repairs.
-- Tool output formats: `check`, `converge`, `review`, `expand`, diagnostic message text,
+- Tool output formats: `check`, `converge`, `review`, `expand` (but not `--json`, §5), diagnostic message text,
   `units.json`, the `// @spec` region marks, and the formatting that `intent fmt` produces.
 - The quality rule sets and their hints (§3).
 - Tuning variables: `INTENT_BUDGET`, `INTENT_SESSIONS`, `INTENT_LENGTH`, `INTENT_REPAIRS`,

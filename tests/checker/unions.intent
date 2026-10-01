@@ -1,0 +1,38 @@
+app Unions {
+  "1.1: a union of records, told apart by a tag; its variants are records without a field named like the tag."
+}
+language 1.1
+
+record Daily {
+  at: Text
+}
+
+record Weekly {
+  day: Text
+  at: Text
+}
+
+record Tagged {
+  kind: Text
+}
+
+union Trigger: Daily = "daily" | Weekly = "weekly"   # expect-not: SYNTAX
+union Bad: Daily | Hourly                            # expect: UNKNOWN_NAME
+union Clash: Daily | Tagged                          # expect: DUPLICATE
+union Nested: Trigger | Daily                        # expect: NOT_YET
+union Half: Daily = "daily" | Weekly                 # expect: SYNTAX
+union Twice: Daily | Daily                           # expect: DUPLICATE
+union ByType by type: Daily | Tagged                 # expect-not: DUPLICATE
+
+state {
+  next: Trigger or nothing = nothing
+  count: Int = 0
+}
+
+screen {
+  text shown = "{@count}"
+}
+
+example "nothing yet" {
+  see shown = "0"
+}

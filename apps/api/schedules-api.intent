@@ -1,0 +1,28 @@
+app SchedulesApi {
+  "Keeps the schedules of jobs, in the order they were planned."
+}
+language 1.1
+
+implements jobs.schedulesApi
+
+state {
+  stored schedules: List Schedule = []
+}
+
+endpoint plan {
+  if @job, trimmed, is blank {
+    answer 400 "Job is required"
+  }
+  - add a @Schedule to the end of @schedules with @id = the highest @id in @schedules + 1, or 1 when there is none, @job trimmed and the given @trigger
+  answer 201 with the new schedule
+}
+
+endpoint schedules {
+  answer 200 with @schedules
+}
+
+example "a trigger of no known kind" {
+  call plan with job = "Backup", trigger = { kind = "hourly", at = "02:00" }
+  see plan.status = 400
+  see plan.body.error = "trigger.kind must be one of daily, weekly"
+}

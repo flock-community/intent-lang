@@ -7,8 +7,10 @@ export type Type =
   | { k: "Bool" }
   | { k: "Date" } // a day: "2026-09-24"
   | { k: "DateTime" } // a moment, to the minute: "2026-09-24T09:00"
+  | { k: "Instant" } // 1.1: a moment on the world's clock, to the second, in UTC: "2026-09-24T07:00:00Z"
   | { k: "List"; of: Type }
   | { k: "Maybe"; of: Type }
+  | { k: "Map"; of: Type } // 1.1: texts to values, a JSON object with any keys (`Map Text`)
   | { k: "Named"; name: string }
   // `ticket: ref Ticket`: a field that holds another record's key. `key` is the referenced
   // record's key field's type, filled in by the checker; storage and reads use it. `in`: the
@@ -25,6 +27,7 @@ export type Literal =
   | { k: "value"; v: string } // a choice value
   | { k: "date"; v: string } // 2026-09-24
   | { k: "dateTime"; v: string } // 2026-09-24 09:00, kept as "2026-09-24T09:00"
+  | { k: "instant"; v: string } // 2026-09-24T07:00:00Z (1.1)
   | { k: "table"; columns: string[]; rows: Literal[][] } // seed data for List Record
   // \`call\` arguments in examples (\`needs = [{ bundle = "std.list", minimum = "1.0" }]\`), and a
   // table cell that holds a row's inner list (\`[{ id = 1, label = "Milk" }]\`).
@@ -60,6 +63,10 @@ export interface RecordDecl {
   fields: Field[];
   key?: string; // `key id: Int`: the field a `ref` holds (without one, the field named `id`)
   line: number;
+  // 1.1: `union Trigger by kind: Daily = "daily" | Weekly`: one of these records, told apart on the
+  // wire by its tag field (`kind`), whose value is the variant's wire name (or its own name). Kept
+  // with the records so that imports, contracts and refinement carry it; it has no fields itself.
+  union?: { tag: string; variants: string[]; wire?: Record<string, string> };
 }
 
 export interface ChoiceDecl {
@@ -249,6 +256,7 @@ export interface App {
   layers?: LayerUse[];
   profile?: string; // "ui" (default) or "api": which vocabulary the app uses (lib/profile/*.intent)
   language?: string; // `language 1`, `language 1.2`: the lowest language version the spec needs (a pre-1 `language vNN` is "1")
+  since?: { line: number; version: string; what: string }[]; // forms added after language 1, by the version that added them (NEEDS_LANGUAGE)
   endpoints?: Endpoint[];
   events?: EventDecl[];
   startsAt?: string; // `examples start at 2026-09-24 09:00`: the clock at the start of every example and session

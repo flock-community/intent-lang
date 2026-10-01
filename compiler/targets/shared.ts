@@ -317,3 +317,19 @@ export function copyDrawRuntime(app: App, dir: string) {
     copyFileSync(join(ROOT, "runtime/ts/platform/std.crypto.ts"), join(dir, "platform", "std.crypto.ts"));
   }
 }
+
+/** Does the app (or an api it uses) have a map type anywhere (Elm: `import Dict`)? */
+export const usesMap = (app: App): boolean => usesTypeKind(app, "Map");
+/** Does the app (or an api it uses) have an `Instant` anywhere (its type alias in the prelude)? */
+export const usesInstant = (app: App): boolean => usesTypeKind(app, "Instant");
+
+function usesTypeKind(app: App, kind: "Map" | "Instant"): boolean {
+  const seen = new Set<object>();
+  const walk = (v: unknown): boolean => {
+    if (!v || typeof v !== "object" || seen.has(v)) return false;
+    seen.add(v);
+    if ((v as { k?: unknown }).k === kind && (kind !== "Map" || "of" in v)) return true;
+    return Object.values(v).some(walk);
+  };
+  return walk({ records: app.records, state: app.state, derive: app.derive, clients: (app.clients ?? []).map((c) => ({ records: c.contract.records, endpoints: c.contract.endpoints, events: c.contract.events })), endpoints: app.endpoints, events: app.events });
+}

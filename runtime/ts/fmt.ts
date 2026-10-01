@@ -176,6 +176,25 @@ export function parseDate(text: string): string | null {
 }
 
 /** A moment typed as "YYYY-MM-DD HH:MM" or "YYYY-MM-DDTHH:MM", only when it exists. */
+/**
+ * An instant (1.1) in its one written form, `YYYY-MM-DDTHH:MM:SSZ` (UTC, to the second), or null. It
+ * reads ISO 8601 with a zone: `Z` or an offset (`+02:00`), seconds optional, a fraction of a second
+ * dropped. Without a zone it is not an instant (it would be a local DateTime).
+ */
+export function parseInstant(text: string): string | null {
+  const m = text.trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/);
+  if (!m || parseDate(`${m[1]}-${m[2]}-${m[3]}`) === null || num(m[4]) > 23 || num(m[5]) > 59 || num(m[6] ?? "0") > 59) return null;
+  const off = m[7] === "Z" ? 0 : (m[7][0] === "-" ? -1 : 1) * (num(m[7].slice(1, 3)) * 60 + num(m[7].slice(4, 6)));
+  if (Math.abs(off) > 14 * 60) return null;
+  // Date.UTC reads years 0–99 as 1900–1999: set the year after.
+  const d = new Date(Date.UTC(2000, 0, 1, num(m[4]), num(m[5]), num(m[6] ?? "0")));
+  d.setUTCFullYear(num(m[1]), num(m[2]) - 1, num(m[3]));
+  d.setTime(d.getTime() - off * 60000);
+  if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 0 || d.getUTCFullYear() > 9999) return null;
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${p(d.getUTCFullYear(), 4)}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}Z`;
+}
+
 export function parseDateTime(text: string): string | null {
   const m = text.trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})$/);
   if (!m || parseDate(m[1]) === null || num(m[2]) > 23 || num(m[3]) > 59) return null;

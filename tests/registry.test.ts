@@ -97,4 +97,12 @@ writeFileSync(file, bundle(items));
 const p = await publish(file, join(dir, "registry"), () => "sha", []);
 assert.equal(p.version, "1.0.0");
 
-console.log("ok registry: field types, wire names, always and change rules, and a contract's events are part of a bundle's version; publish needs a `language` line");
+// A union (1.1): its variants and the tag's name on the wire are surface; a map's type is spelled out.
+{
+  const api = apiOf(parseSyntax(readFileSync("lib/jobs/schedulesApi.intent", "utf8")).app);
+  for (const line of ["union Trigger.Daily", "union Trigger.Weekly", "wire Trigger.kind = daily", "field Schedule.trigger: Trigger"]) assert.ok(api.includes(line), `${line} in ${api.join(" | ")}`);
+  const renamed = apiOf(parseSyntax(readFileSync("lib/jobs/schedulesApi.intent", "utf8").replace('Daily = "daily"', 'Daily = "day"')).app);
+  assert.match(nextVersion({ api, examples: [] } as never, "1.0.0", renamed, []).version, /^2\./, "a variant's wire name changed: major");
+  assert.ok(apiOf(parseSyntax(readFileSync("lib/prefs/themeApi.intent", "utf8")).app).some((l) => /Map Color/.test(l)), "Map Color is spelled out");
+}
+console.log("ok registry: field types, wire names, always and change rules, a contract's events, and a union's variants are part of a bundle's version; publish needs a `language` line");

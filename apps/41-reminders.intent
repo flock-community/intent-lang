@@ -1,0 +1,63 @@
+app Reminders {
+  "Two quick reminders and the list of reminders, earliest first, each at its moment in UTC."
+}
+language 1.1
+
+uses notes.remindersApi as reminders only remind, due {
+  tested with "apps/api/reminders-api.intent"
+}
+
+state {
+  rows: List Reminder = []
+  problem: Text = ""
+}
+
+screen {
+  button standup "Standup at 06:30 UTC"
+  button call "Call Ann at 07:00 UTC"
+  text problem
+  list rows of Reminder {
+    text text
+    text at
+  }
+  text earliest = "First: {the @at of the first of @rows, or "nothing yet"}"
+}
+
+on start {
+  - call @reminders.due
+}
+
+on click standup {
+  - call @reminders.remind with @text = "Standup" and @at = 2026-09-24T06:30:00Z
+}
+
+on click call {
+  - call @reminders.remind with @text = "Call Ann" and @at = 2026-09-24T07:00:00Z
+}
+
+on answer reminders.remind {
+  if its status is 201 {
+    - clear @problem
+    - call @reminders.due
+  } else {
+    - set @problem to "Not added"
+  }
+}
+
+on answer reminders.due {
+  if its status is 200 {
+    - set @rows to its body
+  }
+}
+
+example "earliest first, whatever the order they were added in" {
+  see earliest = "First: nothing yet"
+  click call
+  click standup
+  see rows has 2 rows
+  see text on row 1 = "Standup"
+  see at on row 1 = "2026-09-24T06:30:00Z"
+  see at on row 2 = "2026-09-24T07:00:00Z"
+  see earliest = "First: 2026-09-24T06:30:00Z"
+  see problem = ""
+}

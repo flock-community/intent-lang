@@ -1,0 +1,9 @@
+contract weather.updatesApi {
+  "A station's updates: nothing to call, only events to hear."
+}
+language 1.1
+
+import weather.readings
+
+event updated: Reading               # a new reading
+event pinged: Ping                   # the station is alive; nothing else to say

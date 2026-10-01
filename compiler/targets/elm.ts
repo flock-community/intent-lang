@@ -10,7 +10,7 @@ import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
 import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -26,6 +26,7 @@ export function elmLiteral(l: Literal, t: Type): string {
     case "value": return mangle(l.v);
     case "date": return q(l.v);
     case "dateTime": return q(l.v);
+    case "instant": return q(l.v);
     case "table": return "[]";
     case "list": case "record": throw new Error("a list or record value needs its type: elmValue");
   }
@@ -38,8 +39,11 @@ export function elmValue(app: App, l: Literal, t: Type): string {
   if (l.k === "list" && inner.k === "List") return wrap(l.items.length ? `[ ${l.items.map((x) => elmValue(app, x, inner.of)).join(", ")} ]` : "[]");
   if (l.k === "record" && inner.k === "Named") {
     const rec = app.records.find((r) => r.name === inner.name);
+    if (rec && !rec.fields.length) return wrap("{}");
     if (rec) return wrap(`{ ${rec.fields.map((f) => `${mangle(f.name)} = ${elmValue(app, l.fields.find((x) => x.name === f.name)?.value ?? f.default ?? { k: "nothing" }, f.type)}`).join(", ")} }`);
   }
+  if (l.k === "record" && inner.k === "Map")
+    return wrap(l.fields.length ? `Dict.fromList [ ${l.fields.map((f) => `( ${q(f.name)}, ${elmValue(app, f.value, inner.of)} )`).join(", ")} ]` : "Dict.empty");
   return elmLiteral(l, t);
 }
 
@@ -85,14 +89,16 @@ export function elmType(t: Type): string {
     case "Bool": return "Bool";
     case "Date": return "Date";
     case "DateTime": return "DateTime";
+    case "Instant": return "Instant";
     case "List": return `List ${elmAtom(t.of)}`;
     case "Maybe": return `Maybe ${elmAtom(t.of)}`;
+    case "Map": return `Dict.Dict String ${elmAtom(t.of)}`;
     case "Named": return mangle(t.name);
     case "Ref": return t.key ? elmType(t.key) : "Int";
   }
 }
 
-export const elmAtom = (t: Type) => (t.k === "List" || t.k === "Maybe" ? `(${elmType(t)})` : elmType(t));
+export const elmAtom = (t: Type) => (t.k === "List" || t.k === "Maybe" || t.k === "Map" ? `(${elmType(t)})` : elmType(t));
 
 export function elmRecord(name: string, fields: [string, string][]): string {
   if (!fields.length) return `type alias ${name} =\n    {}\n`;
@@ -107,10 +113,10 @@ export function genElmSpec(app: App): string {
 -}
 
 ${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}${app.platforms?.some((p) => p.name === "std.crypto") ? "import Crypto\n" : ""}${usesDraws(app) || hasCodes(app) ? "import Draw\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
-${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}
+${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}${usesMap(app) ? "import Dict\n" : ""}
 `);
   if (app.platforms?.some((p) => p.name === "std.crypto")) out.push(`{-| Platform std.crypto: SHA-256, from the installation's reviewed code (never a home-made version). -}\nsha256 : String -> String\nsha256 =\n    Crypto.sha256\n\n\n`);
-  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n{-| The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. -}\ntype alias Clock =\n    { now : DateTime, today : Date${app.sizes ? ", size : Size" : ""} }\n\n\n`);
+  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n${usesInstant(app) ? `{-| An instant on the world's clock, in UTC to the second: "YYYY-MM-DDTHH:MM:SSZ". The harness reads every ISO 8601 form with a zone into this one, so compare and sort them as text. -}\ntype alias Instant =\n    String\n\n\n` : ""}{-| The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. -}\ntype alias Clock =\n    { now : DateTime, today : Date${app.sizes ? ", size : Size" : ""} }\n\n\n`);
   for (const r of app.refined ?? []) {
     if (r.code) {
       // A code: exactly n characters of its alphabet, read as the alphabet says (the harness's reader, Draw.readCode).
@@ -134,7 +140,13 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     }
   }
   // A record named like a type Elm's Basics always exposes (`Order`) is ambiguous in App.elm unless qualified.
-  for (const r of app.records) out.push((["Order", "Never"].includes(r.name) ? `{-| Elm's Basics also has an \`${r.name}\`: in App.elm write this record's type as \`Spec.${r.name}\`. -}\n` : "") + elmRecord(mangle(r.name), r.fields.map((f) => [mangle(f.name), elmType(f.type)])) + "\n");
+  for (const r of app.records) {
+    if (r.union) {
+      out.push(`{-| One of ${r.union.variants.join(", ")}: a variant is its record, wrapped (\`${mangle(r.name)}${mangle(r.union.variants[0])} { … }\`). -}\ntype ${mangle(r.name)}\n    = ${r.union.variants.map((v) => `${mangle(r.name)}${mangle(v)} ${mangle(v)}`).join("\n    | ")}\n\n\n`);
+      continue;
+    }
+    out.push((["Order", "Never"].includes(r.name) ? `{-| Elm's Basics also has an \`${r.name}\`: in App.elm write this record's type as \`Spec.${r.name}\`. -}\n` : "") + elmRecord(mangle(r.name), r.fields.map((f) => [mangle(f.name), elmType(f.type)])) + "\n");
+  }
   // Following a reference: the row is found in its home list when it is read (Nothing: it is gone).
   const refs = refLookups(app);
   for (const b of refs.byKey) out.push(`{-| Following a \`ref ${b.record}\`: the ${b.record} in \`${b.list}\` whose \`${b.key}\` is the key, or Nothing when there is none (it was removed). -}\n${b.fn} : List ${mangle(b.record)} -> ${elmType(b.keyType)} -> Maybe ${mangle(b.record)}\n${b.fn} rows k =\n    List.head (List.filter (\\r -> r.${mangle(b.key)} == k) rows)\n\n\n`);
@@ -836,9 +848,10 @@ export function elmDecoder(app: App, t: Type): string {
     case "Int": return "D.int";
     case "Decimal": return "D.float";
     case "Bool": return "D.bool";
-    case "Date": case "DateTime": return "D.string";
+    case "Date": case "DateTime": case "Instant": return "D.string";
     case "List": return `(D.list ${elmDecoder(app, t.of)})`;
     case "Maybe": return `(D.nullable ${elmDecoder(app, t.of)})`;
+    case "Map": return `(D.dict ${elmDecoder(app, t.of)})`;
     case "Named": {
       const r = app.refined?.find((x) => x.name === t.name);
       if (r) return r.base === "Text" ? "D.string" : r.base === "Int" ? "D.int" : "D.float";
@@ -854,9 +867,11 @@ export function elmEncoder(app: App, t: Type, v: string, d = 0): string {
     case "Int": return `J.int ${v}`;
     case "Decimal": return `J.float ${v}`;
     case "Bool": return `J.bool ${v}`;
-    case "Date": case "DateTime": return `J.string ${v}`;
+    case "Date": case "DateTime": case "Instant": return `J.string ${v}`;
     case "List": return `J.list (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v}`;
     case "Maybe": return `Maybe.withDefault J.null (Maybe.map (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v})`;
+    // Dict encodes its keys in order: the wire's order (§9), the same as TypeScript's toWire.
+    case "Map": return `J.dict identity (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v}`;
     case "Named": {
       const r = app.refined?.find((x) => x.name === t.name);
       if (r) return elmEncoder(app, { k: r.base } as Type, v, d);
@@ -879,7 +894,23 @@ export function genElmJson(app: App): string {
     out.push(`encode${c.name} : ${mangle(c.name)} -> J.Value\nencode${c.name} v =\n    J.string (${lc}ToString v)\n\n\n`);
   }
   for (const r of app.records) {
-    if (!r.fields.length) continue;
+    if (r.union) {
+      // A union: the tag says which record (by its own name or its wire name; the harness hands the app
+      // its own names), and the record's fields come with it.
+      const u = r.union;
+      const ctor = (v: string) => `${mangle(r.name)}${mangle(v)}`;
+      const names = (v: string) => [...new Set([v, ...(u.wire?.[v] ? [u.wire[v]] : [])])];
+      out.push(`decode${r.name} : D.Decoder ${mangle(r.name)}\ndecode${r.name} =\n    D.field ${q(u.tag)} D.string\n        |> D.andThen\n            (\\tag ->\n                case tag of\n${u.variants.flatMap((v) => names(v).map((n) => `                    ${q(n)} ->\n                        D.map ${ctor(v)} decode${v}\n\n`)).join("")}                    _ ->\n                        D.fail ("not a ${r.name}: " ++ tag)\n            )\n\n\n`);
+      const fieldsOf = (v: string) => app.records.find((x) => x.name === v)?.fields ?? [];
+      out.push(`encode${r.name} : ${mangle(r.name)} -> J.Value\nencode${r.name} u =\n    case u of\n${u.variants.map((v) => `        ${ctor(v)} r ->\n            J.object [ ${[`( ${q(u.tag)}, J.string ${q(v)} )`, ...fieldsOf(v).map((f) => `( ${q(f.name)}, ${elmEncoder(app, f.type, `r.${mangle(f.name)}`)} )`)].join(", ")} ]\n`).join("\n")}\n\n`);
+      continue;
+    }
+    if (!r.fields.length) {
+      // A record without fields: any JSON object (as TypeScript reads it), written as {}.
+      out.push(`decode${r.name} : D.Decoder ${mangle(r.name)}\ndecode${r.name} =\n    D.keyValuePairs D.value |> D.map (\\_ -> {})\n\n\n`);
+      out.push(`encode${r.name} : ${mangle(r.name)} -> J.Value\nencode${r.name} _ =\n    J.object []\n\n\n`);
+      continue;
+    }
     const field = (f: { name: string; type: Type }) =>
       f.type.k === "Maybe" ? `(jsonOptional ${q(f.name)} ${elmDecoder(app, f.type.of)})` : `(D.field ${q(f.name)} ${elmDecoder(app, f.type)})`;
     out.push(`decode${r.name} : D.Decoder ${mangle(r.name)}\ndecode${r.name} =\n    D.succeed ${mangle(r.name)}\n${r.fields.map((f) => `        |> jsonAndMap ${field(f)}`).join("\n")}\n\n\n`);
@@ -896,6 +927,8 @@ export function genElmCalls(app: App): string {
     ...eps.map((c) => `${c.tag}${c.ep.params.length ? ` { ${c.ep.params.map((p) => `${mangle(p.name)} : ${elmType(p.type)}`).join(", ")} }` : ""}`),
     ...undos.map((u) => `${u.tag} { answer : ${elmType(u.answer)}${u.usesArgs ? `, ${u.of.ep.params.map((p) => `${mangle(p.name)} : ${elmType(p.type)}`).join(", ")}` : ""} }`),
   ];
+  // An app that only hears events calls nothing: a Call that cannot be made.
+  if (!callVariants.length) callVariants.push("NoCall Never");
   out.push(`{-| A request to an API, made by returning it from init or update. It is answered later by an \`…Answered\` message.${undos.length ? " An \`undo\` takes an effect back (\`undo @pay.charge\`): give the answer the original call got (and its args); the harness calls the endpoint the contract names in \`undone by\`, answered as that endpoint's \`…Answered\`." : ""} -}\ntype Call\n    = ${callVariants.join("\n    | ")}\n\n\n`);
   for (const c of eps) {
     const variants = (c.ep.answers ?? []).map((a) => `${c.tag}${a.status}${a.type ? ` ${elmAtom(a.type)}` : ""}`);
@@ -921,6 +954,7 @@ export function genElmCalls(app: App): string {
       return `        ${u.tag} u ->\n            J.object [ ( "endpoint", J.string ${q(`${u.of.alias}.${u.by.name}`)} ), ( "args", J.object [ ${args.join(", ")} ] ), ( "undo", J.bool True ), ( "of", J.object [ ( "endpoint", J.string ${q(u.of.name)} ), ( "answer", ${elmEncoder(app, u.answer, "u.answer")} ) ] ) ]\n`;
     }),
   ];
+  if (!callCases.length) callCases.push(`        NoCall n ->\n            never n\n`);
   out.push(`callToJson : Call -> J.Value\ncallToJson c =\n    case c of\n${callCases.join("\n")}\n\n`);
   out.push(`{-| An answer from the outside (\`{ endpoint, status, body }\` or \`{ endpoint, status: 0, error }\`) as a message. -}\nfromAnswer : D.Value -> Maybe Msg\nfromAnswer v =\n    let\n        endpoint =\n            Result.withDefault "" (D.decodeValue (D.field "endpoint" D.string) v)\n\n        status =\n            Result.withDefault 0 (D.decodeValue (D.field "status" D.int) v)\n\n        failure =\n            Result.withDefault "no answer" (D.decodeValue (D.field "error" D.string) v)\n\n        errored =\n            Result.withDefault False (Result.map (\\_ -> True) (D.decodeValue (D.field "error" D.string) v))\n\n        unknown =\n            Result.withDefault False (D.decodeValue (D.field "unknown" D.bool) v)\n\n${clientEndpoints(app).some((c) => gated(app, c)) ? '        held =\n            Result.withDefault False (D.decodeValue (D.field "held" D.bool) v)\n\n        rejected =\n            Result.withDefault False (D.decodeValue (D.field "rejected" D.bool) v)\n\n' : ""}        body d ok bad =\n            case D.decodeValue (D.field "body" d) v of\n                Ok x ->\n                    ok x\n\n                Err _ ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit the contract")\n\n        noBody ok bad =\n            case ( D.decodeValue (D.field "body" (D.null ())) v, D.decodeValue (D.field "body" D.value) v ) of\n                ( Err _, Ok _ ) ->\n                    bad (endpoint ++ " answered " ++ String.fromInt status ++ ", but the body does not fit the contract")\n\n                _ ->\n                    ok\n    in\n    case endpoint of\n${eps
     .map((c) => {

@@ -29,7 +29,7 @@ export function units(app: App): Unit[] {
     out.push({ key: `${kind} ${name}`, kind, name, line, digest: sha(canonical(text)), depends: [...new Set(deps.filter(Boolean))].sort() });
 
   // The types a unit uses: a `Named`/`Ref` name (a record, a choice or a refined type).
-  const typesOf = (t: Type): string[] => (t.k === "Named" || t.k === "Ref" ? [t.name] : t.k === "List" || t.k === "Maybe" ? typesOf(t.of) : []);
+  const typesOf = (t: Type): string[] => (t.k === "Named" || t.k === "Ref" ? [t.name] : t.k === "List" || t.k === "Maybe" || t.k === "Map" ? typesOf(t.of) : []);
   // The names a piece of prose reads.
   const refsOf = (text: string) => refsIn(text).map((r) => r.split(".")[0]);
   const refsOfAll = (...texts: (string | undefined)[]) => texts.flatMap((t) => (t ? refsOf(t) : []));

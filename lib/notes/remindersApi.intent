@@ -1,0 +1,36 @@
+contract notes.remindersApi {
+  "Reminders at moments on the world's clock: a client in any time zone sends when, and every client lists the same moments, earliest first."
+}
+language 1.1
+
+record Reminder {
+  id: Int
+  text: Text
+  at: Instant
+}
+
+endpoint remind POST "/reminders" {
+  body text: Text
+  body at: Instant
+  answers 201 Reminder
+  answers 400 Problem
+}
+
+endpoint due GET "/reminders" {
+  query until: Instant or nothing    # only the reminders before this moment; all when absent
+  answers 200 List Reminder
+}
+
+example "one moment, written in two zones" {
+  call remind with text = "Call Ann", at = "2026-09-24T09:00:00+02:00"
+  see remind.status = 201
+  see remind.body.at = 2026-09-24T07:00:00Z
+  call remind with text = "Standup", at = "2026-09-24T06:30:00Z"
+  call due
+  see due.body has 2 rows
+  see due.body[1].text = "Standup"
+  see due.body[2].text = "Call Ann"
+  call due with until = 2026-09-24T07:00:00Z
+  see due.body has 1 row
+  see due.body[1].text = "Standup"
+}

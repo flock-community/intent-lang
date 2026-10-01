@@ -28,9 +28,10 @@ type TypeDescValue = import("../../runtime/ts/api.ts").TypeDesc;
 /** A spec type as the runtime's type description (routing, contract checks, wire names). */
 export function typeDescOf(app: App, t: Type): TypeDescValue {
   switch (t.k) {
-    case "Text": case "Int": case "Decimal": case "Bool": case "Date": case "DateTime": return { k: t.k };
+    case "Text": case "Int": case "Decimal": case "Bool": case "Date": case "DateTime": case "Instant": return { k: t.k };
     case "List": return { k: "List", of: typeDescOf(app, t.of) };
     case "Maybe": return { k: "Maybe", of: typeDescOf(app, t.of) };
+    case "Map": return { k: "Map", of: typeDescOf(app, t.of) };
     case "Ref": return typeDescOf(app, t.key ?? { k: "Int" });
     case "Named": {
       const rf = app.refined?.find((x) => x.name === t.name);
@@ -39,6 +40,7 @@ export function typeDescOf(app: App, t: Type): TypeDescValue {
       const c = app.choices.find((x) => x.name === t.name);
       if (c) return { k: "Choice", name: c.name, values: c.values, ...(c.wire ? { wire: c.values.map((v) => c.wire![v]) } : {}) };
       const r = app.records.find((x) => x.name === t.name)!;
+      if (r.union) return { k: "Union", name: r.name, tag: r.union.tag, variants: r.union.variants.map((v) => ({ name: v, ...(r.union!.wire?.[v] ? { wire: r.union!.wire[v] } : {}), fields: (app.records.find((x) => x.name === v)?.fields ?? []).map((f) => ({ name: f.name, type: typeDescOf(app, f.type) })) })) };
       return { k: "Record", name: r.name, fields: r.fields.map((f) => ({ name: f.name, type: typeDescOf(app, f.type) })) };
     }
   }
@@ -80,7 +82,7 @@ export type { Response } from "./api.ts";
 ${(app.platforms ?? []).map((p) => `/** Platform ${p.name}: ${p.functions.map((f) => f.name).join(", ")}. Exact, reviewed code from the Intent installation: use these, never write your own. */\nexport { ${p.functions.map((f) => f.name).join(", ")} } from "./platform/${p.name}.js";\n`).join("")}
 ${tsDomain(app)}${tsDraws(app)}${hasData(app) ? tsData(app) : ""}${provided.length ? `/** What the layers hand to every endpoint: ${provided.map((p) => `\\\`${p.name}\\\` from ${p.from}${p.note ? ` (${doc(p.note)})` : ""}`).join("; ")}. */\nexport type Provided = { ${provided.map((p) => `${p.name}: ${tsType(p.type)}`).join("; ")} };\n\n` : ""}/** One variant per endpoint, with its validated input (path, query and body params together)${provided.length ? ", and what the layers provide" : ""}. */
 export type Request =
-${eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n")};
+${eps.length ? eps.map((e) => `  | { endpoint: ${q(e.name)}${e.params.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")}${provided.map((p) => `; ${p.name}: ${tsType(p.type)}`).join("")} }`).join("\n") : "  never"};
 
 ${eps
   .map(
@@ -756,7 +758,7 @@ async function compileLayer(dir: string): Promise<string> {
 /** A platform's functions as TypeScript declarations (the implementation is the installation's). */
 function platformDeclarations(p: NonNullable<App["platforms"]>[number]): string {
   return `// Generated from platform ${p.name} — do not edit. Implemented by the Intent installation (runtime/ts/platform/${p.name}.ts).
-${p.records.map((r) => `export type ${mangle(r.name)} = { ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} };\n`).join("")}
+${p.records.map((r) => r.union ? `export type ${mangle(r.name)} = ${r.union.variants.map((v) => `({ ${r.union!.tag}: ${q(v)} } & ${mangle(v)})`).join(" | ")};\n` : `export type ${mangle(r.name)} = ${r.fields.length ? `{ ${r.fields.map((f) => `${f.name}: ${tsType(f.type)}`).join("; ")} }` : "Record<string, never>"};\n`).join("")}
 ${p.functions.map((f) => `/**${f.note ? ` ${doc(f.note)}` : ""} */\nexport declare function ${f.name}(${f.params.map((x) => `${mangle(x.name)}: ${tsType(x.type)}`).join(", ")}): ${tsType(f.returns)};\n`).join("\n")}`;
 }
 

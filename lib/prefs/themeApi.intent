@@ -1,0 +1,26 @@
+contract prefs.themeApi {
+  "A theme: a colour for each role name, as a host keeps it. The roles are not known ahead: any name may get a colour."
+}
+language 1.1
+
+type Color = Text matching /\x23[0-9a-f]{6}/   # a hash and six hex digits, in lower case
+
+endpoint theme GET "/theme" {
+  answers 200 Map Color
+}
+
+endpoint paint PUT "/theme/{role}" {
+  path role: Text
+  body color: Color
+  answers 200 Map Color
+  answers 400 Problem
+}
+
+example "painting two roles" {
+  call paint with role = "primary", color = "#334466"
+  see paint.status = 200
+  call paint with role = "accent", color = "#cc3333"
+  call theme
+  see theme.body.primary = "#334466"
+  see theme.body.accent = "#cc3333"
+}

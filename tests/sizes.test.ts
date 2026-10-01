@@ -4,11 +4,12 @@
 // targets' browser entries show the app again at once with the new size: they are generated for
 // apps/29-sized.intent, bundled, and run here against a stand-in window, without an LLM.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { spawnSync } from "node:child_process";
 import { hostSize } from "../runtime/ts/clock.ts";
 import { load } from "../compiler/load.ts";
 import { scaffold } from "../compiler/gen.ts";
@@ -58,6 +59,13 @@ try {
   // TypeScript: the page is shown again (a no-op event re-renders it), and the view reads the size.
   rmSync(dir, { recursive: true, force: true });
   scaffold(app!, "ts", dir);
+  // The app's code reads @size from the clock it is given: the generated Clock type must have it.
+  assert.match(readFileSync(join(dir, "spec.ts"), "utf8"), /export type Clock = \{ now: DateTime; today: Date; size: Size \};/, "TypeScript: Clock has the size");
+  // …and the harness's own files (the page's entry, the test entry) type-check against an app that is
+  // typed by spec.ts, the way the model writes it (a real build's first attempt failed here).
+  writeFileSync(join(dir, "app.ts"), 'import type { Clock, Msg, Screen } from "./spec.ts";\nexport const init = (_c: Clock) => 0;\nexport const update = (_e: Msg, m: number, _c: Clock) => m;\nexport const view = (_m: number, c: Clock): Screen => ({ count: c.size, notes: c.size === "Standard" ? [] : null, more: null });\n');
+  const tsc = spawnSync(process.execPath, [new URL("../node_modules/typescript/bin/tsc", import.meta.url).pathname, "-p", dir], { encoding: "utf8" });
+  assert.equal(tsc.status, 0, `TypeScript: the harness's files type-check with the sized Clock:\n${tsc.stdout}${tsc.stderr}`);
   g.__seen = [];
   g.__dispatched = [];
   g.document = { createElement: () => ({}), head: { append: () => {} }, getElementById: () => ({}) };

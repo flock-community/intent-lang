@@ -1,0 +1,31 @@
+app RemindersApi {
+  "Keeps reminders at moments on the world's clock, earliest first."
+}
+language 1.1
+
+implements notes.remindersApi
+
+state {
+  stored reminders: List Reminder = []
+}
+
+endpoint remind {
+  if @text, trimmed, is blank {
+    answer 400 "Text is required"
+  }
+  - add a @Reminder to the end of @reminders with @id = the highest @id in @reminders + 1, or 1 when there is none, @text trimmed and the given @at
+  answer 201 with the new reminder
+}
+
+endpoint due {
+  if there is an @until {
+    answer 200 with the @reminders whose @at is before @query.until, the earliest @at first, and on the same @at the lowest @id first
+  }
+  answer 200 with the @reminders, the earliest @at first, and on the same @at the lowest @id first
+}
+
+example "a moment without a zone is not an instant" {
+  call remind with text = "Lunch", at = "2026-09-24T12:00:00"
+  see remind.status = 400
+  see remind.body.error = "at must be an instant with a zone (YYYY-MM-DDTHH:MM:SSZ)"
+}

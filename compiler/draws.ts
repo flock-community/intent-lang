@@ -314,7 +314,7 @@ const spaceWords = (sp: Space) => (sp.k === "int" ? `a whole number from ${sp.lo
 
 const codeSizeOf = (sp: Space) => (sp.k === "text" ? codeSize(sp.n, sp.chars) : `${count(spaceSize(sp))} values`);
 
-const showT = (t: Type): string => (t.k === "List" ? `a List ${showT(t.of)}` : t.k === "Maybe" ? `${showT(t.of)} or nothing` : t.k === "Named" || t.k === "Ref" ? t.name : t.k);
+const showT = (t: Type): string => (t.k === "List" ? `a List ${showT(t.of)}` : t.k === "Maybe" ? `${showT(t.of)} or nothing` : t.k === "Map" ? `a Map ${showT(t.of)}` : t.k === "Named" || t.k === "Ref" ? t.name : t.k);
 
 function baseKind(app: App, t: Type): string {
   const inner = t.k === "Maybe" ? t.of : t;
@@ -426,7 +426,7 @@ const ELM_IMPORTS = new Set(["Spec", "Fmt", "Array", "Basics", "Bitwise", "Char"
  * \`Fmt\` and elm/core's pure modules), and uses no source of randomness or time in any spelling it
  * can be caught in: \`Math\` other than \`Math.<function>\`, \`crypto\`, \`performance\`, \`Date.now\`,
  * \`new Date()\`, a dynamic \`import\`, \`require\`, \`eval\`, \`Function\`, or a global read by a
- * computed name. Comments and the text of strings do not count. In tests \`Math.random\` and
+ * computed name, nor the platform (`fetch`, timers, storage, `document.…`, `window.…`). Comments and the text of strings do not count. In tests \`Math.random\` and
  * \`crypto\` also throw (runtime/ts/norandom.ts): what a static reading misses still fails. The reason, or undefined.
  */
 export function ownRandomness(code: string, target: "elm" | "ts"): string | undefined {
@@ -453,6 +453,10 @@ export function ownRandomness(code: string, target: "elm" | "ts"): string | unde
     [/\brequire\s*\(/, "`require(…)`"],
     [/\beval\b|\bFunction\s*\(/, "`eval` or `Function(…)`"],
     [/\b(?:globalThis|self|window|global)\s*(?:\?\.)?\s*\[/, "a global read by a computed name (`globalThis[…]`)"],
+    // The platform: a host runs the module with none (screen.mjs, STABILITY.md §5). Names no domain uses.
+    [/(?<![.\w$])(?:fetch|setTimeout|setInterval|queueMicrotask)\s*\(/, "the platform (`fetch`, timers): the harness performs calls and keeps time"],
+    [/(?<![.\w$])(?:XMLHttpRequest|EventSource|WebSocket|localStorage|sessionStorage|indexedDB)\b/, "the platform (requests, storage): the harness performs calls and keeps stored state"],
+    [/(?<![.\w$])(?:document\s*\.\s*(?:createElement|getElementById|querySelector\w*|body|head|cookie|title)\b|window\s*\.)/, "the DOM (`document`, `window`): the harness renders the screen"],
   ];
   for (const [re, what] of bans) if (re.test(codeOnly)) return what;
   return undefined;
