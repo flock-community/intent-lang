@@ -68,7 +68,7 @@ try {
   assert.equal(tsc.status, 0, `TypeScript: the harness's files type-check with the sized Clock:\n${tsc.stdout}${tsc.stderr}`);
   g.__seen = [];
   g.__dispatched = [];
-  g.document = { createElement: () => ({}), head: { append: () => {} }, getElementById: () => ({}) };
+  g.document = { createElement: () => ({}), head: { append: () => {} }, getElementById: () => ({}), querySelector: () => null };
   at("?size=standard");
   await bundle("main.ts", "main.mjs", {
     "app.ts": "export const init = () => 0; export const update = (e: unknown, m: number) => m; export const view = (m: number, clock: { size: string }) => clock.size;\n",

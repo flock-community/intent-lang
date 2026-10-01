@@ -52,13 +52,19 @@ A theme can change the look at three depths, as the `stad` desktop shows:
 - Sizes: Intent `sizes` and OurOS's `compact | standard | wide | full` mean the same; the library
   uses OurOS's names.
 
+## Themes (built)
+
+A theme is a spec (`theme stad { "…" }`, optionally `tokens "stad.tokens.json"`); `intent build`
+has the model write its skin and verifies it on the gallery (compiler/theme.ts, TOOLS.md §1). The
+first two live in intent-speclib (`themes/default.intent`, `themes/stad.intent` with nuri-apps'
+`stad` tokens); one build of `apps/44-team.intent` wears either. The checks are the floor, not taste:
+everything drawn, readable, told apart, focus visible, dialog over the page, colours in tokens.
+
 ## Next
 
-1. `std.ui` in intent-speclib: button, text field, checkbox, select, dialog. Each a component with
-   its anatomy (parts are its element names), states and variants, and its keyboard behaviour as
-   examples (needs: slots, typed params, component examples, `press` and focus steps).
-2. A theme as a spec: the skin of every `std.ui` component, generated from a design language
-   ("default", "Material 3", "stad") and verified against the component specs (every part drawn,
-   contrast per state, a visible focus, only its own tokens).
+1. More of `std.ui` in intent-speclib (Dialog and Table exist, with their own examples), and the
+   gallery grows with each component's parts.
+2. Focus steps (`see focus on x`, Tab order, a dialog's focus trap) and a harness-owned dialog ARIA.
 3. OurOS renders the tree with its primitives by `as`, `tone`, `component` and `part`
-   (`<ouros-intent-screen>`'s table), so switching its theme restyles every Intent app.
+   (`<ouros-intent-screen>`'s table), so switching its theme restyles every Intent app; Elm's
+   wrappers (`display: contents` divs) carry the same attributes.

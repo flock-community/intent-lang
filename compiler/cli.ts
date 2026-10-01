@@ -10,6 +10,7 @@ import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { componentHosts } from "./hosts.ts";
+import { applySkin, buildTheme, parseTheme } from "./theme.ts";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
 import { fixFile } from "./fix.ts";
@@ -121,6 +122,13 @@ switch (cmd) {
     for (const f of args) {
       if (isProfile(readFileSync(resolve(f), "utf8"))) {
         if (checkProfileFile(f)) ok = false;
+        continue;
+      }
+      if (/^theme\s+[a-z]/m.test(readFileSync(resolve(f), "utf8"))) {
+        const { errors } = parseTheme(resolve(f));
+        for (const e of errors) console.log(`${f}: error: ${e}`);
+        console.log(`${f}: ${errors.length ? "FAIL" : "ok"} — ${errors.length} error(s) (a theme)`);
+        if (errors.length) ok = false;
         continue;
       }
       const { diagnostics, sources } = loadSpec(resolve(f), { quality: { sets, config: quality } });
@@ -301,6 +309,16 @@ switch (cmd) {
     process.exit(0);
   }
   case "build": {
+    // A theme (1.1): its skin, written by the model and verified on the gallery (compiler/theme.ts).
+    if (/^theme\s+[a-z]/m.test(readFileSync(resolve(args[0]), "utf8").split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "")) {
+      const out = resolve(flags.out ?? `runs/themes/${basename(args[0], ".intent")}`);
+      const r = await buildTheme(resolve(args[0]), out, (m) => (flags.json ? console.error : console.log)(`[theme] ${m}`));
+      await closeBrowser();
+      if (flags.json) console.log(JSON.stringify({ file: args[0], ok: r.ok, theme: { dir: r.dir, attempts: r.attempts, costUsd: r.costUsd } }, null, 2));
+      else console.log(`${args[0]}: ${r.ok ? "OK" : "FAILED"}, $${r.costUsd.toFixed(2)} → ${r.dir}/skin.css (gallery: ${r.dir}/gallery.png)${r.ok ? "" : `\n${r.attempts.at(-1)?.detail ?? ""}`}`);
+      process.stdout.write("", () => process.exit(r.ok ? 0 : 1));
+      break;
+    }
     // --json: stdout is one JSON report (docs/STABILITY.md §5), everything else goes to stderr.
     const say = flags.json ? (m: string) => console.error(m) : (m: string) => console.log(m);
     const report = (r: object, ok: boolean) => {
@@ -361,6 +379,8 @@ switch (cmd) {
     if (!jobs.length) say(`${file}: a bundle without component examples: nothing to build (its demo app proves it)`);
     const results = await Promise.all(jobs.map((j) => j()));
     await closeBrowser();
+    // `--skin <skin.css>`: the build looks as that theme says (its skin instead of the default look).
+    if (flags.skin) for (const r of results) if (r.ok) applySkin(r.dir, resolve(flags.skin));
     if (flags.json) {
       const targets = results.map((r) => {
         const last = r.builds[r.builds.length - 1];

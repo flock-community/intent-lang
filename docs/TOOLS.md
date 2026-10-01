@@ -17,7 +17,7 @@ intent fmt <file.intent>... [--check]    rewrite specs in the canonical layout (
 intent fix <file.intent>... [--check]    apply the mechanical fixes the checker names
 intent expand <file.intent>              print the canonical, expanded spec the compiler reads
 intent review <file.intent>              list what the spec leaves to defaults (one LLM call)
-intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off] [--json]
+intent build <file.intent> [--target elm,ts] [--out dir] [--styled --kit] [--twin auto|always|off] [--skin skin.css] [--json]
 intent converge <file.intent>... [--builds N] [--targets elm,ts] [--traces N] [--length N]
 intent config                            the compiler's options for this project, and where each came from
 ```
@@ -29,6 +29,16 @@ intent config                            the compiler's options for this project
   (`# expanded by intent expand: …`): only such a spec may declare a component's qualified names
   (`pager.page: Int = 1`, `button pager.next`), so the expanded spec reads back as it is printed.
   An author who writes one gets a `SYNTAX` error.
+- A **theme** (`theme stad { "…" }`, its look in words; `language 1.1`; optionally `tokens
+  "stad.tokens.json"`, W3C design tokens): `intent build themes/stad.intent` has the model write its
+  skin, one stylesheet for the plain renderer's DOM keyed only on the contract of
+  docs/design/look.md, and verifies it on a gallery of every element kind, presentation, tone and
+  state in a real browser (everything drawn, text contrast per WCAG 1.4.3, presentations and tones
+  told apart, a visible focus, a dialog over the page, colours only in tokens); what fails goes back
+  to the model. Out: `skin.css` and `gallery.png`. `intent build <app> --skin skin.css` gives a build
+  that skin instead of the default look; a host switches themes by switching the stylesheet.
+- A **bundle** whose components have examples: `intent build lib/x/y.intent` builds each component's
+  host app (its examples, its random sessions) on every target.
 - `--json` (`check`, `build`): stdout is one JSON report and nothing else; a build's log goes to
   stderr. `check --json`: `[{ file, diagnostics: [{ level, code, line, col, message, file }] }]`.
   `build --json`: `{ file, ok, targets: [{ target, ok, dir, cached, verified, ambiguous?, examples,

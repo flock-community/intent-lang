@@ -24,7 +24,8 @@ A component that shows the app's own content has slots (`slot body`, filled by `
 `param rows: List T`). Never copy a component to change what it contains. Prove a component with
 examples inside it (`examples with { … }` says what they run with), written in its own names;
 build the bundle (`intent build lib/x/y.intent`) to run them. A dialog says what Escape does
-(`on dismiss ask { … }`) and proves it with `press Escape`. If the changelog shows a newer
+(`on dismiss ask { … }`) and proves it with `press Escape`. How an app looks is a theme's, never the
+app's: a theme is its own spec (`theme stad { "…" }`), built into a skin any app can wear. If the changelog shows a newer
 version, read what it adds first.
 
 ## 1. Understand the intent (interview)

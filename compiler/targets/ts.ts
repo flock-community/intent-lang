@@ -409,7 +409,8 @@ import { apply } from "./through.ts";
 ${dw ? DRAW_MAIN : ""}${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
-document.head.append(style);
+// A theme's skin (docs/design/look.md) replaces the default look.
+if (!document.querySelector("link[data-intent-skin]")) document.head.append(style);
 let dispatch: (w: Wire) => void = () => {};
 let current: App.Model;
 // Every call and event stream goes through its api's client layer, with the config from the current state.
@@ -558,7 +559,8 @@ import { mount, STYLE } from "./ui.ts";
 ${dw ? DRAW_MAIN : ""}${c ? clockImport(app) : ""}${st ? `import { load, save } from "./store.ts";\n\n// Stored state lives in this browser (localStorage), under the app's name.\nconst KEY = ${q(`intent:${app.name}`)};\n` : ""}
 const style = document.createElement("style");
 style.textContent = STYLE;
-document.head.append(style);
+// A theme's skin (docs/design/look.md) replaces the default look.
+if (!document.querySelector("link[data-intent-skin]")) document.head.append(style);
 ${sar ? tsStarted(app, "localClock()", "drawsFrom({ seed: freshSeed() })") : ""}${c ? "const dispatch = " : ""}mount(document.getElementById("app")!, {
   init: () => ${sar ? "started(load(KEY, storedFields, storedDefaults) as Stored | null)" : st ? `{
     const m = App.init(${c ? "localClock()" : ""});
@@ -693,7 +695,7 @@ function jobEntry(app: App, main: string): string {
     return s.replace(from, to);
   };
   const data = hasData(app) ? "(m) => App.data(m)" : "(m) => m";
-  let s = main.replace(/const style = document\.createElement\("style"\);\nstyle\.textContent = STYLE;\ndocument\.head\.append\(style\);\n/, "");
+  let s = main.replace(/const style = document\.createElement\("style"\);\nstyle\.textContent = STYLE;\n\/\/ A theme's skin \(docs\/design\/look\.md\) replaces the default look\.\nif \(!document\.querySelector\("link\[data-intent-skin\]"\)\) document\.head\.append\(style\);\n/, "");
   s = s.replace(/import \{ mount, STYLE(, type Wire)? \} from "\.\/ui\.ts";/, (_all, w) => `${w ? 'import type { Wire } from "./ui.ts";\n' : ""}import { headless } from "./headless.ts";`);
   const wired = eventWireTypes(app);
   const read = Object.keys(wired).length ? `\n  read: (e: { event: string; body: unknown }) => ({ ...e, body: fromWireValue(e.body, (${JSON.stringify(wired)} as Record<string, TypeDesc>)[e.event]) }),` : "";

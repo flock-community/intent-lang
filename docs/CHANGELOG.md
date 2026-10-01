@@ -100,7 +100,11 @@ Versions v1–v73 are the development history before the first stable version: s
   (Stepper), twin-verified on both targets, first attempt. **Dismissing:** `on dismiss <section>`
   for a section `as dialog` or `as drawer`; Escape inside it sends it in the plain renderers (both
   targets) and, by the DOM contract, in styled builds; examples `press Escape [in x]`, random
-  sessions press it too. `apps/44-team.intent` uses it, twin-verified on both targets. A spec that uses a form newer than its own `language` line
+  sessions press it too. `apps/44-team.intent` uses it, twin-verified on both targets.
+  **Themes:** a theme is a spec (`theme <name> { "…" }`, optional W3C `tokens`); `intent build` has
+  the model write its skin and verifies it on a gallery of every element kind, presentation, tone
+  and state in a browser (compiler/theme.ts); `--skin` gives an app build that look instead of the
+  default. intent-speclib's `default` and `stad` themes pass; one build of the team app wears either. A spec that uses a form newer than its own `language` line
   is an error (`NEEDS_LANGUAGE`, as Go's `go` line), and `intent fix` raises the line; an expanded
   spec prints the line its forms need. Example: `apps/39-weather.intent` with
   `lib/weather/*` and `apps/api/weather-api.intent` (twin-verified on both targets, first attempt).
