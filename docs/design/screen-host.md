@@ -16,7 +16,11 @@ verify is what ships.
 
 ## The contract (`intent.screen/1`)
 
-`screen.mjs` is an ES module bundled for no platform. Its default export is `{ meta, start }`.
+`screen.mjs` is an ES module bundled for no platform, in TypeScript and Elm builds alike. Its
+default export is `{ meta, start }`. A host awaits `start(…)` and `send(…)`: an Elm build answers
+through its worker's ports, asynchronously (a TypeScript build answers at once; awaiting it costs
+nothing). The Elm worker is bundled with a scope and timers of its own (promise microtasks), so it
+touches no global either.
 
 - `meta`: `contract` (`"intent.screen/1"`), `name`, `clock` (`{ tickMs }`, or `null` when the app reads
   no clock), `sizes` (or `null`), `stored` (the stored field names), `draws` (whether it draws random
@@ -64,7 +68,5 @@ browser entry.
 
 ## Not yet
 
-- The Elm target has no `screen.mjs` yet: its headless worker is driven through an adapter inside the
-  compiler (`openElm`), asynchronously. A host uses a TypeScript build.
 - Jobs keep `job.mjs`, which still takes the transport from `__intentTransport`.
 - Answers carry no call id: two calls to the same endpoint in flight are told apart only by order.

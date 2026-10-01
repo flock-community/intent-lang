@@ -174,7 +174,7 @@ is lost on the next build and breaks the trace back to the spec.
 | `sourcemap.json` | per build: element, handler, step, endpoint, event, layer, rule, example → file:line |
 | `manifest.json` | per api the app uses: its contract, endpoints and events (the `uses … only` list) |
 | `job.mjs` | ES module, default export `{ run }`; `run({ event: { event, body } })` or `run()`, resolving with the job's data |
-| `screen.mjs` (since 1.1) | a TypeScript screen build: ES module, no platform, default export `{ meta, start }`; `start({ clock?, size?, saved?, seed? })` returns `observe`, `send`, `calls`, `stored`, `nav`, `through`; it touches no platform global (docs/design/screen-host.md, contract `intent.screen/1`) |
+| `screen.mjs` (since 1.1) | a screen build (TypeScript or Elm): ES module, no platform, default export `{ meta, start }`; `start({ clock?, size?, saved?, seed? })` (awaited) returns `observe`, `send` (awaited), `calls`, `stored`, `nav`, `through`; it touches no platform global (docs/design/screen-host.md, contract `intent.screen/1`) |
 | `globalThis.__intentTransport` | the host transport a job or screen uses when calls do not go over HTTP |
 | `<meta name="intent-api" content="alias=url">` | where a browser build sends calls, else the page's origin |
 | the wire | JSON; nothing is `null`; a choice value is its wire name, or else its spec name; fixed answers `400/404/405/413 {"error": …}`, `401`/`403 {"error": …}` from access; `idempotency-key` kept 24 h; retries of lost/5xx/429 answers, three attempts |

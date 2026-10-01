@@ -2,6 +2,7 @@ apps/01-counter.intent elm elm.json 31d97d30272b
 apps/01-counter.intent elm focus-entry.ts 34a837645903
 apps/01-counter.intent elm focus.ts 8497b2cf5d70
 apps/01-counter.intent elm index.html 222fe1b1ef7d
+apps/01-counter.intent elm screen-entry.ts d6732d2a0ced
 apps/01-counter.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/01-counter.intent elm src/Main.elm 42c44d3bef38
 apps/01-counter.intent elm src/Spec.elm 4f11556ce791
@@ -27,6 +28,7 @@ apps/02-todo.intent elm elm.json 31d97d30272b
 apps/02-todo.intent elm focus-entry.ts 34a837645903
 apps/02-todo.intent elm focus.ts 8497b2cf5d70
 apps/02-todo.intent elm index.html a1471ff4a24c
+apps/02-todo.intent elm screen-entry.ts 69122016f2b7
 apps/02-todo.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/02-todo.intent elm src/Main.elm 42c44d3bef38
 apps/02-todo.intent elm src/Spec.elm 477fb77ccac1
@@ -52,6 +54,7 @@ apps/03-tipsplit.intent elm elm.json 31d97d30272b
 apps/03-tipsplit.intent elm focus-entry.ts 34a837645903
 apps/03-tipsplit.intent elm focus.ts 8497b2cf5d70
 apps/03-tipsplit.intent elm index.html 00ce5715b9dd
+apps/03-tipsplit.intent elm screen-entry.ts f4435608c4dc
 apps/03-tipsplit.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/03-tipsplit.intent elm src/Main.elm 42c44d3bef38
 apps/03-tipsplit.intent elm src/Spec.elm dc86139fd193
@@ -77,6 +80,7 @@ apps/04-pomodoro.intent elm elm.json 31d97d30272b
 apps/04-pomodoro.intent elm focus-entry.ts 34a837645903
 apps/04-pomodoro.intent elm focus.ts 8497b2cf5d70
 apps/04-pomodoro.intent elm index.html 5c1934d5198c
+apps/04-pomodoro.intent elm screen-entry.ts 508ebd2e98e1
 apps/04-pomodoro.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/04-pomodoro.intent elm src/Main.elm 49a2da58ceea
 apps/04-pomodoro.intent elm src/Spec.elm f87c0430da30
@@ -102,6 +106,7 @@ apps/05-wordle.intent elm elm.json 31d97d30272b
 apps/05-wordle.intent elm focus-entry.ts 34a837645903
 apps/05-wordle.intent elm focus.ts 8497b2cf5d70
 apps/05-wordle.intent elm index.html 5de0d645a60b
+apps/05-wordle.intent elm screen-entry.ts b306241cd76c
 apps/05-wordle.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/05-wordle.intent elm src/Main.elm 42c44d3bef38
 apps/05-wordle.intent elm src/Spec.elm fe7cc69bf842
@@ -127,6 +132,7 @@ apps/06-expenses.intent elm elm.json 31d97d30272b
 apps/06-expenses.intent elm focus-entry.ts 34a837645903
 apps/06-expenses.intent elm focus.ts 8497b2cf5d70
 apps/06-expenses.intent elm index.html b91a2c81b0e1
+apps/06-expenses.intent elm screen-entry.ts 199df9e8383b
 apps/06-expenses.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/06-expenses.intent elm src/Main.elm 42c44d3bef38
 apps/06-expenses.intent elm src/Spec.elm 7e5f07b88567
@@ -152,6 +158,7 @@ apps/07-shop.intent elm elm.json 31d97d30272b
 apps/07-shop.intent elm focus-entry.ts 34a837645903
 apps/07-shop.intent elm focus.ts 8497b2cf5d70
 apps/07-shop.intent elm index.html c304434fb5ec
+apps/07-shop.intent elm screen-entry.ts d4e8f0c17baa
 apps/07-shop.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/07-shop.intent elm src/Main.elm 42c44d3bef38
 apps/07-shop.intent elm src/Spec.elm 76aab47e7a9d
@@ -177,6 +184,7 @@ apps/08-calculator.intent elm elm.json 31d97d30272b
 apps/08-calculator.intent elm focus-entry.ts 34a837645903
 apps/08-calculator.intent elm focus.ts 8497b2cf5d70
 apps/08-calculator.intent elm index.html 84c69f630343
+apps/08-calculator.intent elm screen-entry.ts 915365a61860
 apps/08-calculator.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/08-calculator.intent elm src/Main.elm 42c44d3bef38
 apps/08-calculator.intent elm src/Spec.elm e22f82d48702
@@ -202,6 +210,7 @@ apps/09-board.intent elm elm.json 31d97d30272b
 apps/09-board.intent elm focus-entry.ts 34a837645903
 apps/09-board.intent elm focus.ts 8497b2cf5d70
 apps/09-board.intent elm index.html 155b62f256b5
+apps/09-board.intent elm screen-entry.ts bc56cbce6400
 apps/09-board.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/09-board.intent elm src/Main.elm 42c44d3bef38
 apps/09-board.intent elm src/Spec.elm 030366e40e34
@@ -227,6 +236,7 @@ apps/10-helpdesk.intent elm elm.json 31d97d30272b
 apps/10-helpdesk.intent elm focus-entry.ts 34a837645903
 apps/10-helpdesk.intent elm focus.ts 8497b2cf5d70
 apps/10-helpdesk.intent elm index.html 05c55b8ab802
+apps/10-helpdesk.intent elm screen-entry.ts 1bccacf67b0f
 apps/10-helpdesk.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/10-helpdesk.intent elm src/Main.elm 42c44d3bef38
 apps/10-helpdesk.intent elm src/Spec.elm 36a959bdf53f
@@ -252,6 +262,7 @@ apps/11-storefront.intent elm elm.json 31d97d30272b
 apps/11-storefront.intent elm focus-entry.ts 34a837645903
 apps/11-storefront.intent elm focus.ts 8497b2cf5d70
 apps/11-storefront.intent elm index.html c52f19ecb48f
+apps/11-storefront.intent elm screen-entry.ts 54a24f6d6c69
 apps/11-storefront.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/11-storefront.intent elm src/Main.elm 42c44d3bef38
 apps/11-storefront.intent elm src/Spec.elm 9f276f2224bb
@@ -277,6 +288,7 @@ apps/12-helpdesk-bundled.intent elm elm.json 31d97d30272b
 apps/12-helpdesk-bundled.intent elm focus-entry.ts 34a837645903
 apps/12-helpdesk-bundled.intent elm focus.ts 8497b2cf5d70
 apps/12-helpdesk-bundled.intent elm index.html 05c55b8ab802
+apps/12-helpdesk-bundled.intent elm screen-entry.ts 8e76345de627
 apps/12-helpdesk-bundled.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/12-helpdesk-bundled.intent elm src/Main.elm 42c44d3bef38
 apps/12-helpdesk-bundled.intent elm src/Spec.elm be2d5e7d1b98
@@ -302,6 +314,7 @@ apps/13-crm.intent elm elm.json 31d97d30272b
 apps/13-crm.intent elm focus-entry.ts 34a837645903
 apps/13-crm.intent elm focus.ts 8497b2cf5d70
 apps/13-crm.intent elm index.html 784224cd3a39
+apps/13-crm.intent elm screen-entry.ts b2d2025bdbf8
 apps/13-crm.intent elm src/Crypto.elm f2638b4b3fd0
 apps/13-crm.intent elm src/Draw.elm 6728392e4b60
 apps/13-crm.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -329,6 +342,7 @@ apps/14-supportdesk.intent elm elm.json 31d97d30272b
 apps/14-supportdesk.intent elm focus-entry.ts 34a837645903
 apps/14-supportdesk.intent elm focus.ts 8497b2cf5d70
 apps/14-supportdesk.intent elm index.html c48dccc7d732
+apps/14-supportdesk.intent elm screen-entry.ts f9ac8c268894
 apps/14-supportdesk.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/14-supportdesk.intent elm src/Main.elm 42c44d3bef38
 apps/14-supportdesk.intent elm src/Spec.elm a84affa137f6
@@ -361,6 +375,7 @@ apps/15-tickets-ui.intent elm glue.ts bcd26e52f925
 apps/15-tickets-ui.intent elm index.html 0e27b08fa8f9
 apps/15-tickets-ui.intent elm outbox.ts 99542882b685
 apps/15-tickets-ui.intent elm platform/std.crypto.ts 0c97184c690f
+apps/15-tickets-ui.intent elm screen-entry.ts 7a8488034beb
 apps/15-tickets-ui.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/15-tickets-ui.intent elm src/Main.elm 95cda784368d
 apps/15-tickets-ui.intent elm src/Spec.elm a782cb877809
@@ -404,6 +419,7 @@ apps/16-desk-ui.intent elm layers/desk/layer.ts 2d711642b726
 apps/16-desk-ui.intent elm layers/desk/spec.ts 2d711642b726
 apps/16-desk-ui.intent elm outbox.ts 99542882b685
 apps/16-desk-ui.intent elm platform/std.crypto.ts 0c97184c690f
+apps/16-desk-ui.intent elm screen-entry.ts 415eb9bd7ff2
 apps/16-desk-ui.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/16-desk-ui.intent elm src/Main.elm 4ce7aadffa76
 apps/16-desk-ui.intent elm src/Spec.elm e5b3a04a0301
@@ -448,6 +464,7 @@ apps/17-habits.intent elm glue.ts 7f9aeeca5416
 apps/17-habits.intent elm index.html c9ab6738243d
 apps/17-habits.intent elm outbox.ts 99542882b685
 apps/17-habits.intent elm platform/std.crypto.ts 0c97184c690f
+apps/17-habits.intent elm screen-entry.ts ee64458dbbcb
 apps/17-habits.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/17-habits.intent elm src/Main.elm 7f4348910289
 apps/17-habits.intent elm src/Spec.elm 42899df50d5f
@@ -489,6 +506,7 @@ apps/18-checkout.intent elm layers/pay/layer.ts 2d711642b726
 apps/18-checkout.intent elm layers/pay/spec.ts 2d711642b726
 apps/18-checkout.intent elm outbox.ts 99542882b685
 apps/18-checkout.intent elm platform/std.crypto.ts 0c97184c690f
+apps/18-checkout.intent elm screen-entry.ts 55ba149374b3
 apps/18-checkout.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/18-checkout.intent elm src/Main.elm 4ce7aadffa76
 apps/18-checkout.intent elm src/Spec.elm c9e8b36bebc4
@@ -532,6 +550,7 @@ apps/19-ticket-pages.intent elm glue.ts 88682f1c674c
 apps/19-ticket-pages.intent elm index.html df0703a44118
 apps/19-ticket-pages.intent elm outbox.ts 99542882b685
 apps/19-ticket-pages.intent elm platform/std.crypto.ts 0c97184c690f
+apps/19-ticket-pages.intent elm screen-entry.ts 262ff8c94e71
 apps/19-ticket-pages.intent elm src/AppNav.elm fec71a30ccdb
 apps/19-ticket-pages.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/19-ticket-pages.intent elm src/Main.elm 95e278262112
@@ -572,6 +591,7 @@ apps/20-approval.intent elm layers/pay/layer.ts 2d711642b726
 apps/20-approval.intent elm layers/pay/spec.ts 2d711642b726
 apps/20-approval.intent elm outbox.ts 99542882b685
 apps/20-approval.intent elm platform/std.crypto.ts 0c97184c690f
+apps/20-approval.intent elm screen-entry.ts 1c07f2e05a6d
 apps/20-approval.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/20-approval.intent elm src/Main.elm a68df8f1661a
 apps/20-approval.intent elm src/Spec.elm a668886d7185
@@ -609,6 +629,7 @@ apps/21-tags.intent elm elm.json 31d97d30272b
 apps/21-tags.intent elm focus-entry.ts 34a837645903
 apps/21-tags.intent elm focus.ts 8497b2cf5d70
 apps/21-tags.intent elm index.html 348099e2040f
+apps/21-tags.intent elm screen-entry.ts 04dde8faeef3
 apps/21-tags.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/21-tags.intent elm src/Main.elm 42c44d3bef38
 apps/21-tags.intent elm src/Spec.elm 58c09f6e10f9
@@ -634,6 +655,7 @@ apps/22-hash.intent elm elm.json 31d97d30272b
 apps/22-hash.intent elm focus-entry.ts 34a837645903
 apps/22-hash.intent elm focus.ts 8497b2cf5d70
 apps/22-hash.intent elm index.html 37c91f3c4adb
+apps/22-hash.intent elm screen-entry.ts 2b307a0938c7
 apps/22-hash.intent elm src/Crypto.elm f2638b4b3fd0
 apps/22-hash.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/22-hash.intent elm src/Main.elm 42c44d3bef38
@@ -668,6 +690,7 @@ apps/23-tabs.intent elm glue.ts 19f16f4f0d0b
 apps/23-tabs.intent elm index.html c76e0fd06df4
 apps/23-tabs.intent elm outbox.ts 99542882b685
 apps/23-tabs.intent elm platform/std.crypto.ts 0c97184c690f
+apps/23-tabs.intent elm screen-entry.ts 89cb98ffccb5
 apps/23-tabs.intent elm src/AppNav.elm 464ff832e3a7
 apps/23-tabs.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/23-tabs.intent elm src/Main.elm 95e278262112
@@ -697,6 +720,7 @@ apps/24-references.intent elm elm.json 31d97d30272b
 apps/24-references.intent elm focus-entry.ts 34a837645903
 apps/24-references.intent elm focus.ts 8497b2cf5d70
 apps/24-references.intent elm index.html b40addf3ce9e
+apps/24-references.intent elm screen-entry.ts 3b7fe07d3a8c
 apps/24-references.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/24-references.intent elm src/Main.elm 42c44d3bef38
 apps/24-references.intent elm src/Spec.elm 2369ac30a445
@@ -722,6 +746,7 @@ apps/25-row-edit.intent elm elm.json 31d97d30272b
 apps/25-row-edit.intent elm focus-entry.ts 34a837645903
 apps/25-row-edit.intent elm focus.ts 8497b2cf5d70
 apps/25-row-edit.intent elm index.html c8ca3c6c0768
+apps/25-row-edit.intent elm screen-entry.ts 6298bb3cdb4b
 apps/25-row-edit.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/25-row-edit.intent elm src/Main.elm 42c44d3bef38
 apps/25-row-edit.intent elm src/Spec.elm 6fac84fa435b
@@ -747,6 +772,7 @@ apps/26-row-status.intent elm elm.json 31d97d30272b
 apps/26-row-status.intent elm focus-entry.ts 34a837645903
 apps/26-row-status.intent elm focus.ts 8497b2cf5d70
 apps/26-row-status.intent elm index.html a695ecc616f5
+apps/26-row-status.intent elm screen-entry.ts 299207cd5e0d
 apps/26-row-status.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/26-row-status.intent elm src/Main.elm 42c44d3bef38
 apps/26-row-status.intent elm src/Spec.elm 82b7af7d14f4
@@ -772,6 +798,7 @@ apps/27-row-assign.intent elm elm.json 31d97d30272b
 apps/27-row-assign.intent elm focus-entry.ts 34a837645903
 apps/27-row-assign.intent elm focus.ts 8497b2cf5d70
 apps/27-row-assign.intent elm index.html 7c7fc15bacd1
+apps/27-row-assign.intent elm screen-entry.ts a47ea1501494
 apps/27-row-assign.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/27-row-assign.intent elm src/Main.elm 42c44d3bef38
 apps/27-row-assign.intent elm src/Spec.elm 8cbdba682300
@@ -804,6 +831,7 @@ apps/28-alerts.intent elm glue.ts 6b5abd1da08a
 apps/28-alerts.intent elm index.html e031458a5364
 apps/28-alerts.intent elm outbox.ts 99542882b685
 apps/28-alerts.intent elm platform/std.crypto.ts 0c97184c690f
+apps/28-alerts.intent elm screen-entry.ts 6e60d5ba35a4
 apps/28-alerts.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/28-alerts.intent elm src/Main.elm 95cda784368d
 apps/28-alerts.intent elm src/Spec.elm 3261014a1fc5
@@ -843,6 +871,7 @@ apps/29-sized.intent elm glue.ts 95915636d494
 apps/29-sized.intent elm index.html c51a49b6e4a7
 apps/29-sized.intent elm outbox.ts 99542882b685
 apps/29-sized.intent elm platform/std.crypto.ts 0c97184c690f
+apps/29-sized.intent elm screen-entry.ts 675010f73866
 apps/29-sized.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/29-sized.intent elm src/Main.elm 041fa07eb3e5
 apps/29-sized.intent elm src/Spec.elm 9cba65e84f4a
@@ -914,6 +943,7 @@ apps/31-frozen-approvals.intent elm elm.json 31d97d30272b
 apps/31-frozen-approvals.intent elm focus-entry.ts 34a837645903
 apps/31-frozen-approvals.intent elm focus.ts 8497b2cf5d70
 apps/31-frozen-approvals.intent elm index.html d347a785270d
+apps/31-frozen-approvals.intent elm screen-entry.ts 927d7d04799f
 apps/31-frozen-approvals.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/31-frozen-approvals.intent elm src/Main.elm 42c44d3bef38
 apps/31-frozen-approvals.intent elm src/Spec.elm 353c07b35a4f
@@ -947,6 +977,7 @@ apps/32-checklists.intent elm glue.ts cd68314b7d04
 apps/32-checklists.intent elm index.html 44a866fda7ae
 apps/32-checklists.intent elm outbox.ts 99542882b685
 apps/32-checklists.intent elm platform/std.crypto.ts 0c97184c690f
+apps/32-checklists.intent elm screen-entry.ts c5ac60ff2d7f
 apps/32-checklists.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/32-checklists.intent elm src/Main.elm 498603890f3d
 apps/32-checklists.intent elm src/Spec.elm c27a705ee7bb
@@ -984,6 +1015,7 @@ apps/33-order-lines.intent elm glue.ts 7e20ef626344
 apps/33-order-lines.intent elm index.html 0e4c1810f16a
 apps/33-order-lines.intent elm outbox.ts 99542882b685
 apps/33-order-lines.intent elm platform/std.crypto.ts 0c97184c690f
+apps/33-order-lines.intent elm screen-entry.ts a39413df7fce
 apps/33-order-lines.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/33-order-lines.intent elm src/Main.elm 498603890f3d
 apps/33-order-lines.intent elm src/Spec.elm 279cf4b8aea9
@@ -1013,6 +1045,7 @@ apps/34-ref-navigation.intent elm elm.json 31d97d30272b
 apps/34-ref-navigation.intent elm focus-entry.ts 34a837645903
 apps/34-ref-navigation.intent elm focus.ts 8497b2cf5d70
 apps/34-ref-navigation.intent elm index.html fda77a037bad
+apps/34-ref-navigation.intent elm screen-entry.ts 02f6063a74ac
 apps/34-ref-navigation.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/34-ref-navigation.intent elm src/Main.elm 42c44d3bef38
 apps/34-ref-navigation.intent elm src/Spec.elm 89f7ef3a38ac
@@ -1045,6 +1078,7 @@ apps/35-recipes.intent elm glue.ts b859ea89750c
 apps/35-recipes.intent elm index.html ef48c28b93ed
 apps/35-recipes.intent elm outbox.ts 99542882b685
 apps/35-recipes.intent elm platform/std.crypto.ts 0c97184c690f
+apps/35-recipes.intent elm screen-entry.ts f95822feb255
 apps/35-recipes.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/35-recipes.intent elm src/Main.elm 95cda784368d
 apps/35-recipes.intent elm src/Spec.elm d3d3ac3fdf10
@@ -1086,6 +1120,7 @@ apps/36-table.intent elm glue.ts 163c1cdae710
 apps/36-table.intent elm index.html b4d5df66ee08
 apps/36-table.intent elm outbox.ts 99542882b685
 apps/36-table.intent elm platform/std.crypto.ts 0c97184c690f
+apps/36-table.intent elm screen-entry.ts d29c515e0f6c
 apps/36-table.intent elm src/Crypto.elm f2638b4b3fd0
 apps/36-table.intent elm src/Draw.elm 6728392e4b60
 apps/36-table.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -1128,6 +1163,7 @@ apps/37-expenses-ui.intent elm layers/exp/layer.ts 2d711642b726
 apps/37-expenses-ui.intent elm layers/exp/spec.ts 2d711642b726
 apps/37-expenses-ui.intent elm outbox.ts 99542882b685
 apps/37-expenses-ui.intent elm platform/std.crypto.ts 0c97184c690f
+apps/37-expenses-ui.intent elm screen-entry.ts bca449f4b675
 apps/37-expenses-ui.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/37-expenses-ui.intent elm src/Main.elm 4ce7aadffa76
 apps/37-expenses-ui.intent elm src/Spec.elm dda50b206309
@@ -1171,6 +1207,7 @@ apps/38-raffle.intent elm glue.ts 7ffe6f52d9de
 apps/38-raffle.intent elm index.html 8bc7b812013e
 apps/38-raffle.intent elm outbox.ts 99542882b685
 apps/38-raffle.intent elm platform/std.crypto.ts 0c97184c690f
+apps/38-raffle.intent elm screen-entry.ts 6066853b99e4
 apps/38-raffle.intent elm src/Crypto.elm f2638b4b3fd0
 apps/38-raffle.intent elm src/Draw.elm 6728392e4b60
 apps/38-raffle.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -1212,6 +1249,7 @@ apps/39-weather.intent elm glue.ts 474870e73ccb
 apps/39-weather.intent elm index.html 98a406b1bcab
 apps/39-weather.intent elm outbox.ts 99542882b685
 apps/39-weather.intent elm platform/std.crypto.ts 0c97184c690f
+apps/39-weather.intent elm screen-entry.ts c571a8926d25
 apps/39-weather.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/39-weather.intent elm src/Main.elm 95cda784368d
 apps/39-weather.intent elm src/Spec.elm 64e86caf7798
@@ -1251,6 +1289,7 @@ apps/40-theme.intent elm glue.ts 79e3db8cbe78
 apps/40-theme.intent elm index.html 4bc11aeb1cff
 apps/40-theme.intent elm outbox.ts 99542882b685
 apps/40-theme.intent elm platform/std.crypto.ts 0c97184c690f
+apps/40-theme.intent elm screen-entry.ts 17b1f8e8b447
 apps/40-theme.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/40-theme.intent elm src/Main.elm 95cda784368d
 apps/40-theme.intent elm src/Spec.elm 619569379312
@@ -1290,6 +1329,7 @@ apps/41-reminders.intent elm glue.ts da319ee355f8
 apps/41-reminders.intent elm index.html 754156b71a3f
 apps/41-reminders.intent elm outbox.ts 99542882b685
 apps/41-reminders.intent elm platform/std.crypto.ts 0c97184c690f
+apps/41-reminders.intent elm screen-entry.ts c9cf7a687a02
 apps/41-reminders.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/41-reminders.intent elm src/Main.elm 95cda784368d
 apps/41-reminders.intent elm src/Spec.elm 31e1ad33c384
@@ -1329,6 +1369,7 @@ apps/42-schedules.intent elm glue.ts 4700fb6cb28e
 apps/42-schedules.intent elm index.html 777165f9ba48
 apps/42-schedules.intent elm outbox.ts 99542882b685
 apps/42-schedules.intent elm platform/std.crypto.ts 0c97184c690f
+apps/42-schedules.intent elm screen-entry.ts 0999520ebc11
 apps/42-schedules.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/42-schedules.intent elm src/Main.elm 95cda784368d
 apps/42-schedules.intent elm src/Spec.elm 37acb20af601
@@ -1361,6 +1402,7 @@ apps/43-stock.intent elm elm.json 31d97d30272b
 apps/43-stock.intent elm focus-entry.ts 34a837645903
 apps/43-stock.intent elm focus.ts 8497b2cf5d70
 apps/43-stock.intent elm index.html 08ede293bf94
+apps/43-stock.intent elm screen-entry.ts 137c991e1512
 apps/43-stock.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/43-stock.intent elm src/Main.elm 42c44d3bef38
 apps/43-stock.intent elm src/Spec.elm 00a3e8f1c40f
@@ -1386,6 +1428,7 @@ apps/44-team.intent elm elm.json 31d97d30272b
 apps/44-team.intent elm focus-entry.ts 34a837645903
 apps/44-team.intent elm focus.ts 8497b2cf5d70
 apps/44-team.intent elm index.html 54bd834284e9
+apps/44-team.intent elm screen-entry.ts 502d0554c20c
 apps/44-team.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/44-team.intent elm src/Main.elm 42c44d3bef38
 apps/44-team.intent elm src/Spec.elm d47afec381da
@@ -1736,6 +1779,7 @@ apps/held-out-2/library.intent elm glue.ts c00403e965e4
 apps/held-out-2/library.intent elm index.html 80b015659cc4
 apps/held-out-2/library.intent elm outbox.ts 99542882b685
 apps/held-out-2/library.intent elm platform/std.crypto.ts 0c97184c690f
+apps/held-out-2/library.intent elm screen-entry.ts a0591650c6db
 apps/held-out-2/library.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/held-out-2/library.intent elm src/Main.elm 73dcaaefddcc
 apps/held-out-2/library.intent elm src/Spec.elm 5b7947f3ab08
@@ -1764,6 +1808,7 @@ apps/held-out-2/reservations.intent elm elm.json 31d97d30272b
 apps/held-out-2/reservations.intent elm focus-entry.ts 34a837645903
 apps/held-out-2/reservations.intent elm focus.ts 8497b2cf5d70
 apps/held-out-2/reservations.intent elm index.html 222a84271d9c
+apps/held-out-2/reservations.intent elm screen-entry.ts 40f2b8db88b8
 apps/held-out-2/reservations.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/held-out-2/reservations.intent elm src/Main.elm 42c44d3bef38
 apps/held-out-2/reservations.intent elm src/Spec.elm d744e6c5116e
@@ -1798,6 +1843,7 @@ apps/held-out-3/approvals.intent elm glue.ts 18a05076ea42
 apps/held-out-3/approvals.intent elm index.html 46f15fb8d564
 apps/held-out-3/approvals.intent elm outbox.ts 99542882b685
 apps/held-out-3/approvals.intent elm platform/std.crypto.ts 0c97184c690f
+apps/held-out-3/approvals.intent elm screen-entry.ts 1f86f75e6840
 apps/held-out-3/approvals.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/held-out-3/approvals.intent elm src/Main.elm 498603890f3d
 apps/held-out-3/approvals.intent elm src/Spec.elm 0f8fd2024d91
@@ -1896,6 +1942,7 @@ apps/held-out-4/chores.intent elm layers/chores/layer.ts 2d711642b726
 apps/held-out-4/chores.intent elm layers/chores/spec.ts 2d711642b726
 apps/held-out-4/chores.intent elm outbox.ts 99542882b685
 apps/held-out-4/chores.intent elm platform/std.crypto.ts 0c97184c690f
+apps/held-out-4/chores.intent elm screen-entry.ts d855ea4851cf
 apps/held-out-4/chores.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/held-out-4/chores.intent elm src/Main.elm a6a85c1ca97b
 apps/held-out-4/chores.intent elm src/Spec.elm f79e9b7de514
@@ -1978,6 +2025,7 @@ apps/held-out-4/clinic.intent elm layers/clinic/layer.ts 2d711642b726
 apps/held-out-4/clinic.intent elm layers/clinic/spec.ts 2d711642b726
 apps/held-out-4/clinic.intent elm outbox.ts 99542882b685
 apps/held-out-4/clinic.intent elm platform/std.crypto.ts 0c97184c690f
+apps/held-out-4/clinic.intent elm screen-entry.ts 2b6adbec7fef
 apps/held-out-4/clinic.intent elm src/Crypto.elm f2638b4b3fd0
 apps/held-out-4/clinic.intent elm src/Draw.elm 6728392e4b60
 apps/held-out-4/clinic.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -2047,6 +2095,7 @@ apps/held-out-4/todo.intent elm glue.ts 135aea152002
 apps/held-out-4/todo.intent elm index.html c67cd65f7612
 apps/held-out-4/todo.intent elm outbox.ts 99542882b685
 apps/held-out-4/todo.intent elm platform/std.crypto.ts 0c97184c690f
+apps/held-out-4/todo.intent elm screen-entry.ts ba3077d901a2
 apps/held-out-4/todo.intent elm src/Crypto.elm f2638b4b3fd0
 apps/held-out-4/todo.intent elm src/Draw.elm 6728392e4b60
 apps/held-out-4/todo.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -2081,6 +2130,7 @@ apps/held-out/events.intent elm elm.json 31d97d30272b
 apps/held-out/events.intent elm focus-entry.ts 34a837645903
 apps/held-out/events.intent elm focus.ts 8497b2cf5d70
 apps/held-out/events.intent elm index.html c890c7f007b9
+apps/held-out/events.intent elm screen-entry.ts bec9c393c3c6
 apps/held-out/events.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/held-out/events.intent elm src/Main.elm 42c44d3bef38
 apps/held-out/events.intent elm src/Spec.elm 78a0ee09033f
@@ -2106,6 +2156,7 @@ apps/held-out/inventory.intent elm elm.json 31d97d30272b
 apps/held-out/inventory.intent elm focus-entry.ts 34a837645903
 apps/held-out/inventory.intent elm focus.ts 8497b2cf5d70
 apps/held-out/inventory.intent elm index.html c853210d9139
+apps/held-out/inventory.intent elm screen-entry.ts 6ba541335a31
 apps/held-out/inventory.intent elm src/Fmt.elm fa5ecdfdefb4
 apps/held-out/inventory.intent elm src/Main.elm 42c44d3bef38
 apps/held-out/inventory.intent elm src/Spec.elm 3e99279a2746

@@ -108,7 +108,9 @@ Versions v1–v73 are the development history before the first stable version: s
   or both, switched at run time. **Focus:** the harness owns a dialog's focus on both targets
   (runtime/ts/focus.ts, every page's `focus.js`): `role="dialog"`, `aria-modal`, `aria-labelledby`
   its title; focus moves in when it opens, Tab and Shift+Tab stay inside, focus returns on close
-  (WAI-ARIA's modal dialog pattern). A spec that uses a form newer than its own `language` line
+  (WAI-ARIA's modal dialog pattern). **`screen.mjs` for Elm builds:** the same contract around the
+  Elm worker (its `start` and `send` are promises; a host awaits both on every target), with timers
+  of its own inside the bundle, so no global is touched. A spec that uses a form newer than its own `language` line
   is an error (`NEEDS_LANGUAGE`, as Go's `go` line), and `intent fix` raises the line; an expanded
   spec prints the line its forms need. Example: `apps/39-weather.intent` with
   `lib/weather/*` and `apps/api/weather-api.intent` (twin-verified on both targets, first attempt).

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { load } from "../compiler/load.ts";
 import { tsTarget } from "../compiler/targets/ts.ts";
+import { elmTarget } from "../compiler/targets/elm.ts";
 
 const { app } = load(new URL("../apps/29-sized.intent", import.meta.url).pathname, { ignoreLock: true });
 const dir = mkdtempSync(join(tmpdir(), "screen-host-"));
@@ -46,6 +47,30 @@ console.log(JSON.stringify(out));`;
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+// The Elm build's screen.mjs: the same contract around the Elm worker (start and send are promises),
+// with no platform global either (Elm's own timers are microtasks inside the bundle).
+{
+  const d = mkdtempSync(join(tmpdir(), "screen-host-elm-"));
+  try {
+    elmTarget.scaffold(app!, d, {} as never);
+    writeFileSync(join(d, "src/App.elm"), 'module App exposing (Model, init, update, view)\n\nimport Spec exposing (..)\n\n\ntype alias Model =\n    Int\n\n\ninit : Clock -> Model\ninit _ =\n    0\n\n\nupdate : Clock -> Msg -> Model -> Model\nupdate _ _ m =\n    m\n\n\nview : Clock -> Model -> Screen\nview clock _ =\n    { count = "2 notes"\n    , notes = if clock.size == Standard then Just [] else Nothing\n    , more = if clock.size == Compact then Just "Open for more" else Nothing\n    }\n');
+    assert.equal(await elmTarget.compile(d), "", "the Elm build compiles");
+    const host = `
+for (const g of ["fetch", "crypto", "localStorage", "document", "window", "location", "setTimeout", "setInterval", "XMLHttpRequest", "EventSource", "navigator"])
+  Object.defineProperty(globalThis, g, { get() { throw new Error("screen.mjs touched " + g); }, configurable: true });
+const { meta, start } = (await import(${JSON.stringify(join(d, "screen.mjs"))})).default;
+const s = await start({ clock: { now: "2026-09-24T09:00", today: "2026-09-24" }, size: "standard" });
+const a = s.observe();
+await s.send({ on: "size", target: "", value: "Compact" });
+console.log(JSON.stringify({ name: meta.name, at: a.c.map((n) => n.n), compact: s.observe().c.map((n) => n.n), calls: s.calls(), stored: s.stored() }));`;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", host], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), { name: "Sized", at: ["count", "notes"], compact: ["count", "more"], calls: [], stored: {} }, "the same contract on Elm");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
 // The tree says what to draw by (1.1): an instance's component and each element's part in it, its
 // presentation and tone. A theme styles `Pager` / `next`; it never needs the app's names.
 {
@@ -61,4 +86,4 @@ console.log(JSON.stringify(out));`;
     rmSync(d, { recursive: true, force: true });
   }
 }
-console.log("ok screen-host: screen.mjs runs with no platform global, says what it is (meta), needs its clock, takes the size at start and from the host; the tree carries component, part, presentation");
+console.log("ok screen-host: screen.mjs runs with no platform global, says what it is (meta), needs its clock, takes the size at start and from the host; the tree carries component, part, presentation; the same on Elm");

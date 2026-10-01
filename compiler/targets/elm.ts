@@ -8,6 +8,7 @@ import type { App, Element, Literal, Type } from "../ast.ts";
 import { usesClock } from "../refs.ts";
 import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
 import { codeSize } from "../alphabets.ts";
+import { screenMeta } from "./ts.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
 import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
@@ -1226,7 +1227,81 @@ ${hasScreens(app) ? `  // Several screens: the address after # is where the app 
     writeFileSync(join(dir, "src/Worker.elm"), ELM_WORKER);
     writeFileSync(join(dir, "index.html"), html(app.name, `<script src="main.js"></script><script>Elm.Main.init({ node: document.getElementById("app") })</script>`, true));
   }
+  if (app.profile !== "job") writeFileSync(join(dir, "screen-entry.ts"), genElmScreenEntry(app, readFileSync(join(dir, "src/Worker.elm"), "utf8").includes("Program D.Value")));
   return { appFile: join(dir, "src/App.elm"), specSource: spec };
+}
+
+/**
+ * The host entry of an Elm build (`screen.mjs`, contract intent.screen/1): the same as TypeScript's,
+ * around the headless worker. Elm answers its ports asynchronously, so `start` and `send` return
+ * promises here (a host awaits both on every target). The worker is bundled with a scope object of
+ * its own instead of the global `this`: no platform global is touched.
+ */
+function genElmScreenEntry(app: App, takesFlags: boolean): string {
+  const c = usesClock(app);
+  const st = hasStored(app);
+  const dw = usesDraws(app);
+  return `// The host entry of ${app.name} (contract intent.screen/1), around its Elm worker. Generated; do not edit.
+import { Elm } from "./worker-scope.js";
+${dw ? `import { eventSeed, isSeed, runBase } from "./draw.ts";\n` : ""}${st ? `import { migrate, type TypeDesc } from "./api.ts";\nconst storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };\n` : ""}
+export const meta = ${JSON.stringify(screenMeta(app), null, 2)} as const;
+
+type Wire = { on: string; target?: string; [k: string]: unknown };
+
+export async function start(o: { clock?: { now: string; today: string }; size?: string; saved?: Record<string, unknown> | null; seed?: string } = {}) {
+${c ? `  if (!o.clock) throw new Error("${app.name}: start needs { clock } (this app reads the clock)");
+  let clock: Record<string, unknown> = { ...o.clock${app.sizes ? `, size: meta.sizes!.find((x) => x.toLowerCase() === (o.size ?? "").toLowerCase()) ?? meta.sizes![0]` : ""} };
+` : ""}${dw ? `  if (!isSeed(o.seed)) throw new Error("${app.name}: start needs { seed }: 64 hex digits from the host's CSPRNG (this app draws random values)");
+  const base = runBase(o.seed);
+  let n = 0;
+` : ""}  const app = ${takesFlags ? `Elm.Worker.init({ flags: ${c ? "clock" : "null"} })` : "Elm.Worker.init()"};
+  let last: unknown;
+  let made: unknown[] = [];
+  let data: Record<string, unknown> = {};
+  let through: unknown = {};
+  let go: string | null = null;
+  let waiting: (() => void) | undefined;
+  app.ports.observe.subscribe((v: any) => {
+    if (v && v.screen) {
+      made.push(...(v.calls ?? []));
+      if (v.data !== undefined) data = v.data;
+      if (v.through) through = v.through;
+      if (v.go) go = v.go;
+      v = v.screen;
+    }
+    last = v;
+    waiting?.();
+  });
+  const deliver = (w: Wire) => new Promise<void>((resolve) => ((waiting = () => ((waiting = undefined), resolve())), app.ports.act.send(w)));
+  await deliver({ on: "noop"${c ? ", clock" : ""} });
+${st ? `  if (o.saved) {
+    // Start from what was kept: the stored fields put back, then \`on start\`.
+    made = [];
+    await deliver({ on: "restart", target: "", saved: migrate(o.saved, storedFields).data${c ? ", clock" : ""} });
+  }
+` : ""}  return {
+    observe: () => last,
+    async send(w: Wire) {
+${c ? `      if (w.clock) clock = { ...clock, ...(w.clock as object) };
+${app.sizes ? `      if (w.on === "size") clock = { ...clock, size: meta.sizes!.find((x) => x.toLowerCase() === String(w.value ?? w.target).toLowerCase()) ?? clock.size };\n` : ""}` : ""}      await deliver({ ...w${c ? ", clock" : ""}${dw ? ", ...(w.draw ? {} : { draw: { seed: eventSeed(base, n++) } })" : ""} });
+    },
+    calls() {
+      const out = made;
+      made = [];
+      return out;
+    },
+    stored: (): Record<string, unknown> => ${st ? "Object.fromEntries(Object.keys(storedFields).map((f) => [f, data[f]]))" : "({})"},
+    nav() {
+      const g = go;
+      go = null;
+      return g;
+    },
+    through: () => through,
+  };
+}
+
+export default { meta, start };
+`;
 }
 
 // ---------------------------------------------------------------- the target module
@@ -1235,6 +1310,15 @@ async function compileElm(dir: string): Promise<string> {
   const w = await run(bin("elm"), ["make", "src/Worker.elm", "--optimize", "--output=worker.js"], dir);
   if (!w.ok) return clean(w.out);
   copyFileSync(join(dir, "worker.js"), join(dir, "worker.cjs"));
+  if (existsSync(join(dir, "screen-entry.ts"))) {
+    // The host entry: the worker with a scope of its own (not the global `this`), bundled for no platform.
+    const worker = readFileSync(join(dir, "worker.js"), "utf8");
+    // Elm hands port messages out with setTimeout(…, 0); the worker gets its own, on promise microtasks
+    // (ECMAScript), so the host's timers are never touched (an app module may not use timers at all).
+    writeFileSync(join(dir, "worker-scope.js"), `const scope = {};\nconst later = (f) => (Promise.resolve().then(() => f()), 0);\n(function (setTimeout, clearTimeout, setInterval) {\n${worker}\n}).call(scope, later, () => {}, () => 0);\nexport const Elm = scope.Elm;\n`);
+    const h = await run(bin("esbuild"), ["screen-entry.ts", "--bundle", "--format=esm", "--platform=neutral", "--outfile=screen.mjs", "--log-level=error"], dir);
+    if (!h.ok) return clean(h.out);
+  }
   const m = await run(bin("elm"), ["make", "src/Main.elm", "--optimize", "--output=main.js"], dir);
   if (!m.ok) return clean(m.out);
   if (existsSync(join(dir, "through.ts"))) {

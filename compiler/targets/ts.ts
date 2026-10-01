@@ -607,11 +607,11 @@ ${c ? "      if (w.clock) clock = w.clock as Clock;\n" : ""}${st ? `      // The
  * itself, with no globals. The host gives the clock, the size, the saved data and a seed; it takes the
  * screen, the calls and the data to keep; it performs the calls and sends their answers and events back.
  */
-export function genTsScreenEntry(app: App): string {
+/** What a screen build is, for its host (`meta` of screen.mjs): the same on every target. */
+export function screenMeta(app: App) {
   const c = usesClock(app);
-  const st = hasStored(app);
   const dw = usesDraws(app);
-  const meta = {
+  return {
     contract: "intent.screen/1",
     name: app.name,
     clock: c ? { tickMs: app.clockMs ?? 0 } : null,
@@ -621,6 +621,13 @@ export function genTsScreenEntry(app: App): string {
     screens: hasScreens(app) ? app.screens!.map((x) => ({ name: x.name, path: x.path })) : null,
     uses: (app.clients ?? []).map((u) => ({ alias: u.alias, contract: u.contract.name, endpoints: (u.contract.endpoints ?? []).map((e) => e.name).filter((n) => !u.only || u.only.includes(n)), events: (u.contract.events ?? []).map((e) => e.name).filter((n) => !u.only || u.only.includes(n)) })),
   };
+}
+
+export function genTsScreenEntry(app: App): string {
+  const c = usesClock(app);
+  const st = hasStored(app);
+  const dw = usesDraws(app);
+  const meta = screenMeta(app);
   return `// The host entry of ${app.name} (contract intent.screen/1): pure, no globals. Generated; do not edit.
 import { start as core } from "./screen-core.ts";
 ${st ? `import { storedFields } from "./spec.ts";
