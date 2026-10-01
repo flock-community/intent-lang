@@ -1,0 +1,55 @@
+app Stock {
+  "Items in stock: each shows how many are left, and its tone says whether that is fine, low or none."
+}
+language 1.1
+
+record Item {
+  id: Int
+  name: Text
+  left: Int
+}
+
+state {
+  items: List Item = table {
+    id | name    | left
+    1  | "Paper" | 6
+    2  | "Pens"  | 1
+  }
+}
+
+screen {
+  heading "Stock"
+  list items of Item {
+    text name
+    text level = "{left} left" as badge {
+      tone danger when @left is 0
+      tone warning when @left is below 5
+      tone success
+    }
+    button sell "Sell one" as secondary {
+      enabled when @left is above 0
+    }
+    button restock "Restock 5" as primary
+  }
+}
+
+on click sell {
+  - decrease the @left of that item by 1
+}
+
+on click restock {
+  - increase the @left of that item by 5
+}
+
+example "tones follow what is left" {
+  see name on row 1 = "Paper"
+  see level on row 1 = "6 left"
+  see level on row 1 has tone success
+  see level on row 2 has tone warning
+  click sell on row 2
+  see level on row 2 = "0 left"
+  see level on row 2 has tone danger
+  see sell on row 2 is disabled
+  click restock on row 2
+  see level on row 2 has tone success
+}

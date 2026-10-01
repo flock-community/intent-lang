@@ -10,7 +10,7 @@ import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
 import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, toneField, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -205,7 +205,8 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     }
     return el.visibleWhen ? `Maybe ${t.includes(" ") ? `(${t})` : t}` : t;
   };
-  const rowFields = (els: Element[], list?: Element): [string, string][] => els.filter((e) => e.kind !== "heading").map((e) => [mangle(ident(e.name)), fieldType(e, list)]);
+  // An element whose tone depends on the state gets a field beside it: the tone whose condition holds first ("" for none).
+  const rowFields = (els: Element[], list?: Element): [string, string][] => els.filter((e) => e.kind !== "heading").flatMap((e): [string, string][] => [[mangle(ident(e.name)), fieldType(e, list)], ...(toneField(e) ? [[mangle(toneField(e)!.field), "String"] as [string, string]] : [])]);
   if (hasScreens(app)) {
     const scs = app.screens!;
     const rec = (fields: [string, string][]) => (fields.length ? `{ ${fields.map(([n, t]) => `${n} : ${t}`).join(", ")} }` : "{}");
@@ -247,8 +248,10 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
     els.map((el) => {
       if (el.kind === "heading") return `Just (Ui.NHeading ${q(el.label ?? "")})`;
       const v = `${acc}.${mangle(ident(el.name))}`;
-      if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${node(el, `v${d}`, d + 1, list)}) ${v}`;
-      return `Just (${node(el, v, d + 1, list)})`;
+      const tf = toneField(el);
+      const n = (x: string) => (tf ? `Ui.NStyled (List.filter (\\( _, t ) -> t /= "") [ ( "tone", ${acc}.${mangle(tf.field)} ) ]) (${node(el, x, d + 1, list)})` : node(el, x, d + 1, list));
+      if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${n(`v${d}`)}) ${v}`;
+      return `Just (${n(v)})`;
     });
   // What a host renders by, besides the element's kind (1.1): `as`, `tone`.
   const node = (el: Element, v: string, d: number, list?: Element): string => {

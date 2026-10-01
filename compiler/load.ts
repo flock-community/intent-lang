@@ -616,6 +616,7 @@ function lintComponent(c: Component, warn: (line: number, code: string, message:
     for (const el of els) {
       check(el.visibleWhen, el.line);
       check(el.enabledWhen, el.line);
+      for (const t of el.tones ?? []) check(t.when, t.line);
       if (el.expr && !el.expr.startsWith('"')) check(el.expr, el.line);
       walk(el.children);
     }

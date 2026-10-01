@@ -40,6 +40,9 @@ export const RESERVED = new Set([
 // The element kinds and their presentations come from the UI profile (lib/profile/ui.intent),
 // a spec in its own right: docs/design/profiles.md.
 const PROFILE = uiProfile();
+/** The tones an element may have (1.1): what its state means, the same words as OurOS's primitives. */
+export const TONES = ["neutral", "muted", "info", "success", "warning", "danger"];
+
 export const PRESENTATIONS: Record<ElementKind, string[]> = Object.fromEntries(
   PROFILE.elements.map((e) => [e.kind, e.presentations.map((x) => x.name)]),
 ) as Record<ElementKind, string[]>;
@@ -334,6 +337,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     seen.add(v);
     const here = typeof (v as { line?: unknown }).line === "number" ? (v as { line: number }).line : line;
     if ((v as { k?: unknown }).k === "Map" && "of" in v) (app.since ??= []).push({ line: here, version: "1.1", what: "a map (`Map T`)" });
+    if (Array.isArray((v as { tones?: unknown }).tones)) (app.since ??= []).push({ line: here, version: "1.1", what: "a tone (`tone …`)" });
     if (!ownInstant && (v as { k?: unknown }).k === "Named" && (v as { name?: unknown }).name === "Instant") {
       const t = v as { k: string; name?: string };
       t.k = "Instant";
@@ -342,7 +346,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     }
     for (const x of Object.values(v)) walk(x, here);
   };
-  walk({ records: app.records, state: app.state, derive: app.derive, endpoints: app.endpoints, events: app.events }, 1);
+  walk({ records: app.records, state: app.state, derive: app.derive, endpoints: app.endpoints, events: app.events, screen: app.screen, components: app.components }, 1);
   return { app, diagnostics: diags, clockLine: ctx.clockLine, language, languageLine };
 }
 
@@ -1428,7 +1432,13 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
   for (const k of c.children) {
     let mm: RegExpMatchArray | null;
     if ((mm = k.text.match(/^visible\s+when\s+(.+)$/))) el.visibleWhen = mm[1] + flattenChildren(k);
-    else if ((mm = k.text.match(new RegExp(`^look\\s+(${STR})$`)))) el.look = [el.look, parseString(mm[1])].filter(Boolean).join(" ");
+    else if ((mm = k.text.match(/^tone\s+([a-z]+)(?:\s+when\s+(.+))?$/))) {
+      // 1.1: a tone says what the element's state means (a host draws it); never a colour.
+      if (!TONES.includes(mm[1])) err(k.line, "UNKNOWN_NAME", `\`${mm[1]}\` is not a tone (${TONES.join(", ")})`, k.indent + 1);
+      else if (kind === "heading" || kind === "list") err(k.line, "SYNTAX", `a ${kind} has no tone: give it to the elements in it`, k.indent + 1);
+      else if (!mm[2] && el.tones?.some((t) => !t.when)) err(k.line, "DUPLICATE", "an element has one default tone (a `tone` without `when`)", k.indent + 1);
+      else (el.tones ??= []).push({ tone: mm[1], ...(mm[2] ? { when: mm[2] + flattenChildren(k) } : {}), line: k.line });
+    } else if ((mm = k.text.match(new RegExp(`^look\\s+(${STR})$`)))) el.look = [el.look, parseString(mm[1])].filter(Boolean).join(" ");
     else if ((mm = k.text.match(/^as\s+([A-Za-z][A-Za-z0-9]*)$/))) el.as = mm[1]; // for long `= …` lines
     else if ((mm = k.text.match(/^enabled\s+when\s+(.+)$/))) {
       if (kind !== "button") err(k.line, "SYNTAX", "`enabled when` is only for buttons", k.indent + 1);
@@ -1444,7 +1454,7 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
       const child = parseElement(k, err, inner);
       if (child) el.children.push(child);
     } else {
-      err(k.line, "SYNTAX", 'expected `visible when …`, `enabled when …` or `look "…"`', k.indent + 1);
+      err(k.line, "SYNTAX", 'expected `visible when …`, `enabled when …`, `tone …` or `look "…"`', k.indent + 1);
     }
   }
   if (kind === "list" && !["Text", "Int", "Decimal", "Bool", "Date", "DateTime"].includes(el.of ?? "") && !el.children.some((e) => e.kind !== "heading")) err(c.line, "SYNTAX", "a list needs row elements, indented under it", col);
@@ -1598,12 +1608,16 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     let im: RegExpMatchArray | null;
     if ((im = inner.match(new RegExp(`^(${QN})\\s+is\\s+${NUMCMP}$`)))) return { step: { do: "see", target: im[1], every: list, check: numCheck(im[2], im[3]), line } };
     if ((im = inner.match(new RegExp(`^(${QN})\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`)))) return { step: { do: "see", target: im[1], every: list, check: { is: im[2] as "shown" }, line } };
+    if ((im = inner.match(new RegExp(`^(${QN})\\s+has\\s+(?:tone\\s+([a-z]+)|no\\s+tone)$`)))) return { step: { do: "see", target: im[1], every: list, check: { is: "tone", value: im[2] ?? "" }, line } };
     if ((im = inner.match(new RegExp(`^(${QN})\\s*=\\s*(${STR})$`)))) return { step: { do: "see", target: im[1], every: list, check: { is: "eq", value: parseString(im[2])! }, line } };
     err(line, "SYNTAX", "after `see every row of <list>:` comes `<element> is at least|at most|above|below <number or element>`, `<element> is shown|hidden|…` or `<element> = \"text\"`", col);
     return;
   }
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+${NUMCMP}$`))))
     return { step: { do: "see", target: m[1], at: at(m[2]), check: numCheck(m[3], m[4]), line } };
+  // 1.1: `see status has tone danger`, `see status has no tone`: the tone the element shows now.
+  if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+has\\s+(?:tone\\s+([a-z]+)|no\\s+tone)$`))))
+    return { step: { do: "see", target: m[1], at: at(m[2]), check: { is: "tone", value: m[3] ?? "" }, line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s+is\\s+(disabled|enabled|hidden|shown|checked|unchecked)$`))))
     return { step: { do: "see", target: m[1], at: at(m[2]), check: { is: m[3] as "shown" }, line } };
   if ((m = t.match(new RegExp(`^see\\s+(${QN})${ROW}\\s*=\\s*(.+)$`)))) {
@@ -2241,7 +2255,11 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
           else if (c.is === "eq") need(["text", "field", "select", "button", "progress"], "compare the value of");
           else if (c.is === "disabled" || c.is === "enabled") need(["button"], `check \`is ${c.is}\` on`);
           else if (c.is === "checked" || c.is === "unchecked") need(["checkbox"], `check \`is ${c.is}\` on`);
-          else if (c.is === "num") {
+          else if (c.is === "tone") {
+            if (c.value && !TONES.includes(c.value)) err(s.line, "UNKNOWN_NAME", `\`${c.value}\` is not a tone (${TONES.join(", ")})`);
+            else if (!el.tones?.length) err(s.line, "STEP", `\`${el.name}\` has no \`tone\`: this check proves nothing`);
+            else if (c.value && !el.tones.some((t) => t.tone === c.value)) err(s.line, "STEP", `\`${el.name}\` never has tone ${c.value} (${el.tones.map((t) => t.tone).join(", ")})`);
+          } else if (c.is === "num") {
             need(["text", "field", "progress"], "compare the number shown by");
             if (c.ref && !findEl(c.ref).length) err(s.line, "UNKNOWN_NAME", `no element \`${c.ref}\``);
           }

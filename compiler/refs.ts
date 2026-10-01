@@ -69,6 +69,7 @@ export function sentences(app: App): { text: string; line: number; where: string
       if (el.expr) out.push({ text: el.expr, line: el.line, where: `${el.kind} ${el.name}` });
       if (el.visibleWhen) out.push({ text: el.visibleWhen, line: el.line, where: `${el.kind} ${el.name}` });
       if (el.enabledWhen) out.push({ text: el.enabledWhen, line: el.line, where: `${el.kind} ${el.name}` });
+      for (const t of el.tones ?? []) if (t.when) out.push({ text: t.when, line: t.line, where: `${el.kind} ${el.name}` });
       walk(el.children);
     }
   };

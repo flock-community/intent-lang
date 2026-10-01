@@ -17,7 +17,8 @@ known ahead, such as a theme's colour per role; prefer a record whenever the key
 `Instant` (a moment in UTC to the second, for moments other systems or other time zones send; keep
 `DateTime` for the app's own local time), and `union` (a value that is one of several records, such
 as a schedule that is daily or weekly: write each variant as its own record, never one record with
-optional fields that only some kinds use). If the changelog shows a newer
+optional fields that only some kinds use). Say what a state *means* with `tone` (`tone danger when
+@left is 0`), never with `look` words about colours: the theme of the host decides how it looks. If the changelog shows a newer
 version, read what it adds first.
 
 ## 1. Understand the intent (interview)

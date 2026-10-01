@@ -1,0 +1,28 @@
+app Tones {
+  "1.1: tones say what a state means; one default; only real tones; a check of a tone needs one."
+}
+language 1.1
+
+state {
+  left: Int = 0
+}
+
+screen {
+  text level = "{left} left" {
+    tone danger when @left is 0         # expect-not: UNKNOWN_NAME
+    tone red when @left is 1            # expect: UNKNOWN_NAME
+    tone success
+    tone info                           # expect: DUPLICATE
+  }
+  text plain = "x"
+  list rows of Text = [] {
+    tone muted                          # expect: SYNTAX
+  }
+}
+
+example "tones" {
+  see level has tone danger
+  see level has tone warning            # expect: STEP
+  see plain has no tone                 # expect: STEP
+  see level has tone purple             # expect: UNKNOWN_NAME
+}

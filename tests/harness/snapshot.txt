@@ -5,8 +5,8 @@ apps/01-counter.intent elm src/Main.elm 42c44d3bef38
 apps/01-counter.intent elm src/Spec.elm 4f11556ce791
 apps/01-counter.intent elm src/Ui.elm 3177f8f5919f
 apps/01-counter.intent elm src/Worker.elm a80db3779849
-apps/01-counter.intent elm prompt ba18c880fac8 repair 22218f3b8539
-apps/01-counter.intent elm prompt-probe c10f711094b7 repair 736931983c0f
+apps/01-counter.intent elm prompt 09963bb5f275 repair 39cc0cf390ef
+apps/01-counter.intent elm prompt-probe e5f4ae379750 repair 3cf562052336
 apps/01-counter.intent ts fmt.ts 298251d361c4
 apps/01-counter.intent ts index.html fce7ddfce1b8
 apps/01-counter.intent ts main.ts 8fd12f39e6ad
@@ -17,8 +17,8 @@ apps/01-counter.intent ts spec.ts 7609b2fddc85
 apps/01-counter.intent ts test-entry.ts 3d26263447aa
 apps/01-counter.intent ts tsconfig.json 422c41f4ed20
 apps/01-counter.intent ts ui.ts dd27cfcd27ef
-apps/01-counter.intent ts prompt 4635e80bc0ab repair 724316c2859e
-apps/01-counter.intent ts prompt-probe 0429a375e716 repair c47172664f8e
+apps/01-counter.intent ts prompt a150ba9064ef repair 58d37dc9ffe0
+apps/01-counter.intent ts prompt-probe 7f1333a0e45b repair 5297e3d657a6
 apps/02-todo.intent elm elm.json 31d97d30272b
 apps/02-todo.intent elm index.html 2b462ce72888
 apps/02-todo.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -26,8 +26,8 @@ apps/02-todo.intent elm src/Main.elm 42c44d3bef38
 apps/02-todo.intent elm src/Spec.elm 477fb77ccac1
 apps/02-todo.intent elm src/Ui.elm 3177f8f5919f
 apps/02-todo.intent elm src/Worker.elm a80db3779849
-apps/02-todo.intent elm prompt dc79c5893367 repair dd628183c7d9
-apps/02-todo.intent elm prompt-probe 86a4b70bcf22 repair 199524973a0e
+apps/02-todo.intent elm prompt 9c44e6cd60dc repair 58bb33c23552
+apps/02-todo.intent elm prompt-probe f7a8a0072bbb repair f357e7f5c4ba
 apps/02-todo.intent ts fmt.ts 298251d361c4
 apps/02-todo.intent ts index.html ed43fab3cd9d
 apps/02-todo.intent ts main.ts 8fd12f39e6ad
@@ -38,8 +38,8 @@ apps/02-todo.intent ts spec.ts e9dcedd30656
 apps/02-todo.intent ts test-entry.ts 3d26263447aa
 apps/02-todo.intent ts tsconfig.json 422c41f4ed20
 apps/02-todo.intent ts ui.ts dd27cfcd27ef
-apps/02-todo.intent ts prompt df2ed2103f02 repair 4616a513aba7
-apps/02-todo.intent ts prompt-probe dd89d604f7d3 repair 205807d499b1
+apps/02-todo.intent ts prompt 3448067d9197 repair a7c9cceb7184
+apps/02-todo.intent ts prompt-probe de6e130d453a repair f31cf2439db9
 apps/03-tipsplit.intent elm elm.json 31d97d30272b
 apps/03-tipsplit.intent elm index.html 0a3661cf2e26
 apps/03-tipsplit.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -47,8 +47,8 @@ apps/03-tipsplit.intent elm src/Main.elm 42c44d3bef38
 apps/03-tipsplit.intent elm src/Spec.elm dc86139fd193
 apps/03-tipsplit.intent elm src/Ui.elm 3177f8f5919f
 apps/03-tipsplit.intent elm src/Worker.elm a80db3779849
-apps/03-tipsplit.intent elm prompt 1591898088cd repair 8a6bf64e4b86
-apps/03-tipsplit.intent elm prompt-probe 0d9be6000ac7 repair 29e41754981c
+apps/03-tipsplit.intent elm prompt c4d1bb82a5d3 repair fb6fa3b317e1
+apps/03-tipsplit.intent elm prompt-probe cb5c6f022d3d repair 31e5ed8724f5
 apps/03-tipsplit.intent ts fmt.ts 298251d361c4
 apps/03-tipsplit.intent ts index.html 869337a37720
 apps/03-tipsplit.intent ts main.ts 8fd12f39e6ad
@@ -59,8 +59,8 @@ apps/03-tipsplit.intent ts spec.ts 740ebb029bad
 apps/03-tipsplit.intent ts test-entry.ts 3d26263447aa
 apps/03-tipsplit.intent ts tsconfig.json 422c41f4ed20
 apps/03-tipsplit.intent ts ui.ts dd27cfcd27ef
-apps/03-tipsplit.intent ts prompt 8e69bbbdd4e6 repair 6bd5442dbcf1
-apps/03-tipsplit.intent ts prompt-probe 1a29b652d2d8 repair 7e7b45cb915f
+apps/03-tipsplit.intent ts prompt d0236e5b25af repair c4084a378b87
+apps/03-tipsplit.intent ts prompt-probe f7af9330bb8a repair 4791e70f752b
 apps/04-pomodoro.intent elm elm.json 31d97d30272b
 apps/04-pomodoro.intent elm index.html 4d9edf64ed54
 apps/04-pomodoro.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -68,8 +68,8 @@ apps/04-pomodoro.intent elm src/Main.elm 49a2da58ceea
 apps/04-pomodoro.intent elm src/Spec.elm f87c0430da30
 apps/04-pomodoro.intent elm src/Ui.elm 3177f8f5919f
 apps/04-pomodoro.intent elm src/Worker.elm a80db3779849
-apps/04-pomodoro.intent elm prompt abeca6df7441 repair c22959a22a01
-apps/04-pomodoro.intent elm prompt-probe b206c7850dd3 repair 9449147886ea
+apps/04-pomodoro.intent elm prompt c406076310f5 repair d633b4f97ba0
+apps/04-pomodoro.intent elm prompt-probe dbb094913036 repair 0020608e9e84
 apps/04-pomodoro.intent ts fmt.ts 298251d361c4
 apps/04-pomodoro.intent ts index.html 4221b0ad9b53
 apps/04-pomodoro.intent ts main.ts 645aa2517fb1
@@ -80,8 +80,8 @@ apps/04-pomodoro.intent ts spec.ts 30d967e389c6
 apps/04-pomodoro.intent ts test-entry.ts 3d26263447aa
 apps/04-pomodoro.intent ts tsconfig.json 422c41f4ed20
 apps/04-pomodoro.intent ts ui.ts dd27cfcd27ef
-apps/04-pomodoro.intent ts prompt 1579116c59c6 repair 59bf248af5b7
-apps/04-pomodoro.intent ts prompt-probe 544099f2157c repair 5bdc1c6ba5e7
+apps/04-pomodoro.intent ts prompt 3b27a527177d repair dc0a3f07cdc1
+apps/04-pomodoro.intent ts prompt-probe f70eff5ca815 repair 6574e8866eba
 apps/05-wordle.intent elm elm.json 31d97d30272b
 apps/05-wordle.intent elm index.html 8932d26dd5fc
 apps/05-wordle.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -89,8 +89,8 @@ apps/05-wordle.intent elm src/Main.elm 42c44d3bef38
 apps/05-wordle.intent elm src/Spec.elm fe7cc69bf842
 apps/05-wordle.intent elm src/Ui.elm 3177f8f5919f
 apps/05-wordle.intent elm src/Worker.elm a80db3779849
-apps/05-wordle.intent elm prompt 2733cd90b0c2 repair 719bef213784
-apps/05-wordle.intent elm prompt-probe e9b2041853ff repair eb42b5e9ba8b
+apps/05-wordle.intent elm prompt 2261ee7d515c repair 933af2df9baf
+apps/05-wordle.intent elm prompt-probe c1385bed5692 repair 36bbad89d3bc
 apps/05-wordle.intent ts fmt.ts 298251d361c4
 apps/05-wordle.intent ts index.html 330cac3d76f6
 apps/05-wordle.intent ts main.ts 8fd12f39e6ad
@@ -101,8 +101,8 @@ apps/05-wordle.intent ts spec.ts e2a1c1c05e7b
 apps/05-wordle.intent ts test-entry.ts 3d26263447aa
 apps/05-wordle.intent ts tsconfig.json 422c41f4ed20
 apps/05-wordle.intent ts ui.ts dd27cfcd27ef
-apps/05-wordle.intent ts prompt cd041de20921 repair a5f8dd4253c2
-apps/05-wordle.intent ts prompt-probe 4ab2b6a44191 repair 42238337c596
+apps/05-wordle.intent ts prompt a864388499b5 repair 3aa0f96a3939
+apps/05-wordle.intent ts prompt-probe 9c6fb1c4d469 repair b6ca4b60bda9
 apps/06-expenses.intent elm elm.json 31d97d30272b
 apps/06-expenses.intent elm index.html b57730a54cfc
 apps/06-expenses.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -110,8 +110,8 @@ apps/06-expenses.intent elm src/Main.elm 42c44d3bef38
 apps/06-expenses.intent elm src/Spec.elm 7e5f07b88567
 apps/06-expenses.intent elm src/Ui.elm 3177f8f5919f
 apps/06-expenses.intent elm src/Worker.elm a80db3779849
-apps/06-expenses.intent elm prompt 8e520510c5d5 repair 6e7efe271156
-apps/06-expenses.intent elm prompt-probe ee691b50b786 repair 6ae55fb46ec5
+apps/06-expenses.intent elm prompt 0dd78511b3e9 repair c12e82fd5bbe
+apps/06-expenses.intent elm prompt-probe dee53f58f78b repair f393dbca90aa
 apps/06-expenses.intent ts fmt.ts 298251d361c4
 apps/06-expenses.intent ts index.html 8766d3ae982d
 apps/06-expenses.intent ts main.ts 8fd12f39e6ad
@@ -122,8 +122,8 @@ apps/06-expenses.intent ts spec.ts a659aa64bacd
 apps/06-expenses.intent ts test-entry.ts 3d26263447aa
 apps/06-expenses.intent ts tsconfig.json 422c41f4ed20
 apps/06-expenses.intent ts ui.ts dd27cfcd27ef
-apps/06-expenses.intent ts prompt 086d323f61d5 repair f5f185d16292
-apps/06-expenses.intent ts prompt-probe c77496ded5a2 repair f19465736d4f
+apps/06-expenses.intent ts prompt 864ec61b006c repair 793369ed68d8
+apps/06-expenses.intent ts prompt-probe 8eb6ef5c3479 repair 83363d5ff8f7
 apps/07-shop.intent elm elm.json 31d97d30272b
 apps/07-shop.intent elm index.html d3cc1a3cecca
 apps/07-shop.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -131,8 +131,8 @@ apps/07-shop.intent elm src/Main.elm 42c44d3bef38
 apps/07-shop.intent elm src/Spec.elm 76aab47e7a9d
 apps/07-shop.intent elm src/Ui.elm 3177f8f5919f
 apps/07-shop.intent elm src/Worker.elm a80db3779849
-apps/07-shop.intent elm prompt 0e7e02bed746 repair f6630218336d
-apps/07-shop.intent elm prompt-probe fa6a2b26237c repair 477c2d05a760
+apps/07-shop.intent elm prompt 5d9346b80f72 repair b050d589a24e
+apps/07-shop.intent elm prompt-probe 371b6dddb873 repair baa925a42d01
 apps/07-shop.intent ts fmt.ts 298251d361c4
 apps/07-shop.intent ts index.html 2dc118d2016e
 apps/07-shop.intent ts main.ts 8fd12f39e6ad
@@ -143,8 +143,8 @@ apps/07-shop.intent ts spec.ts 823a68b487d5
 apps/07-shop.intent ts test-entry.ts 3d26263447aa
 apps/07-shop.intent ts tsconfig.json 422c41f4ed20
 apps/07-shop.intent ts ui.ts dd27cfcd27ef
-apps/07-shop.intent ts prompt 3c831d920bd4 repair 8360423c82eb
-apps/07-shop.intent ts prompt-probe c7c065c45738 repair 3a9cd32db6f1
+apps/07-shop.intent ts prompt 7cdeba2d7fc6 repair d461e8661b1a
+apps/07-shop.intent ts prompt-probe d0ff6300afe9 repair f278fdb9a045
 apps/08-calculator.intent elm elm.json 31d97d30272b
 apps/08-calculator.intent elm index.html 27ecc9bbb997
 apps/08-calculator.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -152,8 +152,8 @@ apps/08-calculator.intent elm src/Main.elm 42c44d3bef38
 apps/08-calculator.intent elm src/Spec.elm e22f82d48702
 apps/08-calculator.intent elm src/Ui.elm 3177f8f5919f
 apps/08-calculator.intent elm src/Worker.elm a80db3779849
-apps/08-calculator.intent elm prompt c6b86710c712 repair 87ff3624cf04
-apps/08-calculator.intent elm prompt-probe b9175a090f46 repair d6651f583104
+apps/08-calculator.intent elm prompt 779ff14bbac4 repair 850b106eb039
+apps/08-calculator.intent elm prompt-probe 805416c12f92 repair 7a85e9bb8d6b
 apps/08-calculator.intent ts fmt.ts 298251d361c4
 apps/08-calculator.intent ts index.html eb68b35a67c3
 apps/08-calculator.intent ts main.ts 8fd12f39e6ad
@@ -164,8 +164,8 @@ apps/08-calculator.intent ts spec.ts 6a6619c8bebe
 apps/08-calculator.intent ts test-entry.ts 3d26263447aa
 apps/08-calculator.intent ts tsconfig.json 422c41f4ed20
 apps/08-calculator.intent ts ui.ts dd27cfcd27ef
-apps/08-calculator.intent ts prompt 7feb245268bb repair f8787dc7945b
-apps/08-calculator.intent ts prompt-probe c95891224e22 repair c6f4d823b17a
+apps/08-calculator.intent ts prompt 20aa23eca87f repair 5e6ac4572e3f
+apps/08-calculator.intent ts prompt-probe b2670293fc6e repair 87d1d9b2ca1e
 apps/09-board.intent elm elm.json 31d97d30272b
 apps/09-board.intent elm index.html ab8487de9f89
 apps/09-board.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -173,8 +173,8 @@ apps/09-board.intent elm src/Main.elm 42c44d3bef38
 apps/09-board.intent elm src/Spec.elm 030366e40e34
 apps/09-board.intent elm src/Ui.elm 3177f8f5919f
 apps/09-board.intent elm src/Worker.elm a80db3779849
-apps/09-board.intent elm prompt f27228556f0f repair 7aada233b9dd
-apps/09-board.intent elm prompt-probe fb756ea43d9c repair d17528f8adf5
+apps/09-board.intent elm prompt 6eabc0a343c8 repair 1f925c6b5713
+apps/09-board.intent elm prompt-probe e48986f87fde repair 075302c60615
 apps/09-board.intent ts fmt.ts 298251d361c4
 apps/09-board.intent ts index.html f0316e39016f
 apps/09-board.intent ts main.ts 8fd12f39e6ad
@@ -185,8 +185,8 @@ apps/09-board.intent ts spec.ts 93b16337640c
 apps/09-board.intent ts test-entry.ts 3d26263447aa
 apps/09-board.intent ts tsconfig.json 422c41f4ed20
 apps/09-board.intent ts ui.ts dd27cfcd27ef
-apps/09-board.intent ts prompt bc10e3cb5a9f repair b248ecbf05e6
-apps/09-board.intent ts prompt-probe f2da7f51e153 repair 0c83acc252d9
+apps/09-board.intent ts prompt 6f5bb3c34a6a repair ed6c9131b84e
+apps/09-board.intent ts prompt-probe 4b0c7122f568 repair af1a5f792ac7
 apps/10-helpdesk.intent elm elm.json 31d97d30272b
 apps/10-helpdesk.intent elm index.html 183884c0c559
 apps/10-helpdesk.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -194,8 +194,8 @@ apps/10-helpdesk.intent elm src/Main.elm 42c44d3bef38
 apps/10-helpdesk.intent elm src/Spec.elm 36a959bdf53f
 apps/10-helpdesk.intent elm src/Ui.elm 3177f8f5919f
 apps/10-helpdesk.intent elm src/Worker.elm 5afad40d6427
-apps/10-helpdesk.intent elm prompt f1055f9bccad repair 613b30e4fbd3
-apps/10-helpdesk.intent elm prompt-probe 11455692fd35 repair a15979202c69
+apps/10-helpdesk.intent elm prompt 7768d1eee210 repair 125dac4abb50
+apps/10-helpdesk.intent elm prompt-probe 4fcc5a3dfae5 repair 7d835348c71b
 apps/10-helpdesk.intent ts fmt.ts 298251d361c4
 apps/10-helpdesk.intent ts index.html 65baadf63b56
 apps/10-helpdesk.intent ts main.ts 8fd12f39e6ad
@@ -206,8 +206,8 @@ apps/10-helpdesk.intent ts spec.ts 4550d6b6d4ec
 apps/10-helpdesk.intent ts test-entry.ts 3d26263447aa
 apps/10-helpdesk.intent ts tsconfig.json 422c41f4ed20
 apps/10-helpdesk.intent ts ui.ts dd27cfcd27ef
-apps/10-helpdesk.intent ts prompt c3bad0bd6965 repair e649810eba48
-apps/10-helpdesk.intent ts prompt-probe cd4528791aa6 repair 60e6942799af
+apps/10-helpdesk.intent ts prompt 0f6000c70456 repair b151f8c7fe88
+apps/10-helpdesk.intent ts prompt-probe 07144b9a8aab repair 99d49e8d1744
 apps/11-storefront.intent elm elm.json 31d97d30272b
 apps/11-storefront.intent elm index.html d1662a3e31c1
 apps/11-storefront.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -215,8 +215,8 @@ apps/11-storefront.intent elm src/Main.elm 42c44d3bef38
 apps/11-storefront.intent elm src/Spec.elm 9f276f2224bb
 apps/11-storefront.intent elm src/Ui.elm 3177f8f5919f
 apps/11-storefront.intent elm src/Worker.elm a80db3779849
-apps/11-storefront.intent elm prompt 75494e062793 repair 6c5a049394f8
-apps/11-storefront.intent elm prompt-probe ac380775b2bf repair c2c8bdae605f
+apps/11-storefront.intent elm prompt d7c5310f9896 repair 44e545073912
+apps/11-storefront.intent elm prompt-probe 667d76e66bfa repair 353c59ebdfaf
 apps/11-storefront.intent ts fmt.ts 298251d361c4
 apps/11-storefront.intent ts index.html 855cf511ee4a
 apps/11-storefront.intent ts main.ts 8fd12f39e6ad
@@ -227,8 +227,8 @@ apps/11-storefront.intent ts spec.ts c3b61c559e8f
 apps/11-storefront.intent ts test-entry.ts 3d26263447aa
 apps/11-storefront.intent ts tsconfig.json 422c41f4ed20
 apps/11-storefront.intent ts ui.ts dd27cfcd27ef
-apps/11-storefront.intent ts prompt 3a95b21db685 repair 4cd0433bec44
-apps/11-storefront.intent ts prompt-probe 50cf6e166623 repair 6c2055ea6171
+apps/11-storefront.intent ts prompt 0356b3b50915 repair f9a17c3bc52a
+apps/11-storefront.intent ts prompt-probe 38aa21e88644 repair fe6061fba262
 apps/12-helpdesk-bundled.intent elm elm.json 31d97d30272b
 apps/12-helpdesk-bundled.intent elm index.html 183884c0c559
 apps/12-helpdesk-bundled.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -236,8 +236,8 @@ apps/12-helpdesk-bundled.intent elm src/Main.elm 42c44d3bef38
 apps/12-helpdesk-bundled.intent elm src/Spec.elm bae04cdcffa1
 apps/12-helpdesk-bundled.intent elm src/Ui.elm 3177f8f5919f
 apps/12-helpdesk-bundled.intent elm src/Worker.elm a80db3779849
-apps/12-helpdesk-bundled.intent elm prompt fc43a4fb00d9 repair 9758ccd2b6d1
-apps/12-helpdesk-bundled.intent elm prompt-probe 0d17e792de2a repair 979115566a48
+apps/12-helpdesk-bundled.intent elm prompt 4e2ca399c63a repair 37c7e73f3c6e
+apps/12-helpdesk-bundled.intent elm prompt-probe a6c8dfef5d04 repair 9ad290157c88
 apps/12-helpdesk-bundled.intent ts fmt.ts 298251d361c4
 apps/12-helpdesk-bundled.intent ts index.html 65baadf63b56
 apps/12-helpdesk-bundled.intent ts main.ts 8fd12f39e6ad
@@ -248,8 +248,8 @@ apps/12-helpdesk-bundled.intent ts spec.ts 6b9d5d657b08
 apps/12-helpdesk-bundled.intent ts test-entry.ts 3d26263447aa
 apps/12-helpdesk-bundled.intent ts tsconfig.json 422c41f4ed20
 apps/12-helpdesk-bundled.intent ts ui.ts dd27cfcd27ef
-apps/12-helpdesk-bundled.intent ts prompt 4f010a1a485f repair 30516cae5ca1
-apps/12-helpdesk-bundled.intent ts prompt-probe e2ddc8a78cb3 repair 3917df18bcc7
+apps/12-helpdesk-bundled.intent ts prompt 8ea0bb52eba7 repair e214c08178d5
+apps/12-helpdesk-bundled.intent ts prompt-probe 49a7d2076f26 repair faa47cf72a7a
 apps/13-crm.intent elm elm.json 31d97d30272b
 apps/13-crm.intent elm index.html edf850035729
 apps/13-crm.intent elm src/Crypto.elm f2638b4b3fd0
@@ -259,8 +259,8 @@ apps/13-crm.intent elm src/Main.elm 42c44d3bef38
 apps/13-crm.intent elm src/Spec.elm 858f32b8d923
 apps/13-crm.intent elm src/Ui.elm 3177f8f5919f
 apps/13-crm.intent elm src/Worker.elm a80db3779849
-apps/13-crm.intent elm prompt b3b27ae69edb repair a32bbf0100db
-apps/13-crm.intent elm prompt-probe ea299e4e0c86 repair f8afe3436775
+apps/13-crm.intent elm prompt 508f5bd77fce repair d53c444f5eac
+apps/13-crm.intent elm prompt-probe ada0fe8bacec repair 7744f48ef4ae
 apps/13-crm.intent ts fmt.ts 298251d361c4
 apps/13-crm.intent ts index.html 95bd048620d6
 apps/13-crm.intent ts main.ts 8fd12f39e6ad
@@ -271,8 +271,8 @@ apps/13-crm.intent ts spec.ts b25138e6f0fe
 apps/13-crm.intent ts test-entry.ts 3d26263447aa
 apps/13-crm.intent ts tsconfig.json 422c41f4ed20
 apps/13-crm.intent ts ui.ts dd27cfcd27ef
-apps/13-crm.intent ts prompt 9f9729e20cf8 repair 2bba3e73b8b6
-apps/13-crm.intent ts prompt-probe 616d55548de9 repair 4a5bc0655701
+apps/13-crm.intent ts prompt 40020e5e376b repair 4c2e10c156a5
+apps/13-crm.intent ts prompt-probe 66bbf8f95889 repair 716da91bb439
 apps/14-supportdesk.intent elm elm.json 31d97d30272b
 apps/14-supportdesk.intent elm index.html dac3b8cf90ba
 apps/14-supportdesk.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -280,8 +280,8 @@ apps/14-supportdesk.intent elm src/Main.elm 42c44d3bef38
 apps/14-supportdesk.intent elm src/Spec.elm dc8b58e1949f
 apps/14-supportdesk.intent elm src/Ui.elm 3177f8f5919f
 apps/14-supportdesk.intent elm src/Worker.elm a80db3779849
-apps/14-supportdesk.intent elm prompt 4e28c84bc933 repair f79d2ac1afe8
-apps/14-supportdesk.intent elm prompt-probe a4faa0d3dff8 repair a741c184fd14
+apps/14-supportdesk.intent elm prompt 26e0659f3c26 repair 6f9a5a3e7a01
+apps/14-supportdesk.intent elm prompt-probe 283c35bf4662 repair 0e25e8c61d56
 apps/14-supportdesk.intent ts fmt.ts 298251d361c4
 apps/14-supportdesk.intent ts index.html 00494ed8b638
 apps/14-supportdesk.intent ts main.ts 8fd12f39e6ad
@@ -292,8 +292,8 @@ apps/14-supportdesk.intent ts spec.ts 16d21046b35e
 apps/14-supportdesk.intent ts test-entry.ts 3d26263447aa
 apps/14-supportdesk.intent ts tsconfig.json 422c41f4ed20
 apps/14-supportdesk.intent ts ui.ts dd27cfcd27ef
-apps/14-supportdesk.intent ts prompt 3d93c50c646e repair dec1999fa07d
-apps/14-supportdesk.intent ts prompt-probe b034f38797d0 repair 9f0c99ed7872
+apps/14-supportdesk.intent ts prompt 11261a9ad421 repair 62c6bd39e960
+apps/14-supportdesk.intent ts prompt-probe 377b382a18a3 repair 5bfc481b8917
 apps/15-tickets-ui.intent elm api.ts 46d4a5c5d1b8
 apps/15-tickets-ui.intent elm calls.ts df611533061a
 apps/15-tickets-ui.intent elm clock.ts 62f694ce400f
@@ -310,8 +310,8 @@ apps/15-tickets-ui.intent elm src/Ui.elm 3177f8f5919f
 apps/15-tickets-ui.intent elm src/Worker.elm e3f1a8421fe8
 apps/15-tickets-ui.intent elm store.ts f6246daaff84
 apps/15-tickets-ui.intent elm through.ts 675c867dcaf2
-apps/15-tickets-ui.intent elm prompt 05011eb4348b repair b4c14851e011
-apps/15-tickets-ui.intent elm prompt-probe 12b0e242cf23 repair 4641df635554
+apps/15-tickets-ui.intent elm prompt a78a0b5156ba repair d08314ece9fc
+apps/15-tickets-ui.intent elm prompt-probe 771cbf4d2477 repair f4ff3fd66d0a
 apps/15-tickets-ui.intent ts api.ts 46d4a5c5d1b8
 apps/15-tickets-ui.intent ts calls.ts df611533061a
 apps/15-tickets-ui.intent ts fmt.ts 298251d361c4
@@ -327,8 +327,8 @@ apps/15-tickets-ui.intent ts test-entry.ts 3d26263447aa
 apps/15-tickets-ui.intent ts through.ts 675c867dcaf2
 apps/15-tickets-ui.intent ts tsconfig.json 422c41f4ed20
 apps/15-tickets-ui.intent ts ui.ts dd27cfcd27ef
-apps/15-tickets-ui.intent ts prompt 22e6c6f85e48 repair 166ca9ea1f21
-apps/15-tickets-ui.intent ts prompt-probe 224546ddadf7 repair 5c0286d5db11
+apps/15-tickets-ui.intent ts prompt 38ca65fbce29 repair c1af4fc4e359
+apps/15-tickets-ui.intent ts prompt-probe b5e8b14d48d9 repair deb3e18cc681
 apps/16-desk-ui.intent elm api.ts 46d4a5c5d1b8
 apps/16-desk-ui.intent elm calls.ts df611533061a
 apps/16-desk-ui.intent elm clock.ts 62f694ce400f
@@ -349,8 +349,8 @@ apps/16-desk-ui.intent elm src/Ui.elm 3177f8f5919f
 apps/16-desk-ui.intent elm src/Worker.elm f293f9ec8a4e
 apps/16-desk-ui.intent elm store.ts f6246daaff84
 apps/16-desk-ui.intent elm through.ts 6ae720ce40d4
-apps/16-desk-ui.intent elm prompt bcffad8d9cf4 repair 938e5965f11b
-apps/16-desk-ui.intent elm prompt-probe 4e7f53cc30fb repair e0091fa497c4
+apps/16-desk-ui.intent elm prompt 7d68dfa56879 repair 379c0c623460
+apps/16-desk-ui.intent elm prompt-probe 9585f63d7371 repair add87e1afa2a
 apps/16-desk-ui.intent ts api.ts 46d4a5c5d1b8
 apps/16-desk-ui.intent ts calls.ts df611533061a
 apps/16-desk-ui.intent ts fmt.ts 298251d361c4
@@ -370,8 +370,8 @@ apps/16-desk-ui.intent ts test-entry.ts 3d26263447aa
 apps/16-desk-ui.intent ts through.ts 6ae720ce40d4
 apps/16-desk-ui.intent ts tsconfig.json 422c41f4ed20
 apps/16-desk-ui.intent ts ui.ts dd27cfcd27ef
-apps/16-desk-ui.intent ts prompt a8998912a91c repair b2b3ab943db9
-apps/16-desk-ui.intent ts prompt-probe c92fe7da277d repair e73aff1063bc
+apps/16-desk-ui.intent ts prompt 46675a3ac9d3 repair 9922cd3e9eb3
+apps/16-desk-ui.intent ts prompt-probe 82ffe4c713b3 repair 0bbcccba3e9b
 apps/17-habits.intent invariants-prompt 95c84fc689ae
 apps/17-habits.intent elm api.ts 46d4a5c5d1b8
 apps/17-habits.intent elm calls.ts df611533061a
@@ -389,8 +389,8 @@ apps/17-habits.intent elm src/Ui.elm 3177f8f5919f
 apps/17-habits.intent elm src/Worker.elm 7c66a5516081
 apps/17-habits.intent elm store.ts f6246daaff84
 apps/17-habits.intent elm through.ts 675c867dcaf2
-apps/17-habits.intent elm prompt 4f5b5bab9f9a repair ab1f0c965001
-apps/17-habits.intent elm prompt-probe 97be6cb9df97 repair a8efdee85409
+apps/17-habits.intent elm prompt 783510064a4d repair e31925ff1682
+apps/17-habits.intent elm prompt-probe cbcef660bc82 repair ebc62bc21b81
 apps/17-habits.intent ts api.ts 46d4a5c5d1b8
 apps/17-habits.intent ts clock.ts 62f694ce400f
 apps/17-habits.intent ts fmt.ts 298251d361c4
@@ -404,8 +404,8 @@ apps/17-habits.intent ts store.ts f6246daaff84
 apps/17-habits.intent ts test-entry.ts 3d26263447aa
 apps/17-habits.intent ts tsconfig.json 422c41f4ed20
 apps/17-habits.intent ts ui.ts dd27cfcd27ef
-apps/17-habits.intent ts prompt 00d69a1a51a0 repair 3fe3b611aa00
-apps/17-habits.intent ts prompt-probe 87102a95aaae repair 9fba13373376
+apps/17-habits.intent ts prompt 1c623e1a64af repair e30ea214f642
+apps/17-habits.intent ts prompt-probe d4598778d8dc repair 2ee1984fc904
 apps/18-checkout.intent elm api.ts 46d4a5c5d1b8
 apps/18-checkout.intent elm calls.ts df611533061a
 apps/18-checkout.intent elm clock.ts 62f694ce400f
@@ -426,8 +426,8 @@ apps/18-checkout.intent elm src/Ui.elm 3177f8f5919f
 apps/18-checkout.intent elm src/Worker.elm f293f9ec8a4e
 apps/18-checkout.intent elm store.ts f6246daaff84
 apps/18-checkout.intent elm through.ts e53115f2652b
-apps/18-checkout.intent elm prompt 5b8559ea2fd9 repair 5f69c93f5d18
-apps/18-checkout.intent elm prompt-probe 9d34a5f1850c repair 8e53b8a894b9
+apps/18-checkout.intent elm prompt c0a479b6731f repair 616fe7344748
+apps/18-checkout.intent elm prompt-probe fd3d74c7e5e9 repair 41e4dfcb2aa2
 apps/18-checkout.intent ts api.ts 46d4a5c5d1b8
 apps/18-checkout.intent ts calls.ts df611533061a
 apps/18-checkout.intent ts fmt.ts 298251d361c4
@@ -447,8 +447,8 @@ apps/18-checkout.intent ts test-entry.ts 3d26263447aa
 apps/18-checkout.intent ts through.ts e53115f2652b
 apps/18-checkout.intent ts tsconfig.json 422c41f4ed20
 apps/18-checkout.intent ts ui.ts dd27cfcd27ef
-apps/18-checkout.intent ts prompt 2c9ecfe27086 repair f3c8a4c9f204
-apps/18-checkout.intent ts prompt-probe c00f2d735a3e repair b825f90806d9
+apps/18-checkout.intent ts prompt fe6c4aeb9b1d repair e68b8a35f2b5
+apps/18-checkout.intent ts prompt-probe 2516b0059bfb repair c216b9a79992
 apps/19-ticket-pages.intent elm api.ts 46d4a5c5d1b8
 apps/19-ticket-pages.intent elm calls.ts df611533061a
 apps/19-ticket-pages.intent elm clock.ts 62f694ce400f
@@ -466,8 +466,8 @@ apps/19-ticket-pages.intent elm src/Ui.elm 3177f8f5919f
 apps/19-ticket-pages.intent elm src/Worker.elm da62600e3753
 apps/19-ticket-pages.intent elm store.ts f6246daaff84
 apps/19-ticket-pages.intent elm through.ts 675c867dcaf2
-apps/19-ticket-pages.intent elm prompt 7333ce5e00c8 repair d5e26abc371e
-apps/19-ticket-pages.intent elm prompt-probe 28dcb197312a repair ee1b5b64349a
+apps/19-ticket-pages.intent elm prompt 58a9f5dd8e67 repair 1cbfb47fc0ee
+apps/19-ticket-pages.intent elm prompt-probe d184735f5af2 repair 7fd720ab9bc4
 apps/19-ticket-pages.intent ts app-nav.ts 127228b2e6b6
 apps/19-ticket-pages.intent ts fmt.ts 298251d361c4
 apps/19-ticket-pages.intent ts index.html 09f63b066bcd
@@ -479,8 +479,8 @@ apps/19-ticket-pages.intent ts spec.ts 366f088201c1
 apps/19-ticket-pages.intent ts test-entry.ts 3d26263447aa
 apps/19-ticket-pages.intent ts tsconfig.json 422c41f4ed20
 apps/19-ticket-pages.intent ts ui.ts dd27cfcd27ef
-apps/19-ticket-pages.intent ts prompt a70c2c75867b repair 0f828d2ca7ff
-apps/19-ticket-pages.intent ts prompt-probe eeba03ae42b1 repair da83d6b7cee6
+apps/19-ticket-pages.intent ts prompt ef1f459ffb6e repair 20ad1ee8d315
+apps/19-ticket-pages.intent ts prompt-probe e6359e2eff16 repair 876753be410e
 apps/20-approval.intent elm api.ts 46d4a5c5d1b8
 apps/20-approval.intent elm calls.ts df611533061a
 apps/20-approval.intent elm clock.ts 62f694ce400f
@@ -501,8 +501,8 @@ apps/20-approval.intent elm src/Ui.elm 3177f8f5919f
 apps/20-approval.intent elm src/Worker.elm 1ca715a77eae
 apps/20-approval.intent elm store.ts f6246daaff84
 apps/20-approval.intent elm through.ts 4ca55046674e
-apps/20-approval.intent elm prompt e27056c4b64b repair a8c7fd6cc195
-apps/20-approval.intent elm prompt-probe 3cbea5939b88 repair 55a32028a79c
+apps/20-approval.intent elm prompt b5af097b3fba repair 927f79ee0ec7
+apps/20-approval.intent elm prompt-probe d7800e7edb37 repair 6e82d133d21f
 apps/20-approval.intent ts api.ts 46d4a5c5d1b8
 apps/20-approval.intent ts calls.ts df611533061a
 apps/20-approval.intent ts fmt.ts 298251d361c4
@@ -523,8 +523,8 @@ apps/20-approval.intent ts test-entry.ts 3d26263447aa
 apps/20-approval.intent ts through.ts 4ca55046674e
 apps/20-approval.intent ts tsconfig.json 422c41f4ed20
 apps/20-approval.intent ts ui.ts dd27cfcd27ef
-apps/20-approval.intent ts prompt f3f44c4653ef repair bf4f99396e29
-apps/20-approval.intent ts prompt-probe 6a7b30b7173b repair 64b23ff81c5c
+apps/20-approval.intent ts prompt 9b1d6ee24ca5 repair 3bc855f43d63
+apps/20-approval.intent ts prompt-probe d4f72dd8ff67 repair 44981072b451
 apps/21-tags.intent elm elm.json 31d97d30272b
 apps/21-tags.intent elm index.html 8fc82ea523d2
 apps/21-tags.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -532,8 +532,8 @@ apps/21-tags.intent elm src/Main.elm 42c44d3bef38
 apps/21-tags.intent elm src/Spec.elm 58c09f6e10f9
 apps/21-tags.intent elm src/Ui.elm 3177f8f5919f
 apps/21-tags.intent elm src/Worker.elm a80db3779849
-apps/21-tags.intent elm prompt 2f671fe87e7b repair aabc2b4d7c54
-apps/21-tags.intent elm prompt-probe 9e02282263da repair 864d014f9d45
+apps/21-tags.intent elm prompt 7901e7096698 repair 36aa228761eb
+apps/21-tags.intent elm prompt-probe 487697d172ce repair 0e8655bac1ea
 apps/21-tags.intent ts fmt.ts 298251d361c4
 apps/21-tags.intent ts index.html bf824bc19e20
 apps/21-tags.intent ts main.ts 8fd12f39e6ad
@@ -544,8 +544,8 @@ apps/21-tags.intent ts spec.ts 0ce07fd12c1e
 apps/21-tags.intent ts test-entry.ts 3d26263447aa
 apps/21-tags.intent ts tsconfig.json 422c41f4ed20
 apps/21-tags.intent ts ui.ts dd27cfcd27ef
-apps/21-tags.intent ts prompt b50c3b070be2 repair 89e28c7456af
-apps/21-tags.intent ts prompt-probe e1ac5dfbacc6 repair e8c1328e50f3
+apps/21-tags.intent ts prompt c8ae02637e20 repair abb04397523a
+apps/21-tags.intent ts prompt-probe 37d5bd1a90e6 repair 7a723e296a24
 apps/22-hash.intent elm elm.json 31d97d30272b
 apps/22-hash.intent elm index.html 57df301d75a6
 apps/22-hash.intent elm src/Crypto.elm f2638b4b3fd0
@@ -554,8 +554,8 @@ apps/22-hash.intent elm src/Main.elm 42c44d3bef38
 apps/22-hash.intent elm src/Spec.elm 16eac4d25b19
 apps/22-hash.intent elm src/Ui.elm 3177f8f5919f
 apps/22-hash.intent elm src/Worker.elm a80db3779849
-apps/22-hash.intent elm prompt 12ea20df13c4 repair 95a7f812ed9f
-apps/22-hash.intent elm prompt-probe df353896d560 repair 3cc480a8e786
+apps/22-hash.intent elm prompt 3bccdf22f297 repair a9411e76508f
+apps/22-hash.intent elm prompt-probe 02ebb9169cf1 repair bcbae79e89ff
 apps/22-hash.intent ts fmt.ts 298251d361c4
 apps/22-hash.intent ts index.html 1e74fa568761
 apps/22-hash.intent ts main.ts 8fd12f39e6ad
@@ -567,8 +567,8 @@ apps/22-hash.intent ts spec.ts 34feb932401b
 apps/22-hash.intent ts test-entry.ts 3d26263447aa
 apps/22-hash.intent ts tsconfig.json 422c41f4ed20
 apps/22-hash.intent ts ui.ts dd27cfcd27ef
-apps/22-hash.intent ts prompt fe2db32e7851 repair f2cf50f67354
-apps/22-hash.intent ts prompt-probe c0e51c5a38c3 repair c2b076d7121d
+apps/22-hash.intent ts prompt 3e2cb2ae87db repair a543fc64b15d
+apps/22-hash.intent ts prompt-probe 96cc2f8613ec repair 3695958729a1
 apps/23-tabs.intent elm api.ts 46d4a5c5d1b8
 apps/23-tabs.intent elm calls.ts df611533061a
 apps/23-tabs.intent elm clock.ts 62f694ce400f
@@ -586,8 +586,8 @@ apps/23-tabs.intent elm src/Ui.elm 3177f8f5919f
 apps/23-tabs.intent elm src/Worker.elm da62600e3753
 apps/23-tabs.intent elm store.ts f6246daaff84
 apps/23-tabs.intent elm through.ts 675c867dcaf2
-apps/23-tabs.intent elm prompt b100a78188d1 repair 0c9308b5c67f
-apps/23-tabs.intent elm prompt-probe 1298d0a7ed67 repair cccb0c009a14
+apps/23-tabs.intent elm prompt 8478e4532c4e repair 5f7b523a2ed9
+apps/23-tabs.intent elm prompt-probe 1234f5fdfe08 repair 398a56897aa1
 apps/23-tabs.intent ts app-nav.ts 5a741e0bf939
 apps/23-tabs.intent ts fmt.ts 298251d361c4
 apps/23-tabs.intent ts index.html 05484cc76514
@@ -599,8 +599,8 @@ apps/23-tabs.intent ts spec.ts 6f2adbba9707
 apps/23-tabs.intent ts test-entry.ts 3d26263447aa
 apps/23-tabs.intent ts tsconfig.json 422c41f4ed20
 apps/23-tabs.intent ts ui.ts dd27cfcd27ef
-apps/23-tabs.intent ts prompt 849854552119 repair cafa0c4cdd0d
-apps/23-tabs.intent ts prompt-probe 52d49ef7eed9 repair 65382596ddea
+apps/23-tabs.intent ts prompt ffc7f5013d57 repair d87d6a13c116
+apps/23-tabs.intent ts prompt-probe 7c2487c5c4aa repair d7d87a8dfacf
 apps/24-references.intent elm elm.json 31d97d30272b
 apps/24-references.intent elm index.html 82f16cdd2dbf
 apps/24-references.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -608,8 +608,8 @@ apps/24-references.intent elm src/Main.elm 42c44d3bef38
 apps/24-references.intent elm src/Spec.elm 2369ac30a445
 apps/24-references.intent elm src/Ui.elm 3177f8f5919f
 apps/24-references.intent elm src/Worker.elm 5afad40d6427
-apps/24-references.intent elm prompt d2528dbc67c0 repair a1e70bf6c392
-apps/24-references.intent elm prompt-probe 7eb500550687 repair fbb12f8bd2d1
+apps/24-references.intent elm prompt 0be9f6125808 repair 7934fa505f88
+apps/24-references.intent elm prompt-probe c74c9a56ed22 repair f5d13276f4f5
 apps/24-references.intent ts fmt.ts 298251d361c4
 apps/24-references.intent ts index.html b64bb3020109
 apps/24-references.intent ts main.ts 8fd12f39e6ad
@@ -620,8 +620,8 @@ apps/24-references.intent ts spec.ts 4713b94fd135
 apps/24-references.intent ts test-entry.ts 3d26263447aa
 apps/24-references.intent ts tsconfig.json 422c41f4ed20
 apps/24-references.intent ts ui.ts dd27cfcd27ef
-apps/24-references.intent ts prompt 06c91c485e37 repair 3abfe9b7aae7
-apps/24-references.intent ts prompt-probe 8f504654bc71 repair 0c1bef87fc7c
+apps/24-references.intent ts prompt cf0a077d7c35 repair 6b65ec44220b
+apps/24-references.intent ts prompt-probe 303c7b5bc08e repair d829b50a8a27
 apps/25-row-edit.intent elm elm.json 31d97d30272b
 apps/25-row-edit.intent elm index.html ccbd8a353e1f
 apps/25-row-edit.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -629,8 +629,8 @@ apps/25-row-edit.intent elm src/Main.elm 42c44d3bef38
 apps/25-row-edit.intent elm src/Spec.elm 6fac84fa435b
 apps/25-row-edit.intent elm src/Ui.elm 3177f8f5919f
 apps/25-row-edit.intent elm src/Worker.elm a80db3779849
-apps/25-row-edit.intent elm prompt 04eb81bb0aea repair eaa84cf946f8
-apps/25-row-edit.intent elm prompt-probe f51d265a86ed repair 14b997580059
+apps/25-row-edit.intent elm prompt 5d89b99ca571 repair cd6e9cb3f9b1
+apps/25-row-edit.intent elm prompt-probe bfac853f7f6b repair 2fecf0f3be09
 apps/25-row-edit.intent ts fmt.ts 298251d361c4
 apps/25-row-edit.intent ts index.html c1a5b9a9a7fe
 apps/25-row-edit.intent ts main.ts 8fd12f39e6ad
@@ -641,8 +641,8 @@ apps/25-row-edit.intent ts spec.ts ed542b86f260
 apps/25-row-edit.intent ts test-entry.ts 3d26263447aa
 apps/25-row-edit.intent ts tsconfig.json 422c41f4ed20
 apps/25-row-edit.intent ts ui.ts dd27cfcd27ef
-apps/25-row-edit.intent ts prompt 628d948d4870 repair 010a9639ab36
-apps/25-row-edit.intent ts prompt-probe 407cbfff1f8b repair 3bcd28337d93
+apps/25-row-edit.intent ts prompt 248eaf097eaf repair 28714209e9b7
+apps/25-row-edit.intent ts prompt-probe 1ddc53a523e3 repair ae73c87a41ac
 apps/26-row-status.intent elm elm.json 31d97d30272b
 apps/26-row-status.intent elm index.html da45dfca4abc
 apps/26-row-status.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -650,8 +650,8 @@ apps/26-row-status.intent elm src/Main.elm 42c44d3bef38
 apps/26-row-status.intent elm src/Spec.elm 82b7af7d14f4
 apps/26-row-status.intent elm src/Ui.elm 3177f8f5919f
 apps/26-row-status.intent elm src/Worker.elm a80db3779849
-apps/26-row-status.intent elm prompt d9ad50260a9b repair 06eebe648f06
-apps/26-row-status.intent elm prompt-probe dade4220f881 repair feddf761d676
+apps/26-row-status.intent elm prompt 332443aaae44 repair dba516cf2715
+apps/26-row-status.intent elm prompt-probe 845ce0fe5aa7 repair 883009141c82
 apps/26-row-status.intent ts fmt.ts 298251d361c4
 apps/26-row-status.intent ts index.html b0ebfefce186
 apps/26-row-status.intent ts main.ts 8fd12f39e6ad
@@ -662,8 +662,8 @@ apps/26-row-status.intent ts spec.ts 8dbaecdea86a
 apps/26-row-status.intent ts test-entry.ts 3d26263447aa
 apps/26-row-status.intent ts tsconfig.json 422c41f4ed20
 apps/26-row-status.intent ts ui.ts dd27cfcd27ef
-apps/26-row-status.intent ts prompt 97eff8a754f7 repair 702040d26beb
-apps/26-row-status.intent ts prompt-probe d884fa1cd3cb repair ae88c5471106
+apps/26-row-status.intent ts prompt 1fe3c6bf6ff3 repair 131922a395f7
+apps/26-row-status.intent ts prompt-probe 658dfbc6a3ff repair e55e420f4edd
 apps/27-row-assign.intent elm elm.json 31d97d30272b
 apps/27-row-assign.intent elm index.html 071e4790f3b3
 apps/27-row-assign.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -671,8 +671,8 @@ apps/27-row-assign.intent elm src/Main.elm 42c44d3bef38
 apps/27-row-assign.intent elm src/Spec.elm 8cbdba682300
 apps/27-row-assign.intent elm src/Ui.elm 3177f8f5919f
 apps/27-row-assign.intent elm src/Worker.elm a80db3779849
-apps/27-row-assign.intent elm prompt a060d3ec5183 repair 889c324c8314
-apps/27-row-assign.intent elm prompt-probe 2ca527acdc23 repair e06c606d3363
+apps/27-row-assign.intent elm prompt 7ef24c2d9804 repair 685cfd95be36
+apps/27-row-assign.intent elm prompt-probe 06949b5c47a0 repair 9110e8e8406f
 apps/27-row-assign.intent ts fmt.ts 298251d361c4
 apps/27-row-assign.intent ts index.html 21a79c21d1f5
 apps/27-row-assign.intent ts main.ts 8fd12f39e6ad
@@ -683,8 +683,8 @@ apps/27-row-assign.intent ts spec.ts 2e6060a23c8e
 apps/27-row-assign.intent ts test-entry.ts 3d26263447aa
 apps/27-row-assign.intent ts tsconfig.json 422c41f4ed20
 apps/27-row-assign.intent ts ui.ts dd27cfcd27ef
-apps/27-row-assign.intent ts prompt 2892adbddcd6 repair 2e185fcbb546
-apps/27-row-assign.intent ts prompt-probe f7a3d0c9470e repair 7877e0822b16
+apps/27-row-assign.intent ts prompt 9050aa7309a8 repair 7932e6cb82ae
+apps/27-row-assign.intent ts prompt-probe 5ad835438ebf repair 9b3260232982
 apps/28-alerts.intent elm api.ts 46d4a5c5d1b8
 apps/28-alerts.intent elm calls.ts df611533061a
 apps/28-alerts.intent elm clock.ts 62f694ce400f
@@ -701,8 +701,8 @@ apps/28-alerts.intent elm src/Ui.elm 3177f8f5919f
 apps/28-alerts.intent elm src/Worker.elm e3f1a8421fe8
 apps/28-alerts.intent elm store.ts f6246daaff84
 apps/28-alerts.intent elm through.ts 675c867dcaf2
-apps/28-alerts.intent elm prompt f183881e282b repair e4b2ee3f748a
-apps/28-alerts.intent elm prompt-probe 5ed01b23a05f repair 4a5e220334bc
+apps/28-alerts.intent elm prompt da005694f178 repair dd0c86f86496
+apps/28-alerts.intent elm prompt-probe c9ba9054d44a repair c824c78650bd
 apps/28-alerts.intent ts api.ts 46d4a5c5d1b8
 apps/28-alerts.intent ts calls.ts df611533061a
 apps/28-alerts.intent ts fmt.ts 298251d361c4
@@ -718,8 +718,8 @@ apps/28-alerts.intent ts test-entry.ts 3d26263447aa
 apps/28-alerts.intent ts through.ts 675c867dcaf2
 apps/28-alerts.intent ts tsconfig.json 422c41f4ed20
 apps/28-alerts.intent ts ui.ts dd27cfcd27ef
-apps/28-alerts.intent ts prompt 9befffa4d5ce repair c68bf7ad4eef
-apps/28-alerts.intent ts prompt-probe c26351d2eb52 repair 0445424982a7
+apps/28-alerts.intent ts prompt 20ff7888eaa2 repair cb5e852883f9
+apps/28-alerts.intent ts prompt-probe 0247f6329a1e repair 735eab2d3668
 apps/29-sized.intent elm api.ts 46d4a5c5d1b8
 apps/29-sized.intent elm calls.ts df611533061a
 apps/29-sized.intent elm clock.ts 62f694ce400f
@@ -736,8 +736,8 @@ apps/29-sized.intent elm src/Ui.elm 3177f8f5919f
 apps/29-sized.intent elm src/Worker.elm 9ae84e9c3f7c
 apps/29-sized.intent elm store.ts f6246daaff84
 apps/29-sized.intent elm through.ts 675c867dcaf2
-apps/29-sized.intent elm prompt 6e10cadf9003 repair 99a324713776
-apps/29-sized.intent elm prompt-probe 9cd30b5316a6 repair 3e0c9191a5d9
+apps/29-sized.intent elm prompt 7c1836e127ea repair 6063499fc998
+apps/29-sized.intent elm prompt-probe 4a75cddebc6b repair 3b60525cfbeb
 apps/29-sized.intent ts clock.ts 62f694ce400f
 apps/29-sized.intent ts fmt.ts 298251d361c4
 apps/29-sized.intent ts index.html 3da2f68d1592
@@ -749,8 +749,8 @@ apps/29-sized.intent ts spec.ts 5c1f06124f0d
 apps/29-sized.intent ts test-entry.ts 3d26263447aa
 apps/29-sized.intent ts tsconfig.json 422c41f4ed20
 apps/29-sized.intent ts ui.ts dd27cfcd27ef
-apps/29-sized.intent ts prompt 03da677b8530 repair 3433478b7c42
-apps/29-sized.intent ts prompt-probe 779195945c6e repair 66ca2ce0047c
+apps/29-sized.intent ts prompt 8f43cc21c4fd repair bf4054759405
+apps/29-sized.intent ts prompt-probe ce64e4de9e12 repair 38db0d26ec11
 apps/30-urgent-watch.intent elm api.ts 46d4a5c5d1b8
 apps/30-urgent-watch.intent elm calls.ts df611533061a
 apps/30-urgent-watch.intent elm clock.ts 62f694ce400f
@@ -767,8 +767,8 @@ apps/30-urgent-watch.intent elm src/Ui.elm 3177f8f5919f
 apps/30-urgent-watch.intent elm src/Worker.elm 838b0b3fab7f
 apps/30-urgent-watch.intent elm store.ts f6246daaff84
 apps/30-urgent-watch.intent elm through.ts 675c867dcaf2
-apps/30-urgent-watch.intent elm prompt bcafc4a9dcd7 repair a9a561228e8e
-apps/30-urgent-watch.intent elm prompt-probe 424b40887b67 repair 3d58b1a6d3ac
+apps/30-urgent-watch.intent elm prompt bad56c382c86 repair 12ab39d6b4eb
+apps/30-urgent-watch.intent elm prompt-probe b39cc7d18420 repair 81a27c730a01
 apps/30-urgent-watch.intent ts api.ts 46d4a5c5d1b8
 apps/30-urgent-watch.intent ts calls.ts df611533061a
 apps/30-urgent-watch.intent ts fmt.ts 298251d361c4
@@ -786,8 +786,8 @@ apps/30-urgent-watch.intent ts test-entry.ts 3d26263447aa
 apps/30-urgent-watch.intent ts through.ts 675c867dcaf2
 apps/30-urgent-watch.intent ts tsconfig.json 422c41f4ed20
 apps/30-urgent-watch.intent ts ui.ts dd27cfcd27ef
-apps/30-urgent-watch.intent ts prompt 24c2a5a54e46 repair 0c5d9204901b
-apps/30-urgent-watch.intent ts prompt-probe 4d092e31a1fe repair 5bf03e8aca70
+apps/30-urgent-watch.intent ts prompt 8e5cff4f95c3 repair a01b59aa76db
+apps/30-urgent-watch.intent ts prompt-probe 91a2772440ba repair c9c16c51f423
 apps/31-frozen-approvals.intent changes.json 7b8ba4a186cd
 apps/31-frozen-approvals.intent invariants-prompt 156c37b40175
 apps/31-frozen-approvals.intent elm elm.json 31d97d30272b
@@ -797,8 +797,8 @@ apps/31-frozen-approvals.intent elm src/Main.elm 42c44d3bef38
 apps/31-frozen-approvals.intent elm src/Spec.elm 353c07b35a4f
 apps/31-frozen-approvals.intent elm src/Ui.elm 3177f8f5919f
 apps/31-frozen-approvals.intent elm src/Worker.elm 5afad40d6427
-apps/31-frozen-approvals.intent elm prompt 496a55ee4a22 repair 4d6c7c8493dc
-apps/31-frozen-approvals.intent elm prompt-probe 8ec6c92bea51 repair b2c0d917638c
+apps/31-frozen-approvals.intent elm prompt 7ec123553028 repair 56273c81bd2e
+apps/31-frozen-approvals.intent elm prompt-probe 4f9d07a93309 repair e3d92c2d99a4
 apps/31-frozen-approvals.intent ts fmt.ts 298251d361c4
 apps/31-frozen-approvals.intent ts index.html bfd55fc244e9
 apps/31-frozen-approvals.intent ts main.ts 8fd12f39e6ad
@@ -809,8 +809,8 @@ apps/31-frozen-approvals.intent ts spec.ts bee7df004fa6
 apps/31-frozen-approvals.intent ts test-entry.ts 3d26263447aa
 apps/31-frozen-approvals.intent ts tsconfig.json 422c41f4ed20
 apps/31-frozen-approvals.intent ts ui.ts dd27cfcd27ef
-apps/31-frozen-approvals.intent ts prompt 0bf037e83366 repair 54e5c81d40ee
-apps/31-frozen-approvals.intent ts prompt-probe 6a71cca61456 repair c965b5b2858f
+apps/31-frozen-approvals.intent ts prompt 81d338e16f0d repair c7ad6a930415
+apps/31-frozen-approvals.intent ts prompt-probe b3fad39bed4d repair d9f51e6c7c7c
 apps/32-checklists.intent invariants-prompt 523dda8b2def
 apps/32-checklists.intent elm api.ts 46d4a5c5d1b8
 apps/32-checklists.intent elm calls.ts df611533061a
@@ -828,8 +828,8 @@ apps/32-checklists.intent elm src/Ui.elm 3177f8f5919f
 apps/32-checklists.intent elm src/Worker.elm 0ca64e73dfb0
 apps/32-checklists.intent elm store.ts f6246daaff84
 apps/32-checklists.intent elm through.ts 675c867dcaf2
-apps/32-checklists.intent elm prompt e3f55d3c8861 repair d8d59754db24
-apps/32-checklists.intent elm prompt-probe 47c164941763 repair 4452944e1f6c
+apps/32-checklists.intent elm prompt aba0c57a45da repair 1683d2cbc430
+apps/32-checklists.intent elm prompt-probe a1b5d48cea59 repair 527c0c649969
 apps/32-checklists.intent ts api.ts 46d4a5c5d1b8
 apps/32-checklists.intent ts fmt.ts 298251d361c4
 apps/32-checklists.intent ts index.html fe09e9e07285
@@ -842,8 +842,8 @@ apps/32-checklists.intent ts store.ts f6246daaff84
 apps/32-checklists.intent ts test-entry.ts 3d26263447aa
 apps/32-checklists.intent ts tsconfig.json 422c41f4ed20
 apps/32-checklists.intent ts ui.ts dd27cfcd27ef
-apps/32-checklists.intent ts prompt b51b0ad10e95 repair a38df1728996
-apps/32-checklists.intent ts prompt-probe d1a264865890 repair 73cb19b21afe
+apps/32-checklists.intent ts prompt 321b974530d4 repair 5a1241289d27
+apps/32-checklists.intent ts prompt-probe 83b457a66213 repair 6e292d5f951a
 apps/33-order-lines.intent changes.json 81dc6a9dcafe
 apps/33-order-lines.intent elm api.ts 46d4a5c5d1b8
 apps/33-order-lines.intent elm calls.ts df611533061a
@@ -861,8 +861,8 @@ apps/33-order-lines.intent elm src/Ui.elm 3177f8f5919f
 apps/33-order-lines.intent elm src/Worker.elm 0ca64e73dfb0
 apps/33-order-lines.intent elm store.ts f6246daaff84
 apps/33-order-lines.intent elm through.ts 675c867dcaf2
-apps/33-order-lines.intent elm prompt 03c66bb61979 repair 20e3f0d43c38
-apps/33-order-lines.intent elm prompt-probe 84e89efade0e repair 0d893e739ace
+apps/33-order-lines.intent elm prompt 10c85121712e repair ad271316fc10
+apps/33-order-lines.intent elm prompt-probe 96ca36a2ab52 repair 55e6e2b3a3bf
 apps/33-order-lines.intent ts api.ts 46d4a5c5d1b8
 apps/33-order-lines.intent ts fmt.ts 298251d361c4
 apps/33-order-lines.intent ts index.html a4d7a9837ff2
@@ -875,8 +875,8 @@ apps/33-order-lines.intent ts store.ts f6246daaff84
 apps/33-order-lines.intent ts test-entry.ts 3d26263447aa
 apps/33-order-lines.intent ts tsconfig.json 422c41f4ed20
 apps/33-order-lines.intent ts ui.ts dd27cfcd27ef
-apps/33-order-lines.intent ts prompt bc7610eba156 repair 2b2bd691c9d6
-apps/33-order-lines.intent ts prompt-probe 9e16ee993f8e repair 2d52243da9a2
+apps/33-order-lines.intent ts prompt 317be176bfe0 repair 94a96a8995fb
+apps/33-order-lines.intent ts prompt-probe 6114cdf7ab44 repair cd29aeede679
 apps/34-ref-navigation.intent elm elm.json 31d97d30272b
 apps/34-ref-navigation.intent elm index.html 54d6d1070309
 apps/34-ref-navigation.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -884,8 +884,8 @@ apps/34-ref-navigation.intent elm src/Main.elm 42c44d3bef38
 apps/34-ref-navigation.intent elm src/Spec.elm 89f7ef3a38ac
 apps/34-ref-navigation.intent elm src/Ui.elm 3177f8f5919f
 apps/34-ref-navigation.intent elm src/Worker.elm 5afad40d6427
-apps/34-ref-navigation.intent elm prompt 3ee80047b0cc repair 1642992d6ffd
-apps/34-ref-navigation.intent elm prompt-probe f4a6e832cad2 repair 46a59ee9a0d8
+apps/34-ref-navigation.intent elm prompt dcebf666c177 repair c904d3e3aded
+apps/34-ref-navigation.intent elm prompt-probe 838e67792137 repair e501270fdd88
 apps/34-ref-navigation.intent ts fmt.ts 298251d361c4
 apps/34-ref-navigation.intent ts index.html b5456c47a6e4
 apps/34-ref-navigation.intent ts main.ts 8fd12f39e6ad
@@ -896,8 +896,8 @@ apps/34-ref-navigation.intent ts spec.ts 4d8cad2f1410
 apps/34-ref-navigation.intent ts test-entry.ts 3d26263447aa
 apps/34-ref-navigation.intent ts tsconfig.json 422c41f4ed20
 apps/34-ref-navigation.intent ts ui.ts dd27cfcd27ef
-apps/34-ref-navigation.intent ts prompt 134e6142e5fe repair 02f4754f25c6
-apps/34-ref-navigation.intent ts prompt-probe f656f3447337 repair b4a1649ecf35
+apps/34-ref-navigation.intent ts prompt b28547780d91 repair d34a23cebaa3
+apps/34-ref-navigation.intent ts prompt-probe 3b948bbb76ac repair fe1c125cc84a
 apps/35-recipes.intent elm api.ts 46d4a5c5d1b8
 apps/35-recipes.intent elm calls.ts df611533061a
 apps/35-recipes.intent elm clock.ts 62f694ce400f
@@ -914,8 +914,8 @@ apps/35-recipes.intent elm src/Ui.elm 3177f8f5919f
 apps/35-recipes.intent elm src/Worker.elm e4356c4d789f
 apps/35-recipes.intent elm store.ts f6246daaff84
 apps/35-recipes.intent elm through.ts 675c867dcaf2
-apps/35-recipes.intent elm prompt 37a89c5b2822 repair 626e19318161
-apps/35-recipes.intent elm prompt-probe 066f58295d67 repair 184e3f0d787f
+apps/35-recipes.intent elm prompt 9be6dbae0444 repair a7ea17f8c272
+apps/35-recipes.intent elm prompt-probe 47fd678a43c4 repair 38e28139d0f7
 apps/35-recipes.intent ts api.ts 46d4a5c5d1b8
 apps/35-recipes.intent ts calls.ts df611533061a
 apps/35-recipes.intent ts fmt.ts 298251d361c4
@@ -931,8 +931,8 @@ apps/35-recipes.intent ts test-entry.ts 3d26263447aa
 apps/35-recipes.intent ts through.ts 675c867dcaf2
 apps/35-recipes.intent ts tsconfig.json 422c41f4ed20
 apps/35-recipes.intent ts ui.ts dd27cfcd27ef
-apps/35-recipes.intent ts prompt 2c7db5bfe669 repair 0935d2c6a677
-apps/35-recipes.intent ts prompt-probe 31fa2fba676a repair 4c74361c9319
+apps/35-recipes.intent ts prompt 787d7f1d087f repair dac54c463d25
+apps/35-recipes.intent ts prompt-probe dcadad7ed3ca repair 0972123e6d70
 apps/36-table.intent invariants-prompt 2577ff8af35c
 apps/36-table.intent elm api.ts 46d4a5c5d1b8
 apps/36-table.intent elm calls.ts df611533061a
@@ -953,8 +953,8 @@ apps/36-table.intent elm src/Ui.elm 3177f8f5919f
 apps/36-table.intent elm src/Worker.elm c6509da1874c
 apps/36-table.intent elm store.ts f6246daaff84
 apps/36-table.intent elm through.ts 675c867dcaf2
-apps/36-table.intent elm prompt b6d7cbe9587e repair 4d9c381bb7ae
-apps/36-table.intent elm prompt-probe b3520a3242d3 repair 3fe614372e44
+apps/36-table.intent elm prompt 8bd6cf91f8a0 repair 5f45b872b8f7
+apps/36-table.intent elm prompt-probe 00bcecf18d6a repair 11e2747ee3f3
 apps/36-table.intent ts draw.ts 9f4969d44078
 apps/36-table.intent ts fmt.ts 298251d361c4
 apps/36-table.intent ts index.html 5da68f7be489
@@ -967,8 +967,8 @@ apps/36-table.intent ts spec.ts e2d09c5e7fce
 apps/36-table.intent ts test-entry.ts 3d26263447aa
 apps/36-table.intent ts tsconfig.json 422c41f4ed20
 apps/36-table.intent ts ui.ts dd27cfcd27ef
-apps/36-table.intent ts prompt 98682889f860 repair 2061bc884860
-apps/36-table.intent ts prompt-probe 5381f6353ae8 repair 1c641ffa6150
+apps/36-table.intent ts prompt 2e2abeaf29db repair 40db1477622c
+apps/36-table.intent ts prompt-probe 8a23ef6acd30 repair 5ed77250dbc5
 apps/37-expenses-ui.intent elm api.ts 46d4a5c5d1b8
 apps/37-expenses-ui.intent elm calls.ts df611533061a
 apps/37-expenses-ui.intent elm clock.ts 62f694ce400f
@@ -989,8 +989,8 @@ apps/37-expenses-ui.intent elm src/Ui.elm 3177f8f5919f
 apps/37-expenses-ui.intent elm src/Worker.elm f293f9ec8a4e
 apps/37-expenses-ui.intent elm store.ts f6246daaff84
 apps/37-expenses-ui.intent elm through.ts 471df26372b2
-apps/37-expenses-ui.intent elm prompt 327c49966ae1 repair 5d048bc45345
-apps/37-expenses-ui.intent elm prompt-probe cb5854799acc repair 7dcb40677068
+apps/37-expenses-ui.intent elm prompt afe17301b7da repair cc2f1bec0105
+apps/37-expenses-ui.intent elm prompt-probe 06303ae3276d repair 74bd3218c42c
 apps/37-expenses-ui.intent ts api.ts 46d4a5c5d1b8
 apps/37-expenses-ui.intent ts calls.ts df611533061a
 apps/37-expenses-ui.intent ts fmt.ts 298251d361c4
@@ -1010,8 +1010,8 @@ apps/37-expenses-ui.intent ts test-entry.ts 3d26263447aa
 apps/37-expenses-ui.intent ts through.ts 471df26372b2
 apps/37-expenses-ui.intent ts tsconfig.json 422c41f4ed20
 apps/37-expenses-ui.intent ts ui.ts dd27cfcd27ef
-apps/37-expenses-ui.intent ts prompt 5b76ede1ef08 repair e7ad83eb7a9f
-apps/37-expenses-ui.intent ts prompt-probe a95eab82ad8b repair c861e0365c65
+apps/37-expenses-ui.intent ts prompt b05c91ad46df repair f701a9a83a04
+apps/37-expenses-ui.intent ts prompt-probe a284806c8a3e repair 41fb15ef6587
 apps/38-raffle.intent elm api.ts 46d4a5c5d1b8
 apps/38-raffle.intent elm calls.ts df611533061a
 apps/38-raffle.intent elm clock.ts 62f694ce400f
@@ -1030,8 +1030,8 @@ apps/38-raffle.intent elm src/Ui.elm 3177f8f5919f
 apps/38-raffle.intent elm src/Worker.elm e3f1a8421fe8
 apps/38-raffle.intent elm store.ts f6246daaff84
 apps/38-raffle.intent elm through.ts 675c867dcaf2
-apps/38-raffle.intent elm prompt 8b97bc647e6f repair ff0360ed39f4
-apps/38-raffle.intent elm prompt-probe 7e79008fdbe2 repair c12a59137e9d
+apps/38-raffle.intent elm prompt b1465f103e0b repair 33d1b49a382b
+apps/38-raffle.intent elm prompt-probe b100e8deac52 repair a057b373e665
 apps/38-raffle.intent ts api.ts 46d4a5c5d1b8
 apps/38-raffle.intent ts calls.ts df611533061a
 apps/38-raffle.intent ts fmt.ts 298251d361c4
@@ -1047,8 +1047,8 @@ apps/38-raffle.intent ts test-entry.ts 3d26263447aa
 apps/38-raffle.intent ts through.ts 675c867dcaf2
 apps/38-raffle.intent ts tsconfig.json 422c41f4ed20
 apps/38-raffle.intent ts ui.ts dd27cfcd27ef
-apps/38-raffle.intent ts prompt 9e2003702476 repair 615c584a16c8
-apps/38-raffle.intent ts prompt-probe 298b3ecc5643 repair 2913c243e778
+apps/38-raffle.intent ts prompt 172f65b55912 repair f023a688d91d
+apps/38-raffle.intent ts prompt-probe 133d179f4bd5 repair b377748ec807
 apps/39-weather.intent elm api.ts 46d4a5c5d1b8
 apps/39-weather.intent elm calls.ts df611533061a
 apps/39-weather.intent elm clock.ts 62f694ce400f
@@ -1065,8 +1065,8 @@ apps/39-weather.intent elm src/Ui.elm 3177f8f5919f
 apps/39-weather.intent elm src/Worker.elm e3f1a8421fe8
 apps/39-weather.intent elm store.ts f6246daaff84
 apps/39-weather.intent elm through.ts 675c867dcaf2
-apps/39-weather.intent elm prompt 5771d8a484de repair 56e61d255df1
-apps/39-weather.intent elm prompt-probe b03aae47155d repair 5ada981fd672
+apps/39-weather.intent elm prompt 94414a8de9d4 repair b61ba2bf803a
+apps/39-weather.intent elm prompt-probe cd557faf8114 repair fb478b238e9d
 apps/39-weather.intent ts api.ts 46d4a5c5d1b8
 apps/39-weather.intent ts calls.ts df611533061a
 apps/39-weather.intent ts fmt.ts 298251d361c4
@@ -1082,8 +1082,8 @@ apps/39-weather.intent ts test-entry.ts 3d26263447aa
 apps/39-weather.intent ts through.ts 675c867dcaf2
 apps/39-weather.intent ts tsconfig.json 422c41f4ed20
 apps/39-weather.intent ts ui.ts dd27cfcd27ef
-apps/39-weather.intent ts prompt fa4b3a1aa377 repair 3c21600942e1
-apps/39-weather.intent ts prompt-probe 183015cfe517 repair b5e6a3b5e806
+apps/39-weather.intent ts prompt 3a45615efb8e repair 7f4baa41ad47
+apps/39-weather.intent ts prompt-probe b20f0ac3bc4d repair 91bee7c87564
 apps/40-theme.intent elm api.ts 46d4a5c5d1b8
 apps/40-theme.intent elm calls.ts df611533061a
 apps/40-theme.intent elm clock.ts 62f694ce400f
@@ -1100,8 +1100,8 @@ apps/40-theme.intent elm src/Ui.elm 3177f8f5919f
 apps/40-theme.intent elm src/Worker.elm e3f1a8421fe8
 apps/40-theme.intent elm store.ts f6246daaff84
 apps/40-theme.intent elm through.ts 675c867dcaf2
-apps/40-theme.intent elm prompt d6438e16607b repair 165650e853d7
-apps/40-theme.intent elm prompt-probe dbeee911897f repair 818b679e12d5
+apps/40-theme.intent elm prompt ce6723ab97e2 repair 9a22aad63ee8
+apps/40-theme.intent elm prompt-probe a9b74f6a09e9 repair 121213ce76b3
 apps/40-theme.intent ts api.ts 46d4a5c5d1b8
 apps/40-theme.intent ts calls.ts df611533061a
 apps/40-theme.intent ts fmt.ts 298251d361c4
@@ -1117,8 +1117,8 @@ apps/40-theme.intent ts test-entry.ts 3d26263447aa
 apps/40-theme.intent ts through.ts 675c867dcaf2
 apps/40-theme.intent ts tsconfig.json 422c41f4ed20
 apps/40-theme.intent ts ui.ts dd27cfcd27ef
-apps/40-theme.intent ts prompt 45bc9e20f378 repair d1fabdd90709
-apps/40-theme.intent ts prompt-probe 376cbf6fcff1 repair 7a1c34b3b4b7
+apps/40-theme.intent ts prompt cf2377d73338 repair 66906b541466
+apps/40-theme.intent ts prompt-probe 8666b95888b0 repair 39f43949fddc
 apps/41-reminders.intent elm api.ts 46d4a5c5d1b8
 apps/41-reminders.intent elm calls.ts df611533061a
 apps/41-reminders.intent elm clock.ts 62f694ce400f
@@ -1135,8 +1135,8 @@ apps/41-reminders.intent elm src/Ui.elm 3177f8f5919f
 apps/41-reminders.intent elm src/Worker.elm e3f1a8421fe8
 apps/41-reminders.intent elm store.ts f6246daaff84
 apps/41-reminders.intent elm through.ts 675c867dcaf2
-apps/41-reminders.intent elm prompt 9f3984527c0b repair 04520a61e8b1
-apps/41-reminders.intent elm prompt-probe 331fe53ea31b repair fbdf52b265d5
+apps/41-reminders.intent elm prompt ba55b8537ec2 repair def66f95c565
+apps/41-reminders.intent elm prompt-probe 9fcf214adf81 repair 3c0b944a2876
 apps/41-reminders.intent ts api.ts 46d4a5c5d1b8
 apps/41-reminders.intent ts calls.ts df611533061a
 apps/41-reminders.intent ts fmt.ts 298251d361c4
@@ -1152,8 +1152,8 @@ apps/41-reminders.intent ts test-entry.ts 3d26263447aa
 apps/41-reminders.intent ts through.ts 675c867dcaf2
 apps/41-reminders.intent ts tsconfig.json 422c41f4ed20
 apps/41-reminders.intent ts ui.ts dd27cfcd27ef
-apps/41-reminders.intent ts prompt 9ace69c28fed repair 4e355ec5d541
-apps/41-reminders.intent ts prompt-probe b7ac655687e7 repair 396a92e9f516
+apps/41-reminders.intent ts prompt 3c4b7313fc78 repair 3e261f71197b
+apps/41-reminders.intent ts prompt-probe d84ea228397a repair fdb9fb73b780
 apps/42-schedules.intent elm api.ts 46d4a5c5d1b8
 apps/42-schedules.intent elm calls.ts df611533061a
 apps/42-schedules.intent elm clock.ts 62f694ce400f
@@ -1170,8 +1170,8 @@ apps/42-schedules.intent elm src/Ui.elm 3177f8f5919f
 apps/42-schedules.intent elm src/Worker.elm e3f1a8421fe8
 apps/42-schedules.intent elm store.ts f6246daaff84
 apps/42-schedules.intent elm through.ts 675c867dcaf2
-apps/42-schedules.intent elm prompt 159ac6b38572 repair dce00fdc6e3f
-apps/42-schedules.intent elm prompt-probe d644eff4d314 repair e2bb48c439a3
+apps/42-schedules.intent elm prompt c99b63fc961e repair 303a0f51f209
+apps/42-schedules.intent elm prompt-probe cdb670989524 repair 98790f734239
 apps/42-schedules.intent ts api.ts 46d4a5c5d1b8
 apps/42-schedules.intent ts calls.ts df611533061a
 apps/42-schedules.intent ts fmt.ts 298251d361c4
@@ -1187,8 +1187,29 @@ apps/42-schedules.intent ts test-entry.ts 3d26263447aa
 apps/42-schedules.intent ts through.ts 675c867dcaf2
 apps/42-schedules.intent ts tsconfig.json 422c41f4ed20
 apps/42-schedules.intent ts ui.ts dd27cfcd27ef
-apps/42-schedules.intent ts prompt 12dfa483c190 repair 221a8acd33b3
-apps/42-schedules.intent ts prompt-probe 962d03062a37 repair cb2fa9354f9a
+apps/42-schedules.intent ts prompt eb764523007a repair 003a5e9ea94b
+apps/42-schedules.intent ts prompt-probe 39e7a959d240 repair 2708abed22a9
+apps/43-stock.intent elm elm.json 31d97d30272b
+apps/43-stock.intent elm index.html e4a5b4c568c5
+apps/43-stock.intent elm src/Fmt.elm fa5ecdfdefb4
+apps/43-stock.intent elm src/Main.elm 42c44d3bef38
+apps/43-stock.intent elm src/Spec.elm 00a3e8f1c40f
+apps/43-stock.intent elm src/Ui.elm 3177f8f5919f
+apps/43-stock.intent elm src/Worker.elm a80db3779849
+apps/43-stock.intent elm prompt b0dd4653e866 repair 3b03b19a59f5
+apps/43-stock.intent elm prompt-probe 402f73c9a10d repair 12ff7bb80ffa
+apps/43-stock.intent ts fmt.ts 298251d361c4
+apps/43-stock.intent ts index.html 55fb5a0f8f09
+apps/43-stock.intent ts main.ts 8fd12f39e6ad
+apps/43-stock.intent ts norandom.ts cfff2a51d330
+apps/43-stock.intent ts screen-core.ts a75d0960c500
+apps/43-stock.intent ts screen-entry.ts 45dbbe16ed52
+apps/43-stock.intent ts spec.ts 05ad68874a55
+apps/43-stock.intent ts test-entry.ts 3d26263447aa
+apps/43-stock.intent ts tsconfig.json 422c41f4ed20
+apps/43-stock.intent ts ui.ts dd27cfcd27ef
+apps/43-stock.intent ts prompt ae08cab8a8d3 repair f8a493c0d2a1
+apps/43-stock.intent ts prompt-probe 5bb747c27ac6 repair 123e40170a5c
 apps/api/alerts-api.intent ts README.md 74704c7b5233
 apps/api/alerts-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/alerts-api.intent ts clock.ts 62f694ce400f
@@ -1202,8 +1223,8 @@ apps/api/alerts-api.intent ts server.ts 30433499a503
 apps/api/alerts-api.intent ts spec.ts 51966f92d6fe
 apps/api/alerts-api.intent ts test-entry.ts 1700abd216a2
 apps/api/alerts-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/alerts-api.intent ts prompt 3ebcfb9aade8 repair bfbdd549ca32
-apps/api/alerts-api.intent ts prompt-probe e4791baa1885 repair 041d508c95e1
+apps/api/alerts-api.intent ts prompt 009c525cb713 repair 78f342ed7c36
+apps/api/alerts-api.intent ts prompt-probe fd966245684e repair 841d44fb1792
 apps/api/desk-api.intent ts README.md 9728f5034cb5
 apps/api/desk-api.intent ts access.ts 11b47e2d44f9
 apps/api/desk-api.intent ts accessPlan.ts a1ea05290203
@@ -1231,8 +1252,8 @@ apps/api/desk-api.intent ts server.ts f0adfc81402a
 apps/api/desk-api.intent ts spec.ts 5e5f2f7890ce
 apps/api/desk-api.intent ts test-entry.ts a24d75b75ba3
 apps/api/desk-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/desk-api.intent ts prompt 6bde632d1dc4 repair c269c354718d
-apps/api/desk-api.intent ts prompt-probe ae69192e4e12 repair 41669d62b04f
+apps/api/desk-api.intent ts prompt 8774aaa93dc1 repair d0cc49d37a60
+apps/api/desk-api.intent ts prompt-probe 54bef66fe8a9 repair 4e75a44ae47d
 apps/api/expenses-api.intent changes.json 53adb5a644b9
 apps/api/expenses-api.intent invariants-prompt 2cae5655c8ae
 apps/api/expenses-api.intent ts README.md 98dcc890a045
@@ -1258,8 +1279,8 @@ apps/api/expenses-api.intent ts server.ts f0adfc81402a
 apps/api/expenses-api.intent ts spec.ts 012ef3633376
 apps/api/expenses-api.intent ts test-entry.ts a24d75b75ba3
 apps/api/expenses-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/expenses-api.intent ts prompt 7c2d8e68899a repair 1a0925c1f16e
-apps/api/expenses-api.intent ts prompt-probe 9311c5d9d45c repair dce976679d00
+apps/api/expenses-api.intent ts prompt 9f66758648ca repair b9d58afe9fde
+apps/api/expenses-api.intent ts prompt-probe f874251075d1 repair 8e136ad0c0c0
 apps/api/invites-api.intent changes.json 91b4509a41af
 apps/api/invites-api.intent invariants-prompt d10520c2f43f
 apps/api/invites-api.intent ts README.md 350ff290e997
@@ -1277,8 +1298,8 @@ apps/api/invites-api.intent ts server.ts 78f3b02a6d80
 apps/api/invites-api.intent ts spec.ts 59c8b34ce35e
 apps/api/invites-api.intent ts test-entry.ts 63e3556d6df6
 apps/api/invites-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/invites-api.intent ts prompt 6a9e9d46128d repair 60578f214ea2
-apps/api/invites-api.intent ts prompt-probe d52d0fa7e06a repair 86e82297cd75
+apps/api/invites-api.intent ts prompt 191ca61df62a repair b52f79877884
+apps/api/invites-api.intent ts prompt-probe af4053011e83 repair cc306bbf89a7
 apps/api/ledger-api.intent changes.json fa9c80b4be0d
 apps/api/ledger-api.intent invariants-prompt 45749b1a27be
 apps/api/ledger-api.intent ts README.md 729c93796a8b
@@ -1294,8 +1315,8 @@ apps/api/ledger-api.intent ts server.ts 30433499a503
 apps/api/ledger-api.intent ts spec.ts 7635640d8bca
 apps/api/ledger-api.intent ts test-entry.ts 1700abd216a2
 apps/api/ledger-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/ledger-api.intent ts prompt 02b87aed2929 repair 1d112a27346c
-apps/api/ledger-api.intent ts prompt-probe 962dc68add28 repair 1fe16dd9f127
+apps/api/ledger-api.intent ts prompt a1afb98eb92e repair 523ac22b4f75
+apps/api/ledger-api.intent ts prompt-probe 5083eba3e0d8 repair 4a621617af4a
 apps/api/members-api.intent ts README.md 9228268b4e44
 apps/api/members-api.intent ts access.ts 11b47e2d44f9
 apps/api/members-api.intent ts accessPlan.ts c02a3be9f7f1
@@ -1317,8 +1338,8 @@ apps/api/members-api.intent ts server.ts cc8fb549cd76
 apps/api/members-api.intent ts spec.ts 6b9e3b4ed81e
 apps/api/members-api.intent ts test-entry.ts 2ed73803c8ae
 apps/api/members-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/members-api.intent ts prompt d0495eac08b2 repair baa00848f2fe
-apps/api/members-api.intent ts prompt-probe cdf81e9499dd repair a6ea41acd1bb
+apps/api/members-api.intent ts prompt a4f35ea1f535 repair a94f011e48da
+apps/api/members-api.intent ts prompt-probe 20b92a368e8d repair e5e64bea58d2
 apps/api/notices-api.intent ts README.md ed1e4a8b5d18
 apps/api/notices-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/notices-api.intent ts clock.ts 62f694ce400f
@@ -1332,8 +1353,8 @@ apps/api/notices-api.intent ts server.ts 30433499a503
 apps/api/notices-api.intent ts spec.ts b5fed2e29c12
 apps/api/notices-api.intent ts test-entry.ts 1700abd216a2
 apps/api/notices-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/notices-api.intent ts prompt 0d254c134518 repair 24c5def8e4dc
-apps/api/notices-api.intent ts prompt-probe 92cc1704c9ae repair 7248a70adf14
+apps/api/notices-api.intent ts prompt f51bfe21c86a repair 5f4367f3d0fa
+apps/api/notices-api.intent ts prompt-probe 66f5e2b01168 repair bc4fb86a6f84
 apps/api/payments-api.intent ts README.md af781b344d10
 apps/api/payments-api.intent ts access.ts 11b47e2d44f9
 apps/api/payments-api.intent ts accessPlan.ts 03635f81d24b
@@ -1353,8 +1374,8 @@ apps/api/payments-api.intent ts server.ts f0adfc81402a
 apps/api/payments-api.intent ts spec.ts 757b969528a4
 apps/api/payments-api.intent ts test-entry.ts a24d75b75ba3
 apps/api/payments-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/payments-api.intent ts prompt bd3dbe665037 repair 9628bdd279fb
-apps/api/payments-api.intent ts prompt-probe 5df01403cdae repair b02da0a3fcd5
+apps/api/payments-api.intent ts prompt 951fcc517f2d repair 7a94857f68e8
+apps/api/payments-api.intent ts prompt-probe d42bf0deb8dc repair f1ab9b7615db
 apps/api/payouts-api.intent invariants-prompt 7a1c6bcf6c10
 apps/api/payouts-api.intent ts README.md e386b5fdef42
 apps/api/payouts-api.intent ts access.ts 11b47e2d44f9
@@ -1379,8 +1400,8 @@ apps/api/payouts-api.intent ts server.ts f0adfc81402a
 apps/api/payouts-api.intent ts spec.ts 27c8d9b207f6
 apps/api/payouts-api.intent ts test-entry.ts a24d75b75ba3
 apps/api/payouts-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/payouts-api.intent ts prompt ae67867b76d7 repair fdd496726c6f
-apps/api/payouts-api.intent ts prompt-probe 90b825681020 repair 56d4060896f9
+apps/api/payouts-api.intent ts prompt 58495d5cb7b3 repair 86af246fce2a
+apps/api/payouts-api.intent ts prompt-probe 4f769a8a1597 repair 6ffa04f4bc7b
 apps/api/raffle-api.intent changes.json b13da2e884f6
 apps/api/raffle-api.intent invariants-prompt af0249190e44
 apps/api/raffle-api.intent ts README.md 06f55752c03a
@@ -1398,8 +1419,8 @@ apps/api/raffle-api.intent ts server.ts 78f3b02a6d80
 apps/api/raffle-api.intent ts spec.ts 2628ef2588f7
 apps/api/raffle-api.intent ts test-entry.ts 63e3556d6df6
 apps/api/raffle-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/raffle-api.intent ts prompt 3b0ec1eeeed7 repair dc04b561d6c1
-apps/api/raffle-api.intent ts prompt-probe f99939ef4bdb repair e8e1611188e3
+apps/api/raffle-api.intent ts prompt 0e1549bcd752 repair 772db21bdcde
+apps/api/raffle-api.intent ts prompt-probe 3bbc0c9638e0 repair 13e81bc2f5c5
 apps/api/recipes-api.intent ts README.md e58715a9527e
 apps/api/recipes-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/recipes-api.intent ts clock.ts 62f694ce400f
@@ -1413,8 +1434,8 @@ apps/api/recipes-api.intent ts server.ts 30433499a503
 apps/api/recipes-api.intent ts spec.ts 25bcc7c1c50f
 apps/api/recipes-api.intent ts test-entry.ts 1700abd216a2
 apps/api/recipes-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/recipes-api.intent ts prompt ed7ad603b0b2 repair bcaccbc1de21
-apps/api/recipes-api.intent ts prompt-probe 76f17ac477a1 repair 8e820ff611bd
+apps/api/recipes-api.intent ts prompt b33925e01b6e repair 629ede2ab6f0
+apps/api/recipes-api.intent ts prompt-probe 3c07e4b93cf5 repair 48525fb46e24
 apps/api/reminders-api.intent ts README.md 7f72c3e66ae1
 apps/api/reminders-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/reminders-api.intent ts clock.ts 62f694ce400f
@@ -1428,8 +1449,8 @@ apps/api/reminders-api.intent ts server.ts 30433499a503
 apps/api/reminders-api.intent ts spec.ts 9ddf4851fdbb
 apps/api/reminders-api.intent ts test-entry.ts 1700abd216a2
 apps/api/reminders-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/reminders-api.intent ts prompt beff1dd6bf9e repair e4165e995ff9
-apps/api/reminders-api.intent ts prompt-probe 2a573841c595 repair e751b1f43458
+apps/api/reminders-api.intent ts prompt 33e9b85e3656 repair 644329c19d7f
+apps/api/reminders-api.intent ts prompt-probe 4a931c667573 repair 5751a46fdd35
 apps/api/schedules-api.intent ts README.md 669f2aa0a999
 apps/api/schedules-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/schedules-api.intent ts clock.ts 62f694ce400f
@@ -1443,8 +1464,8 @@ apps/api/schedules-api.intent ts server.ts 30433499a503
 apps/api/schedules-api.intent ts spec.ts 5615c394aabd
 apps/api/schedules-api.intent ts test-entry.ts 1700abd216a2
 apps/api/schedules-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/schedules-api.intent ts prompt 99e4c0c8001c repair 270b4fd470fc
-apps/api/schedules-api.intent ts prompt-probe 56f2bf966d39 repair d71b4eab48a5
+apps/api/schedules-api.intent ts prompt 4f8c32dbe432 repair 567ec93b2a7c
+apps/api/schedules-api.intent ts prompt-probe 07fb6759fa14 repair bdf10a535f07
 apps/api/specs-api.intent ts README.md 7796374e4f3e
 apps/api/specs-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/specs-api.intent ts clock.ts 62f694ce400f
@@ -1460,8 +1481,8 @@ apps/api/specs-api.intent ts server.ts 30433499a503
 apps/api/specs-api.intent ts spec.ts dee0943542c9
 apps/api/specs-api.intent ts test-entry.ts 1700abd216a2
 apps/api/specs-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/specs-api.intent ts prompt 9e0e7ab5abd7 repair 668815342426
-apps/api/specs-api.intent ts prompt-probe 20723a3b531c repair 61f16eda2574
+apps/api/specs-api.intent ts prompt e0eb131b43d0 repair c5d2d8b199fe
+apps/api/specs-api.intent ts prompt-probe 2d3596b88744 repair db7d0013de83
 apps/api/theme-api.intent ts README.md d7e93504c6ed
 apps/api/theme-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/theme-api.intent ts clock.ts 62f694ce400f
@@ -1475,8 +1496,8 @@ apps/api/theme-api.intent ts server.ts 30433499a503
 apps/api/theme-api.intent ts spec.ts aa8c8c9f186a
 apps/api/theme-api.intent ts test-entry.ts 1700abd216a2
 apps/api/theme-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/theme-api.intent ts prompt 96942fa08afd repair 36e7d8252992
-apps/api/theme-api.intent ts prompt-probe a1def3f9237e repair 2b5feb2d6914
+apps/api/theme-api.intent ts prompt 4474c3d8fd9f repair 7938c4972cf0
+apps/api/theme-api.intent ts prompt-probe d4e28f45e62e repair fc6b85cb5b61
 apps/api/tickets-api.intent ts README.md 27e278bd9539
 apps/api/tickets-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/tickets-api.intent ts clock.ts 62f694ce400f
@@ -1490,8 +1511,8 @@ apps/api/tickets-api.intent ts server.ts 30433499a503
 apps/api/tickets-api.intent ts spec.ts b30681df5531
 apps/api/tickets-api.intent ts test-entry.ts 1700abd216a2
 apps/api/tickets-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/tickets-api.intent ts prompt f5cf2de7a136 repair fb61a2bef04d
-apps/api/tickets-api.intent ts prompt-probe 34821a7c5211 repair 748a0a36044c
+apps/api/tickets-api.intent ts prompt 66c7e2d5712f repair e29b2fa08b22
+apps/api/tickets-api.intent ts prompt-probe d830a6e2a801 repair 8f9371156ef8
 apps/api/weather-api.intent ts README.md 7264012c45f0
 apps/api/weather-api.intent ts api.ts 46d4a5c5d1b8
 apps/api/weather-api.intent ts clock.ts 62f694ce400f
@@ -1505,8 +1526,8 @@ apps/api/weather-api.intent ts server.ts 30433499a503
 apps/api/weather-api.intent ts spec.ts 4fc35e5b1d36
 apps/api/weather-api.intent ts test-entry.ts 1700abd216a2
 apps/api/weather-api.intent ts tsconfig.json 43e980e4e9ff
-apps/api/weather-api.intent ts prompt 1458e9223d5e repair 43bd6a77ed49
-apps/api/weather-api.intent ts prompt-probe da4d5a0c2352 repair 7607cc3830ea
+apps/api/weather-api.intent ts prompt c407454d244b repair 1d38289dbb49
+apps/api/weather-api.intent ts prompt-probe f2c8fff67da8 repair b9d742d63f26
 apps/held-out-2/library.intent elm api.ts 46d4a5c5d1b8
 apps/held-out-2/library.intent elm calls.ts df611533061a
 apps/held-out-2/library.intent elm clock.ts 62f694ce400f
@@ -1523,8 +1544,8 @@ apps/held-out-2/library.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out-2/library.intent elm src/Worker.elm 392f6cfc8de2
 apps/held-out-2/library.intent elm store.ts f6246daaff84
 apps/held-out-2/library.intent elm through.ts 675c867dcaf2
-apps/held-out-2/library.intent elm prompt aca0d011cc26 repair 2fb17419cdfe
-apps/held-out-2/library.intent elm prompt-probe 5303819940ec repair ac7288e780af
+apps/held-out-2/library.intent elm prompt b833d92e67d3 repair ae0bf5f5fbe3
+apps/held-out-2/library.intent elm prompt-probe 2088361943ed repair 160e1111e7d2
 apps/held-out-2/library.intent ts clock.ts 62f694ce400f
 apps/held-out-2/library.intent ts fmt.ts 298251d361c4
 apps/held-out-2/library.intent ts index.html c6083e1570fa
@@ -1536,8 +1557,8 @@ apps/held-out-2/library.intent ts spec.ts 37c65c99600f
 apps/held-out-2/library.intent ts test-entry.ts 3d26263447aa
 apps/held-out-2/library.intent ts tsconfig.json 422c41f4ed20
 apps/held-out-2/library.intent ts ui.ts dd27cfcd27ef
-apps/held-out-2/library.intent ts prompt 531e4d367118 repair 9482c9eb614f
-apps/held-out-2/library.intent ts prompt-probe 130502c90541 repair a935452493cb
+apps/held-out-2/library.intent ts prompt d745a9a5e068 repair 46e9b027f57b
+apps/held-out-2/library.intent ts prompt-probe 53a21deaff6f repair bc4ea3e6edd9
 apps/held-out-2/reservations.intent elm elm.json 31d97d30272b
 apps/held-out-2/reservations.intent elm index.html 1cf7124874a3
 apps/held-out-2/reservations.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -1545,8 +1566,8 @@ apps/held-out-2/reservations.intent elm src/Main.elm 42c44d3bef38
 apps/held-out-2/reservations.intent elm src/Spec.elm 96b16dc153f8
 apps/held-out-2/reservations.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out-2/reservations.intent elm src/Worker.elm a80db3779849
-apps/held-out-2/reservations.intent elm prompt 2053c2558731 repair 8434bea5c5e6
-apps/held-out-2/reservations.intent elm prompt-probe c7e3fb4a50b0 repair 8417192e2f63
+apps/held-out-2/reservations.intent elm prompt d2961d93853b repair 875086571461
+apps/held-out-2/reservations.intent elm prompt-probe 717f98b05ec9 repair 659e7ccb9ab3
 apps/held-out-2/reservations.intent ts fmt.ts 298251d361c4
 apps/held-out-2/reservations.intent ts index.html 8f3205fa47ae
 apps/held-out-2/reservations.intent ts main.ts 8fd12f39e6ad
@@ -1557,8 +1578,8 @@ apps/held-out-2/reservations.intent ts spec.ts 96ca50008b59
 apps/held-out-2/reservations.intent ts test-entry.ts 3d26263447aa
 apps/held-out-2/reservations.intent ts tsconfig.json 422c41f4ed20
 apps/held-out-2/reservations.intent ts ui.ts dd27cfcd27ef
-apps/held-out-2/reservations.intent ts prompt 278b3979552d repair 91f1193e60d5
-apps/held-out-2/reservations.intent ts prompt-probe 4d15b98b0044 repair 4dc20b48800a
+apps/held-out-2/reservations.intent ts prompt 2376215dc015 repair 5c4dd15f3088
+apps/held-out-2/reservations.intent ts prompt-probe e75fbdb7366a repair c69f457ea4a5
 apps/held-out-3/approvals.intent changes.json c97c9f3bdaf4
 apps/held-out-3/approvals.intent invariants-prompt 9f146f2bd32d
 apps/held-out-3/approvals.intent elm api.ts 46d4a5c5d1b8
@@ -1577,8 +1598,8 @@ apps/held-out-3/approvals.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out-3/approvals.intent elm src/Worker.elm 0ca64e73dfb0
 apps/held-out-3/approvals.intent elm store.ts f6246daaff84
 apps/held-out-3/approvals.intent elm through.ts 675c867dcaf2
-apps/held-out-3/approvals.intent elm prompt 967397fc15e9 repair 6baf0e3de8ea
-apps/held-out-3/approvals.intent elm prompt-probe 78a9f462b5ed repair f9158a9cedb6
+apps/held-out-3/approvals.intent elm prompt 8078208d908b repair 69c708746253
+apps/held-out-3/approvals.intent elm prompt-probe 59b27bf5bacc repair 9f688d80a992
 apps/held-out-3/approvals.intent ts api.ts 46d4a5c5d1b8
 apps/held-out-3/approvals.intent ts fmt.ts 298251d361c4
 apps/held-out-3/approvals.intent ts index.html 852b46b25c91
@@ -1591,8 +1612,8 @@ apps/held-out-3/approvals.intent ts store.ts f6246daaff84
 apps/held-out-3/approvals.intent ts test-entry.ts 3d26263447aa
 apps/held-out-3/approvals.intent ts tsconfig.json 422c41f4ed20
 apps/held-out-3/approvals.intent ts ui.ts dd27cfcd27ef
-apps/held-out-3/approvals.intent ts prompt 493868656731 repair 07f6e0e493c1
-apps/held-out-3/approvals.intent ts prompt-probe 1c8ee8872f90 repair 91bc9d5764e8
+apps/held-out-3/approvals.intent ts prompt 5b0cc78b123f repair 72d41d42260c
+apps/held-out-3/approvals.intent ts prompt-probe bb322912551c repair 4705b4ed97ae
 apps/held-out-3/lockers-api.intent invariants-prompt 630f644045ea
 apps/held-out-3/lockers-api.intent ts README.md 8d755f08f9b2
 apps/held-out-3/lockers-api.intent ts access.ts 11b47e2d44f9
@@ -1619,8 +1640,8 @@ apps/held-out-3/lockers-api.intent ts server.ts cc8fb549cd76
 apps/held-out-3/lockers-api.intent ts spec.ts b0a28f91c328
 apps/held-out-3/lockers-api.intent ts test-entry.ts 2ed73803c8ae
 apps/held-out-3/lockers-api.intent ts tsconfig.json 43e980e4e9ff
-apps/held-out-3/lockers-api.intent ts prompt 0e38f5da7d85 repair a6c1ff244775
-apps/held-out-3/lockers-api.intent ts prompt-probe b124f3872141 repair 7e6a0fa9d990
+apps/held-out-3/lockers-api.intent ts prompt 1798373ce1ef repair 727ee76de864
+apps/held-out-3/lockers-api.intent ts prompt-probe ac2443c5a557 repair 35f1b012fc7d
 apps/held-out-4/chores-api.intent changes.json a436920c43bc
 apps/held-out-4/chores-api.intent invariants-prompt 76e6d1c3be8b
 apps/held-out-4/chores-api.intent ts README.md 8e48f4a2618e
@@ -1648,8 +1669,8 @@ apps/held-out-4/chores-api.intent ts server.ts cc8fb549cd76
 apps/held-out-4/chores-api.intent ts spec.ts b7ac508c1260
 apps/held-out-4/chores-api.intent ts test-entry.ts 2ed73803c8ae
 apps/held-out-4/chores-api.intent ts tsconfig.json 43e980e4e9ff
-apps/held-out-4/chores-api.intent ts prompt 2638c38c0ec8 repair 0276456d637a
-apps/held-out-4/chores-api.intent ts prompt-probe 7a074dadef2d repair 1af983475602
+apps/held-out-4/chores-api.intent ts prompt 1f330bfdb947 repair b7150a98f440
+apps/held-out-4/chores-api.intent ts prompt-probe 435aced36370 repair 951c0c45ce94
 apps/held-out-4/chores.intent invariants-prompt 599e78c379f3
 apps/held-out-4/chores.intent elm api.ts 46d4a5c5d1b8
 apps/held-out-4/chores.intent elm calls.ts df611533061a
@@ -1671,8 +1692,8 @@ apps/held-out-4/chores.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out-4/chores.intent elm src/Worker.elm b8f353a313a7
 apps/held-out-4/chores.intent elm store.ts f6246daaff84
 apps/held-out-4/chores.intent elm through.ts f946e8c04896
-apps/held-out-4/chores.intent elm prompt 265666779ef8 repair fe3b6bc15d0d
-apps/held-out-4/chores.intent elm prompt-probe b3506187c92d repair af68ef5d2bbf
+apps/held-out-4/chores.intent elm prompt 96dba6fcbbcc repair 6d39430268ac
+apps/held-out-4/chores.intent elm prompt-probe d8a90d6723e6 repair b05881e16593
 apps/held-out-4/chores.intent ts api.ts 46d4a5c5d1b8
 apps/held-out-4/chores.intent ts calls.ts df611533061a
 apps/held-out-4/chores.intent ts clock.ts 62f694ce400f
@@ -1694,8 +1715,8 @@ apps/held-out-4/chores.intent ts test-entry.ts 3d26263447aa
 apps/held-out-4/chores.intent ts through.ts f946e8c04896
 apps/held-out-4/chores.intent ts tsconfig.json 422c41f4ed20
 apps/held-out-4/chores.intent ts ui.ts dd27cfcd27ef
-apps/held-out-4/chores.intent ts prompt 946f6ee4bf22 repair ae3de68082da
-apps/held-out-4/chores.intent ts prompt-probe 0dce46c086d9 repair 79844a4d632b
+apps/held-out-4/chores.intent ts prompt 7dc574f34b13 repair 53826aea4da5
+apps/held-out-4/chores.intent ts prompt-probe c57bec656af5 repair 424a205577d3
 apps/held-out-4/clinic-api.intent changes.json 2b07d9382d5e
 apps/held-out-4/clinic-api.intent invariants-prompt 0ac43380eb01
 apps/held-out-4/clinic-api.intent ts README.md b8048e6ec6b8
@@ -1727,8 +1748,8 @@ apps/held-out-4/clinic-api.intent ts server.ts cc8fb549cd76
 apps/held-out-4/clinic-api.intent ts spec.ts 21fc778d5863
 apps/held-out-4/clinic-api.intent ts test-entry.ts 2ed73803c8ae
 apps/held-out-4/clinic-api.intent ts tsconfig.json 43e980e4e9ff
-apps/held-out-4/clinic-api.intent ts prompt 9f0882800751 repair 9099525f0046
-apps/held-out-4/clinic-api.intent ts prompt-probe 42fe5016dfda repair 34ab917a6598
+apps/held-out-4/clinic-api.intent ts prompt 522eb5a3a7e8 repair e21f927d59ee
+apps/held-out-4/clinic-api.intent ts prompt-probe 1b313e25b560 repair c7bb340461cd
 apps/held-out-4/clinic.intent elm api.ts 46d4a5c5d1b8
 apps/held-out-4/clinic.intent elm calls.ts df611533061a
 apps/held-out-4/clinic.intent elm clock.ts 62f694ce400f
@@ -1751,8 +1772,8 @@ apps/held-out-4/clinic.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out-4/clinic.intent elm src/Worker.elm f293f9ec8a4e
 apps/held-out-4/clinic.intent elm store.ts f6246daaff84
 apps/held-out-4/clinic.intent elm through.ts 708e48532ddb
-apps/held-out-4/clinic.intent elm prompt 5fc623414f32 repair 853a5d43b9ff
-apps/held-out-4/clinic.intent elm prompt-probe c270d21f1de5 repair fe0cd4a99ff7
+apps/held-out-4/clinic.intent elm prompt 56b412e7cafb repair 9d377bc275d0
+apps/held-out-4/clinic.intent elm prompt-probe 2bd26543051e repair 30ddad2f7d93
 apps/held-out-4/clinic.intent ts api.ts 46d4a5c5d1b8
 apps/held-out-4/clinic.intent ts calls.ts df611533061a
 apps/held-out-4/clinic.intent ts fmt.ts 298251d361c4
@@ -1772,8 +1793,8 @@ apps/held-out-4/clinic.intent ts test-entry.ts 3d26263447aa
 apps/held-out-4/clinic.intent ts through.ts 708e48532ddb
 apps/held-out-4/clinic.intent ts tsconfig.json 422c41f4ed20
 apps/held-out-4/clinic.intent ts ui.ts dd27cfcd27ef
-apps/held-out-4/clinic.intent ts prompt b1895a004741 repair f43c77da233a
-apps/held-out-4/clinic.intent ts prompt-probe 1002cfe63465 repair db04f53f3366
+apps/held-out-4/clinic.intent ts prompt e3d9f9c61ff9 repair 88c703bde7e1
+apps/held-out-4/clinic.intent ts prompt-probe e983437d8820 repair f58c8573a619
 apps/held-out-4/todo-api.intent changes.json 1c7e2e95fe73
 apps/held-out-4/todo-api.intent ts README.md cbbe54c95212
 apps/held-out-4/todo-api.intent ts access.ts 11b47e2d44f9
@@ -1794,8 +1815,8 @@ apps/held-out-4/todo-api.intent ts server.ts f0adfc81402a
 apps/held-out-4/todo-api.intent ts spec.ts 5c6cafe606d1
 apps/held-out-4/todo-api.intent ts test-entry.ts a24d75b75ba3
 apps/held-out-4/todo-api.intent ts tsconfig.json 43e980e4e9ff
-apps/held-out-4/todo-api.intent ts prompt 7d9b17196085 repair c6231dc47835
-apps/held-out-4/todo-api.intent ts prompt-probe c99533fdc659 repair 962f19f65b90
+apps/held-out-4/todo-api.intent ts prompt b98ee0ba814f repair 1445e8f0c785
+apps/held-out-4/todo-api.intent ts prompt-probe 1319f56d5bfe repair 72abe0c55ac6
 apps/held-out-4/todo.intent changes.json b324f4460aee
 apps/held-out-4/todo.intent elm api.ts 46d4a5c5d1b8
 apps/held-out-4/todo.intent elm calls.ts df611533061a
@@ -1816,8 +1837,8 @@ apps/held-out-4/todo.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out-4/todo.intent elm src/Worker.elm 2dc0af4138b0
 apps/held-out-4/todo.intent elm store.ts f6246daaff84
 apps/held-out-4/todo.intent elm through.ts 675c867dcaf2
-apps/held-out-4/todo.intent elm prompt 3e7ce32afbc7 repair b3df8c192928
-apps/held-out-4/todo.intent elm prompt-probe a0bd9bbd34ec repair 754eb04e191c
+apps/held-out-4/todo.intent elm prompt d804a4390cce repair cab59a8eafc5
+apps/held-out-4/todo.intent elm prompt-probe ab358d868cdd repair 0dbb491efefa
 apps/held-out-4/todo.intent ts api.ts 46d4a5c5d1b8
 apps/held-out-4/todo.intent ts clock.ts 62f694ce400f
 apps/held-out-4/todo.intent ts draw.ts 9f4969d44078
@@ -1833,8 +1854,8 @@ apps/held-out-4/todo.intent ts store.ts f6246daaff84
 apps/held-out-4/todo.intent ts test-entry.ts 3d26263447aa
 apps/held-out-4/todo.intent ts tsconfig.json 422c41f4ed20
 apps/held-out-4/todo.intent ts ui.ts dd27cfcd27ef
-apps/held-out-4/todo.intent ts prompt 65bc40d1e456 repair 7fb3f8d7e3b9
-apps/held-out-4/todo.intent ts prompt-probe 451bf26a65f9 repair 2bfe801396d0
+apps/held-out-4/todo.intent ts prompt da5ec8713dd7 repair b52f9a972b7a
+apps/held-out-4/todo.intent ts prompt-probe 0c0795101c0b repair 4e33b8ec354d
 apps/held-out/events.intent elm elm.json 31d97d30272b
 apps/held-out/events.intent elm index.html d56bd2b94964
 apps/held-out/events.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -1842,8 +1863,8 @@ apps/held-out/events.intent elm src/Main.elm 42c44d3bef38
 apps/held-out/events.intent elm src/Spec.elm 318006facb1f
 apps/held-out/events.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out/events.intent elm src/Worker.elm a80db3779849
-apps/held-out/events.intent elm prompt 60b4cc57b5da repair 35bc20b33dbc
-apps/held-out/events.intent elm prompt-probe dee309e0673a repair c9d36acc6ddd
+apps/held-out/events.intent elm prompt 223dc75e5cb5 repair 63ae62e4444b
+apps/held-out/events.intent elm prompt-probe fe4beee2c8d0 repair 3b06150f5570
 apps/held-out/events.intent ts fmt.ts 298251d361c4
 apps/held-out/events.intent ts index.html d2e4258d6dff
 apps/held-out/events.intent ts main.ts 8fd12f39e6ad
@@ -1854,8 +1875,8 @@ apps/held-out/events.intent ts spec.ts 6c7425f6752d
 apps/held-out/events.intent ts test-entry.ts 3d26263447aa
 apps/held-out/events.intent ts tsconfig.json 422c41f4ed20
 apps/held-out/events.intent ts ui.ts dd27cfcd27ef
-apps/held-out/events.intent ts prompt f1ab8a7c01f4 repair e2697ace6af4
-apps/held-out/events.intent ts prompt-probe abb1890e9175 repair d1394de1a97b
+apps/held-out/events.intent ts prompt 404bd24bfbea repair 52d6c71de108
+apps/held-out/events.intent ts prompt-probe c48ed52033a9 repair d8ce53b16f55
 apps/held-out/inventory.intent elm elm.json 31d97d30272b
 apps/held-out/inventory.intent elm index.html d7ef08f064fa
 apps/held-out/inventory.intent elm src/Fmt.elm fa5ecdfdefb4
@@ -1863,8 +1884,8 @@ apps/held-out/inventory.intent elm src/Main.elm 42c44d3bef38
 apps/held-out/inventory.intent elm src/Spec.elm 0020857ddc08
 apps/held-out/inventory.intent elm src/Ui.elm 3177f8f5919f
 apps/held-out/inventory.intent elm src/Worker.elm a80db3779849
-apps/held-out/inventory.intent elm prompt 6b24d66ea348 repair 0a2961b10344
-apps/held-out/inventory.intent elm prompt-probe dfd186b7c8fe repair 490523fa80c9
+apps/held-out/inventory.intent elm prompt e5b0eb5665f2 repair bdcf0b228aaa
+apps/held-out/inventory.intent elm prompt-probe fa411e3cba61 repair a6fd2f9b434d
 apps/held-out/inventory.intent ts fmt.ts 298251d361c4
 apps/held-out/inventory.intent ts index.html e3cab47909e4
 apps/held-out/inventory.intent ts main.ts 8fd12f39e6ad
@@ -1875,8 +1896,8 @@ apps/held-out/inventory.intent ts spec.ts 0a24d7c7b307
 apps/held-out/inventory.intent ts test-entry.ts 3d26263447aa
 apps/held-out/inventory.intent ts tsconfig.json 422c41f4ed20
 apps/held-out/inventory.intent ts ui.ts dd27cfcd27ef
-apps/held-out/inventory.intent ts prompt c64ca76a02a9 repair 72767e169fe7
-apps/held-out/inventory.intent ts prompt-probe c5fd5170218f repair d5449386576a
+apps/held-out/inventory.intent ts prompt 1f81f754e751 repair b81856a975e6
+apps/held-out/inventory.intent ts prompt-probe b225fe71719f repair cba1d33ec7f4
 lib/pay/paymentsApi.intent client aca802ce6676
 lib/std/actions.intent ts config.json 0d1f6abb4cf9
 lib/std/actions.intent ts fmt.ts 298251d361c4
@@ -1884,38 +1905,38 @@ lib/std/actions.intent ts http.ts c99695adc499
 lib/std/actions.intent ts spec.ts 1d807a39b76d
 lib/std/actions.intent ts test-entry.ts bd9b1110e8fb
 lib/std/actions.intent ts tsconfig.json b49be70fddc3
-lib/std/actions.intent ts prompt 7dff0323fb48 repair 49d13a63fb54
-lib/std/actions.intent ts prompt-probe 5bf71ec7764e repair 4a6fb285602b
+lib/std/actions.intent ts prompt 2af1ea7a1d64 repair d1f83c5dc411
+lib/std/actions.intent ts prompt-probe 6459a85e98e8 repair dcabfd98b9bb
 lib/std/http/apiKey.intent ts config.json e320764da32d
 lib/std/http/apiKey.intent ts fmt.ts 298251d361c4
 lib/std/http/apiKey.intent ts http.ts c99695adc499
 lib/std/http/apiKey.intent ts spec.ts eb7944843aaa
 lib/std/http/apiKey.intent ts test-entry.ts 688fa29edf33
 lib/std/http/apiKey.intent ts tsconfig.json b49be70fddc3
-lib/std/http/apiKey.intent ts prompt 3fea474a85fa repair 4cf4acc65e65
-lib/std/http/apiKey.intent ts prompt-probe fbef0544e348 repair b307e58520a6
+lib/std/http/apiKey.intent ts prompt e83bad6b9371 repair 98641033d232
+lib/std/http/apiKey.intent ts prompt-probe 97fe08d430bf repair 8782bf2f9096
 lib/std/http/cors.intent ts config.json de643966793b
 lib/std/http/cors.intent ts fmt.ts 298251d361c4
 lib/std/http/cors.intent ts http.ts c99695adc499
 lib/std/http/cors.intent ts spec.ts 563e041dd0ea
 lib/std/http/cors.intent ts test-entry.ts 688fa29edf33
 lib/std/http/cors.intent ts tsconfig.json b49be70fddc3
-lib/std/http/cors.intent ts prompt b7e5c4f7e271 repair 8d8cd017232e
-lib/std/http/cors.intent ts prompt-probe 51257e55f522 repair ce645e8a6ec7
+lib/std/http/cors.intent ts prompt 029815929861 repair 33bea8d46f6e
+lib/std/http/cors.intent ts prompt-probe 7a7397e6648c repair 0c077ef81857
 lib/std/http/secure.intent ts config.json 44136fa355b3
 lib/std/http/secure.intent ts fmt.ts 298251d361c4
 lib/std/http/secure.intent ts http.ts c99695adc499
 lib/std/http/secure.intent ts spec.ts e1255772c936
 lib/std/http/secure.intent ts test-entry.ts 688fa29edf33
 lib/std/http/secure.intent ts tsconfig.json b49be70fddc3
-lib/std/http/secure.intent ts prompt b6b42991b7f9 repair cdf522d06ff1
-lib/std/http/secure.intent ts prompt-probe a57b79bf072a repair f0a3b18db91b
+lib/std/http/secure.intent ts prompt 4c39c1284f0b repair de49fbaee778
+lib/std/http/secure.intent ts prompt-probe d8c1771f2c1f repair 763e93189e8f
 lib/std/http/sendKey.intent ts config.json f42425ce781e
 lib/std/http/sendKey.intent ts fmt.ts 298251d361c4
 lib/std/http/sendKey.intent ts http.ts c99695adc499
 lib/std/http/sendKey.intent ts spec.ts cbb9a594ec24
 lib/std/http/sendKey.intent ts test-entry.ts bd9b1110e8fb
 lib/std/http/sendKey.intent ts tsconfig.json b49be70fddc3
-lib/std/http/sendKey.intent ts prompt 9e7294a3cae0 repair 2ebce21df265
-lib/std/http/sendKey.intent ts prompt-probe a87729909ec7 repair f3d2fa14d0b4
+lib/std/http/sendKey.intent ts prompt f6a6f698c79f repair 63bf3b2adae4
+lib/std/http/sendKey.intent ts prompt-probe b6e076ecda35 repair a601cbc70028
 lib/support/ticketsApi.intent client c56e4e03a930

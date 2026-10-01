@@ -771,6 +771,26 @@ Built-in presentations (closed set; each has one meaning):
 | list | `table`, `cards`, `grid`, `timeline`, `bars`, `menu` | `bars` is a horizontal bar chart |
 | progress | `bar`, `ring` | |
 
+**Tone (1.1).** An element may say what its state *means*, never how that looks: `tone neutral |
+muted | info | success | warning | danger`, optionally `when <condition>`, one per line inside the
+element. The first tone whose condition holds is the element's tone; a `tone` without `when` is
+the default (without one, an element whose conditions all fail has no tone). The host draws it (a
+theme decides what `danger` looks like). With conditions, `view` fills a field beside the element,
+`<name>Tone`, with the tone that holds (`""` in Elm, `null` in TypeScript, for none). Prove it with
+`see level has tone danger` (or `has no tone`).
+
+```intent-excerpt
+text level = "{left} left" as badge {
+  tone danger when @left is 0
+  tone warning when @left is below 5
+  tone success
+}
+```
+
+Presentations and tones are what a host renders an element by: the screen tree carries them (`as`,
+`tone`), and each host's theme gives them their look. Prefer them over `look` words, which only a
+styled build reads.
+
 ## 4d. Reuse: bundles, imports and behaviour components
 
 A **bundle** is a library file under the project's `lib/`: `lib/std/list.intent` starts with

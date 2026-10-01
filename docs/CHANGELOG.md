@@ -82,7 +82,11 @@ Versions v1–v73 are the development history before the first stable version: s
   no checked spec changes. **Refinement:** as deep as the chain (a base may extend another; each
   is applied in turn and locked; a cycle is `BAD_BINDING`); this lifts a `NOT_YET`. `override
   component` of a component the base imports from a bundle works (it was a `DUPLICATE` error, and
-  `intent lock` crashed on it). A spec that uses a form newer than its own `language` line
+  `intent lock` crashed on it). **What, not look:** the screen tree carries each element's
+  presentation (`as`) and its tone (`tone danger when @left is 0`, `tone success`: what a state
+  means, from a closed set shared with OurOS's primitives), so a host's theme can draw any app; the
+  plain renderers write them as `data-as`/`data-tone`; examples prove a tone with `see level has
+  tone danger`. Example: `apps/43-stock.intent`, twin-verified on both targets, first attempt. A spec that uses a form newer than its own `language` line
   is an error (`NEEDS_LANGUAGE`, as Go's `go` line), and `intent fix` raises the line; an expanded
   spec prints the line its forms need. Example: `apps/39-weather.intent` with
   `lib/weather/*` and `apps/api/weather-api.intent` (twin-verified on both targets, first attempt).

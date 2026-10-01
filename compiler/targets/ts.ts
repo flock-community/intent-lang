@@ -11,7 +11,7 @@ import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, usesInstant, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, toneField, usesInstant, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -253,7 +253,12 @@ ${hasClients(app) ? `import { conforms, fromWire as fromWireValue, type TypeDesc
     }
     return el.visibleWhen ? `${t} | null` : t;
   };
-  const rowFields = (els: Element[], list?: Element): string => els.filter((e) => e.kind !== "heading").map((e) => `${ident(e.name)}: ${fieldType(e, list)}`).join("; ");
+  // An element whose tone depends on the state gets a field beside it: the tone whose condition holds first.
+  const toneOf = (e: Element) => {
+    const tf = toneField(e);
+    return tf ? [`/** ${e.name}'s tone: ${e.tones!.map((t) => `${t.tone}${t.when ? ` when ${doc(t.when)}` : " otherwise"}`).join("; ")}${tf.withDefault ? "" : "; else null"} (the first that holds) */ ${tf.field}: ${tf.tones.map(q).join(" | ")}${tf.withDefault ? "" : " | null"}`] : [];
+  };
+  const rowFields = (els: Element[], list?: Element): string => els.filter((e) => e.kind !== "heading").flatMap((e) => [`${ident(e.name)}: ${fieldType(e, list)}`, ...toneOf(e)]).join("; ");
   if (hasScreens(app)) {
     const scs = app.screens!;
     const param = (p: { name: string; type: Type }) => `${p.name}: ${tsType(p.type)}`;
@@ -283,8 +288,10 @@ ${hasClients(app) ? `import { conforms, fromWire as fromWireValue, type TypeDesc
     els.map((el) => {
       if (el.kind === "heading") return `{ k: "heading", v: ${q(el.label ?? "")} }`;
       const v = `${acc}.${ident(el.name)}`;
-      if (el.visibleWhen) return `${v} === null ? null : ${node(el, v, listEl)}`;
-      return node(el, v, listEl);
+      const tf = toneField(el);
+      const n = tf ? `{ ...${node(el, v, listEl).replace(/ as Node$/, "")}, ...(${acc}.${tf.field} ? { tone: ${acc}.${tf.field} } : {}) } as Node` : node(el, v, listEl);
+      if (el.visibleWhen) return `${v} === null ? null : ${n}`;
+      return n;
     });
   const list = (xs: string[]) => (xs.length ? `[${xs.join(", ")}].filter((x): x is Node => x !== null)` : `([] as Node[])`);
   // What a host renders by, besides the element's kind (1.1): `as`, `tone`.

@@ -132,6 +132,7 @@ function instantiate(app: App, comp: Component, use: Element, err: Err): Element
       expr: rwAll(el.expr),
       visibleWhen: rwAll(el.visibleWhen),
       enabledWhen: rwAll(el.enabledWhen),
+      tones: el.tones?.map((t) => ({ ...t, when: rwAll(t.when) })),
       look: rwAll(el.look),
       from: el.from ? { list: renameRef(el.from.list), field: el.from.field } : undefined,
       bindings: el.bindings?.map((b) => ({ ...b, value: rwAll(b.value)! })),

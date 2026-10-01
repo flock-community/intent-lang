@@ -51,7 +51,7 @@ export function units(app: App): Unit[] {
       if (el.kind === "heading") continue;
       const on = el.screen ?? screen;
       const name = `${on ? `${on}/` : ""}${list ? `${list}.${el.name}` : el.name}`;
-      add("element", name, el.line, { kind: el.kind, label: el.label, expr: el.expr, of: el.of, visibleWhen: el.visibleWhen, enabledWhen: el.enabledWhen, from: el.from, as: el.as, look: el.look, component: el.component, bindings: el.bindings }, [...refsOfAll(el.expr, el.visibleWhen, el.enabledWhen, ...(el.bindings ?? []).map((b) => b.value)), ...(el.of ? [el.of] : [])]);
+      add("element", name, el.line, { kind: el.kind, label: el.label, expr: el.expr, of: el.of, visibleWhen: el.visibleWhen, enabledWhen: el.enabledWhen, tones: el.tones, from: el.from, as: el.as, look: el.look, component: el.component, bindings: el.bindings }, [...refsOfAll(el.expr, el.visibleWhen, el.enabledWhen, ...(el.bindings ?? []).map((b) => b.value)), ...(el.of ? [el.of] : [])]);
       walk(el.children, el.kind === "list" ? (list ? `${list}.${el.name}` : el.name) : list, on);
     }
   };

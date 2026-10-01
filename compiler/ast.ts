@@ -90,6 +90,9 @@ export interface Element {
   from?: { list: string; field: string }; // dynamic select options
   as?: string; // presentation: a built-in (dialog, table, tabs, badge, …) or a declared component
   look?: string; // styling intent in words
+  // 1.1: what the element's state means, for a host to render by (`tone danger when @overdue`):
+  // the first tone whose condition holds; one without `when` is the default.
+  tones?: { tone: string; when?: string; line: number }[];
   component?: string; // `use name = Component`: the component to instantiate
   bindings?: { name: string; value: string; line: number }[]; // its parameter values
   children: Element[];
@@ -166,6 +169,7 @@ export type Check =
   | { is: "eq"; value: string; nothing?: true } // canonical string of the expected value; `= nothing` (an answer's value is null)
   | { is: "rows"; count: number; cmp?: "atMost" | "atLeast"; countParam?: string }
   | { is: "disabled" | "enabled" | "hidden" | "shown" | "checked" | "unchecked" }
+  | { is: "tone"; value: string } // 1.1: `has tone danger`; "" for `has no tone`
   // A number read from what is shown ("10 left" → 10), compared with a number or another element in the same scope.
   | { is: "num"; op: "atLeast" | "atMost" | "above" | "below"; value?: number; ref?: string };
 

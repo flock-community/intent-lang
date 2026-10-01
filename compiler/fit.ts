@@ -1787,7 +1787,8 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       const own = narrowBy(sc, el.visibleWhen, true, inner);
       if (el.expr) check(el.expr, el.line, where, own, inner, undefined, "value");
       if (el.enabledWhen) check(el.enabledWhen, el.line, where, own, inner, undefined, "cond");
-      for (const text of [el.expr, el.visibleWhen, el.enabledWhen]) if (text) uses(text, introduces(text, record && !rows.length ? [record] : rows), el.line, where, false);
+      for (const t of el.tones ?? []) if (t.when) check(t.when, t.line, `${where} (tone ${t.tone})`, own, inner, undefined, "cond");
+      for (const text of [el.expr, el.visibleWhen, el.enabledWhen, ...(el.tones ?? []).map((t) => t.when)]) if (text) uses(text, introduces(text, record && !rows.length ? [record] : rows), el.line, where, false);
       // `list items of Item = …`: the value is a list of Items.
       if (el.kind === "list" && el.expr && el.line < LINE_BASE && records.has(el.of ?? "")) {
         const t = typeOfValue(typeExpr(el.expr, own, inner));

@@ -69,7 +69,9 @@ export function stepText(s: Step): string {
       const c = s.check;
       if (/(^|\.)header\./.test(s.target)) return `see ${s.target} ${c.is === "eq" ? `= ${q(c.value)}` : "is absent"}`;
       const cmp = (x: typeof c) => (x.is === "num" ? `is ${{ atLeast: "at least", atMost: "at most", above: "above", below: "below" }[x.op]} ${x.ref ?? x.value}` : "");
-      if (s.every) return `see every row of ${s.every}: ${s.target} ${c.is === "num" ? cmp(c) : c.is === "eq" ? `= ${q(c.value)}` : `is ${c.is}`}`;
+      const tone = (x: typeof c) => (x.is === "tone" ? (x.value ? `has tone ${x.value}` : "has no tone") : "");
+      if (s.every) return `see every row of ${s.every}: ${s.target} ${c.is === "num" ? cmp(c) : c.is === "eq" ? `= ${q(c.value)}` : c.is === "tone" ? tone(c) : `is ${c.is}`}`;
+      if (c.is === "tone") return `see ${s.target}${at} ${tone(c)}`;
       if (c.is === "num") return `see ${s.target}${at} ${cmp(c)}`;
       if (c.is === "rows") return `see ${s.target}${at} has ${c.cmp === "atMost" ? "at most " : c.cmp === "atLeast" ? "at least " : ""}${c.count} rows`;
       if (c.is === "eq" && s.target === "screen" && !at) return `see screen = ${c.value}`;
@@ -113,6 +115,7 @@ function element(app: App, el: Element, ind: string): string[] {
   out.push(`${ind}${head}${origin(app, el.line, el.note)}`);
   if (el.visibleWhen) out.push(`${ind}  visible when ${el.visibleWhen}`);
   if (el.enabledWhen) out.push(`${ind}  enabled when ${el.enabledWhen}`);
+  for (const t of el.tones ?? []) out.push(`${ind}  tone ${t.tone}${t.when ? ` when ${t.when}` : ""}`);
   if (el.look) out.push(`${ind}  look ${q(el.look)}`);
   for (const c of el.children) out.push(...element(app, c, ind + "  "));
   return out;

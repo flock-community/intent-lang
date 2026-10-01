@@ -812,6 +812,7 @@ export function checkSee(obs: Obs, s: Extract<Step, { do: "see" }>, invariant = 
     case "disabled": return n.enabled === (c.is === "enabled") ? undefined : `expected ${what} to be ${c.is}, but it is ${n.enabled ? "enabled" : "disabled"}`;
     case "checked":
     case "unchecked": return n.checked === (c.is === "checked") ? undefined : `expected ${what} to be ${c.is}`;
+    case "tone": return (n.tone ?? "") === c.value ? undefined : `expected ${what} ${c.value ? `to have tone ${c.value}` : "to have no tone"}, but it has ${n.tone ? `tone ${n.tone}` : "none"}`;
     case "num": return compareNumber(n, c, obs.c, what);
     case "eq": {
       const actual = n.k === "button" ? n.label : String(n.v);
