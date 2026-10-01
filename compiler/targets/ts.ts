@@ -11,7 +11,7 @@ import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, usesInstant, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, usesInstant, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -287,7 +287,13 @@ ${hasClients(app) ? `import { conforms, fromWire as fromWireValue, type TypeDesc
       return node(el, v, listEl);
     });
   const list = (xs: string[]) => (xs.length ? `[${xs.join(", ")}].filter((x): x is Node => x !== null)` : `([] as Node[])`);
+  // What a host renders by, besides the element's kind (1.1): `as`, `tone`.
   const node = (el: Element, v: string, listEl?: Element): string => {
+    const sem = semanticsOf(app, el);
+    const plain = nodeOf(el, v, listEl);
+    return sem.length && plain !== "null" ? `{ ...${plain.replace(/ as Node$/, "")}, ${sem.map(([k, x]) => `${k}: ${q(x)}`).join(", ")} } as Node` : plain;
+  };
+  const nodeOf = (el: Element, v: string, listEl?: Element): string => {
     switch (el.kind) {
       case "text": return `{ k: "text", n: ${q(el.name)}, v: ${v} } as Node`;
       case "field": return `{ k: "field", n: ${q(el.name)}, label: ${q(el.label ?? "")}, v: ${v} } as Node`;

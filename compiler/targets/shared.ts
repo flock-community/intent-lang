@@ -333,3 +333,15 @@ function usesTypeKind(app: App, kind: "Map" | "Instant"): boolean {
   };
   return walk({ records: app.records, state: app.state, derive: app.derive, clients: (app.clients ?? []).map((c) => ({ records: c.contract.records, endpoints: c.contract.endpoints, events: c.contract.events })), endpoints: app.endpoints, events: app.events });
 }
+
+/**
+ * The look-free facts of an element a host renders by (1.1, docs/design/look.md): its built-in
+ * presentation (`as primary`; a component's base presentation), and its tone. Empty: none said.
+ */
+export function semanticsOf(app: App, el: Element): [string, string][] {
+  const out: [string, string][] = [];
+  // The checker allows a built-in presentation (lower case) or a component (UpperCamel) with a base.
+  const as = el.as && (/^[a-z]/.test(el.as) ? el.as : app.components.find((c) => c.name === el.as)?.base);
+  if (as) out.push(["as", as]);
+  return out;
+}

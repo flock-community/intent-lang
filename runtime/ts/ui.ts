@@ -1,6 +1,7 @@
 // Screen nodes, wire events and the DOM renderer. Shared by every TypeScript build.
 
-export type Node =
+// `as` and `tone` (1.1): what a host renders an element by, never how it looks (docs/design/look.md).
+export type Node = (
   | { k: "screen"; title: string; c: Node[] }
   | { k: "heading"; v: string }
   | { k: "text"; n: string; v: string }
@@ -10,7 +11,8 @@ export type Node =
   | { k: "progress"; n: string; label: string; v: number }
   | { k: "select"; n: string; label: string; options: string[]; v: string }
   | { k: "list"; n: string; rows: { key: string; c: Node[] }[] }
-  | { k: "section"; n: string; label: string; c: Node[] };
+  | { k: "section"; n: string; label: string; c: Node[] }
+) & { as?: string; tone?: string };
 
 // `key`: the row's key; `keys`: a row inside a row's path of keys, the outer row's first (`key` is the last).
 export type Wire = { on: string; target: string; key?: string; keys?: string[]; text?: string; value?: string; answer?: unknown; event?: unknown; clock?: unknown };
@@ -45,8 +47,16 @@ export function mount<M>(root: HTMLElement, p: Program<M>): (w: Wire) => void {
   return dispatch;
 }
 
-/** One node. `keys` are the keys of the rows it is in and `lists` their lists, outermost first: a row inside a row has two. */
+/** One node, with its presentation and tone as data attributes (a stylesheet's hooks; the look is the host's). */
 function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: string[]): HTMLElement {
+  const e = drawn(node, dispatch, keys, lists);
+  if (node.as) e.dataset.as = node.as;
+  if (node.tone) e.dataset.tone = node.tone;
+  return e;
+}
+
+/** One node. `keys` are the keys of the rows it is in and `lists` their lists, outermost first: a row inside a row has two. */
+function drawn(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: string[]): HTMLElement {
   const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;

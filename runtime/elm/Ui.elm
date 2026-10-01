@@ -21,6 +21,8 @@ type Node
     | NSelect String String (List String) String
     | NList String (List ( String, List Node ))
     | NSection String String (List Node)
+      -- 1.1: what a host renders the node by (`as`, `tone`), never how it looks
+    | NStyled (List ( String, String )) Node
 
 
 {-| An event: `key` is the row's key; `keys` a row inside a row's path of keys, the outer row's first
@@ -47,6 +49,14 @@ wireDecoder =
 encode : Node -> J.Value
 encode node =
     case node of
+        NStyled attrs inner ->
+            case D.decodeValue (D.keyValuePairs D.value) (encode inner) of
+                Ok fields ->
+                    J.object (List.reverse fields ++ List.map (\( k, v ) -> ( k, J.string v )) attrs)
+
+                Err _ ->
+                    encode inner
+
         NScreen title c ->
             J.object [ ( "k", J.string "screen" ), ( "title", J.string title ), ( "c", J.list encode c ) ]
 
@@ -108,6 +118,9 @@ view lists keys node =
             { noWire | on = on, target = target n, key = key, keys = path }
     in
     case node of
+        NStyled attrs inner ->
+            Html.div (A.style "display" "contents" :: List.map (\( k, v ) -> A.attribute ("data-" ++ k) v) attrs) [ view lists keys inner ]
+
         NScreen title c ->
             Html.main_ [ A.class "screen" ] (Html.h1 [] [ Html.text title ] :: List.map (view lists keys) c)
 

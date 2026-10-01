@@ -10,7 +10,7 @@ import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
 import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -250,7 +250,13 @@ ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : 
       if (el.visibleWhen) return `Maybe.map (\\v${d} -> ${node(el, `v${d}`, d + 1, list)}) ${v}`;
       return `Just (${node(el, v, d + 1, list)})`;
     });
+  // What a host renders by, besides the element's kind (1.1): `as`, `tone`.
   const node = (el: Element, v: string, d: number, list?: Element): string => {
+    const sem = semanticsOf(app, el);
+    const plain = nodeOf(el, v, d, list);
+    return sem.length && plain ? `Ui.NStyled [ ${sem.map(([k, x]) => `( ${q(k)}, ${q(x)} )`).join(", ")} ] (${plain})` : plain;
+  };
+  const nodeOf = (el: Element, v: string, d: number, list?: Element): string => {
     switch (el.kind) {
       case "text": return `Ui.NText ${q(el.name)} ${v}`;
       case "field": return `Ui.NField ${q(el.name)} ${q(el.label ?? "")} ${v}`;
