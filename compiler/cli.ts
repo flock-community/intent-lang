@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { formatDiagnostics, parseSyntax } from "./parse.ts";
 import { compilerPins, load as loadSpec, modelPinProblem, readCompilerLock, sha, writeLock } from "./load.ts";
 import { install, publish, readProject } from "./registry.ts";
@@ -446,6 +447,33 @@ switch (cmd) {
     console.log(`${results.length} mutants, ${results.length - survivors.length} caught, ${survivors.length} surviving${survivors.length ? `:\n${survivors.map((s) => `  ${s.source}  ${s.what}`).join("\n")}\n(each is a rule no example proves: add an example that one call permits and another refuses, or that a screen hears)` : ""}`);
     process.exit(survivors.length ? 1 : 0);
   }
+  case "run": {
+    // `intent run --terminal <build dir>`: a screen build in this terminal (runtime/ts/terminal.ts).
+    const dir = resolve(args[0] ?? ".");
+    const mod = join(dir, "screen.mjs");
+    if (!existsSync(mod)) (console.error(`${args[0]}: no screen.mjs here (build a screen app first)`), process.exit(2));
+    if (!flags.terminal) (console.error("intent run needs a host: --terminal"), process.exit(2));
+    const { runTerminal } = await import("../runtime/ts/terminal.ts");
+    const { default: screen } = await import(pathToFileURL(mod).href);
+    const now = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    const today = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+    const keep = join(dir, ".terminal-stored.json");
+    const { randomBytes } = await import("node:crypto");
+    const opts = {
+      ...(screen.meta.clock ? { clock: { now: `${today}T${p(now.getHours())}:${p(now.getMinutes())}`, today } } : {}),
+      ...(screen.meta.draws ? { seed: randomBytes(32).toString("hex") } : {}),
+      ...(screen.meta.stored.length && existsSync(keep) ? { saved: JSON.parse(readFileSync(keep, "utf8")) } : {}),
+    };
+    process.stdin.setRawMode?.(true);
+    process.stdin.setEncoding("utf8");
+    let session: { stored?: () => unknown } | undefined;
+    const wrapped = { start: async (o: object) => (session = (await screen.start(o)) as { stored?: () => unknown }) };
+    await runTerminal(wrapped, opts, { write: (t) => process.stdout.write(t), keys: process.stdin as AsyncIterable<string> });
+    if (screen.meta.stored.length && session?.stored) writeFileSync(keep, JSON.stringify(session.stored()));
+    process.stdout.write("\n", () => process.exit(0));
+    break;
+  }
   case "config": {
     // The compiler's options for this project, and where each came from.
     const { config: c, from } = configWithSources();
@@ -474,6 +502,7 @@ switch (cmd) {
   intent reanalyse <file.intent>... --out <earlier run dir>   re-test existing builds
   intent mutate <api.intent> --build <dir> [--screen <screen.intent>=<dir>,…]   do the examples prove each access rule? (no LLM)
   intent doctor                            is this machine ready to build?
+  intent run --terminal <build dir>        a screen build (screen.mjs) in this terminal
   intent config                            the compiler's options and where each comes from
 
 Options (a flag wins over the environment, which wins over \`compiler { … }\` in intent.project):

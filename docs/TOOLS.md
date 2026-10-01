@@ -38,6 +38,10 @@ intent config                            the compiler's options for this project
   to the model. Out: `skin.css` and `gallery.png`. `intent build <app> --skin skin.css` gives a build
   that skin instead of the default look; `--skin a/skin.css,b/skin.css` gives it both, switched at run
   time: `?theme=b`, or the host sets `globalThis.__intentTheme` and dispatches `intenttheme`.
+- `intent run --terminal <build dir>` runs a screen build (its `screen.mjs`, TypeScript or Elm) in
+  the terminal: Tab and the arrows move, Enter and Space act, typing edits a field, ← → choose,
+  Escape closes a dialog, Ctrl+C quits (stored data is kept next to the build). Calls are listed,
+  not performed.
 - A **bundle** whose components have examples: `intent build lib/x/y.intent` builds each component's
   host app (its examples, its random sessions) on every target.
 - `--json` (`check`, `build`): stdout is one JSON report and nothing else; a build's log goes to

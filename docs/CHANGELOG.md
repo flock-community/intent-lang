@@ -34,8 +34,8 @@ The candidates, for 1.x unless marked:
   `GUESSABLE`; a draw in a loop inside a loop; `Int` ranges above 2^32 values;
 - explicit layout sizes (`look` is still words; a closed size vocabulary next to them is 1.x,
   replacing them would be `language 2`);
-- a terminal target: a second renderer of the same screens (sizes are the first step), and Kotlin
-  as a second target for apis (a target is a module and must pass the same examples, STABILITY.md §7);
+- Kotlin as a second target for apis (a terminal renderer of the same screens is a host since 1.1:
+  `intent run --terminal`) (a target is a module and must pass the same examples, STABILITY.md §7);
 - from held-out round 4 (runs/r1-held-out-4/report.md), each a 1.x addition: a rule for some roles
   only (G8: a deadline for patients, not the desk: `no one may call @cancel when … unless the caller is
   a @Desk`, which needs `@now` in a condition and an exception by role in the access plan); viewport
@@ -110,7 +110,10 @@ Versions v1–v73 are the development history before the first stable version: s
   its title; focus moves in when it opens, Tab and Shift+Tab stay inside, focus returns on close
   (WAI-ARIA's modal dialog pattern). **`screen.mjs` for Elm builds:** the same contract around the
   Elm worker (its `start` and `send` are promises; a host awaits both on every target), with timers
-  of its own inside the bundle, so no global is touched. A spec that uses a form newer than its own `language` line
+  of its own inside the bundle, so no global is touched. **A terminal host:** `intent run --terminal
+  <build>` runs any screen build (`screen.mjs`, either target) in a terminal
+  (runtime/ts/terminal.ts): the same screen tree as text, presentations and tones as marks, the same
+  events from keys, a dialog's focus kept as in the browser; no third code generator. A spec that uses a form newer than its own `language` line
   is an error (`NEEDS_LANGUAGE`, as Go's `go` line), and `intent fix` raises the line; an expanded
   spec prints the line its forms need. Example: `apps/39-weather.intent` with
   `lib/weather/*` and `apps/api/weather-api.intent` (twin-verified on both targets, first attempt).
