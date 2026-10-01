@@ -170,7 +170,7 @@ is lost on the next build and breaks the trace back to the spec.
 
 | Contract | What is fixed |
 |---|---|
-| `data-el` | every element carries its spec name, qualified in a component instance (`pager.next`), in plain and styled builds alike. Since 1.1 also: each row of a list is one element with `data-row="<the row's key>"`, the key its events carry (an element belongs to its nearest `data-row`); a select's options carry `data-option="<value>"`. The compiler asks for a record's key as the key of a row that shows that record; a styled build is refused when a row's `data-row` is not its key |
+| `data-el` | every element carries its spec name, qualified in a component instance (`pager.next`), in plain and styled builds alike. Since 1.1 also: each row of a list is one element with `data-row="<the row's key>"`, the key its events carry (an element belongs to its nearest `data-row`); a select's options carry `data-option="<value>"`. The compiler asks for a record's key as the key of a row that shows that record; a styled build is refused when a row's `data-row` is not its key. Since 1.1 the screen tree, and the plain renderers as `data-as`, `data-tone`, `data-component`, `data-part`, also carry what a host draws an element by: its presentation, its tone, the component an instance is and an element's part in it (docs/design/look.md) |
 | `sourcemap.json` | per build: element, handler, step, endpoint, event, layer, rule, example → file:line |
 | `manifest.json` | per api the app uses: its contract, endpoints and events (the `uses … only` list) |
 | `job.mjs` | ES module, default export `{ run }`; `run({ event: { event, body } })` or `run()`, resolving with the job's data |
