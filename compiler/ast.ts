@@ -97,6 +97,8 @@ export interface Element {
   // name inside its component (`title` for `confirm.title`). A theme styles a component's parts.
   instanceOf?: string;
   part?: string;
+  slot?: boolean; // 1.1: `slot body` in a component's screen: a place the using app fills (a section until expanded)
+  fills?: Record<string, Element[]>; // 1.1: a `use`'s slot contents (`body { … }`): the app's own elements
   component?: string; // `use name = Component`: the component to instantiate
   bindings?: { name: string; value: string; line: number }[]; // its parameter values
   children: Element[];
@@ -193,6 +195,7 @@ export interface Design {
 
 export interface Param {
   name: string;
+  type?: string; // 1.1: `param items: List T`, as written (a type parameter is resolved per `use`)
   doc?: string;
   default?: string;
   line: number;
@@ -204,6 +207,7 @@ export interface Component {
   look: string;
   line: number;
   params?: Param[]; // behaviour components: parameters bound by `use`
+  typeParams?: string[]; // 1.1: `component Table of T`: types each `use` binds (from its params' values)
   body?: App; // behaviour components: their state, derive, screen, handlers, rules and always
   from?: string; // the bundle it was imported from
 }

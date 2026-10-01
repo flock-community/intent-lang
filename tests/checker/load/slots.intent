@@ -1,0 +1,67 @@
+app Slots {
+  "1.1: typed params bind a component's type parameter; slots must be filled, and only the slots it has."
+}
+language 1.1
+
+record Person {
+  name: Text
+}
+
+record Pet {
+  name: Text
+}
+
+component Pair of T {
+  param left: List T
+  param right: List T
+  screen {
+    list a of T = @left {
+      slot cells
+    }
+    list b of T = @right {
+      text name
+    }
+  }
+}
+
+component Box {
+  param size: Int = 1
+  screen {
+    slot body
+  }
+}
+
+state {
+  people: List Person = []
+  pets: List Pet = []
+  count: Int = 0
+}
+
+screen {
+  use p = Pair {
+    left = people
+    right = pets                       # expect: TYPE
+    cells {
+      text name
+    }
+  }
+  use q = Pair {                       # expect: BAD_BINDING
+    left = people
+    right = people
+  }
+  use r = Box {                        # expect: UNKNOWN_NAME
+    body {
+      text shown = "{@count}"
+    }
+    footer {
+      text other = "x"
+    }
+  }
+  use s = Box {                        # expect: BAD_BINDING
+    size = count
+  }
+}
+
+example "nothing" {
+  see shown = "0"
+}

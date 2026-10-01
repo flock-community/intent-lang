@@ -18,7 +18,10 @@ known ahead, such as a theme's colour per role; prefer a record whenever the key
 `DateTime` for the app's own local time), and `union` (a value that is one of several records, such
 as a schedule that is daily or weekly: write each variant as its own record, never one record with
 optional fields that only some kinds use). Say what a state *means* with `tone` (`tone danger when
-@left is 0`), never with `look` words about colours: the theme of the host decides how it looks. If the changelog shows a newer
+@left is 0`), never with `look` words about colours: the theme of the host decides how it looks.
+A component that shows the app's own content has slots (`slot body`, filled by `body { … }` in the
+`use`); one that works on any record has a type parameter (`component Table of T`,
+`param rows: List T`). Never copy a component to change what it contains. If the changelog shows a newer
 version, read what it adds first.
 
 ## 1. Understand the intent (interview)

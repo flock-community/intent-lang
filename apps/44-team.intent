@@ -1,0 +1,103 @@
+app Team {
+  "A team in a table whose cells the app chooses, and a dialog that asks before someone is removed."
+}
+language 1.1
+
+record Person {
+  id: Int
+  name: Text
+  role: Text
+}
+
+component Table of T {
+  "Rows of any record, with a count below them; what each row shows is the app's."
+  param rows: List T "the rows to show"
+  screen {
+    list shown of T = @rows as table {
+      slot cells "what each row shows"
+    }
+    text count = "{the number of @rows} rows" as caption
+  }
+}
+
+component Dialog as dialog {
+  "A question over the page: its content and its actions are the app's."
+  param question "what the dialog asks"
+  screen {
+    text title = "{question}" as title
+    slot body "what the dialog says or asks for"
+    slot actions "its buttons"
+  }
+}
+
+state {
+  people: List Person = table {
+    id | name  | role
+    1  | "Ann" | "Lead"
+    2  | "Bob" | "Dev"
+  }
+  leaving: Int or nothing = nothing
+  reason: Text = ""
+}
+
+screen {
+  heading "Team"
+  use team = Table {
+    rows = people
+    cells {
+      text name
+      text role as badge
+      button remove "Remove" as danger
+    }
+  }
+  use ask = Dialog {
+    question = "Remove this person?"
+    body {
+      field reason "Reason"
+    }
+    actions {
+      button confirm "Remove" as danger {
+        enabled when @reason is not blank
+      }
+      button cancel "Keep" as secondary
+    }
+    visible when there is a @leaving
+  }
+}
+
+on click remove {
+  - set @leaving to the @id of that person
+}
+
+on click confirm {
+  - remove the person whose @id is @leaving from @people
+  - set @leaving to nothing
+  - clear @reason
+}
+
+on click cancel {
+  - set @leaving to nothing
+  - clear @reason
+}
+
+example "removing someone after saying why" {
+  see team.shown has 2 rows
+  see team.count = "2 rows"
+  see ask is hidden
+  click remove on row 2
+  see ask.title = "Remove this person?"
+  see confirm is disabled
+  type "Moved on" into reason
+  click confirm
+  see ask is hidden
+  see team.shown has 1 row
+  see name on row 1 = "Ann"
+  see role on row 1 = "Lead"
+}
+
+example "keeping them" {
+  click remove on row 1
+  click cancel
+  see ask is hidden
+  see team.count = "2 rows"
+}

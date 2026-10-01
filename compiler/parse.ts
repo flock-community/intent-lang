@@ -338,6 +338,8 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
     const here = typeof (v as { line?: unknown }).line === "number" ? (v as { line: number }).line : line;
     if ((v as { k?: unknown }).k === "Map" && "of" in v) (app.since ??= []).push({ line: here, version: "1.1", what: "a map (`Map T`)" });
     if (Array.isArray((v as { tones?: unknown }).tones)) (app.since ??= []).push({ line: here, version: "1.1", what: "a tone (`tone …`)" });
+    if ((v as { slot?: unknown }).slot === true) (app.since ??= []).push({ line: here, version: "1.1", what: "a slot (`slot …`)" });
+    if ((v as { fills?: unknown }).fills) (app.since ??= []).push({ line: here, version: "1.1", what: "a slot's content in a `use`" });
     if (!ownInstant && (v as { k?: unknown }).k === "Named" && (v as { name?: unknown }).name === "Instant") {
       const t = v as { k: string; name?: string };
       t.k = "Instant";
@@ -472,9 +474,15 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if (t === "design") {
     onlyTop("design");
     app.design = parseDesign(node, err);
-  } else if ((m = t.match(new RegExp(`^component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
+  } else if ((m = t.match(new RegExp(`^component\\s+(${UPPER})(?:\\s+of\\s+(${UPPER}(?:\\s*,\\s*${UPPER})*))?(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
     onlyTop("component");
-    app.components.push(parseComponent(node, m[1], m[2], m[3], ctx));
+    const comp = parseComponent(node, m[1], m[3], m[4], ctx);
+    if (m[2]) {
+      comp.typeParams = m[2].split(",").map((x) => x.trim());
+      (app.since ??= []).push({ line: node.line, version: "1.1", what: `a type parameter (\`component ${m[1]} of ${m[2]}\`)` });
+    }
+    if (comp.params?.some((p) => p.type)) (app.since ??= []).push({ line: node.line, version: "1.1", what: "a typed param (`param name: Type`)" });
+    app.components.push(comp);
   } else if (t === "state") {
     for (const c of node.children) {
       const stored = /^stored\s+/.test(c.text);
@@ -641,8 +649,10 @@ function parseRefinement(node: Line, ctx: Ctx): Refinement | undefined {
   if ((m = t.match(new RegExp(`^override\\s+on\\s+(${VERBS})\\s+(${QN})$`)))) {
     return { op: "override-handler", handler: { verb: m[1] as Verb, target: m[2], ...parseBody(node, err), line: node.line, note: node.note }, line: node.line };
   }
-  if ((m = t.match(new RegExp(`^override\\s+component\\s+(${UPPER})(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
-    return { op: "override-component", component: parseComponent(node, m[1], m[2], m[3], ctx), line: node.line };
+  if ((m = t.match(new RegExp(`^override\\s+component\\s+(${UPPER})(?:\\s+of\\s+(${UPPER}(?:\\s*,\\s*${UPPER})*))?(?:\\s+as\\s+([a-z]+))?(?:\\s+(${STR}))?$`)))) {
+    const comp = parseComponent(node, m[1], m[3], m[4], ctx);
+    if (m[2]) comp.typeParams = m[2].split(",").map((x) => x.trim());
+    return { op: "override-component", component: comp, line: node.line };
   }
   if ((m = t.match(new RegExp(`^add\\s+to\\s+(${QN})(?:\\s+after\\s+(${QN}))?$`)))) {
     const elements = node.children.map((c) => parseElement(c, err, 0)).filter((e): e is Element => !!e);
@@ -669,9 +679,9 @@ function parseComponent(node: Line, name: string, base: string | undefined, look
     let m: RegExpMatchArray | null;
     const str = parseString(c.text);
     if (str !== undefined) looks.push(str);
-    else if ((m = c.text.match(new RegExp(`^param\\s+(${LOWER})(?:\\s+(${STR}))?(?:\\s*=\\s*(.+))?$`)))) {
+    else if ((m = c.text.match(new RegExp(`^param\\s+(${LOWER})(?:\\s*:\\s*([A-Za-z][\\w ]*?))?(?:\\s+(${STR}))?(?:\\s*=\\s*(.+))?$`)))) {
       if (params.some((p) => p.name === m![1])) err(c.line, "DUPLICATE", `param \`${m[1]}\` is declared twice`, c.indent + 1);
-      params.push({ name: m[1], doc: m[2] ? parseString(m[2]) : undefined, default: m[3]?.trim(), line: c.line });
+      params.push({ name: m[1], ...(m[2] ? { type: m[2].trim() } : {}), doc: m[3] ? parseString(m[3]) : undefined, default: m[4]?.trim(), line: c.line });
     } else if (parseBlock(c, body, ctx, "component")) hasBody = true;
     else err(c.line, "SYNTAX", 'inside a component: a "look" string, `param name`, or a block (state, derive, screen, on, always, rules)', c.indent + 1);
   }
@@ -1362,6 +1372,17 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
   const t = c.text;
   const kw = t.split(/\s+/)[0];
   const col = c.indent + 1;
+  // 1.1: `slot body` in a component's screen: the using app fills it with its own elements (its
+  // indented elements, if any, are what it shows when the app gives none).
+  const sm = t.match(new RegExp(`^slot\\s+(${LOWER})(?:\\s+(${STR}))?$`));
+  if (sm) {
+    const slot: Element = { kind: "section", name: sm[1], slot: true, children: [], line: c.line, note: sm[2] ? parseString(sm[2]) : c.note };
+    for (const k of c.children) {
+      const child = parseElement(k, err, rows);
+      if (child) slot.children.push(child);
+    }
+    return slot;
+  }
   if (!ELEMENT_KINDS.includes(kw as ElementKind)) {
     err(c.line, "SYNTAX", `unknown element \`${kw}\`${suggest(kw, ELEMENT_KINDS)}`, col);
     return;
@@ -1383,7 +1404,15 @@ function parseElement(c: Line, err: (l: number, c: string, m: string, col?: numb
       if ((vm = k.text.match(/^visible\s+when\s+(.+)$/))) el.visibleWhen = vm[1] + flattenChildren(k);
       else if ((vm = k.text.match(new RegExp(`^look\\s+(${STR})$`)))) el.look = parseString(vm[1]);
       else if ((vm = k.text.match(new RegExp(`^(${LOWER})\\s*=\\s*(.+)$`)))) el.bindings.push({ name: vm[1], value: (vm[2] + flattenChildren(k)).trim(), line: k.line });
-      else err(k.line, "SYNTAX", "under `use`: `param = value`, `visible when …` or `look \"…\"`", k.indent + 1);
+      else if ((vm = k.text.match(new RegExp(`^(${LOWER})$`))) && k.children.length) {
+        // 1.1: a slot's content (`body { field reason "Reason" }`): the app's own elements.
+        const fill: Element[] = [];
+        for (const x of k.children) {
+          const child = parseElement(x, err, rows);
+          if (child) fill.push(child);
+        }
+        (el.fills ??= {})[vm[1]] = fill;
+      } else err(k.line, "SYNTAX", "under `use`: `param = value`, a slot's content (`body { … }`), `visible when …` or `look \"…\"`", k.indent + 1);
     }
     return el;
   }

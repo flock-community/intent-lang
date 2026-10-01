@@ -261,7 +261,7 @@ project's levels; `intent check` also runs the project's own rule sets. It adds 
 | `SHADOWED` | warning | inside a list, an element's name is both a field of the row and an app-level name; inside a row of a list inside a row, a field of both rows' records (it shows the inner row's) |
 | `LANGUAGE` | warning | a `language` line from before language 1 (`language v73`): it reads as `language 1`, and `intent fix` rewrites it |
 | `NEWER_LANGUAGE` | error | the spec needs a newer language version (`language 1.2`) than the compiler reads |
-| `NEEDS_LANGUAGE` | error | the spec uses a form added after its own `language` line (a record without fields, a choice with one value, an api with only events, `Map T`, `Instant`, `union`, `tone` and extending a base that extends another are 1.1); `intent fix` raises the line |
+| `NEEDS_LANGUAGE` | error | the spec uses a form added after its own `language` line (a record without fields, a choice with one value, an api with only events, `Map T`, `Instant`, `union`, `tone`, typed params, type parameters, slots and extending a base that extends another are 1.1); `intent fix` raises the line |
 | `NO_ACCESS` | error | an api with a layer that says who calls does not say what they may do: without an `access` block every key holder may call every endpoint |
 | `OVERRIDES_PROOF` | warning | a base example or `always` check is about something this spec overrides |
 | `BASE_CHANGED` | warning | the base changed a part this spec overrides (see §4e) |

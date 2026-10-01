@@ -885,6 +885,57 @@ A `use` can also take `visible when …` and `look "…"`, like any element:
 The look of a bundle component's elements belongs to the bundle; an app cannot restyle
 them one by one. Change the design, or propose a change to the bundle.
 
+**Typed params and slots (1.1).** A param may say its type (`param rows: List T`, `param size: Int
+= 5`), and a component may have type parameters (`component Table of T`): each `use` binds them by
+what it binds (`rows = people`, a `List Person`, makes `T` Person), and a binding of the wrong
+type is a `TYPE` error on its line. A `slot` is a place in the component's screen that the using
+app fills with its own elements (`slot body`; a slot with indented elements shows those when the
+app gives none). The app fills it in its `use` block, by the slot's name:
+
+```intent-excerpt
+component Table of T {
+  param rows: List T
+  screen {
+    list shown of T = @rows as table {
+      slot cells "what each row shows"
+    }
+  }
+}
+component Dialog as dialog {
+  param question
+  screen {
+    text title = "{question}" as title
+    slot body
+    slot actions
+  }
+}
+
+screen {
+  use team = Table {
+    rows = people
+    cells {
+      text name
+      button remove "Remove" as danger
+    }
+  }
+  use ask = Dialog {
+    question = "Remove this person?"
+    body {
+      field reason "Reason"
+    }
+    actions {
+      button confirm "Remove" as danger
+    }
+    visible when there is a @leaving
+  }
+}
+```
+
+What fills a slot is the app's: its names stay unqualified (`reason`, `confirm`, `remove`), its
+handlers are the app's (`on click confirm`), and its sentences read the app's names (in a row slot,
+the row's fields). A slot left empty is a `BAD_BINDING` error, a slot the component does not have
+`UNKNOWN_NAME`.
+
 **Pinned.** Every bundle a spec uses is pinned by its content: a bundle that changed is reviewed
 before a build uses it, so a build never picks up a library change silently.
 

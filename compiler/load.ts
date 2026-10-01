@@ -516,7 +516,12 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
   // project's own rule sets: it loads with `quality: false` and applies them all).
   if (opts.quality !== false && app.name && app.kind !== "bundle")
     diagnostics.splice(0, diagnostics.length, ...(opts.quality ? applyQuality(file, app, diagnostics, opts.quality.sets, opts.quality.config) : withStdQuality(file, app, diagnostics, readProject()?.quality?.levels)));
-  const out = diagnostics.map((d) => ({ ...d, ...at(d.line) }));
+  // One diagnostic once: a component used twice says its own findings once.
+  const said = new Set<string>();
+  const out = diagnostics.map((d) => ({ ...d, ...at(d.line) })).filter((d) => {
+    const k = `${d.file}:${d.line}:${d.col}:${d.code}:${d.message}`;
+    return said.has(k) ? false : (said.add(k), true);
+  });
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
   return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp, read: app };
 }
