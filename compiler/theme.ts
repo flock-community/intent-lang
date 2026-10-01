@@ -91,6 +91,8 @@ export function gallery(): Node {
     c.push({ k: "section", n: `section-${p}`, label: `A ${p}`, as: p, c: [{ k: "text", n: "inside", v: `Inside a ${p}` }, { k: "button", n: "act", label: "Act", enabled: true, as: "secondary" }] });
   // A component's parts, and a dialog open over everything.
   c.push({ k: "section", n: "pager", label: "", component: "Pager", c: [{ k: "text", n: "pager.pageInfo", v: "Page 1 of 3", part: "pageInfo" }, { k: "button", n: "pager.next", label: "Next", enabled: true, as: "secondary", part: "next" }] });
+  // A component whose dialog is closed: its root is there, with nothing in it. It must draw nothing.
+  c.push({ k: "section", n: "closed", label: "", component: "Dialog", c: [] });
   c.push({ k: "section", n: "ask", label: "", as: "dialog", c: [{ k: "text", n: "ask-title", v: "Delete this ticket?", as: "title" }, { k: "text", n: "ask-body", v: "This cannot be undone." }, { k: "button", n: "ask-delete", label: "Delete", enabled: true, as: "danger" }, { k: "button", n: "ask-keep", label: "Keep", enabled: true, as: "secondary" }] });
   return { k: "screen", title: "Gallery", c };
 }
@@ -155,7 +157,7 @@ function pageChecks(): string[] {
   };
   const visible = (el: Element) => (el as any).checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
   const els = Array.from(document.querySelectorAll<HTMLElement>("[data-el]"));
-  for (const el of els) if (!visible(el)) out.push(`\`${el.dataset.el}\` is not visible (every element of the gallery must be drawn)`);
+  for (const el of els) if (!visible(el) && el.dataset.el !== "closed") out.push(`\`${el.dataset.el}\` is not visible (every element of the gallery must be drawn)`);
   // Readable text (WCAG 1.4.3): 4.5:1, 3:1 for large text; disabled controls are exempt.
   for (const el of els) {
     if (!visible(el) || (el as HTMLButtonElement).disabled || !el.textContent?.trim()) continue;
@@ -179,6 +181,14 @@ function pageChecks(): string[] {
   distinct("buttons", ['[data-el="button-primary"]', '[data-el="button-secondary"]', '[data-el="button-danger"]', '[data-el="button-ghost"]', '[data-el="button-link"]']);
   distinct("tones", ["neutral", "info", "success", "warning", "danger"].map((t) => `[data-el="badge-${t}"]`));
   distinct("tones", ["info", "success", "warning", "danger"].map((t) => `[data-el="tone-${t}"]`));
+  // A component's root is only a group: empty (its dialog closed), it draws nothing.
+  const closed = document.querySelector<HTMLElement>('[data-el="closed"]');
+  if (closed) {
+    const cs = getComputedStyle(closed);
+    const r = closed.getBoundingClientRect();
+    if (r.height > 2 || rgba(cs.backgroundColor)[3] > 0 || (cs.boxShadow && cs.boxShadow !== "none") || parseFloat(cs.borderTopWidth) > 0 || cs.position === "fixed")
+      out.push("a component's root (`[data-component]`) is only a group: with nothing in it (a Dialog whose dialog is closed) it must draw nothing; draw a dialog by `[data-as=\"dialog\"]`, never by the component's name");
+  }
   // A dialog is over the page.
   const dialog = document.querySelector<HTMLElement>('[data-el="ask"]');
   if (dialog && !["fixed", "absolute"].includes(getComputedStyle(dialog).position)) out.push("a section shown as dialog must be over the page (position fixed), with a backdrop behind it");
@@ -248,7 +258,8 @@ function rules(t: ThemeSpec): string {
 4. A visible keyboard focus on every control (\`:focus-visible\`: an outline or ring, WCAG 2.4.7). Disabled controls look disabled.
 5. A section \`[data-as="dialog"]\` is over the page: \`position: fixed\`, centered, above a dimmed backdrop (a box-shadow spread or ::before); \`[data-as="drawer"]\` is fixed to the right edge.
 6. No @import, no url(), no fonts from outside, no animations unless \`@media (prefers-reduced-motion: no-preference)\`. Use system font stacks or the token's fonts.
-7. Style only by the contract: element classes, \`data-as\`, \`data-tone\`, \`data-component\`/\`data-part\`, states (\`:disabled\`, \`.chosen\`, \`:checked\`, \`:focus-visible\`, \`:hover\`). Never by \`data-el\` (an app's own names).`;
+7. A component's root (\`[data-component]\`) is only a group around its parts: give it no box of its own (a Dialog's root is there even while its dialog is closed). Style parts by \`[data-component="X"] [data-part="y"]\` if you like, but draw dialogs, cards and the like by \`data-as\`.
+8. Style only by the contract: element classes, \`data-as\`, \`data-tone\`, \`data-component\`/\`data-part\`, states (\`:disabled\`, \`.chosen\`, \`:checked\`, \`:focus-visible\`, \`:hover\`). Never by \`data-el\` (an app's own names).`;
 }
 
 export function themePrompt(t: ThemeSpec): string {
