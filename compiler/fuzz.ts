@@ -157,6 +157,7 @@ export function orderByDirty(traces: Action[][], dirty: string[]): Action[][] {
 
 export function makeTraces(app: App, count: number, length: number, seed = 1): Action[][] {
   const templates = actionTemplates(app);
+  if (!templates.length) return []; // nothing to do on this screen: no random sessions (its examples still run)
   const total = templates.reduce((s, t) => s + t.weight, 0);
   const rnd = mulberry32(seed);
   const traces: Action[][] = [];

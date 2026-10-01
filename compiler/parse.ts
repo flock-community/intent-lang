@@ -685,7 +685,8 @@ function parseComponent(node: Line, name: string, base: string | undefined, look
       params.push({ name: m[1], ...(m[2] ? { type: m[2].trim() } : {}), doc: m[3] ? parseString(m[3]) : undefined, default: m[4]?.trim(), line: c.line });
     } else if (/^examples\s+with$/.test(c.text)) {
       // 1.1: what the component's examples run with, kept as written for its host app (componentHosts).
-      const text = (l: Line, ind: string): string[] => [`${ind}${l.text}`, ...l.children.flatMap((x) => text(x, ind + "  "))];
+      // Written back with braces, as the canonical layout (the host is read like any spec).
+      const text = (l: Line, ind: string): string[] => (l.children.length ? [`${ind}${l.text} {`, ...l.children.flatMap((x) => text(x, ind + "  ")), `${ind}}`] : [`${ind}${l.text}`]);
       examplesWith = { lines: c.children.flatMap((x) => text(x, "")), line: c.line };
     } else if (parseBlock(c, body, ctx, "component")) hasBody = true;
     else err(c.line, "SYNTAX", 'inside a component: a "look" string, `param name`, or a block (state, derive, screen, on, always, rules)', c.indent + 1);

@@ -25,7 +25,9 @@ export function componentHosts(bundleText: string, bundle: App): Host[] {
 
 function host(bundleText: string, comp: Component): Host {
   const name = `${comp.name}Examples`;
-  const inst = comp.name[0].toLowerCase() + comp.name.slice(1);
+  // The instance is named after the component, unless that is a word of the language (`table`, `list`).
+  const lower = comp.name[0].toLowerCase() + comp.name.slice(1);
+  const inst = ["table", "list", "text", "field", "button", "checkbox", "select", "section", "progress", "heading", "screen", "state", "use", "slot", "record", "choice", "union", "example", "always", "derive", "nothing"].includes(lower) ? `${lower}1` : lower;
   // The bundle as an app: its header line becomes the host's, its language line 1.1; nothing moves.
   const lines = bundleText.split("\n");
   const head = lines.findIndex((l) => /^bundle\s+/.test(l));
@@ -35,7 +37,7 @@ function host(bundleText: string, comp: Component): Host {
   else lines.splice(head + 1, 0, "language 1.1");
   // `examples with`: top-level items, each a first line and its indented lines.
   const items: string[][] = [];
-  for (const l of comp.examplesWith?.lines ?? []) (/^\S/.test(l) || !items.length ? items.push([l]) : items[items.length - 1].push(l));
+  for (const l of comp.examplesWith?.lines ?? []) ((/^\S/.test(l) && l !== "}") || !items.length ? items.push([l]) : items[items.length - 1].push(l));
   // Records and choices the examples need (sample data), the host's state, and the `use`'s bindings and slot fills.
   const decls = items.filter((it) => /^(record|choice|union)\s/.test(it[0]));
   const state = items.filter((it) => /^[a-z]\w*\s*:/.test(it[0]) || /^stored\s+[a-z]\w*\s*:/.test(it[0]));
