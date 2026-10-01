@@ -775,7 +775,8 @@ Built-in presentations (closed set; each has one meaning):
 Escape inside it (and its backdrop) sends `on dismiss <section>`, and the app says what that does
 (`on dismiss ask { - set @leaving to nothing }`). In an example, `press Escape` dismisses the
 topmost open dialog or drawer (`press Escape in ask` names it). Other keys are not in the language
-yet (`NOT_YET`).
+yet (`NOT_YET`). The harness owns a dialog's focus on every target: it is a labelled modal dialog,
+focus moves into it when it opens, Tab stays inside it, and focus goes back when it closes.
 
 **Tone (1.1).** An element may say what its state *means*, never how that looks: `tone neutral |
 muted | info | success | warning | danger`, optionally `when <condition>`, one per line inside the

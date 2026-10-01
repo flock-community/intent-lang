@@ -10,7 +10,7 @@ import { buildSites, usesDraws, type DrawSite } from "../draws.ts";
 import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, toneField, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
@@ -1129,6 +1129,7 @@ export function scaffoldElm(app: App, dir: string, layerDirs: Record<string, str
   // Randomness is the harness's: an Elm build has no package that makes it (and App.elm may not import one).
   if (/"elm\/random"/.test(readFileSync(join(dir, "elm.json"), "utf8"))) throw new Error("runtime/elm/elm.json depends on elm/random: randomness is the harness's (Draw.elm)");
   copyFileSync(join(ROOT, "runtime/elm/Ui.elm"), join(dir, "src/Ui.elm"));
+  copyFocusRuntime(dir);
   copyFileSync(join(ROOT, "runtime/elm/Fmt.elm"), join(dir, "src/Fmt.elm"));
   // Platform functions: the installation's reviewed Elm code, imported by the generated Spec.
   if (app.platforms?.some((p) => p.name === "std.crypto")) copyFileSync(join(ROOT, "runtime/elm/Crypto.elm"), join(dir, "src/Crypto.elm"));
@@ -1240,6 +1241,10 @@ async function compileElm(dir: string): Promise<string> {
     // The client layers, for the test driver.
     const t = await run(bin("esbuild"), ["through.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=through.mjs", "--log-level=error"], dir);
     if (!t.ok) return clean(t.out);
+  }
+  if (existsSync(join(dir, "focus-entry.ts"))) {
+    const f = await run(bin("esbuild"), ["focus-entry.ts", "--bundle", "--format=iife", "--outfile=focus.js", "--log-level=error"], dir);
+    if (!f.ok) return clean(f.out);
   }
   if (existsSync(join(dir, "glue.ts"))) {
     // Apps that make calls: the fetch glue for the browser.

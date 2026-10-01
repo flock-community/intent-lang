@@ -88,8 +88,34 @@ try {
   assert.deepEqual(await tab.evaluate(() => (window as any).__w), [{ on: "dismiss", target: "ask", key: "" }], "Escape in the dialog dismisses it; outside it does nothing");
   assert.equal(await tab.getAttribute('[data-el="ask"]', "data-as"), "dialog");
   await tab.close();
+  // Focus (runtime/ts/focus.ts): a dialog is a labelled modal dialog; when it opens focus moves into
+  // it, Tab stays inside it, and when it closes focus goes back to the button that opened it.
+  const fdir = site("");
+  await build({
+    stdin: { contents: `import { mount } from ${JSON.stringify(join(process.cwd(), "runtime/ts/ui.ts"))};\nimport { watchFocus } from ${JSON.stringify(join(process.cwd(), "runtime/ts/focus.ts"))};\nmount(document.getElementById("app")!, { init: () => 0, step: (w, m) => (w.on === "click" && w.target === "open" ? 1 : w.on === "dismiss" || (w.on === "click" && w.target === "cancel") ? 0 : m), render: (m) => ({ k: "screen", title: "T", c: [{ k: "button", n: "open", label: "Open", enabled: true }, ...(m ? [{ k: "section", n: "ask", label: "", as: "dialog", c: [{ k: "text", n: "q", v: "Sure?", as: "title" }, { k: "field", n: "why", label: "Why", v: "" }, { k: "button", n: "ok", label: "OK", enabled: true }, { k: "button", n: "cancel", label: "Cancel", enabled: true }] }] : [])] }) as any });\nwatchFocus(document.body);`, loader: "ts", resolveDir: process.cwd() },
+    bundle: true, format: "iife", outfile: join(fdir, "app.js"), logLevel: "error",
+  });
+  writeFileSync(join(fdir, "index.html"), `<!doctype html><html><body><div id="app"></div><script src="app.js"></script></body></html>`);
+  const ft = await (await getBrowser()).newPage();
+  await ft.goto(`file://${join(fdir, "index.html")}`);
+  const focused = () => ft.evaluate(() => (document.activeElement as HTMLElement | null)?.closest("[data-el]")?.getAttribute("data-el") ?? null);
+  await ft.click('[data-el="open"]');
+  await ft.waitForFunction(() => document.activeElement?.closest("[data-el]")?.getAttribute("data-el") === "why");
+  assert.deepEqual(await ft.evaluate(() => { const d = document.querySelector('[data-el="ask"]')!; return [d.getAttribute("role"), d.getAttribute("aria-modal"), document.getElementById(d.getAttribute("aria-labelledby")!)?.textContent]; }), ["dialog", "true", "Sure?"], "a modal dialog, labelled by its title");
+  await ft.keyboard.press("Tab");
+  await ft.keyboard.press("Tab");
+  assert.equal(await focused(), "cancel");
+  await ft.keyboard.press("Tab");
+  assert.equal(await focused(), "why", "Tab goes round inside the dialog");
+  await ft.keyboard.press("Shift+Tab");
+  assert.equal(await focused(), "cancel", "and Shift+Tab back");
+  await ft.keyboard.press("Escape");
+  await ft.waitForFunction(() => !document.querySelector('[data-el="ask"]'));
+  await ft.waitForFunction(() => document.activeElement?.getAttribute("data-el") === "open");
+  assert.equal(await focused(), "open", "focus goes back to what opened it");
+  await ft.close();
 } finally {
   await closeBrowser();
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }
-console.log("ok browser-nested: rows inside rows read by the nearest data-row, acted on by the path of rows, rects keyed by it, inner rows outside their row refused, data-row is the row's key; the plain renderer meets the same contract; Escape dismisses a dialog");
+console.log("ok browser-nested: rows inside rows read by the nearest data-row, acted on by the path of rows, rects keyed by it, inner rows outside their row refused, data-row is the row's key; the plain renderer meets the same contract; Escape dismisses a dialog; focus moves into a dialog, stays there and goes back");

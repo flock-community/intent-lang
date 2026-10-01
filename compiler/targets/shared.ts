@@ -297,7 +297,13 @@ export function writeThrough(app: App, dir: string, layerDirs: Record<string, st
 
 export function html(title: string, scripts: string, elm: boolean): string {
   const style = elm ? `<style>${STYLE}</style>` : "";
-  return `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>${style}</head>\n<body><div id="app"></div>${scripts}</body></html>\n`;
+  return `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>${style}</head>\n<body><div id="app"></div>${scripts}<script src="focus.js"></script></body></html>\n`;
+}
+
+/** Focus and dialogs (1.1, runtime/ts/focus.ts): the same on every target, bundled as focus.js for the page. */
+export function copyFocusRuntime(dir: string) {
+  copyFileSync(join(ROOT, "runtime/ts/focus.ts"), join(dir, "focus.ts"));
+  writeFileSync(join(dir, "focus-entry.ts"), 'import { watchFocus } from "./focus.ts";\n\nwatchFocus(document.body);\n');
 }
 
 /** Apps that call apis: the calls runtime, its outbox, and the reviewed SHA-256 an undo's key is made with. */

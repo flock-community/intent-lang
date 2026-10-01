@@ -11,7 +11,7 @@ import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, semanticsOf, toneField, usesInstant, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -791,6 +791,7 @@ ${hasData(app) ? "\nexport const data = (m: Model) => Inner.data(m.inner);\n" : 
 export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, string> = {}): { appFile: string; specSource: string } {
   mkdirSync(dir, { recursive: true });
   copyFileSync(join(ROOT, "runtime/ts/ui.ts"), join(dir, "ui.ts"));
+  copyFocusRuntime(dir);
   copyFileSync(join(ROOT, "runtime/ts/fmt.ts"), join(dir, "fmt.ts"));
   if (usesClock(app)) copyFileSync(join(ROOT, "runtime/ts/clock.ts"), join(dir, "clock.ts"));
   copyDrawRuntime(app, dir);
@@ -835,6 +836,10 @@ async function compileTs(dir: string): Promise<string> {
   if (!t.ok) return clean(t.out);
   const b1 = await run(bin("esbuild"), ["main.ts", "--bundle", "--format=iife", "--outfile=main.js", "--log-level=error"], dir);
   if (!b1.ok) return clean(b1.out);
+  if (existsSync(join(dir, "focus-entry.ts"))) {
+    const f = await run(bin("esbuild"), ["focus-entry.ts", "--bundle", "--format=iife", "--outfile=focus.js", "--log-level=error"], dir);
+    if (!f.ok) return clean(f.out);
+  }
   const b2 = await run(bin("esbuild"), ["test-entry.ts", "--bundle", "--format=esm", "--platform=node", "--outfile=test.mjs", "--log-level=error"], dir);
   if (!b2.ok) return clean(b2.out);
   if (existsSync(join(dir, "screen-entry.ts"))) {
