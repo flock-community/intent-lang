@@ -1,0 +1,42 @@
+bundle ui.controls {
+  "Small controls that keep a value in bounds."
+}
+language 1.1
+
+component Stepper {
+  "A number from 0 up to a highest value, one step at a time."
+  param highest: Int = 10
+  state {
+    value: Int = 0
+  }
+  screen {
+    button down "−" as icon {
+      enabled when @value is above 0
+    }
+    text shown = "{value}" as stat
+    button up "+" as icon {
+      enabled when @value is below @highest
+    }
+  }
+  on click down {
+    - decrease @value by 1
+  }
+  on click up {
+    - increase @value by 1
+  }
+
+  examples with {
+    highest = 2
+  }
+
+  example "never past its bounds" {
+    see shown = "0"
+    see down is disabled
+    click up
+    click up
+    see shown = "2"
+    see up is disabled
+    click down
+    see shown = "1"
+  }
+}

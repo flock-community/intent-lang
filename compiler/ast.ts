@@ -208,6 +208,9 @@ export interface Component {
   line: number;
   params?: Param[]; // behaviour components: parameters bound by `use`
   typeParams?: string[]; // 1.1: `component Table of T`: types each `use` binds (from its params' values)
+  // 1.1: what the component's own examples run with (`examples with { … }`), as written: the host's
+  // state fields (`samples: List Text = …`), the `use`'s bindings and slot fills. Its examples are in body.examples.
+  examplesWith?: { lines: string[]; line: number };
   body?: App; // behaviour components: their state, derive, screen, handlers, rules and always
   from?: string; // the bundle it was imported from
 }

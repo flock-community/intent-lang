@@ -842,8 +842,49 @@ component Pager as footer "The page info on the left; previous and next on the r
 ```
 
 Inside a component, write its own names and its params with `@` (`@page`, `@items`), so that
-every use gets its own copy. The checker warns (`UNSCOPED`) when you don't. A component has no
-examples of its own (`NOT_YET`): the demo app of its bundle proves it, through a `use`.
+every use gets its own copy. The checker warns (`UNSCOPED`) when you don't.
+
+**A component's own examples (1.1).** A component proves itself with `example` blocks inside it,
+written with its own names (`click next`), and an `examples with { … }` block that says what they
+run with: the `use`'s bindings and slot fills, and any state or records the examples need
+(`samples: List Sample = table { … }`). Each component with examples runs in a host app of its own:
+the bundle's declarations, that state, one `use` of the component, and its examples (`click next`
+becomes `click pager.next`), checked with the bundle and built and verified like any app
+(`intent build lib/ui/controls.intent`). They are part of the bundle's version: a changed one is a
+major version. A demo app still proves how components work together.
+
+```intent-excerpt
+component Stepper {
+  param highest: Int = 10
+  state {
+    value: Int = 0
+  }
+  screen {
+    button down "−" as icon {
+      enabled when @value is above 0
+    }
+    text shown = "{value}" as stat
+    button up "+" as icon {
+      enabled when @value is below @highest
+    }
+  }
+  on click down {
+    - decrease @value by 1
+  }
+  on click up {
+    - increase @value by 1
+  }
+  examples with {
+    highest = 2
+  }
+  example "never past its bounds" {
+    click up
+    click up
+    see shown = "2"
+    see up is disabled
+  }
+}
+```
 
 An app places a component with `use`, and binds its params in its block:
 

@@ -8,7 +8,8 @@ import { formatDiagnostics, parseSyntax } from "./parse.ts";
 import { compilerPins, load as loadSpec, modelPinProblem, readCompilerLock, sha, writeLock } from "./load.ts";
 import { install, publish, readProject } from "./registry.ts";
 import { stepText } from "./print.ts";
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { componentHosts } from "./hosts.ts";
 import { printApp } from "./print.ts";
 import { toBraces } from "./braces.ts";
 import { fixFile } from "./fix.ts";
@@ -157,17 +158,28 @@ switch (cmd) {
     // A bundle is proven by its demo app; a published app or contract is its own proof.
     const isApp = /^(app|contract)\s/m.test(readFileSync(file, "utf8").split("\n").find((l) => l.trim() && !l.trim().startsWith("#")) ?? "");
     const demo = isApp ? file : file.replace(/\.intent$/, ".demo.intent");
-    if (!existsSync(demo)) {
-      console.log(`publishing needs a demo app that proves the bundle: ${demo.replace(process.cwd() + "/", "")}`);
+    // 1.1: a bundle's components may prove themselves (their examples); then a demo app is optional.
+    const own = isApp ? undefined : loadSpec(resolve(file));
+    const proven = (own?.app?.components ?? []).filter((c) => c.body?.examples.length && !c.from);
+    if (own && own.diagnostics.some((x) => x.level === "error")) {
+      console.log(formatDiagnostics(file, own.sources[0].text, own.diagnostics, own.sources));
+      console.log("the bundle (or its components' examples) does not pass the checker");
       process.exit(1);
     }
-    const d = loadSpec(demo);
-    if (!d.app) {
+    if (!existsSync(demo) && !proven.length) {
+      console.log(`publishing needs a demo app that proves the bundle (${demo.replace(process.cwd() + "/", "")}), or examples in its components`);
+      process.exit(1);
+    }
+    const d = existsSync(demo) ? loadSpec(demo) : undefined;
+    if (d && !d.app) {
       console.log(formatDiagnostics(demo, d.sources[0].text, d.diagnostics, d.sources));
       console.log("the demo app does not pass the checker");
       process.exit(1);
     }
-    const fingerprints = d.app.examples.map((ex) => sha(ex.name + "\n" + ex.steps.map(stepText).join("\n")));
+    const fingerprints = [
+      ...(d?.app?.examples ?? []).map((ex) => sha(ex.name + "\n" + ex.steps.map(stepText).join("\n"))),
+      ...proven.flatMap((c) => c.body!.examples.map((ex) => sha(`${c.name}: ${ex.name}\n` + ex.steps.map(stepText).join("\n")))),
+    ];
     const registry = resolve(flags.registry ?? readProject()?.registry ?? "registry");
     const r = await publish(file, registry, sha, fingerprints);
     console.log(`published ${r.name} ${r.version} to ${registry}\n  ${r.why.join("\n  ")}`);
@@ -330,9 +342,24 @@ switch (cmd) {
     const wanted = (c.targets ?? (service || job ? ["ts"] : ["elm", "ts"])) as Target[];
     const targets = service || job ? (wanted.filter(able).length ? wanted.filter(able) : (["ts"] as Target[])) : wanted;
     const out = resolve(flags.out ?? `runs/single/${basename(file, ".intent")}`);
-    const results = await Promise.all(
-      targets.map((t) => compileApp(app, basename(file), src, t, `${out}/${t}`, { styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, incremental: c.incremental === "auto", cleanCheck: c.cleanCheck === "always", sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m) => say(`[${t}] ${m}`) })),
-    );
+    const opts = (t: Target, tag: string = t) => ({ styled: !!flags.styled, kit: !!flags.kit, twin: c.twin, incremental: c.incremental === "auto", cleanCheck: c.cleanCheck === "always", sessions: c.sessions, length: c.length, repairs: c.repairs, log: (m: string) => say(`[${tag}] ${m}`) });
+    // A bundle (1.1): every component with examples is built in its host app, and its examples run there.
+    const jobs =
+      app.kind === "bundle"
+        ? componentHosts(readFileSync(resolve(file), "utf8"), app).flatMap((h) => {
+            mkdirSync(out, { recursive: true });
+            const hf = join(out, `${h.name}.intent`);
+            writeFileSync(hf, h.text);
+            const hosted = loadSpec(hf, { ignoreLock: true });
+            if (!hosted.app) {
+              say(formatDiagnostics(hf, h.text, hosted.diagnostics, hosted.sources));
+              return [];
+            }
+            return (["elm", "ts"] as Target[]).filter((t) => targets.includes(t)).map((t) => () => compileApp(hosted.app!, `${h.name}.intent`, printApp(hosted.app!), t, `${out}/${h.component}/${t}`, opts(t, `${h.component} ${t}`)));
+          })
+        : targets.map((t) => () => compileApp(app, basename(file), src, t, `${out}/${t}`, opts(t)));
+    if (!jobs.length) say(`${file}: a bundle without component examples: nothing to build (its demo app proves it)`);
+    const results = await Promise.all(jobs.map((j) => j()));
     await closeBrowser();
     if (flags.json) {
       const targets = results.map((r) => {

@@ -482,6 +482,7 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
       (app.since ??= []).push({ line: node.line, version: "1.1", what: `a type parameter (\`component ${m[1]} of ${m[2]}\`)` });
     }
     if (comp.params?.some((p) => p.type)) (app.since ??= []).push({ line: node.line, version: "1.1", what: "a typed param (`param name: Type`)" });
+    if (comp.body?.examples.length) (app.since ??= []).push({ line: comp.body.examples[0].line, version: "1.1", what: `examples inside a component (\`${m[1]}\`)` });
     app.components.push(comp);
   } else if (t === "state") {
     for (const c of node.children) {
@@ -563,7 +564,6 @@ function parseBlock(node: Line, app: App, ctx: Ctx, where: "top" | "component"):
   } else if (t === "relations") {
     err(node.line, "SYNTAX", "a relation is said on the field that holds the key: `ticket: ref Ticket` in the record (the `relations` block is gone since v59)");
   } else if ((m = t.match(new RegExp(`^example\\s+(${STR})$`)))) {
-    if (where === "component") err(node.line, "NOT_YET", "examples inside a component are not in the language yet; prove a component with examples in its bundle's demo app");
     const ex: Example = { name: parseString(m[1])!, steps: [], line: node.line };
     for (const c of node.children) {
       const st = parseStep(c, err);
@@ -675,6 +675,7 @@ function parseComponent(node: Line, name: string, base: string | undefined, look
   const params: Param[] = [];
   const body = emptyApp();
   let hasBody = false;
+  let examplesWith: Component["examplesWith"];
   for (const c of node.children) {
     let m: RegExpMatchArray | null;
     const str = parseString(c.text);
@@ -682,6 +683,10 @@ function parseComponent(node: Line, name: string, base: string | undefined, look
     else if ((m = c.text.match(new RegExp(`^param\\s+(${LOWER})(?:\\s*:\\s*([A-Za-z][\\w ]*?))?(?:\\s+(${STR}))?(?:\\s*=\\s*(.+))?$`)))) {
       if (params.some((p) => p.name === m![1])) err(c.line, "DUPLICATE", `param \`${m[1]}\` is declared twice`, c.indent + 1);
       params.push({ name: m[1], ...(m[2] ? { type: m[2].trim() } : {}), doc: m[3] ? parseString(m[3]) : undefined, default: m[4]?.trim(), line: c.line });
+    } else if (/^examples\s+with$/.test(c.text)) {
+      // 1.1: what the component's examples run with, kept as written for its host app (componentHosts).
+      const text = (l: Line, ind: string): string[] => [`${ind}${l.text}`, ...l.children.flatMap((x) => text(x, ind + "  "))];
+      examplesWith = { lines: c.children.flatMap((x) => text(x, "")), line: c.line };
     } else if (parseBlock(c, body, ctx, "component")) hasBody = true;
     else err(c.line, "SYNTAX", 'inside a component: a "look" string, `param name`, or a block (state, derive, screen, on, always, rules)', c.indent + 1);
   }
@@ -689,7 +694,8 @@ function parseComponent(node: Line, name: string, base: string | undefined, look
   if (!look && !hasBody) err(node.line, "SYNTAX", `component ${name} needs a look: \`component ${name} "…"\`, or behaviour blocks`);
   if (base && !Object.values(PRESENTATIONS).some((ps) => ps.includes(base))) err(node.line, "UNKNOWN_NAME", `\`${base}\` is not a built-in presentation`);
   if (hasBody && !body.screen.length) err(node.line, "SYNTAX", `component ${name} has behaviour but no \`screen\``);
-  return { name, base, look, line: node.line, params: hasBody ? params : undefined, body: hasBody ? body : undefined };
+  if (examplesWith && !body.examples.length) err(examplesWith.line, "SYNTAX", `component ${name} has \`examples with\` but no \`example\``);
+  return { name, base, look, line: node.line, params: hasBody ? params : undefined, body: hasBody ? body : undefined, ...(examplesWith ? { examplesWith } : {}) };
 }
 
 /**

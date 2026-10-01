@@ -15,6 +15,7 @@ import { expandUses } from "./expand.ts";
 import { PROJECT_ROOT, ROOT } from "./gen.ts";
 import { checkApp, jobScreen, parseSyntax, typeToString } from "./parse.ts";
 import { baseTarget, refine, targetOf } from "./refine.ts";
+import { checkHosts } from "./hosts.ts";
 import { model } from "./llm.ts";
 import { config } from "./config.ts";
 import { printApp } from "./print.ts";
@@ -124,7 +125,7 @@ function offsetLines(v: any, base: number) {
       else offsetLines(x, base);
 }
 
-export function load(file: string, opts: { ignoreLock?: boolean; quality?: false | { sets: RuleSet[]; config: QualityConfig } } = {}): Loaded {
+export function load(file: string, opts: { ignoreLock?: boolean; quality?: false | { sets: RuleSet[]; config: QualityConfig }; hosts?: false } = {}): Loaded {
   const sources = [{ file: shown(file), text: readFileSync(file, "utf8") }];
   const diagnostics: Diagnostic[] = [];
   const at = (line: number): { file: string; line: number } => ({ file: sources[Math.floor(line / LINE_BASE)]?.file ?? sources[0].file, line: line % LINE_BASE });
@@ -522,6 +523,9 @@ export function load(file: string, opts: { ignoreLock?: boolean; quality?: false
     const k = `${d.file}:${d.line}:${d.col}:${d.code}:${d.message}`;
     return said.has(k) ? false : (said.add(k), true);
   });
+  // A bundle's components with examples (1.1): each runs in a host app, checked here on the bundle's lines.
+  if (app.kind === "bundle" && opts.hosts !== false)
+    out.push(...checkHosts(sources[0].file, sources[0].text, app, (f) => load(f, { ignoreLock: true, quality: false, hosts: false })).map((d) => ({ ...d, file: d.file ?? sources[0].file })));
   out.sort((a, b) => (a.file === b.file ? a.line - b.line || a.col - b.col : a.file === sources[0].file ? -1 : 1));
   return { app: out.some((d) => d.level === "error") ? undefined : app, diagnostics: out, sources, bundles, base: baseApp, read: app };
 }

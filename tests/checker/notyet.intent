@@ -18,7 +18,7 @@ component Counter {                                              # expect: UNUSE
   screen {
     text shown = "{@value}"
   }
-  example "counts" {                                             # expect: NOT_YET
+  example "counts" {                                             # expect-not: NOT_YET
     see shown = "0"
   }
 }

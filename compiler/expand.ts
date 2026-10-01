@@ -10,7 +10,7 @@ type Err = (l: number, c: string, m: string, col?: number) => void;
 const QN = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/;
 
 /** Every name a component declares: its state, derived values and screen elements (not row children). */
-function localNames(body: App): Set<string> {
+export function localNames(body: App): Set<string> {
   const names = new Set<string>([...body.state.map((f) => f.name), ...body.derive.map((d) => d.name)]);
   const walk = (els: Element[]) => {
     for (const el of els) {

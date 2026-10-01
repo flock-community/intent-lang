@@ -92,7 +92,12 @@ Versions v1–v73 are the development history before the first stable version: s
   bound per `use` by what it binds, a mismatch a `TYPE` error at the binding), and slots (`slot body`,
   filled by the app with its own elements: `body { field reason "Reason" }`). Example:
   `apps/44-team.intent` (a generic table and a dialog), twin-verified on both targets, first
-  attempt. A spec that uses a form newer than its own `language` line
+  attempt. **A component's own examples** (lifts a `NOT_YET`): `example` blocks inside a component
+  and `examples with { … }` (bindings, slot fills, sample state and records); each runs in a host
+  app of its own (`compiler/hosts.ts`), checked with the bundle on the bundle's lines and built with
+  `intent build <bundle>`; their fingerprints are part of the bundle's version, and a bundle whose
+  components prove themselves needs no demo app to publish. Example: `lib/ui/controls.intent`
+  (Stepper), twin-verified on both targets, first attempt. A spec that uses a form newer than its own `language` line
   is an error (`NEEDS_LANGUAGE`, as Go's `go` line), and `intent fix` raises the line; an expanded
   spec prints the line its forms need. Example: `apps/39-weather.intent` with
   `lib/weather/*` and `apps/api/weather-api.intent` (twin-verified on both targets, first attempt).
