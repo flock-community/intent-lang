@@ -119,7 +119,32 @@ view lists keys node =
     in
     case node of
         NStyled attrs inner ->
-            Html.div (A.style "display" "contents" :: List.map (\( k, v ) -> A.attribute ("data-" ++ k) v) attrs) [ view lists keys inner ]
+            let
+                -- A dialog or drawer: Escape inside it dismisses it (1.1; the app decides what that does).
+                onEscape =
+                    case inner of
+                        NSection n _ _ ->
+                            if List.any (\( k, v ) -> k == "as" && (v == "dialog" || v == "drawer")) attrs then
+                                [ E.stopPropagationOn "keydown"
+                                    (D.field "key" D.string
+                                        |> D.andThen
+                                            (\k ->
+                                                if k == "Escape" then
+                                                    D.succeed ( wire "dismiss" n, True )
+
+                                                else
+                                                    D.fail "not Escape"
+                                            )
+                                    )
+                                ]
+
+                            else
+                                []
+
+                        _ ->
+                            []
+            in
+            Html.div (A.style "display" "contents" :: onEscape ++ List.map (\( k, v ) -> A.attribute ("data-" ++ k) v) attrs) [ view lists keys inner ]
 
         NScreen title c ->
             Html.main_ [ A.class "screen" ] (Html.h1 [] [ Html.text title ] :: List.map (view lists keys) c)

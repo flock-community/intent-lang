@@ -142,6 +142,12 @@ function pageAct(a: { on: string; target: string; rows: { list: string; row: num
   }
   const el = find(scope, row, a.target);
   if (!el) return `${a.target} not on screen`;
+  // Escape, pressed inside the dialog or drawer (1.1).
+  if (a.on === "dismiss") {
+    const inner = el.querySelector<HTMLElement>("button,input,textarea,select,[tabindex]") ?? el;
+    inner.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    return null;
+  }
   const setValue = (input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) => {
     const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : input instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(input, value);

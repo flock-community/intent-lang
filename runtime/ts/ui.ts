@@ -50,6 +50,15 @@ export function mount<M>(root: HTMLElement, p: Program<M>): (w: Wire) => void {
 /** One node, with its presentation and tone as data attributes (a stylesheet's hooks; the look is the host's). */
 function el(node: Node, dispatch: (w: Wire) => void, keys: string[], lists: string[]): HTMLElement {
   const e = drawn(node, dispatch, keys, lists);
+  // A dialog or drawer: Escape inside it dismisses it (1.1; the app decides what that does).
+  if (node.k === "section" && (node.as === "dialog" || node.as === "drawer")) {
+    const target = [...lists, node.n].join(".");
+    e.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      ev.stopPropagation();
+      dispatch({ on: "dismiss", target, key: keys[keys.length - 1] ?? "" });
+    });
+  }
   if (node.as) e.dataset.as = node.as;
   if (node.tone) e.dataset.tone = node.tone;
   if (node.component) e.dataset.component = node.component;

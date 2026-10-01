@@ -23,7 +23,8 @@ A component that shows the app's own content has slots (`slot body`, filled by `
 `use`); one that works on any record has a type parameter (`component Table of T`,
 `param rows: List T`). Never copy a component to change what it contains. Prove a component with
 examples inside it (`examples with { … }` says what they run with), written in its own names;
-build the bundle (`intent build lib/x/y.intent`) to run them. If the changelog shows a newer
+build the bundle (`intent build lib/x/y.intent`) to run them. A dialog says what Escape does
+(`on dismiss ask { … }`) and proves it with `press Escape`. If the changelog shows a newer
 version, read what it adds first.
 
 ## 1. Understand the intent (interview)

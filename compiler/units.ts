@@ -69,7 +69,7 @@ export function units(app: App): Unit[] {
   for (const a of app.invariants ?? []) add("always", `${a.line}`, a.line, a.text, refsOf(a.text));
   for (const ex of app.examples) {
     const lists = (r?: RowRef): string[] => (r ? [...(r.list ? [r.list] : []), ...lists(r.parent)] : []);
-    const deps = ex.steps.flatMap((s) => [...("target" in s ? [s.target] : []), ...("at" in s ? lists(s.at) : [])]);
+    const deps = ex.steps.flatMap((s) => [...("target" in s && s.target ? [s.target] : []), ...("at" in s ? lists(s.at) : [])]);
     add("example", ex.name, ex.line, ex.steps, deps);
   }
   return out;

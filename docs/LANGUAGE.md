@@ -771,6 +771,12 @@ Built-in presentations (closed set; each has one meaning):
 | list | `table`, `cards`, `grid`, `timeline`, `bars`, `menu` | `bars` is a horizontal bar chart |
 | progress | `bar`, `ring` | |
 
+**Dismissing (1.1).** A section shown `as dialog` or `as drawer` can be dismissed by the user:
+Escape inside it (and its backdrop) sends `on dismiss <section>`, and the app says what that does
+(`on dismiss ask { - set @leaving to nothing }`). In an example, `press Escape` dismisses the
+topmost open dialog or drawer (`press Escape in ask` names it). Other keys are not in the language
+yet (`NOT_YET`).
+
 **Tone (1.1).** An element may say what its state *means*, never how that looks: `tone neutral |
 muted | info | success | warning | danger`, optionally `when <condition>`, one per line inside the
 element. The first tone whose condition holds is the element's tone; a `tone` without `when` is

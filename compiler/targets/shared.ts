@@ -118,7 +118,7 @@ export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, 
 
 export interface EventDef {
   tag: string;
-  on: "click" | "toggle" | "input" | "choose" | "tick";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "dismiss";
   target: string; // wire target: "list.name" inside rows, "list.inner.name" inside a row of a list inside a row
   // key: the row's key; keys: a row inside a row, with the outer row's key too (outerKey, then key)
   payload?: "key" | "text" | "value" | "pick" | "key-text" | "key-value" | "key-pick" | "keys" | "keys-text" | "keys-value" | "keys-pick";
@@ -145,6 +145,8 @@ export function events(app: App): EventDef[] {
         out.push({ tag: prefix + "Chosen", on: "choose", target, payload: k ? (`${k}-value` as "key-value") : "value", choice: t?.k === "Named" ? t.name : "" });
       }
       if (el.kind === "list") walk(el.children, [...lists, el]);
+      // A dialog or drawer the app closes on Escape (1.1): only when the app handles it.
+      if (el.kind === "section" && app.handlers.some((h) => h.verb === "dismiss" && h.target === target)) out.push({ tag: prefix + "Dismissed", on: "dismiss", target });
       if (el.kind === "section") walk(el.children, lists);
     }
   };

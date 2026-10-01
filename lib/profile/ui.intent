@@ -84,6 +84,7 @@ element section "a group of elements" {
   presentation banner "a full-width strip"
   presentation main "the main content column"
   presentation form "fields stacked with labels above them"
+  verb dismiss "the user closes it without choosing (Escape, the backdrop); a section shown as dialog or drawer; the step is `press Escape`"
   presentation empty "a centered \"nothing here\" block: a muted circle, then its texts stacked"
 }
 

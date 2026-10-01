@@ -22,7 +22,7 @@ export const DOM_CONTRACT = `The harness finds and drives every element through 
 6. select: either data-el on a native <select> whose option values are the choice values (option text = labels), or data-el on a container holding one element per option with data-option="<Value>" (the value name, not the label) and aria-selected="true" (tabs, chips), aria-pressed="true" (segmented) or aria-current="page" (nav) on the chosen one. Clicking an option sends the Chosen event. Options appear in the order of the choice.
 7. progress: data-el on a <progress max="100" value="…"> or on an element with role="progressbar" and aria-valuenow.
 8. list: data-el on the list container; each row is one element with data-row="<the row's key>" (the key the Screen gives the row, the one its events carry). Row elements go inside their row. A row may hold an inner list (a list inside a row, its own data-el) whose rows are data-row elements inside it: an element belongs to its nearest data-row, so the inner rows must be inside their outer row. An inner row's events carry the outer row's key and its own (TypeScript: \`outerKey\` and \`key\`; Elm: the outer key first). Inside a table row, the inner list goes in a cell of its own as a plain stacked list.
-9. section: data-el on the section's container; its elements are inside it. A section with nothing visible in it may be left out. A section title (\`section x "Title"\`) and field labels are shown as written.
+9. section: data-el on the section's container; its elements are inside it. A section shown as dialog or drawer whose app handles it (a Dismissed event) sends Dismissed when the user presses Escape inside it, and on a click on its backdrop. A section with nothing visible in it may be left out. A section title (\`section x "Title"\`) and field labels are shown as written.
 10. Nothing else may carry data-el, data-row or data-option.`;
 
 const STYLE_RULES = `Styling rules:
@@ -133,7 +133,8 @@ export async function checkLook(dir: string, app: App, shotsDir?: string): Promi
           continue;
         }
         if (step.do === "see") {
-          const msg = checkSee(dom, step);
+          // A tone is what the screen says; the page shows it in its look, which no data attribute must carry.
+          const msg = checkSee(step.check.is === "tone" ? screen : dom, step);
           if (msg) {
             problems.push(`${where}: ${msg} (on the page)\n\nWhat the screen should show:\n\`\`\`\n${describe(screen)}\n\`\`\``);
             break;
@@ -141,7 +142,9 @@ export async function checkLook(dir: string, app: App, shotsDir?: string): Promi
           continue;
         }
         const action = stepToAction(step)!;
-        const r = resolve(dom, action);
+        // Which section is a dialog is the screen's to say (`as`); the page is then pressed in it.
+        const r = resolve(action.on === "dismiss" ? screen : dom, action);
+        if (action.on === "dismiss" && "wires" in r) action.target = (r.wires[0] as { target: string }).target;
         if ("unavailable" in r) {
           problems.push(`${where}: cannot do this step on the page: ${r.unavailable}`);
           break;

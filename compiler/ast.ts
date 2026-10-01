@@ -107,7 +107,7 @@ export interface Element {
   screen?: string; // the screen this element is on, when an app has several
 }
 
-export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer" | "event" | "open";
+export type Verb = "click" | "toggle" | "type" | "choose" | "tick" | "start" | "answer" | "event" | "open" | "dismiss";
 
 /** `screen ticket "/tickets/{id}" { path id: Int … }`: one of an app's screens, with its address. */
 export interface ScreenDecl {
@@ -152,6 +152,8 @@ export type Step =
   | { do: "type"; text: string; target: string; at?: RowRef; line: number }
   | { do: "click"; target: string; at?: RowRef; line: number }
   | { do: "toggle"; target: string; at?: RowRef; line: number }
+  // 1.1: a key the user presses. Escape dismisses the topmost open dialog or drawer (or the section named).
+  | { do: "press"; key: "Escape"; target?: string; line: number }
   | { do: "choose"; value: string; target: string; at?: RowRef; line: number; quoted?: boolean }
   | { do: "tick"; times: number; ms?: number; line: number } // ms: a `wait`: the clock moves on by that much
   | { do: "size"; size: string; line: number } // the host shows the app at another size (`size Standard`)

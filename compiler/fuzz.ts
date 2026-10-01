@@ -93,6 +93,8 @@ export function actionTemplates(app: App): { weight: number; make: (rnd: () => n
     }
   };
   walk(app.screen, []);
+  // A dialog or drawer the app dismisses: now and then the user presses Escape (1.1).
+  if (app.handlers.some((h) => h.verb === "dismiss")) out.push({ weight: 1, make: () => ({ on: "dismiss", target: "" }) });
   // Apps that read the clock (without a tick): time passes, as the examples let it (and a day or two).
   const waits = clockWaits(app);
   if (waits.length) out.push({ weight: 2, make: (r) => ({ on: "tick", target: "", times: 0, ms: pick(r, waits) }) });
@@ -177,6 +179,7 @@ export function actionText(a: Action): string {
     case "input": return `type ${JSON.stringify(a.text)} into ${a.target}${at}`;
     case "click": return `click ${a.target}${at}`;
     case "toggle": return `toggle ${a.target}${at}`;
+    case "dismiss": return `press Escape${a.target ? ` in ${a.target}` : ""}`;
     case "choose": return a.pick !== undefined ? `choose option ${a.pick + 1} in ${a.target}${at}` : `choose ${a.value} in ${a.target}${at}`;
     case "tick": return a.times === 0 && a.ms ? `wait ${a.ms % 86400000 === 0 ? `${a.ms / 86400000}d` : a.ms % 3600000 === 0 ? `${a.ms / 3600000}h` : `${a.ms / 60000}m`}` : `tick ${a.times} times`;
     case "restart": return "restart";

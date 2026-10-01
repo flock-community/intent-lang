@@ -36,7 +36,7 @@ export const useProviderPlans = (p?: Record<string, import("../runtime/ts/access
 export type Acting = CallOut & { as?: string };
 
 export interface Action {
-  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back" | "size" | "random";
+  on: "click" | "toggle" | "input" | "choose" | "tick" | "other" | "restart" | "steer" | "open" | "back" | "size" | "random" | "dismiss";
   target: string; // element name ("" for tick; the endpoint for another client's call)
   call?: Acting; // on "other": another client calls the provider (as a caller, when the example says so)
   ms?: number; // on "tick" from a `wait`: how far the clock moves
@@ -690,10 +690,19 @@ export function resolve(obs: Obs, a: Action): { wires: object[] } | { unavailabl
   if (a.on === "open" || a.on === "back") return { wires: [{ on: a.on, target: a.target }] }; // handled by the session: the history
   if (a.on === "steer") return { wires: [{ on: "steer", target: a.target, value: a.value, times: a.times }] }; // handled by the session: the next attempts to that api go wrong
   if (a.on === "random") return { wires: [{ on: "random", target: a.target, value: a.value }] }; // handled by the session: the next draws take these values
+  // 1.1: Escape dismisses the dialog or drawer named, or else the last one open (the topmost).
+  if (a.on === "dismiss") {
+    const open: string[] = [];
+    const walk = (ns: any[]) => ns?.forEach((n) => (n?.k === "section" && (n.as === "dialog" || n.as === "drawer") && open.push(n.n), n?.k === "section" && walk(n.c)));
+    walk(obs?.c);
+    const target = a.target || open[open.length - 1];
+    if (!target || !open.includes(target)) return { unavailable: a.target ? `\`${a.target}\` is not an open dialog or drawer` : "no dialog or drawer is open" };
+    return { wires: [{ on: "dismiss", target, key: "" }] };
+  }
   const f = locate(obs, a.target, rowsOf(a));
   if ("missing" in f) return { unavailable: f.missing };
   const n = f.node;
-  const want = { click: "button", toggle: "checkbox", input: "field", choose: "select" }[a.on];
+  const want = ({ click: "button", toggle: "checkbox", input: "field", choose: "select" } as Record<string, string>)[a.on];
   if (n.k !== want) return { unavailable: `\`${a.target}\` is a ${n.k}, not a ${want}` };
   if (a.on === "click" && !n.enabled) return { unavailable: `button \`${a.target}\` is disabled` };
   let value = a.value;
@@ -728,6 +737,7 @@ export function stepToAction(s: Step): Action | undefined {
     case "type": return { on: "input", target: s.target, text: s.text, ...rowOfStep(s.at) };
     case "click": return { on: "click", target: s.target, ...rowOfStep(s.at) };
     case "toggle": return { on: "toggle", target: s.target, ...rowOfStep(s.at) };
+    case "press": return { on: "dismiss", target: s.target ?? "" };
     case "choose": return { on: "choose", target: s.target, value: s.value, ...rowOfStep(s.at) };
     case "tick": return { on: "tick", target: "", times: s.times, ms: s.ms };
     case "restart": return { on: "restart", target: "" };

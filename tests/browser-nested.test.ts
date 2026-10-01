@@ -71,8 +71,25 @@ try {
   assert.deepEqual(o.errors, [], "the plain renderer meets the DOM contract");
   assert.deepEqual(fidelityDiff(o.dom, o.screen), [], "the plain renderer shows the screen, row keys included");
   await p.close();
+  // Escape inside a section shown as dialog sends `dismiss` for it (1.1), and nothing outside one.
+  const esc = site("");
+  await build({
+    stdin: { contents: `import { mount } from ${JSON.stringify(join(process.cwd(), "runtime/ts/ui.ts"))};\n(window as any).__w = [];\nmount(document.getElementById("app")!, { init: () => 0, step: (w, m) => ((window as any).__w.push(w), m), render: () => ({ k: "screen", title: "T", c: [{ k: "button", n: "outside", label: "Out", enabled: true }, { k: "section", n: "ask", label: "", as: "dialog", c: [{ k: "button", n: "ok", label: "OK", enabled: true }] }] }) as any });`, loader: "ts", resolveDir: process.cwd() },
+    bundle: true, format: "iife", outfile: join(esc, "app.js"), logLevel: "error",
+  });
+  writeFileSync(join(esc, "index.html"), `<!doctype html><html><body><div id="app"></div><script src="app.js"></script></body></html>`);
+  const { getBrowser } = await import("../compiler/browser.ts");
+  const tab = await (await getBrowser()).newPage();
+  await tab.goto(`file://${join(esc, "index.html")}`);
+  await tab.focus('[data-el="outside"]');
+  await tab.keyboard.press("Escape");
+  await tab.focus('[data-el="ok"]');
+  await tab.keyboard.press("Escape");
+  assert.deepEqual(await tab.evaluate(() => (window as any).__w), [{ on: "dismiss", target: "ask", key: "" }], "Escape in the dialog dismisses it; outside it does nothing");
+  assert.equal(await tab.getAttribute('[data-el="ask"]', "data-as"), "dialog");
+  await tab.close();
 } finally {
   await closeBrowser();
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 }
-console.log("ok browser-nested: rows inside rows read by the nearest data-row, acted on by the path of rows, rects keyed by it, inner rows outside their row refused, data-row is the row's key; the plain renderer meets the same contract");
+console.log("ok browser-nested: rows inside rows read by the nearest data-row, acted on by the path of rows, rects keyed by it, inner rows outside their row refused, data-row is the row's key; the plain renderer meets the same contract; Escape dismisses a dialog");

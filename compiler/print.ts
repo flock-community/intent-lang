@@ -65,6 +65,7 @@ export function stepText(s: Step): string {
     }
     case "given": return `given ${s.name} = ${lit(s.value, "")}`;
     case "request": return `request ${s.method} ${q(s.path)}${s.args.length ? ` with ${s.args.map((a) => `${a.in} ${a.name} = ${lit(a.value, "")}`).join(", ")}` : ""}`;
+    case "press": return `press ${s.key}${s.target ? ` in ${s.target}` : ""}`;
     case "see": {
       const c = s.check;
       if (/(^|\.)header\./.test(s.target)) return `see ${s.target} ${c.is === "eq" ? `= ${q(c.value)}` : "is absent"}`;

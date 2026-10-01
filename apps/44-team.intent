@@ -80,6 +80,11 @@ on click cancel {
   - clear @reason
 }
 
+on dismiss ask {
+  - set @leaving to nothing
+  - clear @reason
+}
+
 example "removing someone after saying why" {
   see team.shown has 2 rows
   see team.count = "2 rows"
@@ -93,6 +98,16 @@ example "removing someone after saying why" {
   see team.shown has 1 row
   see name on row 1 = "Ann"
   see role on row 1 = "Lead"
+}
+
+example "Escape keeps them too" {
+  click remove on row 2
+  type "Typo" into reason
+  press Escape
+  see ask is hidden
+  see team.count = "2 rows"
+  click remove on row 2
+  see reason = ""
 }
 
 example "keeping them" {

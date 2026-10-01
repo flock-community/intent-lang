@@ -1577,6 +1577,12 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
   }
   if (t === "restart") return { step: { do: "restart", line } };
   if (t === "go back") return { step: { do: "back", line } };
+  // 1.1: `press Escape [in ask]`: the user dismisses a dialog or drawer.
+  if ((m = t.match(new RegExp(`^press\\s+Escape(?:\\s+in\\s+(${QN}))?$`)))) return { step: { do: "press", key: "Escape", ...(m[1] ? { target: m[1] } : {}), line } };
+  if (/^press\s/.test(t)) {
+    err(line, "NOT_YET", "only `press Escape` is in the language yet (it dismisses a dialog or drawer); other keys come with focus steps", col);
+    return;
+  }
   if ((m = t.match(new RegExp(`^see\\s+screen\\s*=\\s*(${LOWER})$`)))) return { step: { do: "see", target: "screen", check: { is: "eq", value: m[1] }, line } };
   if ((m = t.match(new RegExp(`^open\\s+(${STR})$`)))) return { step: { do: "open", path: parseString(m[1])!, line } };
   // `steer random …`: the next draws take these values (a type's values, a shuffle's order, a pick).
@@ -1669,7 +1675,7 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     return { step: { do: "see", target: m[1], at: at(m[2]), check: { is: "eq", value }, line } };
   }
   const word = t.split(/\s+/)[0];
-  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "wait", "tick", "see", "snapshot", "restart", "steer", "open", "go back"])}`, col);
+  err(line, "SYNTAX", `not an example step: \`${t}\`${suggest(word, ["type", "click", "toggle", "choose", "press", "wait", "tick", "see", "snapshot", "restart", "steer", "open", "go back"])}`, col);
 }
 
 // ---------------------------------------------------------------- semantic checks
@@ -2228,6 +2234,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
             }
           }
         }
+        continue;
+      }
+      // 1.1: `press Escape [in x]`: a dialog or drawer the app dismisses (`on dismiss x`).
+      if (s.do === "press") {
+        const handled = app.handlers.filter((h) => h.verb === "dismiss").map((h) => h.target);
+        if (s.target && !handled.includes(s.target)) err(s.line, "STEP", `\`press Escape in ${s.target}\` does nothing: there is no \`on dismiss ${s.target}\``);
+        else if (!s.target && !handled.length) err(s.line, "STEP", "`press Escape` does nothing: no dialog or drawer here has `on dismiss …`");
         continue;
       }
       const cands = findEl(s.target).filter((c) => onScreen(c.el) && fitsRows(c, at));

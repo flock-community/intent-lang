@@ -218,10 +218,10 @@ export function overridesProof(app: App, warn: Warn) {
   if (!overridden.size) return;
   // Only the base's proofs (they come from the base's file); the spec's own examples are about its changes.
   for (const ex of app.examples.filter((e) => e.line >= LINE_BASE)) {
-    const touched = [...new Set(ex.steps.flatMap((s) => ("target" in s ? [s.target] : [])).filter((t) => overridden.has(t)))];
+    const touched = [...new Set(ex.steps.flatMap((s) => ("target" in s && s.target ? [s.target] : [])).filter((t) => overridden.has(t)))];
     if (touched.length) warn(ex.line, "OVERRIDES_PROOF", `base example "${ex.name}" checks ${touched.map((t) => `\`${t}\``).join(", ")}, which this spec changes: it must still pass, or \`drop example "${ex.name}"\``);
   }
-  for (const a of app.always) if (a.line >= LINE_BASE && "target" in a && overridden.has(a.target)) warn(a.line, "OVERRIDES_PROOF", `a base \`always\` check is about \`${a.target}\`, which this spec changes: it must still hold`);
+  for (const a of app.always) if (a.line >= LINE_BASE && "target" in a && !!a.target && overridden.has(a.target)) warn(a.line, "OVERRIDES_PROOF", `a base \`always\` check is about \`${a.target}\`, which this spec changes: it must still hold`);
 }
 
 /** A derived value used where its type matters has a known or declared type. */

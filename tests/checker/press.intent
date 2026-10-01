@@ -1,0 +1,29 @@
+app Press {
+  "1.1: `press Escape` dismisses a dialog the app handles (`on dismiss`); other keys are not in the language yet."
+}
+language 1.1
+
+state {
+  open: Bool = true
+}
+
+screen {
+  section ask as dialog {
+    visible when @open
+    text question = "Sure?"
+  }
+  section side as drawer {
+    text note = "x"
+  }
+}
+
+on dismiss ask {
+  - set @open to false
+}
+
+example "keys" {
+  press Escape                       # expect-not: STEP
+  press Escape in ask                # expect-not: STEP
+  press Escape in side               # expect: STEP
+  press Tab                          # expect: NOT_YET
+}
