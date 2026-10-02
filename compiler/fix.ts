@@ -116,7 +116,8 @@ function fixMaybe(line: string): { line: string; whats: string[] } {
   let result = "";
   let last = 0;
   const whats: string[] = [];
-  for (const m of line.matchAll(/\bMaybe\s+([A-Za-z]\w*)/g)) {
+  // `Maybe List T` / `Maybe Map T` stay: `List T or nothing` would be a list of `T or nothing`.
+  for (const m of line.matchAll(/\bMaybe\s+(?!(?:List|Map)\b)([A-Za-z]\w*)/g)) {
     const at = m.index!;
     if (!outsideString(line, at)) continue;
     result += line.slice(last, at) + `${m[1]} or nothing`;

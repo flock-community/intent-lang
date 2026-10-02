@@ -177,7 +177,10 @@ Habits that make builds identical *and* correct:
   record that holds a list of its own kind, is `NOT_YET`.
 - **Absent is `nothing`, and it works like Kotlin's null:** a value that may be missing is
   `T or nothing` with default `nothing`; never a stand-in like `0` or `""` with a comment explaining
-  it. A `T or nothing` is not a `T`: the checker refuses it (`NOTHING`, an error) wherever a `T` is
+  it. `or nothing` belongs to the type word right before it: `List Text or nothing` is a list of
+  `Text or nothing`. A list (or map) that may itself be absent is `Maybe List Text` (`Maybe Map
+  Int`); write it so, and do not let a `Maybe` rewrite turn it into `List Text or nothing`, which
+  means something else. A `T or nothing` is not a `T`: the checker refuses it (`NOTHING`, an error) wherever a `T` is
   needed — adding, ordering (`is above`), trimming, showing it (an element's value, a template's
   hole), counting, `increase … by`, a field or state of type `T` — until the sentence handles it.
   Lookups (`the ticket whose …`), `the highest … in @xs` and reads through a reference

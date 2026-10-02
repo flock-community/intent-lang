@@ -708,7 +708,9 @@ export function languageSpelling(app: App, warn: Warn) {
   own.forEach((raw, i) => {
     const line = i + 1;
     const t = codeOf(raw);
-    for (const m of t.matchAll(/\bMaybe\s+([A-Z]\w*)/g)) says(line, m[0], `${m[1]} or nothing`, "a value that may be absent is `T or nothing`");
+    // `Maybe List T` / `Maybe Map T` stay: they are the spelling of a list (map) that may be absent;
+    // `List T or nothing` is a list of `T or nothing` (`or nothing` binds to the word before it).
+    for (const m of t.matchAll(/\bMaybe\s+(?!(?:List|Map)\b)([A-Z]\w*)/g)) says(line, m[0], `${m[1]} or nothing`, "a value that may be absent is `T or nothing`");
     const sz = t.match(/^sizes\s+(.+)$/);
     if (sz && /\b[a-z]/.test(sz[1])) says(line, sz[0].trim(), `sizes ${sz[1].split("|").map((x) => x.trim()).map((x) => x[0].toUpperCase() + x.slice(1)).join(" | ")}`, "sizes are choice values, written in UpperCamel like every choice value");
     const step = t.match(/^\s*size\s+([a-z]\w*)\s*$/);

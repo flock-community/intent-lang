@@ -195,6 +195,10 @@ is what other languages call null or none. Say so instead of using a stand-in su
 (`selected: Int or nothing = nothing`, then `visible when there is a @selected` and `set @selected
 to nothing`). A `T or nothing` is not a `T`: wherever a sentence needs a `T`, it says what happens
 when there is none (the rules are in §2). On the wire nothing is `null` (§9.18).
+`or nothing` belongs to the type word right before it: `List Text or nothing` is a list of
+`Text or nothing` (an item may be nothing; the list itself is always there). A list that may itself
+be absent is written `Maybe List Text` (and a map, `Maybe Map Int`): nothing when there is no list,
+and when there is one, none of its items is nothing.
 `Instant` is a moment on the world's clock, to the second, in UTC: written `2026-09-24T07:00:00Z`
 (in JSON too). Use it for moments that other systems send or that people in other time zones share;
 use `DateTime` for the app's own local time. On input every ISO 8601 form with a zone is read into

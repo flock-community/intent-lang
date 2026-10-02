@@ -17,8 +17,9 @@ The candidates, for 1.x unless marked:
 - `row state` for view-only fields of a row (a per-row draft that is not stored with the row);
 - a reference to a row inside a row (it needs both keys: a path type, or a globally unique key);
 - reverse navigation (`@ticket's @comments`): `the @comments whose @ticket is @id` says it now;
-- `for each` over a chain (`for each @tag in @ticket's @tags`), and a `List T or nothing` type (it
-  reads as a list of `T or nothing`);
+- `for each` over a chain (`for each @tag in @ticket's @tags`); an optional list spelled with
+  `or nothing` (`(List T) or nothing`, or, in an edition, `List T or nothing` itself: it reads as a
+  list of `T or nothing` in language 1, and `Maybe List T` is the optional list);
 - `clock` in styled apps;
 - restyling a bundle component's elements from the app;
 - type parameters and slots, so a component can render the app's own rows;
@@ -149,7 +150,19 @@ Versions v1–v73 are the development history before the first stable version: s
   TypeScript target's `Clock` has `size` when the spec has `sizes`, and the harness's own entries
   type it with the spec's `Size` (a TypeScript build that read `@size` failed to compile); `intent
   check --json` writes its whole report before it exits (into a pipe it was cut at 512 bytes); an
-  api's random sessions no longer need an endpoint.
+  api's random sessions no longer need an endpoint. **An optional list** (found by OurOS: there was
+  no clean way to write one): `List T or nothing` has always parsed as a list of `T or nothing`
+  (`or nothing` binds to the type word right before it, as `?` does in Kotlin's `List<T?>`), and
+  the one spelling that parses as a list that may be absent, `Maybe List T`, got a `SPELLING` hint
+  whose rewrite (`List or nothing`) changed what the spec meant, and `intent fix` wrote
+  `List or nothing T`. Making `List T or nothing` mean an optional list would read more naturally,
+  but a spec that says it checks under language 1 with the other meaning (a list whose items may be
+  nothing; `null` items accepted on the wire), so changing it is breaking (STABILITY.md §3, rule 2)
+  and waits for an edition. The smallest change that keeps every spec's meaning: `Maybe List T` and
+  `Maybe Map T` are the reference's spelling of a list (map) that may be absent (§1 says so, and how
+  `or nothing` binds), the hint and `intent fix` leave them, and `Maybe T` for any other `T` is
+  still rewritten to `T or nothing` (tests/optional-list.test.ts). No spec in this repository,
+  `lib/` or the registry wrote `List T or nothing` or `Maybe List`.
 - 1 — the first stable version (stamped on v73's language). **What language 1 is:** a spec says
   what an app must be — its records, choices and refined types (`ref` references with declared
   keys, `T or nothing` with nothing-safety, random values drawn from types), its state (`stored`
