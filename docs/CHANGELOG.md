@@ -126,7 +126,13 @@ Versions v1–v73 are the development history before the first stable version: s
   a TypeScript screen build holds `screen.mjs` (contract `intent.screen/1`): the same core the
   examples run, with no platform; the host gives the clock, the size, the saved data and a seed,
   and performs the calls (docs/design/screen-host.md). App code may not use the platform (`fetch`,
-  timers, storage, the DOM), checked like randomness. **Providers:**
+  timers, storage, the DOM), checked like randomness. **A job host entry** (OurOS request 4): a job
+  build also holds `job-host.mjs` (contract `intent.job/1`), the same core with no platform and no
+  global: `start({ transport, clock?, saved?, seed? })` takes the host's transport (the shape of
+  `__intentTransport`) and what it kept, `run({ event?, tick?, clock? })` resolves with the job's
+  data once every call is answered, `stored()` gives the stored fields back; calls go out once each,
+  without a key (the host owns keys and retries, as for a screen). `job.mjs` and the global
+  transport are unchanged for existing hosts (tests/job-host.test.ts). **Providers:**
   `llm replay` answers each call from what was recorded for exactly its prompt (build logs, or
   `INTENT_RECORD`'s files), so a recorded build replays in CI without a model. **Fixes:** the
   TypeScript target's `Clock` has `size` when the spec has `sizes`, and the harness's own entries

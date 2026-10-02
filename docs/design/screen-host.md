@@ -66,7 +66,50 @@ browser entry.
   Habits (stored data round trip, no calls made twice), Table (seed required; the same seed gives the
   same run, another seed another), Weather (api events, no calls), Sized (sizes).
 
+## Jobs (`job-host.mjs`, `intent.job/1`)
+
+Asked for by OurOS (request 4, the job half): a sandboxed job may not touch `globalThis`, but
+`job.mjs` reads its transport from `__intentTransport`, keeps its stored state and outbox in
+`localStorage`, mints keys with `crypto` and waits with timers, all from the moment it is imported.
+
+**The choice: a second module, mirroring the screen host.** A job build also holds `job-host.mjs`,
+bundled for no platform, default export `{ meta, start }`, on the same core as `screen.mjs` (the step
+machine the examples run):
+
+- `meta`: as a screen's, without `sizes` and `screens`: `contract` (`"intent.job/1"`), `name`,
+  `clock`, `stored`, `draws`, `uses`.
+- `start({ transport, clock?, saved?, seed? })`: `clock`, `saved` and `seed` as for a screen.
+  `transport` has the shape of `__intentTransport` (calls.ts `Transport`); only `send` is used.
+  Required when the job calls an api (an error otherwise).
+- It returns `run({ event?, tick?, clock? })` and `stored()`. `run` hands the job an api event
+  (`{ event: "alerts.alertRaised", body }`, wire names read back), a tick or a new clock, or nothing;
+  it resolves with the job's data, as `job.mjs`'s `run` does, once every call it made, and every
+  call their answers made, has been answered. `stored()` is a screen's.
+
+Each call goes to `transport.send` once, as `job.mjs` sends it (the HTTP-shaped request after the
+api's client layer, with `alias` and `endpoint`; an undo also carries `undo` and `of`), but without
+an idempotency key: as for a screen, the host owns keys, retries, the outbox and approval. Answers are
+fed back in the order of the calls, not of their arrival, so a run does not depend on timing; a
+`send` that throws is an answer with status 0 (`no answer: …`). No timers: `run` awaits the
+transport's promises.
+
+**The alternative: a `start` on `job.mjs`, or `run({ event, transport, saved })` there.** One module
+is simpler to name, but `job.mjs` starts at import: it reads `localStorage`, opens its event
+streams through `__intentTransport` and keeps a timer. Making that lazy would change when an existing
+host's job starts and hears events; leaving it eager means a sandboxed host cannot import the module
+at all. A one-shot `run({ event, transport, saved })` that returns the data and the stored fields
+would also differ from `job.mjs`'s `run`, which resolves with the data alone. A second module keeps
+`job.mjs` exactly as it is and gives the job the screen's names and shapes (`start`, `saved`,
+`stored()`, `meta`). Reversible: `job.mjs` could later be generated on top of `job-host.mjs`.
+
+**Verified:** `tests/job-host.test.ts` builds `apps/30-urgent-watch.intent` with a stand-in app and
+runs `job-host.mjs` where `__intentTransport`, `localStorage`, `crypto`, `fetch`, the timers and
+`Math.random` throw on access: the exact requests sent through a fake transport, the data after each
+run, a 400 answer and a failing transport, `stored()` and a start from `saved`; and `job.mjs` on the
+global transport, unchanged.
+
 ## Not yet
 
-- Jobs keep `job.mjs`, which still takes the transport from `__intentTransport`.
-- Answers carry no call id: two calls to the same endpoint in flight are told apart only by order.
+- Answers carry no call id in `screen.mjs`: two calls to the same endpoint in flight are told apart
+  only by order (`job-host.mjs` performs the calls itself, so it pairs them).
+- A job host entry for Elm (jobs build on TypeScript only).

@@ -623,6 +623,27 @@ export function screenMeta(app: App) {
   };
 }
 
+/** The start of a host entry (screen.mjs, job-host.mjs): the clock and seed it needs, the core, and
+ *  what the host kept put back before \`on start\` runs. */
+function hostStart(app: App): string {
+  const c = usesClock(app);
+  const st = hasStored(app);
+  const dw = usesDraws(app);
+  return `${c ? `  if (!o.clock) throw new Error("${app.name}: start needs { clock } (this app reads the clock)");
+  let clock: Record<string, unknown> = { ...o.clock${app.sizes ? `, size: meta.sizes!.find((x) => x.toLowerCase() === (o.size ?? "").toLowerCase()) ?? meta.sizes![0]` : ""} };
+` : ""}${dw ? `  if (!isSeed(o.seed)) throw new Error("${app.name}: start needs { seed }: 64 hex digits from the host's CSPRNG (this app draws random values)");
+  const base = runBase(o.seed);
+  let n = 0;
+` : ""}  const s = core(${c ? "clock as never" : ""}) as ReturnType<typeof core> & Partial<{ calls(): unknown[]; data(): Record<string, unknown>; nav(): string | null; through(): unknown }>;
+${st ? `  if (o.saved) {
+    // Start from what was kept: the app from its defaults, the stored fields put back, then \`on start\`.
+    s.calls?.(); // the start without the saved data made nothing anyone saw
+    const { data } = migrate(o.saved, storedFields);
+    s.send({ on: "restart", target: "", saved: data${c ? ", clock" : ""} } as Wire);
+  }
+` : ""}`;
+}
+
 export function genTsScreenEntry(app: App): string {
   const c = usesClock(app);
   const st = hasStored(app);
@@ -651,19 +672,7 @@ export interface Options {
 }
 
 export function start(o: Options = {}) {
-${c ? `  if (!o.clock) throw new Error("${app.name}: start needs { clock } (this app reads the clock)");
-  let clock: Record<string, unknown> = { ...o.clock${app.sizes ? `, size: meta.sizes!.find((x) => x.toLowerCase() === (o.size ?? "").toLowerCase()) ?? meta.sizes![0]` : ""} };
-` : ""}${dw ? `  if (!isSeed(o.seed)) throw new Error("${app.name}: start needs { seed }: 64 hex digits from the host's CSPRNG (this app draws random values)");
-  const base = runBase(o.seed);
-  let n = 0;
-` : ""}  const s = core(${c ? "clock as never" : ""}) as ReturnType<typeof core> & Partial<{ calls(): unknown[]; data(): Record<string, unknown>; nav(): string | null; through(): unknown }>;
-${st ? `  if (o.saved) {
-    // Start from what was kept: the app from its defaults, the stored fields put back, then \`on start\`.
-    s.calls?.(); // the start without the saved data made nothing anyone saw
-    const { data } = migrate(o.saved, storedFields);
-    s.send({ on: "restart", target: "", saved: data${c ? ", clock" : ""} } as Wire);
-  }
-` : ""}  return {
+${hostStart(app)}  return {
     /** The screen now, as a tree of nodes (data-el names, rows with their keys). */
     observe: (): Node => s.observe(),
     /** An event: a user's (click, input, toggle, choose, navigate), an answer to a call, an event of an api, a tick, or the host's (size, clock). */
@@ -680,6 +689,99 @@ ${app.sizes ? `      if (w.on === "size") clock = { ...clock, size: meta.sizes!.
     nav: (): string | null => (s.nav ? s.nav() : null),
     /** What the client layers get from the state, per api (\`through\` in \`uses\`). */
     through: (): unknown => (s.through ? s.through() : {}),
+  };
+}
+
+export default { meta, start };
+`;
+}
+
+/** What a job build is, for its host (`meta` of job-host.mjs): a screen's meta without sizes and screens. */
+export function jobMeta(app: App) {
+  const { sizes: _sizes, screens: _screens, ...rest } = screenMeta(app);
+  return { ...rest, contract: "intent.job/1" };
+}
+
+/**
+ * The host entry of a job (\`job-host.mjs\`, contract intent.job/1, docs/design/screen-host.md "Jobs"):
+ * the screen host entry's core and start, with the host's transport passed in instead of read from
+ * \`globalThis.__intentTransport\`, and the stored fields handed back (\`stored()\`) instead of kept in
+ * localStorage. \`run\` performs each call through the transport (after the client layers) and feeds the
+ * answer back, in call order, until no call is left; it touches no global (no timers either).
+ */
+export function genTsJobHostEntry(app: App): string {
+  const c = usesClock(app);
+  const st = hasStored(app);
+  const dw = usesDraws(app);
+  const calls = clientEndpoints(app).length > 0 || undoables(app).length > 0;
+  const meta = jobMeta(app);
+  return `// The host entry of the job ${app.name} (contract intent.job/1): pure, no globals. Generated; do not edit.
+import { start as core } from "./screen-core.ts";
+${st ? `import { storedFields } from "./spec.ts";
+import { migrate } from "./api.ts";
+` : ""}${dw ? `import { eventSeed, isSeed, runBase } from "./draw.ts";
+` : ""}${calls ? `import { callEndpoints } from "./spec.ts";
+import { outgoing, type Answer, type CallOut, type Transport } from "./calls.ts";
+import { apply } from "./through.ts";
+` : ""}import type { Wire } from "./ui.ts";
+
+/** What this job is, for its host: read it instead of guessing. */
+export const meta = ${JSON.stringify(meta, null, 2)} as const;
+
+export type Clock = { now: string; today: string };
+export interface Options {
+  /** How the job's calls go out: the same shape as \`globalThis.__intentTransport\` (only \`send\` is used).${calls ? " Required: this job calls an api." : " Unused: this job calls nothing."} */
+  transport?: ${calls ? "Transport" : "unknown"};
+  /** The time the job starts at: \`{ now: "2026-09-24T09:00", today: "2026-09-24" }\` (local time, to the minute).${c ? " Required." : " Unused: this job reads no clock."} */
+  clock?: Clock;
+  /** What the host kept from \`stored()\` last time; migrated to this version's types. */
+  saved?: Record<string, unknown> | null;
+  /** 64 hex digits from the host's CSPRNG.${dw ? " Required: this job draws random values, each event from a seed derived from this one." : " Unused: this job draws nothing."} */
+  seed?: string;
+}
+
+/** What \`run\` hands the job: an api's event, a tick of the clock, a new clock; or nothing, to let it settle. */
+export interface Input {
+  event?: { event: string; body: unknown };
+  tick?: boolean;
+  clock?: Clock;
+}
+
+export function start(o: Options = {}) {
+${calls ? `  const transport = o.transport;
+  if (!transport || typeof transport.send !== "function") throw new Error("${app.name}: start needs { transport } with send(req) (this job calls an api)");
+` : ""}${hostStart(app)}  const step = (w: Wire) => s.send({ ...w${c ? ", clock" : ""}${dw ? ", draw: { seed: eventSeed(base, n++) }" : ""} } as Wire);
+${calls ? `  // One call through the host's transport: once, as HTTP after its api's client layer. The host owns
+  // keys, retries, the outbox and approval; a transport that throws is an answer with status 0.
+  const perform = async (call: CallOut): Promise<Answer> => {
+    try {
+      const alias = call.endpoint.split(".")[0];
+      const req = outgoing(callEndpoints, call, (a, r) => apply(a, r, call.config));
+      const r = await transport.send({ ...req, alias, endpoint: call.endpoint, ...(call.undo ? { undo: true, of: call.of } : {}) });
+      return { endpoint: call.endpoint, status: r.status, body: r.body, ...(r.error !== undefined ? { error: r.error } : {}) };
+    } catch (e) {
+      return { endpoint: call.endpoint, status: 0, error: \`no answer: \${(e as Error).message}\` };
+    }
+  };
+` : ""}  // Settled: every call made, and every call its answer made, has been answered.
+  const settle = async () => {
+${calls ? `    for (let made = (s.calls ? s.calls() : []) as CallOut[]; made.length; made = (s.calls ? s.calls() : []) as CallOut[]) {
+      const answers = await Promise.all(made.map(perform));
+      for (const a of answers) step({ on: "answer", target: a.endpoint, answer: a } as Wire);
+    }
+` : `    s.calls?.();
+`}  };
+  return {
+    /** Hand the job an event, a tick or a new clock (or nothing); resolves with its data once every call is answered. */
+    async run(i: Input = {}): Promise<Record<string, unknown>> {
+${c ? `      if (i.clock) clock = { ...clock, ...i.clock };
+` : ""}      if (i.event) step({ on: "event", target: i.event.event, event: i.event } as Wire);
+      if (i.tick) step({ on: "tick", target: "" } as Wire);
+      await settle();
+      return s.data ? s.data() : {};
+    },
+    /** What the host keeps for the next start (only the stored fields). */
+    stored: (): Record<string, unknown> => ${st ? "Object.fromEntries(Object.keys(storedFields).map((f) => [f, s.data!()[f]]))" : "({})"},
   };
 }
 
@@ -827,6 +929,8 @@ export function scaffoldTs(app: App, dir: string, layerDirs: Record<string, stri
   if (app.profile === "job") {
     copyFileSync(join(ROOT, "runtime/ts/headless.ts"), join(dir, "headless.ts"));
     writeFileSync(join(dir, "job.ts"), jobEntry(app, main));
+    // The host entry that takes everything from its host (transport, saved state): job-host.mjs.
+    writeFileSync(join(dir, "job-host.ts"), genTsJobHostEntry(app));
   }
   writeFileSync(
     join(dir, "tsconfig.json"),
@@ -857,6 +961,11 @@ async function compileTs(dir: string): Promise<string> {
   if (existsSync(join(dir, "job.ts"))) {
     // A job's entry for its host: an ES module whose default export is { run }.
     const j = await run(bin("esbuild"), ["job.ts", "--bundle", "--format=esm", "--outfile=job.mjs", "--log-level=error"], dir);
+    if (!j.ok) return clean(j.out);
+  }
+  if (existsSync(join(dir, "job-host.ts"))) {
+    // A job's host entry: an ES module with no platform (default export { meta, start }).
+    const j = await run(bin("esbuild"), ["job-host.ts", "--bundle", "--format=esm", "--platform=neutral", "--outfile=job-host.mjs", "--log-level=error"], dir);
     if (!j.ok) return clean(j.out);
   }
   if (existsSync(join(dir, "through.ts"))) {

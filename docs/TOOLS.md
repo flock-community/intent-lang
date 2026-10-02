@@ -177,7 +177,9 @@ A built service (§4f) reads these on the server:
 
 A TypeScript screen build also holds `screen.mjs`, the app for a host that runs it itself (in a
 sandbox, with no platform): `start({ clock, size, saved, seed })`, then `send` events and answers and
-read `observe()`, `calls()` and `stored()` (STABILITY.md §5, docs/design/screen-host.md).
+read `observe()`, `calls()` and `stored()` (STABILITY.md §5, docs/design/screen-host.md). A job
+build holds `job-host.mjs` beside `job.mjs`: `start({ transport, saved })`, then `run({ event })` and
+`stored()`, with no global (docs/design/screen-host.md, "Jobs").
 
 A build's `sourcemap.json` maps every element, handler, step, endpoint, event, layer, rule and
 example to its file and line, and its `manifest.json` lists, per api, the endpoints and events the

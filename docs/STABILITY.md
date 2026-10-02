@@ -19,7 +19,7 @@ code is not: it can be thrown away and rebuilt at any time.
 |---|---|---|
 | write specs | syntax, meaning, §9 defaults, compiler diagnostics | §3, §4 |
 | build on bundles | computed versions, examples and `always` rules as conformance tests | §6 |
-| host generated apps | `data-el`, `sourcemap.json`, `manifest.json`, `job.mjs`, the transport, the wire, the audit, stored data | §5 |
+| host generated apps | `data-el`, `sourcemap.json`, `manifest.json`, `job.mjs`, `screen.mjs`, `job-host.mjs`, the transport, the wire, the audit, stored data | §5 |
 
 ## 3. The language
 
@@ -175,6 +175,7 @@ is lost on the next build and breaks the trace back to the spec.
 | `manifest.json` | per api the app uses: its contract, endpoints and events (the `uses … only` list) |
 | `job.mjs` | ES module, default export `{ run }`; `run({ event: { event, body } })` or `run()`, resolving with the job's data |
 | `screen.mjs` (since 1.1) | a screen build (TypeScript or Elm): ES module, no platform, default export `{ meta, start }`; `start({ clock?, size?, saved?, seed? })` (awaited) returns `observe`, `send` (awaited), `calls`, `stored`, `nav`, `through`; it touches no platform global (docs/design/screen-host.md, contract `intent.screen/1`) |
+| `job-host.mjs` (since 1.1) | a job build: ES module, no platform, default export `{ meta, start }`; `start({ transport, clock?, saved?, seed? })` returns `run({ event?, tick?, clock? })`, resolving with the job's data once every call is answered, and `stored()`; `transport` has the shape of `__intentTransport` (`send` is used); calls go out once each, without a key (the host owns keys, retries, the outbox and approval); it touches no platform global and no `__intentTransport` or `localStorage` (docs/design/screen-host.md "Jobs", contract `intent.job/1`). `job.mjs` stays as it is |
 | `globalThis.__intentTransport` | the host transport a job or screen uses when calls do not go over HTTP |
 | `<meta name="intent-api" content="alias=url">` | where a browser build sends calls, else the page's origin |
 | the wire | JSON; nothing is `null`; a choice value is its wire name, or else its spec name; fixed answers `400/404/405/413 {"error": …}`, `401`/`403 {"error": …}` from access; `idempotency-key` kept 24 h; retries of lost/5xx/429 answers, three attempts |

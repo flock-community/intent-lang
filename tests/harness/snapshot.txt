@@ -923,6 +923,7 @@ apps/30-urgent-watch.intent ts focus-entry.ts 34a837645903
 apps/30-urgent-watch.intent ts focus.ts 8497b2cf5d70
 apps/30-urgent-watch.intent ts headless.ts 6f651fe1a394
 apps/30-urgent-watch.intent ts index.html 77f420e57cf3
+apps/30-urgent-watch.intent ts job-host.ts b90783b74fd6
 apps/30-urgent-watch.intent ts job.ts 1a2b960d5c4b
 apps/30-urgent-watch.intent ts main.ts 3bbe6c69dd1d
 apps/30-urgent-watch.intent ts norandom.ts cfff2a51d330
