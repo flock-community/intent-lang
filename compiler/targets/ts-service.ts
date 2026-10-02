@@ -32,6 +32,7 @@ export function typeDescOf(app: App, t: Type): TypeDescValue {
     case "List": return { k: "List", of: typeDescOf(app, t.of) };
     case "Maybe": return { k: "Maybe", of: typeDescOf(app, t.of) };
     case "Map": return { k: "Map", of: typeDescOf(app, t.of) };
+    case "Json": return { k: "Json" };
     case "Ref": return typeDescOf(app, t.key ?? { k: "Int" });
     case "Named": {
       const rf = app.refined?.find((x) => x.name === t.name);

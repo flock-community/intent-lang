@@ -14,6 +14,7 @@ export type TypeDesc =
   | { k: "List"; of: TypeDesc }
   | { k: "Maybe"; of: TypeDesc }
   | { k: "Map"; of: TypeDesc } // texts to values: a JSON object with any keys, written in key order
+  | { k: "Json" } // 1.1: a JSON value the spec does not own; held canonical (every object's keys in order, at every depth)
   | { k: "Choice"; name: string; values: string[]; wire?: string[] } // wire: each value's name in JSON (`Info = "info"`), in order
   | { k: "Record"; name: string; fields: { name: string; type: TypeDesc }[] }
   // 1.1: one of several records, told apart by a tag field whose value is the variant's wire name (or its name).
@@ -52,7 +53,7 @@ export function conforms(answers: Record<number, TypeDesc | null> | undefined, r
 }
 
 const describe = (t: TypeDesc): string =>
-  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "Instant" ? "an instant with a zone (YYYY-MM-DDTHH:MM:SSZ)" : t.k === "List" ? "a list" : t.k === "Map" ? `an object of ${describe(t.of)} by key` : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${(t.wire ?? t.values).join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : t.k === "Union" ? `a ${t.name} (${t.tag}: ${t.variants.map((v) => v.wire ?? v.name).join(", ")})` : "an object";
+  t.k === "Text" ? "text" : t.k === "Int" ? "a whole number" : t.k === "Decimal" ? "a number" : t.k === "Bool" ? "true or false" : t.k === "Date" ? "a date (YYYY-MM-DD)" : t.k === "DateTime" ? "a moment (YYYY-MM-DDTHH:MM)" : t.k === "Instant" ? "an instant with a zone (YYYY-MM-DDTHH:MM:SSZ)" : t.k === "List" ? "a list" : t.k === "Map" ? `an object of ${describe(t.of)} by key` : t.k === "Json" ? "a JSON value" : t.k === "Maybe" ? describe(t.of) : t.k === "Choice" ? `one of ${(t.wire ?? t.values).join(", ")}` : t.k === "Refined" ? `a valid ${t.name}` : t.k === "Union" ? `a ${t.name} (${t.tag}: ${t.variants.map((v) => v.wire ?? v.name).join(", ")})` : "an object";
 
 /** A map's entries in the wire's order: by key, as text (§9; Elm's Dict writes the same order). A key is
  *  set as an own property, so no key (`__proto__`) can reach the object's prototype. */
@@ -62,6 +63,16 @@ function mapOf(entries: [string, unknown][]): Record<string, unknown> {
   for (const [k, v] of entries) Object.defineProperty(out, k, { value: v, enumerable: true, writable: true, configurable: true });
   return out;
 }
+
+/** A JSON value in its one written form (§9.22): every object's keys in order, at every depth, as own
+ *  properties (`__proto__` is a key); lists in their order; numbers, texts, true/false and null as they are. */
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v !== null && typeof v === "object") return mapOf(entriesInOrder(v).map(([k, x]) => [k, canonical(x)]));
+  return v;
+}
+const isJson = (v: unknown): boolean =>
+  v === null || typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (Array.isArray(v) ? v.every(isJson) : typeof v === "object" && Object.values(v as object).every(isJson));
 
 /** Does a JSON value fit a type (kept data read back, for example)? */
 export const fits = (v: unknown, t: TypeDesc): boolean => !("error" in check(v, t, "the value"));
@@ -87,6 +98,7 @@ export function migrate(saved: unknown, types: Record<string, TypeDesc>): { data
 /** The value as the current type wants it, or undefined when it cannot be migrated. */
 function coerce(v: unknown, t: TypeDesc): unknown {
   if (t.k === "Maybe") return v === undefined || v === null ? null : (coerce(v, t.of) ?? null);
+  if (t.k === "Json") return v !== undefined && isJson(v) ? canonical(v) : undefined; // null is a value, kept
   if (v === undefined || v === null) return undefined;
   switch (t.k) {
     case "List": {
@@ -141,6 +153,8 @@ function check(v: unknown, t: TypeDesc, name: string): { ok: unknown } | { error
   if (t.k === "Maybe") return v === null || v === undefined ? { ok: null } : check(v, t.of, name);
   if (v === undefined) return { error: `${name} is required` };
   const bad = { error: `${name} must be ${describe(t)}` };
+  // A Json is whatever arrived, read into its one form; null inside it (or as it) is a value.
+  if (t.k === "Json") return isJson(v) ? { ok: canonical(v) } : bad;
   if (v === null) return bad;
   switch (t.k) {
     case "Text": return typeof v === "string" ? { ok: v } : bad;
@@ -233,6 +247,7 @@ export function toWire(v: unknown, t: TypeDesc | null | undefined): unknown {
     case "Choice": return t.wire && typeof v === "string" && t.values.includes(v) ? t.wire[t.values.indexOf(v)] : v;
     case "List": return Array.isArray(v) ? v.map((x) => toWire(x, t.of)) : v;
     case "Map": return typeof v === "object" && !Array.isArray(v) ? mapOf(entriesInOrder(v as object).map(([k, x]) => [k, toWire(x, t.of)])) : v;
+    case "Json": return canonical(v);
     case "Record": {
       if (typeof v !== "object" || Array.isArray(v)) return v;
       const o = v as Record<string, unknown>;
@@ -262,7 +277,7 @@ export function fromWire(v: unknown, t: TypeDesc | null | undefined): unknown {
 
 /** Does a type carry wire names anywhere (so the harness must translate it)? */
 export const hasWire = (t: TypeDesc | null | undefined): boolean =>
-  !!t && (t.k === "Choice" ? !!t.wire : t.k === "List" || t.k === "Maybe" || t.k === "Map" ? hasWire(t.of) : t.k === "Record" ? t.fields.some((f) => hasWire(f.type)) : t.k === "Union");
+  !!t && (t.k === "Choice" ? !!t.wire : t.k === "List" || t.k === "Maybe" || t.k === "Map" ? hasWire(t.of) : t.k === "Record" ? t.fields.some((f) => hasWire(f.type)) : t.k === "Union" || t.k === "Json");
 
 /** A query or path value arrives as text: read it as its type. */
 function fromText(s: string | undefined, t: TypeDesc): unknown {

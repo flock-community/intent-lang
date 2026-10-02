@@ -220,6 +220,11 @@ export function checkDraws(app: App, err: Err) {
       continue;
     }
     if (f.loops > 1) say("NOT_YET", "a draw inside a loop inside a loop is not in the language yet: draw in the outer loop, or keep the values in a list first");
+    // `a random @Json` (1.1): a Json is whatever arrived, unless the spec declares its own `Json`.
+    if (f.type === "Json" && !app.records.some((x) => x.name === "Json") && !app.choices.some((x) => x.name === "Json") && !app.refined?.some((x) => x.name === "Json")) {
+      say("RANDOM", "a Json is whatever arrived; there is nothing to draw from");
+      continue;
+    }
     if (f.type) {
       const declared = !!(app.refined?.some((x) => x.name === f.type) || app.choices.some((x) => x.name === f.type) || app.records.some((x) => x.name === f.type));
       if (!declared) continue; // UNKNOWN_NAME: the reference is checked with the others
@@ -314,7 +319,7 @@ const spaceWords = (sp: Space) => (sp.k === "int" ? `a whole number from ${sp.lo
 
 const codeSizeOf = (sp: Space) => (sp.k === "text" ? codeSize(sp.n, sp.chars) : `${count(spaceSize(sp))} values`);
 
-const showT = (t: Type): string => (t.k === "List" ? `a List ${showT(t.of)}` : t.k === "Maybe" ? `${showT(t.of)} or nothing` : t.k === "Map" ? `a Map ${showT(t.of)}` : t.k === "Named" || t.k === "Ref" ? t.name : t.k);
+const showT = (t: Type): string => (t.k === "List" ? `a List ${showT(t.of)}` : t.k === "Maybe" ? `${showT(t.of)} or nothing` : t.k === "Map" ? `a Map ${showT(t.of)}` : t.k === "Json" ? "a Json" : t.k === "Named" || t.k === "Ref" ? t.name : t.k);
 
 function baseKind(app: App, t: Type): string {
   const inner = t.k === "Maybe" ? t.of : t;

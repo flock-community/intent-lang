@@ -1,0 +1,58 @@
+app Notices {
+  "Send a notice with the actions this app offers, and see every notice, also those others send; the actions of the last one are kept as they came."
+}
+language 1.1
+
+uses notify.noticesApi as notices only notify, noticeCreated {
+  tested with "apps/api/notice-actions-api.intent"
+}
+
+record Action {
+  label: Text
+  type: Text
+}
+
+state {
+  draft: Text = ""
+  actions: List Action = table {
+    label  | type
+    "Open" | "open"
+  }
+  stored shown: List Notice = []
+  stored last: Json or nothing = nothing
+}
+
+screen {
+  field draft "Notice"
+  button send "Send" {
+    enabled when @draft is not blank
+  }
+  list shown of Notice {
+    text title
+  }
+}
+
+on click send {
+  - call @notices.notify with @title = @draft trimmed and @actions = @actions
+}
+
+on answer notices.notify {
+  if its status is 201 {
+    - clear @draft
+  }
+}
+
+on event notices.noticeCreated {
+  - add its body to the end of @shown
+  - set @last to its body's @actions
+}
+
+example "a notice is sent with its actions" {
+  see send is disabled
+  type "Server down" into draft
+  click send
+  see shown has 1 row
+  see title on row 1 = "Server down"
+  restart
+  see shown has 1 row
+}

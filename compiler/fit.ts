@@ -56,6 +56,9 @@ export interface Navigation {
 }
 
 /** `skip`: lines with a SYNTAX error, whose sentences are not typed (what the parser read of them is not what was meant). */
+/** Why a Json is not read (1.1): it is whatever arrived. */
+const JSON_READ = "a Json is whatever arrived: hold it, pass it on or compare it; say what you own as a record";
+
 export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Coverage[] {
   // A union is not a record a sentence reads fields of (its variants are): sentences over it are left to the model.
   const records = new Map(app.records.filter((r) => !r.union).map((r) => [r.name, r]));
@@ -141,6 +144,9 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
   function fits(to: Type, from: Type): boolean {
     if (to.k === "Maybe") return from.k === "Maybe" ? fits(to.of, from.of) : fits(to.of, from);
     if (from.k === "Maybe") return false;
+    // 1.1: any value fits a Json (it goes out as its JSON); a Json fits only a Json.
+    if (to.k === "Json") return true;
+    if (from.k === "Json") return false;
     if (to.k === "Ref" && from.k === "Ref") return to.name === from.name;
     if (to.k === "Ref") return fits(keyType(to.name), from);
     if (from.k === "Ref") return fits(to, keyType(from.name));
@@ -267,6 +273,7 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
     return result ? T(result) : undefined;
   };
   const isText = (t: Type) => base(strip(t)).k === "Text";
+  const isJson = (t: Type | undefined) => !!t && strip(t).k === "Json";
   let inText = false; // typing a template's hole: every value is shown as text
   let it: string | undefined; // the record "its @f" and "that ticket" mean in the sentence being checked
 
@@ -511,6 +518,7 @@ export function checkFit(app: App, err: Err, skip: Set<number> = new Set()): Cov
         for (const h of [...x.matchAll(/\{([^{}]*)\}/g)].map((y) => y[1]).filter((y) => /@/.test(y))) {
           const v = typeExpr(h, scope, row);
           if (v?.k === "error") return v;
+          if (v?.k === "type" && isJson(v.t)) return wrong(`\`{${h.trim()}}\` is shown as text: ${JSON_READ}`);
           if (!safe && (v?.k === "nothing" || (v?.k === "type" && v.t.k === "Maybe"))) return nothingErr(`\`{${h.trim()}}\` is shown as text`, v.k === "nothing" ? v : v.t);
         }
       } finally {
@@ -1306,6 +1314,18 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       if (item && records.has(m[1]) && !(item.k === "Named" && item.name === m[1])) say("TYPE", `\`add a @${m[1]} to @${m[2]}\`: @${m[2]} holds ${show(item)}`);
     }
 
+    // A read into a Json (1.1): a field after a `'s` on a value that is a Json. Nothing in the spec says what is there.
+    for (const m of text.replace(/"(?:[^"\\]|\\.)*"/g, '""').matchAll(/((?:its\s+body['’]s\s+|its\s+|(?:that|this|the)\s+[a-z]\w*['’]s\s+)?@[a-z][\w.]*)((?:['’]s\s+@[a-z]\w*)+)/g)) {
+      let cur = m[1];
+      for (const hop of m[2].match(/['’]s\s+@[a-z]\w*/g) ?? []) {
+        if (isJson(typeOfValue(typeExpr(cur, scope, row)))) {
+          say("TYPE", `\`${cur}${hop}\`: ${JSON_READ}`);
+          break;
+        }
+        cur += hop;
+      }
+    }
+
     // ---------------------------------------------------------------- whole sentences, typed
     const value = (v: string) => typeExpr(v, scope, row);
     const typedValue = (v: string) => {
@@ -1469,6 +1489,7 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
         if (!/@/.test(h)) return true;
         const v = value(h);
         if (v?.k === "error") say("TYPE", `\`${h.trim()}\`: ${v.msg}`);
+        else if (v?.k === "type" && isJson(v.t)) say("TYPE", `\`${h.trim()}\` is shown: ${JSON_READ}`);
         else if (v?.k === "type" && v.t.k === "Maybe" && !/^select\s/.test(where)) say("NOTHING", `\`${h.trim()}\` is shown, and it may be nothing (${show(v.t)}): ${NOTHING_HOW}`);
         return !!v;
       });
@@ -1529,6 +1550,26 @@ const checkPairs = (list: string, field: (f: string) => Type | undefined, owner:
       if (!home.list || (m[4] && m[4] !== home.list)) continue;
       if (m[2] && m[0].length !== text.trim().length) continue; // `there is …` as the whole condition only
       spellings.push({ line, from: m[0], to: m[1] ? `${m[6]}'s @${m[1]}` : `${m[6]} ${m[2] === "no" ? "does not exist" : "exists"}` });
+    }
+
+    // A sentence that mentions a Json anywhere but where a value is held, passed on or compared (1.1)
+    // says something about what is inside (`the number of items in @answer`), which two builds could
+    // each read their own way. Refused, not left to judgement.
+    {
+      const plain = text.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+      const HOLD_BEFORE = /(?:^|\bset\s+|\bclear\s+|\bto\s+|\bwith\s+|,\s*|\band\s+|\bor\s+|=\s*|\badd\s+|\bpublish\s+|\bis\s+(?:not\s+)?|\bthere\s+is\s+(?:a|an|no)\s+|\bif\s+|\bwhen\s+|\bunless\s+|\bkeep\s+|\bto\s+be\s+|\bcall\s+\S+\s+with\s+|\bthe\s+given\s+)$/;
+      const HOLD_AFTER = /^(?:\s*$|\s*[,;.)]|\s+and\b|\s+or\b|\s+to\b|\s+with\b|\s*=|\s+is\b|\s+never\s+changes\b|\s+when\b|\s+(?:exists|does\s+not\s+exist)\b)/;
+      for (const y of plain.matchAll(/(?<!['’]s\s)@([a-z][\w.]*)/g)) {
+        const f = fitOf(y[1], scope, row);
+        if (f.k !== "type" || !isJson(f.t)) continue;
+        const before = plain.slice(0, y.index!).replace(/\b(?:its\s+body['’]s\s+|its\s+)$/, "");
+        const after = plain.slice(y.index! + y[0].length);
+        if (/['’]s\s+@/.test(after.slice(0, 4))) continue; // a hop: said above
+        if (!HOLD_BEFORE.test(before.trimEnd() + (before.endsWith(" ") ? " " : "")) || !HOLD_AFTER.test(after)) {
+          say("TYPE", `\`${text.trim()}\` says something about @${y[1]}: ${JSON_READ}`);
+          break;
+        }
+      }
     }
 
     // ---------------------------------------------------------------- nothing escapes

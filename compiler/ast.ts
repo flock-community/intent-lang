@@ -11,6 +11,7 @@ export type Type =
   | { k: "List"; of: Type }
   | { k: "Maybe"; of: Type }
   | { k: "Map"; of: Type } // 1.1: texts to values, a JSON object with any keys (`Map Text`)
+  | { k: "Json" } // 1.1: a JSON value the spec does not own: held, passed on and compared, never read into
   | { k: "Named"; name: string }
   // `ticket: ref Ticket`: a field that holds another record's key. `key` is the referenced
   // record's key field's type, filled in by the checker; storage and reads use it. `in`: the
@@ -174,7 +175,7 @@ export type Step =
   | { do: "see"; target: string; at?: RowRef; every?: string; check: Check; line: number }; // every: check each row of that list
 
 export type Check =
-  | { is: "eq"; value: string; nothing?: true } // canonical string of the expected value; `= nothing` (an answer's value is null)
+  | { is: "eq"; value: string; nothing?: true; json?: true } // canonical string of the expected value; `= nothing` (an answer's value is null); `json`: a Json's canonical JSON text (1.1)
   | { is: "rows"; count: number; cmp?: "atMost" | "atLeast"; countParam?: string }
   | { is: "disabled" | "enabled" | "hidden" | "shown" | "checked" | "unchecked" }
   | { is: "tone"; value: string } // 1.1: `has tone danger`; "" for `has no tone`

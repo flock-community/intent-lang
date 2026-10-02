@@ -1,7 +1,7 @@
 // Small helpers for the words of a spec: a quoted string, a type written out, and "did you mean".
 // Kept apart from the parser so modules the harness imports (compiler/access.ts) can use them
 // without importing the checker.
-import type { Type } from "./ast.ts";
+import type { Literal, Type } from "./ast.ts";
 
 const STR = '"(?:[^"\\\\]|\\\\.)*"';
 
@@ -9,6 +9,35 @@ const STR = '"(?:[^"\\\\]|\\\\.)*"';
 export function parseString(s: string): string | undefined {
   if (!new RegExp(`^${STR}$`).test(s)) return undefined;
   return s.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === "n" ? "\n" : c === "t" ? "\t" : c));
+}
+
+/** A literal as JSON: a record's fields by name, nothing as null, a day or moment as its text. */
+export function literalJson(l: Literal): unknown {
+  switch (l.k) {
+    case "text": return l.v;
+    case "number": return l.v;
+    case "bool": return l.v;
+    case "nothing": return null;
+    case "emptyList": return [];
+    case "value": return l.v;
+    case "date": return l.v;
+    case "dateTime": return l.v;
+    case "instant": return l.v;
+    case "list": return l.items.map(literalJson);
+    case "record": return Object.fromEntries(l.fields.map((f) => [f.name, literalJson(f.value)]));
+    default: return null;
+  }
+}
+
+/** A JSON value in its one written form (§9.22): every object's keys in order (as a map's), at every depth. */
+export function canonicalJson(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonicalJson);
+  if (v !== null && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v).sort()) Object.defineProperty(out, k, { value: canonicalJson((v as Record<string, unknown>)[k]), enumerable: true, writable: true, configurable: true });
+    return out;
+  }
+  return v;
 }
 
 export function typeToString(t: Type): string {

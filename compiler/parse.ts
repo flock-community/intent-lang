@@ -10,7 +10,7 @@ import { checkFit } from "./fit.ts";
 import { ALPHABETS, ALPHABET_NAMES } from "./alphabets.ts";
 import { checkDraws } from "./draws.ts";
 import { checkAccess, parseRule } from "./access.ts";
-import { parseString, suggest, typeToString } from "./words.ts";
+import { canonicalJson, literalJson, parseString, suggest, typeToString } from "./words.ts";
 export { parseString, suggest, typeToString };
 import { withStdQuality } from "./quality.ts";
 import { declaredNames, refsIn, resolves, sentences, usedByAlias, usesClock } from "./refs.ts";
@@ -331,6 +331,7 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
   // Types added after language 1, wherever they appear (fields, state, params, answers, events).
   // `Instant` is a word read in its place: a spec's own record, choice or type named so keeps it.
   const ownInstant = app.records.some((r) => r.name === "Instant") || app.choices.some((c) => c.name === "Instant") || !!app.refined?.some((r) => r.name === "Instant");
+  const ownJson = app.records.some((r) => r.name === "Json") || app.choices.some((c) => c.name === "Json") || !!app.refined?.some((r) => r.name === "Json");
   const seen = new Set<object>();
   const walk = (v: unknown, line: number) => {
     if (!v || typeof v !== "object" || seen.has(v)) return;
@@ -345,6 +346,13 @@ export function parseSyntax(src: string): { app: App; diagnostics: Diagnostic[];
       t.k = "Instant";
       delete t.name;
       (app.since ??= []).push({ line: here, version: "1.1", what: "an instant (`Instant`)" });
+    }
+    // `Json` likewise: a JSON value the spec does not own, unless the spec declares its own `Json`.
+    if (!ownJson && (v as { k?: unknown }).k === "Named" && (v as { name?: unknown }).name === "Json") {
+      const t = v as { k: string; name?: string };
+      t.k = "Json";
+      delete t.name;
+      (app.since ??= []).push({ line: here, version: "1.1", what: "a JSON value (`Json`)" });
     }
     for (const x of Object.values(v)) walk(x, here);
   };
@@ -956,6 +964,14 @@ function checkBodies(app: App, err: Err) {
 }
 
 
+/** Does `@r` follow a `'s` after a name that holds a Json (`@answer's @text`, `its body's @answer's @kind`)? */
+function afterJson(app: App, text: string, r: string): boolean {
+  const isJson = (t: Type | undefined) => !!t && (t.k === "Maybe" ? t.of : t).k === "Json";
+  const holders = new Set([...app.state, ...(app.params ?? []), ...app.records.flatMap((x) => x.fields), ...(app.endpoints ?? []).flatMap((e) => e.params)].filter((f) => isJson(f.type)).map((f) => f.name));
+  for (const c of app.clients ?? []) for (const x of c.contract.records) for (const f of x.fields) if (isJson(f.type)) holders.add(f.name);
+  return [...text.matchAll(/@([a-z][\w.]*)['’]s\s+@([a-z]\w*)/g)].some((m) => m[2] === r && holders.has(m[1].split(".").pop()!));
+}
+
 /**
  * References in sentences: every `@name` must be declared; a bare word that is a declared name
  * gets a hint to mark it (it may also just be English: "the title of the page").
@@ -978,7 +994,9 @@ function checkRefs(app: App, err: Err) {
         if (!ep) err(s.line, "UNKNOWN_NAME", `\`@${r}\` names a request param, which only an endpoint's steps can write`);
         else if (!p) err(s.line, "UNKNOWN_NAME", `endpoint ${ep.name} has no param \`${q[2]}\` (${ep.params.map((x) => x.name).join(", ") || "none"})`);
         else if (p.in !== q[1]) err(s.line, "UNKNOWN_NAME", `\`${q[2]}\` is a ${p.in} param, not ${q[1]}: write \`@${p.in}.${q[2]}\``);
-      } else if (!resolves(r, names)) err(s.line, "UNKNOWN_NAME", `\`@${r}\` (${s.where}) is not declared${suggest(r, [...names])}`);
+      } else if (r === "Json" && !names.has("Json")) continue; // `a random @Json`: the type (1.1), and RANDOM says why it cannot be drawn
+      else if (afterJson(app, s.text, r)) continue; // `@answer's @text`: a read into a Json, which the typer refuses (TYPE)
+      else if (!resolves(r, names)) err(s.line, "UNKNOWN_NAME", `\`@${r}\` (${s.where}) is not declared${suggest(r, [...names])}`);
     }
   }
 }
@@ -1113,6 +1131,8 @@ export const screenMatch = (pattern: string, path: string): boolean => {
 /** Whether a list or record value in a \`call\` fits the param's type: lists for lists, a record's fields by name. */
 function argShape(v: Literal, t: Type, app: App): string | undefined {
   const inner = t.k === "Maybe" ? t.of : t;
+  // A Json takes any literal the language has, at any depth (1.1).
+  if (inner.k === "Json") return jsonLiteral(v) ? undefined : `a Json holds texts, numbers, true/false, nothing, lists and records`;
   if (v.k === "list") {
     if (inner.k !== "List") return `a list, but the param is ${typeToString(t)}`;
     for (const x of v.items) {
@@ -1262,7 +1282,8 @@ function parseField(c: Line, err: (l: number, c: string, m: string, col?: number
   if (m[3]?.trim() === "table") {
     def = parseTable(c, err);
   } else if (m[3] !== undefined) {
-    def = parseLiteral(m[3]);
+    // A list or a record written out (`[{ label = "Open" }]`, `{ x = 1 }`): the literal of call arguments (a `Json`'s default, 1.1).
+    def = /^[[{]/.test(m[3].trim()) ? parseArgValue(m[3]) : parseLiteral(m[3]);
     if (!def) err(c.line, "SYNTAX", `\`${m[3]}\` is not a literal`, c.indent + 1);
   } else if (needDefault) {
     err(c.line, "SYNTAX", `state field \`${m[1]}\` needs a default: \`${m[1]}: ${m[2]} = …\``, c.indent + 1);
@@ -1288,7 +1309,7 @@ function parseTable(c: Line, err: (l: number, c: string, m: string, col?: number
       continue;
     }
     // A cell holds one value, or a row's inner list: `[{ id = 1, label = "Milk" }, …]` (the literal of call arguments).
-    const lits = cells.map((cell) => (cell.trim().startsWith("[") && cell.trim() !== "[]" ? parseArgValue(cell) : parseLiteral(cell)));
+    const lits = cells.map((cell) => ((cell.trim().startsWith("[") && cell.trim() !== "[]") || /^\{.*=/.test(cell.trim()) ? parseArgValue(cell) : parseLiteral(cell)));
     const bad = lits.findIndex((l) => !l);
     if (bad >= 0)
       err(r.line, "SYNTAX", cells[bad].trim().startsWith("[") ? `\`${cells[bad]}\` is not a list: write the row's inner list as \`[{ id = 1, label = "Milk" }, { … }]\` (records with \`field = value\`), or \`[]\`` : `\`${cells[bad]}\` is not a literal: use a "text", a number, true/false, nothing or a choice value`, r.indent + 1);
@@ -1668,6 +1689,10 @@ function parseStep(c: Line, err: (l: number, c: string, m: string, col?: number)
     if (lit?.k === "nothing" && !m[2] && /(^|\.)body\b/.test(m[1])) return { step: { do: "see", target: m[1], check: { is: "eq", value: "nothing", nothing: true }, line } };
     // `see x.body = {}`: an empty map (or a record without fields) in an answer or an event.
     if (lit?.k === "record" && !lit.fields.length && !m[2] && /(^|\.)body\b/.test(m[1])) return { step: { do: "see", target: m[1], check: { is: "eq", value: "{}" }, line } };
+    // `see notify.body.actions = [{ label = "Open", type = "open" }]` (1.1): a Json compared as JSON, in
+    // any key order (its canonical text); the checker requires the target to be a Json.
+    const json = /^[[{]/.test(m[3].trim()) && !m[2] ? parseArgValue(m[3]) : undefined;
+    if (json && (json.k === "list" || json.k === "emptyList" || json.k === "record")) return { step: { do: "see", target: m[1], check: { is: "eq", value: JSON.stringify(canonicalJson(literalJson(json))), json: true }, line } };
     if (!lit || lit.k === "emptyList" || lit.k === "nothing" || lit.k === "table" || lit.k === "list" || lit.k === "record") {
       err(line, "SYNTAX", `\`${m[3]}\` is not a value to compare with; use a "string", a number or a choice value${lit?.k === "nothing" ? " (`= nothing` is for a value in an answer or an event: `see x.body.f = nothing`)" : ""}`, col);
       return;
@@ -1786,7 +1811,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       for (const fv of item.fields) {
         const field = rec.fields.find((x) => x.name === fv.name);
         if (!field) err(line, "UNKNOWN_NAME", `${what}, item ${n + 1}: ${rec.name} has no field \`${fv.name}\`${suggest(fv.name, rec.fields.map((x) => x.name))}`);
-        else if (fv.value.k === "list" || fv.value.k === "record") err(line, "TYPE", `${what}: \`${fv.name}\` of item ${n + 1} must be ${typeToString(field.type)}`);
+        else if ((fv.value.k === "list" || fv.value.k === "record") && strip1(field.type).k !== "Json") err(line, "TYPE", `${what}: \`${fv.name}\` of item ${n + 1} must be ${typeToString(field.type)}`);
         else if (!literalFits(fv.value, field.type, choices)) err(line, "TYPE", `${what}: \`${fv.name}\` of item ${n + 1} must be ${typeToString(field.type)}`);
       }
       for (const rf of rec.fields)
@@ -1812,7 +1837,7 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
       table.rows.forEach((row, i) =>
         row.forEach((cell, j) => {
           const rf = rec.fields.find((x) => x.name === table.columns[j]);
-          if (rf && cell.k === "list") innerList(cell, rf.type, `\`${rf.name}\` of row ${i + 1}`, f.line + 2 + i);
+          if (rf && cell.k === "list" && strip1(rf.type).k !== "Json") innerList(cell, rf.type, `\`${rf.name}\` of row ${i + 1}`, f.line + 2 + i);
           else if (rf && !literalFits(cell, rf.type, choices)) err(f.line + 2 + i, "BAD_BINDING", `\`${rf.name}\` must be ${typeToString(rf.type)}`);
         }),
       );
@@ -2141,6 +2166,13 @@ function check(app: App, err: (l: number, c: string, m: string, col?: number) =>
     };
     const onScreen = (el: Element) => !app.screens?.length || !el.screen || current === undefined || el.screen === current;
     for (const s of ex.steps) {
+      // `see last = [{ … }]` (1.1): a job's state field that is a `Json`, compared as JSON; a screen shows none.
+      if (s.do === "see" && s.check.is === "eq" && s.check.json) {
+        const f = app.profile === "job" ? app.state.find((x) => x.name === s.target) : undefined;
+        if (!f || strip1(f.type).k !== "Json") err(s.line, "TYPE", `\`see ${s.target} = …\` with a list or record compares a Json as JSON: a job's state field that is a Json${f ? `, but ${s.target} is ${typeToString(f.type)}` : ""}`);
+        else seen.add(s.target);
+        continue;
+      }
       if (s.do === "tick") {
         // `tick` needs a clock tick; `wait` needs one, or an app that reads the clock (@now, @today).
         if (!app.clockMs && !(s.ms && (usesClock(app) || app.clients?.some((c) => c.providerClock)))) err(s.line, "STEP", s.ms ? "`wait` moves the clock on: it needs `clock every …`, or sentences that read `@now` or `@today` (here or in a provider named in `tested with`)" : "`tick` needs a `clock every …` block");
@@ -2453,8 +2485,14 @@ function checkApi(
     if (listNeeded && (cur.k === "Maybe" ? cur.of : cur).k !== "List") return `this is ${typeToString(cur)}, not a list`;
     return cur;
   };
+  // `see x.body.actions = [{ … }]` (1.1): a list or record literal compares a Json, and nothing else.
+  const jsonEq = (target: string, s: Extract<Step, { do: "see" }>, found: Type[]): boolean => {
+    if (s.check.is !== "eq" || !s.check.json) return false;
+    if (!found.some((t) => strip1(t).k === "Json")) err(s.line, "TYPE", `\`${target}\` is ${typeToString(found[0])}: a list or record literal in \`see\` compares a Json as JSON (${found[0].k === "Named" ? "a record compares with `{}` only" : "compare a value with its literal"})`);
+    return true;
+  };
   const checkBodyEq = (target: string, s: Extract<Step, { do: "see" }>, t: Type) => {
-    if (absentOnNothing(target, s, [t]) || nothingOnT(target, s, [t])) return;
+    if (jsonEq(target, s, [t]) || absentOnNothing(target, s, [t]) || nothingOnT(target, s, [t])) return;
     // The value compared with must be one the field can hold: `see x.body.id = "ten"` is a mistake.
     if (s.check.is === "eq" && !(t.k === "Named" && ctx.records.has(t.name) ? (s.check as { value: string }).value.startsWith("{") : valueFits(t, (s.check as { value: string }).value, ctx.choices)))
       err(s.line, "STEP", `\`${target}\` is ${typeToString(t)}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
@@ -2561,7 +2599,7 @@ function checkApi(
             const results = types.map((t) => walk(t, rest, s.check.is === "rows"));
             const found = results.filter((r): r is Type => typeof r !== "string");
             if (!found.length) err(s.line, "UNKNOWN_NAME", `\`${target}${s.every ? `: ${s.target}` : ""}\`: ${results[0]}`);
-            else if (absentOnNothing(target, s, found) || nothingOnT(target, s, found)) continue;
+            else if (jsonEq(target, s, found) || absentOnNothing(target, s, found) || nothingOnT(target, s, found)) continue;
             // The value compared with must be one the field can hold: `see x.body.id = "ten"` is a mistake.
             else if (s.check.is === "eq" && !found.some((t) => (t.k === "Named" && ctx.records.has(t.name) ? (s.check as { value: string }).value.startsWith("{") : valueFits(t, (s.check as { value: string }).value, ctx.choices))))
               err(s.line, "STEP", `\`${target}${s.every ? `: ${s.target}` : ""}\` is ${typeToString(found[0])}; ${JSON.stringify((s.check as { value: string }).value)} can never be equal to it`);
@@ -2577,6 +2615,8 @@ function checkApi(
     }
   }
 }
+
+const strip1 = (t: Type): Type => (t.k === "Maybe" ? t.of : t);
 
 /** Is this a Date or DateTime (or `T or nothing` of one)? */
 function dateType(t: Type): boolean {
@@ -2595,6 +2635,7 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
     case "Instant": return l.k === "instant";
     case "List": return l.k === "emptyList" || l.k === "table";
     case "Map": return l.k === "record" && l.fields.length === 0; // `{}`: a map with no keys
+    case "Json": return jsonLiteral(l); // any literal the language has (1.1)
     case "Maybe": return l.k === "nothing" || literalFits(l, t.of, choices);
     case "Named": {
       const r = REFINED.get(t.name);
@@ -2607,6 +2648,13 @@ function literalFits(l: Literal, t: Type, choices: Map<string, ChoiceDecl>): boo
 
 /** The refined types of the app being checked (set by check). */
 let REFINED = new Map<string, RefinedDecl>();
+
+/** A literal a `Json` can hold: a text, a number, true/false, nothing, a list or a record of them (a day or moment as its text). */
+function jsonLiteral(l: Literal): boolean {
+  if (l.k === "list") return l.items.every(jsonLiteral);
+  if (l.k === "record") return l.fields.every((f) => jsonLiteral(f.value));
+  return l.k !== "table" && l.k !== "value";
+}
 
 /** Does a value satisfy a refined type's rule? The same rule the generated validators apply. */
 /** Can a value of this type be shown as this text? (For `see … = value` checks.) */
@@ -2621,6 +2669,7 @@ function valueFits(t: Type, v: string, choices: Map<string, ChoiceDecl>): boolea
   if (t.k === "Named" && choices.has(t.name)) return choices.get(t.name)!.values.includes(v);
   if (t.k === "List") return v.startsWith("[");
   if (t.k === "Map") return v.startsWith("{");
+  if (t.k === "Json") return true;
   return true; // text, and refined types (their rule is checked at run time)
 }
 

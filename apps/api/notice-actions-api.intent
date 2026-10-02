@@ -1,0 +1,40 @@
+app NoticeActionsApi {
+  "Keeps notices with the actions the host offers with each, exactly as they came, and announces each one."
+}
+language 1.1
+
+implements notify.noticesApi
+
+state {
+  stored notices: List Notice = []
+}
+
+endpoint notify {
+  - add a @Notice to the end of @notices with @id = the highest @id in @notices + 1, or 1 when there is none, the given @title and the given @actions
+  - publish @noticeCreated with the new notice
+  answer 201 with the new notice
+}
+
+endpoint latest {
+  if @notices is empty {
+    answer 404 "No notices yet"
+  }
+  answer 200 with the last of @notices
+}
+
+example "a notice carries its actions" {
+  call notify with title = "Server down", actions = [{ type = "open", label = "Open" }]
+  see notify.status = 201
+  see notify.body.actions = [{ label = "Open", type = "open" }]
+  see noticeCreated.body.actions = [{ label = "Open", type = "open" }]
+  restart
+  call latest
+  see latest.body.actions = [{ label = "Open", type = "open" }]
+  see latest.body.actions = [{ type = "open", label = "Open" }]
+}
+
+example "no notices yet" {
+  call latest
+  see latest.status = 404
+  see latest.body.error = "No notices yet"
+}

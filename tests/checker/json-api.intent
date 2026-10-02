@@ -1,0 +1,30 @@
+app JsonApiChecks {
+  "1.1: an example compares a Json as JSON with a record or list literal; another type keeps only `{}`."
+}
+language 1.1
+profile api
+
+record Notice {
+  id: Int
+  title: Text
+  actions: Json
+}
+
+state {
+  stored notices: List Notice = []
+}
+
+endpoint notify POST "/notices" {
+  body title: Text
+  body actions: Json
+  answers 201 Notice
+  - add a notice with the next @id, @title and @actions to @notices
+  - answer 201 with that notice
+}
+
+example "a notice carries its actions" {
+  call notify with title = "Server down", actions = [{ type = "open", label = "Open" }]
+  see notify.status = 201
+  see notify.body.actions = [{ label = "Open", type = "open" }]          # expect-not: SYNTAX
+  see notify.body.title = [{ label = "Open", type = "open" }]            # expect: TYPE
+}

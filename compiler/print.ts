@@ -30,6 +30,17 @@ function lit(l: Literal, ind: string): string {
   }
 }
 
+/** A JSON value as the spec's literal (a Json compared in `see`, 1.1): null is nothing, a key that is not a name is quoted. */
+function jsonLit(v: unknown): string {
+  if (v === null) return "nothing";
+  if (Array.isArray(v)) return `[${v.map(jsonLit).join(", ")}]`;
+  if (typeof v === "object") {
+    const ks = Object.keys(v as object);
+    return ks.length ? `{ ${ks.map((k) => `${/^[a-z]\w*$/.test(k) ? k : q(k)} = ${jsonLit((v as Record<string, unknown>)[k])}`).join(", ")} }` : "{}";
+  }
+  return typeof v === "string" ? q(v) : String(v);
+}
+
 /** A duration in its largest exact unit: 90000 → "90s", 86400000 → "1d". */
 function duration(ms: number): string {
   for (const [u, n] of [["d", 86400000], ["h", 3600000], ["m", 60000], ["s", 1000]] as const) if (ms % n === 0) return `${ms / n}${u}`;
@@ -76,6 +87,7 @@ export function stepText(s: Step): string {
       if (c.is === "num") return `see ${s.target}${at} ${cmp(c)}`;
       if (c.is === "rows") return `see ${s.target}${at} has ${c.cmp === "atMost" ? "at most " : c.cmp === "atLeast" ? "at least " : ""}${c.count} rows`;
       if (c.is === "eq" && s.target === "screen" && !at) return `see screen = ${c.value}`;
+      if (c.is === "eq" && c.json) return `see ${s.target}${at} = ${jsonLit(JSON.parse(c.value))}`;
       if (c.is === "eq") return `see ${s.target}${at} = ${c.nothing ? "nothing" : q(c.value)}`;
       return `see ${s.target}${at} is ${c.is}`;
     }
@@ -165,7 +177,7 @@ export function printApp(app: App): string {
   const hasMap = (v: unknown): boolean => {
     if (!v || typeof v !== "object" || seen.has(v)) return false;
     seen.add(v);
-    return ((v as { k?: unknown }).k === "Map" && "of" in v) || Object.values(v).some(hasMap);
+    return ((v as { k?: unknown }).k === "Map" && "of" in v) || (v as { k?: unknown }).k === "Json" || Object.values(v).some(hasMap);
   };
   const since = app.records.some((r) => !r.fields.length) || app.choices.some((c) => c.values.length === 1) || (app.profile === "api" && !app.endpoints?.length && !!app.events?.length) || hasMap({ r: app.records, s: app.state, d: app.derive, e: app.endpoints, v: app.events });
   const own = app.language && /^\d+\.\d+$/.test(app.language) ? app.language : undefined;

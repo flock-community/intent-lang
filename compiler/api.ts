@@ -43,22 +43,8 @@ interface EpDesc {
   external?: boolean; // \`effect external\`: needs an idempotency key
 }
 
-export function literalJson(l: Literal): unknown {
-  switch (l.k) {
-    case "text": return l.v;
-    case "number": return l.v;
-    case "bool": return l.v;
-    case "nothing": return null;
-    case "emptyList": return [];
-    case "value": return l.v;
-    case "date": return l.v;
-    case "dateTime": return l.v;
-    case "instant": return l.v;
-    case "list": return l.items.map(literalJson);
-    case "record": return Object.fromEntries(l.fields.map((f) => [f.name, literalJson(f.value)]));
-    default: return null;
-  }
-}
+import { canonicalJson, literalJson } from "./words.ts";
+export { literalJson };
 
 export type Responses = Map<string, { status: number; body: unknown; headers?: Record<string, string> }>;
 
@@ -89,8 +75,10 @@ const shown = (v: unknown) => (typeof v === "string" ? v : v === null ? "nothing
 
 function checkValue(v: unknown, c: Check, what: string): string | undefined {
   switch (c.is) {
+    // A Json compared as JSON (1.1): its canonical text, keys in order on both sides.
+    case "eq": if (c.json) return JSON.stringify(canonicalJson(v)) === c.value ? undefined : `expected ${what} = ${c.value}, got ${JSON.stringify(canonicalJson(v ?? null))}`;
     // `= nothing` asks for null; any other value is never nothing (a text "nothing" is not null).
-    case "eq": return (c.nothing ? v === null : v !== null && shown(v) === c.value) ? undefined : `expected ${what} = ${c.nothing ? "nothing" : JSON.stringify(c.value)}, got ${v === null ? "nothing" : JSON.stringify(shown(v))}`;
+      return (c.nothing ? v === null : v !== null && shown(v) === c.value) ? undefined : `expected ${what} = ${c.nothing ? "nothing" : JSON.stringify(c.value)}, got ${v === null ? "nothing" : JSON.stringify(shown(v))}`;
     case "rows": {
       if (!Array.isArray(v)) return `${what} is not a list`;
       const ok = c.cmp === "atMost" ? v.length <= c.count : c.cmp === "atLeast" ? v.length >= c.count : v.length === c.count;
@@ -412,6 +400,9 @@ function mulberry32(seed: number) {
 const TEXTS = ["", "   ", "Printer on fire", "  padded  ", "don't stop", "Café", "a", "ALL CAPS", "x@y.z"];
 
 /** Random call sequences, from the spec alone: values drawn per param type, sometimes left out. */
+/** The values a random session draws for a Json param (each as its JSON text: `__proto__` stays a key). */
+const JSON_VALUES = ["null", "true", "0", "-1.5", '""', '"x"', "[]", "{}", '[1, "a", null]', '{ "a": { "b": [1, 2] }, "key": "x" }', '{ "__proto__": 1 }'];
+
 export function apiTraces(app: App, count: number, length: number, seed = 7): Call[][] {
   const rnd = mulberry32(seed);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
@@ -432,6 +423,8 @@ export function apiTraces(app: App, count: number, length: number, seed = 7): Ca
     if (t.k === "Bool") return rnd() < 0.5;
     if (t.k === "Text") return pick(TEXTS);
     if (t.k === "Ref") return t.key ? valueFor(name, t.key) : null;
+    // A Json: every shape JSON has, the ugly ones too (the spec's own example values come first, above).
+    if (t.k === "Json") return JSON.parse(pick(JSON_VALUES));
     // An instant, in its own form, with an offset, or without a zone (refused: it is not an instant).
     if (t.k === "Instant") return pick(["2026-09-24T07:00:00Z", "2026-09-24T09:00:00+02:00", "2026-01-01T00:00:00.5Z", "2026-09-24T07:00:00", "1999-12-31T23:59:59Z"]);
     // A map: a few keys (texts the sessions use, and `key`, which no comparison may drop), values of its type.

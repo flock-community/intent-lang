@@ -108,7 +108,7 @@ export function callDescs(app: App): CallDesc[] {
 
 /** Does a type (read in the app that declares it) hold a choice with wire names, or a map (its keys go out in order)? */
 export function wireType(app: App, t: Type): boolean {
-  if (t.k === "Map" || t.k === "Instant") return true; // an instant is read into its one form
+  if (t.k === "Map" || t.k === "Instant" || t.k === "Json") return true; // an instant is read into its one form, a Json into its canonical one
   if (t.k === "Named" && app.records.find((r) => r.name === t.name)?.union) return true; // a union's tag goes by its wire name
   return t.k === "List" || t.k === "Maybe" ? wireType(app, t.of) : t.k === "Named" ? !!app.choices.find((c) => c.name === t.name)?.wire || !!app.records.find((r) => r.name === t.name)?.fields.some((f) => wireType(app, f.type)) : false;
 }

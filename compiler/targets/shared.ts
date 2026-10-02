@@ -7,7 +7,8 @@ import type { App, Element, Literal, RecordDecl, Type } from "../ast.ts";
 import { homeOf, keyedLists } from "../homes.ts";
 import { STYLE } from "../../runtime/ts/ui.ts";
 import { literalJson, typeDesc } from "../api.ts";
-import { throughs } from "../calls.ts";
+import { canonicalJson } from "../words.ts";
+import { clientEndpoints, throughs } from "../calls.ts";
 import { usesDraws } from "../draws.ts";
 
 export type Target = "elm" | "ts";
@@ -261,7 +262,7 @@ export const dataField = (name: string) => name.replace(/\.([a-z])/g, (_, c: str
 export const storedTypes = (app: App) => app.state.filter((f) => f.stored).map((f) => `${dataField(f.name)}: ${typeDesc(app, f.type)}`).join(", ");
 
 /** The spec's defaults for the stored fields, as JSON: what a field that cannot be migrated keeps. */
-export const storedDefaults = (app: App) => app.state.filter((f) => f.stored).map((f) => `${dataField(f.name)}: ${JSON.stringify(f.default?.k === "table" ? [] : literalJson(f.default ?? { k: "nothing" }))}`).join(", ");
+export const storedDefaults = (app: App) => app.state.filter((f) => f.stored).map((f) => `${dataField(f.name)}: ${JSON.stringify(f.default?.k === "table" ? [] : (f.type.k === "Json" || (f.type.k === "Maybe" && f.type.of.k === "Json") ? canonicalJson : (x: unknown) => x)(literalJson(f.default ?? { k: "nothing" })))}`).join(", ");
 
 /** The client layers of an app's apis (\`through\` under \`uses\`), with their fixed params: used in the browser and in tests. */
 export function genThrough(app: App): string {
@@ -330,8 +331,46 @@ export function copyDrawRuntime(app: App, dir: string) {
 export const usesMap = (app: App): boolean => usesTypeKind(app, "Map");
 /** Does the app (or an api it uses) have an `Instant` anywhere (its type alias in the prelude)? */
 export const usesInstant = (app: App): boolean => usesTypeKind(app, "Instant");
+/** Does the app (or an api it uses) hold a `Json` anywhere (its type alias and `sameJson` in the prelude)? */
+export const usesJson = (app: App): boolean => usesTypeKind(app, "Json");
 
-function usesTypeKind(app: App, kind: "Map" | "Instant"): boolean {
+/**
+ * The calls an app makes with a `Json` arg (1.1): the host entries hand them over canonical (every
+ * object's keys in order), however the app built the value, as the wire has them. Empty for an app
+ * with none, so its entries stay as they were.
+ */
+export function jsonArgs(app: App): { imports: string; decl: string; wrap: (e: string) => string } {
+  const strip = (t: Type) => (t.k === "Maybe" ? t.of : t);
+  const by = Object.fromEntries(clientEndpoints(app).map((c) => [c.name, c.ep.params.filter((p) => strip(p.type).k === "Json").map((p) => p.name)] as const).filter(([, ps]) => ps.length));
+  if (!Object.keys(by).length) return { imports: "", decl: "", wrap: (e) => e };
+  return {
+    imports: `import { toWire as jsonWire } from "./api.ts";\n`,
+    decl: `// A Json arg goes out canonical (§9.22): every object's keys in order, however the app built it.
+const JSON_ARGS: Record<string, string[]> = ${JSON.stringify(by)};
+const canonicalArgs = <T,>(c: T): T => {
+  const o = c as { endpoint?: string; args?: Record<string, unknown> };
+  const names = o.endpoint ? JSON_ARGS[o.endpoint] : undefined;
+  return names && o.args ? ({ ...o, args: Object.fromEntries(Object.entries(o.args).map(([k, v]) => [k, names.includes(k) ? jsonWire(v, { k: "Json" }) : v])) } as T) : c;
+};
+`,
+    wrap: (e) => `canonicalArgs(${e})`,
+  };
+}
+
+/** A JSON value as code: canonical (keys in order) and spelled for the target (§9.22). */
+export function jsonCode(v: unknown, target: "ts" | "elm"): string {
+  const ts = target === "ts";
+  if (v === null) return ts ? "null" : "J.null";
+  if (typeof v === "boolean") return ts ? String(v) : `J.bool ${v ? "True" : "False"}`;
+  if (typeof v === "number") return ts ? String(v) : Number.isInteger(v) ? `J.int ${v < 0 ? `(${v})` : v}` : `J.float ${v < 0 ? `(${v})` : v}`;
+  if (typeof v === "string") return ts ? JSON.stringify(v) : `J.string ${elmQ(v)}`;
+  if (Array.isArray(v)) return ts ? `[${v.map((x) => jsonCode(x, target)).join(", ")}]` : v.length ? `J.list identity [ ${v.map((x) => jsonCode(x, target)).join(", ")} ]` : "J.list identity []";
+  const keys = Object.keys(v as object).sort();
+  const at = (k: string) => jsonCode((v as Record<string, unknown>)[k], target);
+  return ts ? (keys.length ? `{ ${keys.map((k) => `${JSON.stringify(k)}: ${at(k)}`).join(", ")} }` : "{}") : keys.length ? `J.object [ ${keys.map((k) => `( ${elmQ(k)}, ${at(k)} )`).join(", ")} ]` : "J.object []";
+}
+
+function usesTypeKind(app: App, kind: "Map" | "Instant" | "Json"): boolean {
   const seen = new Set<object>();
   const walk = (v: unknown): boolean => {
     if (!v || typeof v !== "object" || seen.has(v)) return false;

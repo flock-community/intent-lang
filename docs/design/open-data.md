@@ -270,7 +270,7 @@ keys in order, §9.22; any value fits it, it fits only itself; Elm `Json.Decode.
 with a literal, `see notify.body.actions = [{ label = "Open", type = "open" }]`; asked for by OurOS:
 `record Ping` dropped every field it did not declare, so an action could only be scheduled with an
 empty payload; docs/design/open-data.md; example: `lib/notify/noticesApi`,
-`apps/api/notices-api.intent`, `apps/45-notices.intent` and `apps/46-notices-watch.intent`,
+`apps/api/notice-actions-api.intent`, `apps/45-notices.intent` and `apps/46-notices-watch.intent`,
 twin-verified on both targets)".
 
 **`docs/TOOLS.md`** §6: the `TYPE` row gains "a read into a `Json` (`@answer's @text`, a template
@@ -324,7 +324,7 @@ Exact values; each is a failing test before the change.
    noticesApi.intent` (contract: `record Notice { id: Int; title: Text; actions: Json }`;
    `endpoint notify POST "/notices" { body title: Text; body actions: Json; answers 201 Notice }`;
    `endpoint latest GET "/notices/latest" { answers 200 Notice; answers 404 Problem }`;
-   `event noticeCreated: Notice`), `apps/api/notices-api.intent` (`stored notices: List Notice`;
+   `event noticeCreated: Notice`), `apps/api/notice-actions-api.intent` (named so because `apps/api/notices-api.intent` is an older, unrelated service; `stored notices: List Notice`;
    the example of the *Examples* section above, plus `see latest.body.actions = [{ type = "open",
    label = "Open" }]` in the other key order), `apps/45-notices.intent` (a screen on both targets:
    `record Action { label: Text; type: Text }`, a seeded `actions: List Action`, `on click send`

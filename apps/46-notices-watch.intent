@@ -1,0 +1,25 @@
+app NoticesWatch {
+  "A headless job: it counts the notices it hears and keeps the actions of the last one, as they came."
+}
+language 1.1
+profile job
+
+uses notify.noticesApi as notices only noticeCreated {
+  tested with "apps/api/notice-actions-api.intent"
+}
+
+state {
+  stored count: Int = 0
+  stored last: Json or nothing = nothing
+}
+
+on event notices.noticeCreated {
+  - increase @count by 1
+  - set @last to its body's @actions
+}
+
+example "the actions of the last notice are kept as they came" {
+  call notices.notify with title = "Server down", actions = [{ label = "Open", type = "open" }]
+  see count = 1
+  see last = [{ type = "open", label = "Open" }]
+}

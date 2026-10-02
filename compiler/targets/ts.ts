@@ -11,7 +11,8 @@ import { codeSize } from "../alphabets.ts";
 import { LINE_BASE } from "../ast.ts";
 import { typeDesc } from "../api.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyCallsRuntime, copyDrawRuntime, dataField, doc, events, nestedLists, refLookups, hasData, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, q, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, usesJson, jsonCode, jsonArgs, writeThrough, type TableLit } from "./shared.ts";
+import { canonicalJson, literalJson } from "../words.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 
@@ -34,6 +35,8 @@ export function tsLiteral(l: Literal): string {
 /** A literal of a type: a row's inner list in a seed table (`[{ id = 1, label = "Milk" }]`), each record with its defaults filled in. */
 export function tsValue(app: App, l: Literal, t: Type): string {
   const inner = t.k === "Maybe" ? t.of : t;
+  // A Json literal: its JSON, keys in order (§9.22); nothing is null.
+  if (inner.k === "Json") return jsonCode(canonicalJson(literalJson(l)), "ts");
   if (l.k === "list" && inner.k === "List") return `[${l.items.map((x) => tsValue(app, x, inner.of)).join(", ")}]`;
   if (l.k === "record" && inner.k === "Map") return `{ ${l.fields.map((f) => `${q(f.name)}: ${tsValue(app, f.value, inner.of)}`).join(", ")} }`;
   if (l.k === "record" && inner.k === "Named") {
@@ -70,6 +73,7 @@ export function tsType(t: Type): string {
     case "List": return `${tsAtom(t.of)}[]`;
     case "Maybe": return `${tsType(t.of)} | null`;
     case "Map": return `Record<string, ${tsType(t.of)}>`;
+    case "Json": return "Json";
     case "Named": return mangle(t.name);
     case "Ref": return t.key ? tsType(t.key) : "unknown";
   }
@@ -81,6 +85,7 @@ export const tsAtom = (t: Type) => (t.k === "Maybe" ? `(${tsType(t)})` : tsType(
 export function tsDomain(app: App): string {
   const out: string[] = [];
   out.push(`/** A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. */\nexport type Date = string;\nexport type DateTime = string;\n/** The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. */\nexport type Clock = { now: DateTime; today: Date${app.sizes ? "; size: Size" : ""} };\n\n`);
+  if (usesJson(app)) out.push(`/** A JSON value the spec does not own (\`Json\`): whatever another system sends or expects there. Hold it, pass it on, compare it with \`sameJson\`; never read into it. The harness hands it over canonical (every object's keys in order, at every depth), so where a job's state screen shows one, its text is \`JSON.stringify(v)\`. */\nexport type Json = null | boolean | number | string | Json[] | { [key: string]: Json };\n/** Whether two Json values are the same JSON (both canonical: the same text). */\nexport const sameJson = (a: Json, b: Json): boolean => JSON.stringify(a) === JSON.stringify(b);\n\n`);
   if (usesInstant(app)) out.push(`/** An instant on the world's clock, in UTC to the second: "YYYY-MM-DDTHH:MM:SSZ". The harness reads every ISO 8601 form with a zone into this one, so compare and sort them as text. */\nexport type Instant = string;\n\n`);
   for (const r of app.refined ?? []) {
     if (r.code) {
@@ -468,14 +473,15 @@ ${st ? "    save(KEY, App.data(r.model), storedFields);\n" : ""}    current = r.
 // Events from each api (Server-Sent Events at /events), for the events this app handles.
 stream = listen(eventsByAlias, (e) => dispatch({ on: "event", target: e.event, event: e }), via${Object.keys(eventWireTypes(app)).length ? `, ${JSON.stringify(eventWireTypes(app))}` : ""});${c ? `\n// The screen reads the clock: show it again as time passes.\nsetInterval(() => dispatch({ on: "noop", target: "" }), 15000);` : ""}${app.sizes ? `\n// The host shows the app at another size: show it again.\nwindow.addEventListener("intentsize", () => dispatch({ on: "noop", target: "" }));` : ""}
 `;
+  const ja = jsonArgs(app);
   const test = `import * as App from "./app.ts";
 import { callToJson, fromWire, toNode, type Call${sar ? ", type Stored" : ""} } from "./spec.ts";
 import type { CallOut } from "./calls.ts";
 import type { Wire } from "./ui.ts";
-${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "${app.sizes ? "./spec.ts" : "./clock.ts"}";\n` : ""}
-/** A call as data, with the config its client layer gets from the state after the step that made it. */
+${ja.imports}${dw ? DRAW_TEST : ""}${c ? `import type { Clock } from "${app.sizes ? "./spec.ts" : "./clock.ts"}";\n` : ""}
+${ja.decl}/** A call as data, with the config its client layer gets from the state after the step that made it. */
 const out = (c: Call, current: App.Model): CallOut => {
-  const j = callToJson(c);
+  const j = ${ja.wrap("callToJson(c)")};
   const alias = j.endpoint.split(".")[0];
   return { ...j, config: ${configOf} } as CallOut;
 };

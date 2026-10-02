@@ -1,0 +1,22 @@
+app JsonOwn {
+  "A spec of language 1 whose own record is called Json keeps it: the 1.1 type is a word read in its place."
+}
+language 1
+
+record Json {
+  x: Int
+}
+
+state {
+  j: Json or nothing = nothing        # expect-not: NEEDS_LANGUAGE
+  js: List Json = []                  # expect-not: NEEDS_LANGUAGE
+  count: Int = 0
+}
+
+screen {
+  text shown = "{@count}"
+}
+
+example "nothing yet" {
+  see shown = "0"
+}

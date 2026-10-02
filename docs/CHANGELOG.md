@@ -78,7 +78,18 @@ Versions v1–v73 are the development history before the first stable version: s
   unknown tag is refused; Elm gets a custom type with prefixed constructors, TypeScript a
   discriminated union; asked for since the OurOS review, G4, `docs/reviews/openouros.md`; example:
   `lib/jobs/schedulesApi`, `apps/api/schedules-api.intent`, `apps/42-schedules.intent`,
-  twin-verified on both targets, first attempt). These were `SYNTAX` (or `UNKNOWN_NAME`) errors, so
+  twin-verified on both targets, first attempt), and `Json` (a JSON value the spec does not own: a
+  notification's `actions`, a chat's `answer`, an action's `payload` for another contract; held,
+  passed on and compared, never read into — `TYPE`; canonical on the wire and in stored data, keys
+  in order, §9.22; any value fits it, it fits only itself; Elm `Json.Decode.Value` with `sameJson`,
+  TypeScript `Json`; a spec's own name `Json` keeps its meaning; an example compares it with a
+  literal, `see notify.body.actions = [{ label = "Open", type = "open" }]`; asked for by OurOS:
+  `record Ping` dropped every field it did not declare, so an action could only be scheduled with an
+  empty payload; docs/design/open-data.md; example: `lib/notify/noticesApi`,
+  `apps/api/notice-actions-api.intent`, `apps/45-notices.intent` and `apps/46-notices-watch.intent`,
+  twin-verified with DeepSeek, the screen on both targets, the api and the job on TypeScript, the
+  harness's only target for them; the screen's first build found one ambiguity, a title sent
+  untrimmed or trimmed, and the spec now says `@draft trimmed`). These were `SYNTAX` (or `UNKNOWN_NAME`) errors, so
   no checked spec changes. **Refinement:** as deep as the chain (a base may extend another; each
   is applied in turn and locked; a cycle is `BAD_BINDING`); this lifts a `NOT_YET`. `override
   component` of a component the base imports from a bundle works (it was a `DUPLICATE` error, and

@@ -101,5 +101,25 @@ for (const [name, got, want] of cases)
   eq("union: kept data migrates", migrate({ t: { kind: "Weekly", day: "Mon", at: "02:00" } }, { t: trigger }), { data: { t: { kind: "Weekly", day: "Mon", at: "02:00" } }, dropped: [] });
   eq("union: a removed kind cannot migrate", migrate({ t: { kind: "Hourly" } }, { t: trigger }).dropped, ["t"]);
 }
+// Json (1.1): a JSON value the spec does not own. Read and written canonically (every object's keys in
+// order, at every depth); what the spec did not declare passes through; null is a value; `__proto__` is a key.
+{
+  const { migrate } = await import("../../runtime/ts/api.ts");
+  const eq = (name: string, got: unknown, want: unknown) => { if (JSON.stringify(got) !== JSON.stringify(want)) (failures++, console.log(`${name}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)); };
+  const J = { k: "Json" } as TypeDesc;
+  const Notice: TypeDesc = { k: "Record", name: "Notice", fields: [{ name: "title", type: { k: "Text" } }, { name: "actions", type: J }] };
+  eq("json: read canonical", JSON.stringify(fromWire({ title: "x", actions: [{ type: "open", label: "Open" }] }, Notice)), '{"title":"x","actions":[{"label":"Open","type":"open"}]}');
+  eq("json: written canonical", JSON.stringify(toWire({ title: "x", actions: [{ type: "open", label: "Open" }] }, Notice)), '{"title":"x","actions":[{"label":"Open","type":"open"}]}');
+  eq("json: passthrough", JSON.stringify(fromWire([{ type: "open", label: "Open", payload: { deep: [1], a: null } }], J)), '[{"label":"Open","payload":{"a":null,"deep":[1]},"type":"open"}]');
+  eq("json: null is a value", conforms({ 200: J }, { status: 200, body: null }), undefined);
+  eq("json: a missing one is required", conforms({ 200: Notice }, { status: 200, body: { title: "x" } }), "answered 200, but the body.actions is required");
+  const maybe: TypeDesc = { k: "Record", name: "R", fields: [{ name: "a", type: { k: "Maybe", of: J } }] };
+  eq("json or nothing: null", fromWire({ a: null }, maybe), { a: null });
+  eq("json or nothing: missing", fromWire({}, maybe), { a: null });
+  const proto = fromWire(JSON.parse('{"__proto__":{"p":1}}'), J) as object;
+  eq("json: __proto__ is a key", [Object.keys(proto), Object.prototype.hasOwnProperty.call(proto, "__proto__"), Object.getPrototypeOf(proto) === Object.prototype], [["__proto__"], true, true]);
+  eq("json: migrates canonical", JSON.stringify(migrate({ answer: { text: "hi", kind: "text" } }, { answer: J })), '{"data":{"answer":{"kind":"text","text":"hi"}},"dropped":[]}');
+  eq("json: migrates a text", migrate({ answer: "x" }, { answer: J }), { data: { answer: "x" }, dropped: [] });
+}
 console.log(failures ? `${failures} api runtime failure(s)` : "api runtime tests pass");
 process.exit(failures ? 1 : 0);

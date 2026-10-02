@@ -11,10 +11,11 @@ import { codeSize } from "../alphabets.ts";
 import { screenMeta } from "./ts.ts";
 import { LINE_BASE } from "../ast.ts";
 import { callDescs, clientEndpoints, clientEvents, eventsByAlias, eventWireTypes, gated, hasClients, hasThrough, throughs, undoables } from "../calls.ts";
-import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, usesMap, writeThrough, type TableLit } from "./shared.ts";
+import { mangle, cap, cellFor, copyDrawRuntime, dataField, hasCodes, events, nestedLists, refLookups, hasData, hasHomes, hasInvariants, hasScreens, hasStored, html, startsAfterRestore, ident, lowerFirst, elmQ as q, doc, copyCallsRuntime, ROOT, rowKeyed, selectChoice, storedDefaults, storedTypes, typeName, copyFocusRuntime, semanticsOf, toneField, usesInstant, usesJson, jsonCode, jsonArgs, usesMap, writeThrough, type TableLit } from "./shared.ts";
 import { bin, clean, run } from "../tools.ts";
 import type { Session, TargetModule } from "./target.ts";
 import type { CallOut } from "../../runtime/ts/calls.ts";
+import { canonicalJson, literalJson } from "../words.ts";
 
 export function elmLiteral(l: Literal, t: Type): string {
   if (t.k === "Maybe") return l.k === "nothing" ? "Nothing" : `Just ${elmLiteral(l, t.of)}`;
@@ -37,6 +38,8 @@ export function elmLiteral(l: Literal, t: Type): string {
 export function elmValue(app: App, l: Literal, t: Type): string {
   const inner = t.k === "Maybe" ? t.of : t;
   const wrap = (v: string) => (t.k === "Maybe" ? `Just (${v})` : v);
+  // A Json literal: its JSON, keys in order (§9.22); in a `Json or nothing`, nothing is Nothing.
+  if (inner.k === "Json") return t.k === "Maybe" && l.k === "nothing" ? "Nothing" : wrap(jsonCode(canonicalJson(literalJson(l)), "elm"));
   if (l.k === "list" && inner.k === "List") return wrap(l.items.length ? `[ ${l.items.map((x) => elmValue(app, x, inner.of)).join(", ")} ]` : "[]");
   if (l.k === "record" && inner.k === "Named") {
     const rec = app.records.find((r) => r.name === inner.name);
@@ -94,6 +97,7 @@ export function elmType(t: Type): string {
     case "List": return `List ${elmAtom(t.of)}`;
     case "Maybe": return `Maybe ${elmAtom(t.of)}`;
     case "Map": return `Dict.Dict String ${elmAtom(t.of)}`;
+    case "Json": return "Json";
     case "Named": return mangle(t.name);
     case "Ref": return t.key ? elmType(t.key) : "Int";
   }
@@ -113,11 +117,11 @@ export function genElmSpec(app: App): string {
 {-| Generated from ${app.name}.intent — do not edit. The interface the app module must satisfy.
 -}
 
-${hasClients(app) || hasData(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}${app.platforms?.some((p) => p.name === "std.crypto") ? "import Crypto\n" : ""}${usesDraws(app) || hasCodes(app) ? "import Draw\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
+${hasClients(app) || hasData(app) || usesJson(app) ? "import Json.Decode as D\nimport Json.Encode as J\n" : ""}${app.platforms?.some((p) => p.name === "std.crypto") ? "import Crypto\n" : ""}${usesDraws(app) || hasCodes(app) ? "import Draw\n" : ""}import Ui${hasScreens(app) ? "\nimport Url" : ""}
 ${(app.refined ?? []).some((r) => r.pattern !== undefined) ? "import Regex\n" : ""}${usesMap(app) ? "import Dict\n" : ""}
 `);
   if (app.platforms?.some((p) => p.name === "std.crypto")) out.push(`{-| Platform std.crypto: SHA-256, from the installation's reviewed code (never a home-made version). -}\nsha256 : String -> String\nsha256 =\n    Crypto.sha256\n\n\n`);
-  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n${usesInstant(app) ? `{-| An instant on the world's clock, in UTC to the second: "YYYY-MM-DDTHH:MM:SSZ". The harness reads every ISO 8601 form with a zone into this one, so compare and sort them as text. -}\ntype alias Instant =\n    String\n\n\n` : ""}{-| The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. -}\ntype alias Clock =\n    { now : DateTime, today : Date${app.sizes ? ", size : Size" : ""} }\n\n\n`);
+  out.push(`{-| A day, "YYYY-MM-DD", and a moment to the minute, "YYYY-MM-DDTHH:MM" (local time). Compare and sort them as text; compute with Fmt. -}\ntype alias Date =\n    String\n\n\ntype alias DateTime =\n    String\n\n\n${usesInstant(app) ? `{-| An instant on the world's clock, in UTC to the second: "YYYY-MM-DDTHH:MM:SSZ". The harness reads every ISO 8601 form with a zone into this one, so compare and sort them as text. -}\ntype alias Instant =\n    String\n\n\n` : ""}${usesJson(app) ? `{-| A JSON value the spec does not own (\`Json\`): whatever another system sends or expects there. It is \`Json.Decode.Value\`: hold it, pass it on, compare it with \`sameJson\`, never \`==\` (Elm's \`==\` on a Value looks only at the keys of its left side), never decode it. The harness hands it over canonical (every object's keys in order), so where a job's state screen shows one, its text is \`J.encode 0 v\`. -}\ntype alias Json =\n    D.Value\n\n\n{-| Whether two Json values are the same JSON. -}\nsameJson : Json -> Json -> Bool\nsameJson a b =\n    J.encode 0 a == J.encode 0 b\n\n\n` : ""}{-| The clock: @now and @today in the spec${app.sizes ? ", and @size: the size the host shows the app at" : ""}. -}\ntype alias Clock =\n    { now : DateTime, today : Date${app.sizes ? ", size : Size" : ""} }\n\n\n`);
   for (const r of app.refined ?? []) {
     if (r.code) {
       // A code: exactly n characters of its alphabet, read as the alphabet says (the harness's reader, Draw.readCode).
@@ -862,6 +866,7 @@ export function elmDecoder(app: App, t: Type): string {
     case "List": return `(D.list ${elmDecoder(app, t.of)})`;
     case "Maybe": return `(D.nullable ${elmDecoder(app, t.of)})`;
     case "Map": return `(D.dict ${elmDecoder(app, t.of)})`;
+    case "Json": return "D.value";
     case "Named": {
       const r = app.refined?.find((x) => x.name === t.name);
       if (r) return r.base === "Text" ? "D.string" : r.base === "Int" ? "D.int" : "D.float";
@@ -882,6 +887,8 @@ export function elmEncoder(app: App, t: Type, v: string, d = 0): string {
     case "Maybe": return `Maybe.withDefault J.null (Maybe.map (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v})`;
     // Dict encodes its keys in order: the wire's order (§9), the same as TypeScript's toWire.
     case "Map": return `J.dict identity (\\x${d} -> ${elmEncoder(app, t.of, `x${d}`, d + 1)}) ${v}`;
+    // A Json is its own JSON (canonical: the harness reads every value through the runtime).
+    case "Json": return v;
     case "Named": {
       const r = app.refined?.find((x) => x.name === t.name);
       if (r) return elmEncoder(app, { k: r.base } as Type, v, d);
@@ -1241,9 +1248,27 @@ function genElmScreenEntry(app: App, takesFlags: boolean): string {
   const c = usesClock(app);
   const st = hasStored(app);
   const dw = usesDraws(app);
+  const ja = jsonArgs(app);
+  // An app that holds a Json (1.1): answers and events reach it as the TypeScript entry reads them,
+  // through the runtime (a Json canonical, every object's keys in order).
+  const jr = usesJson(app);
+  const answerTypes = Object.fromEntries(callDescs(app).filter((d) => d.answers).map((d) => [d.name, d.answers]));
+  const readIn = jr
+    ? `import { fromWire as readWire } from "./api.ts";
+const ANSWER_TYPES: Record<string, Record<number, any>> = ${JSON.stringify(answerTypes)};
+const EVENT_TYPES: Record<string, any> = ${JSON.stringify(eventWireTypes(app))};
+const readIn = (w: Wire): Wire => {
+  const a = w.answer as { endpoint?: string; status?: number; body?: unknown } | undefined;
+  if (w.on === "answer" && a?.endpoint && a.body !== undefined && ANSWER_TYPES[a.endpoint]?.[a.status!]) return { ...w, answer: { ...a, body: readWire(a.body, ANSWER_TYPES[a.endpoint][a.status!]) } };
+  const e = w.event as { event?: string; body?: unknown } | undefined;
+  if (w.on === "event" && e?.event && EVENT_TYPES[e.event]) return { ...w, event: { ...e, body: readWire(e.body, EVENT_TYPES[e.event]) } };
+  return w;
+};
+`
+    : "";
   return `// The host entry of ${app.name} (contract intent.screen/1), around its Elm worker. Generated; do not edit.
 import { Elm } from "./worker-scope.js";
-${dw ? `import { eventSeed, isSeed, runBase } from "./draw.ts";\n` : ""}${st ? `import { migrate, type TypeDesc } from "./api.ts";\nconst storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };\n` : ""}
+${ja.imports}${ja.decl}${readIn}${dw ? `import { eventSeed, isSeed, runBase } from "./draw.ts";\n` : ""}${st ? `import { migrate, type TypeDesc } from "./api.ts";\nconst storedFields: Record<string, TypeDesc> = { ${storedTypes(app)} };\n` : ""}
 export const meta = ${JSON.stringify(screenMeta(app), null, 2)} as const;
 
 type Wire = { on: string; target?: string; [k: string]: unknown };
@@ -1263,7 +1288,7 @@ ${c ? `  if (!o.clock) throw new Error("${app.name}: start needs { clock } (this
   let waiting: (() => void) | undefined;
   app.ports.observe.subscribe((v: any) => {
     if (v && v.screen) {
-      made.push(...(v.calls ?? []));
+      made.push(...${ja.decl ? "(v.calls ?? []).map(canonicalArgs)" : "(v.calls ?? [])"});
       if (v.data !== undefined) data = v.data;
       if (v.through) through = v.through;
       if (v.go) go = v.go;
@@ -1283,7 +1308,7 @@ ${st ? `  if (o.saved) {
     observe: () => last,
     async send(w: Wire) {
 ${c ? `      if (w.clock) clock = { ...clock, ...(w.clock as object) };
-${app.sizes ? `      if (w.on === "size") clock = { ...clock, size: meta.sizes!.find((x) => x.toLowerCase() === String(w.value ?? w.target).toLowerCase()) ?? clock.size };\n` : ""}` : ""}      await deliver({ ...w${c ? ", clock" : ""}${dw ? ", ...(w.draw ? {} : { draw: { seed: eventSeed(base, n++) } })" : ""} });
+${app.sizes ? `      if (w.on === "size") clock = { ...clock, size: meta.sizes!.find((x) => x.toLowerCase() === String(w.value ?? w.target).toLowerCase()) ?? clock.size };\n` : ""}` : ""}      await deliver({ ...${jr ? "readIn(w)" : "w"}${c ? ", clock" : ""}${dw ? ", ...(w.draw ? {} : { draw: { seed: eventSeed(base, n++) } })" : ""} });
     },
     calls() {
       const out = made;

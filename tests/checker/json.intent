@@ -1,0 +1,44 @@
+app JsonChecks {
+  "1.1: a Json is a value the spec does not own: held, passed on and compared, never read into or shown."
+}
+language 1.1
+
+record Notice {
+  title: Text
+  actions: Json                                  # expect-not: SYNTAX
+}
+
+state {
+  stored answer: Json or nothing = nothing
+  last: Json = {}
+  many: List Json = []
+  title: Text = ""
+  n: Int = 0
+  notices: List Notice = []
+}
+
+derive {
+  ordered = @notices sorted by @actions          # expect: TYPE
+}
+
+screen {
+  text shown = "{@last}"                         # expect: TYPE
+  text count = "{@n}"
+  button go "Go"
+}
+
+on click go {
+  - set @last to @title                          # expect-not: TYPE
+  - set @title to @last                          # expect: TYPE
+  - set @title to @last's @text                  # expect: TYPE
+  - set @n to the number of items in @last       # expect: TYPE
+  - set @last to a random @Json                  # expect: RANDOM
+  - add @title to the end of @many               # expect-not: TYPE
+  if @last is @answer {                          # expect-not: TYPE
+    - set @n to 1
+  }
+}
+
+example "nothing yet" {
+  see count = "0"
+}

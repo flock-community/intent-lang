@@ -17,7 +17,8 @@ known ahead, such as a theme's colour per role; prefer a record whenever the key
 `Instant` (a moment in UTC to the second, for moments other systems or other time zones send; keep
 `DateTime` for the app's own local time), and `union` (a value that is one of several records, such
 as a schedule that is daily or weekly: write each variant as its own record, never one record with
-optional fields that only some kinds use). Say what a state *means* with `tone` (`tone danger when
+optional fields that only some kinds use), and `Json`, a value whose shape someone else owns: hold
+it and pass it on, never describe or read it. Say what a state *means* with `tone` (`tone danger when
 @left is 0`), never with `look` words about colours: the theme of the host decides how it looks.
 A component that shows the app's own content has slots (`slot body`, filled by `body { … }` in the
 `use`); one that works on any record has a type parameter (`component Table of T`,
@@ -407,6 +408,10 @@ A source that only announces (a station's readings, a ping) is a contract with e
 endpoints (1.1): its service publishes from `every` blocks, and a screen `uses` it and handles
 `on event`. A payload with nothing to say is a record without fields (`record Ping`); one kind of
 something, with more to come, is a choice with one value. Don't invent a dummy field or value.
+A payload whose shape belongs to someone else — the host decides a notification's `actions`, another
+contract owns an action's `payload` — is `Json`: carry it, compare it, never read it. What you send
+yourself you write as your own record; it fits a `Json` param as it is. Never declare an empty
+record for it: an empty record drops every field it did not declare.
 Inside one app (between components, or a screen and its logic), there is no wire and no
 contract to write: component params and the generated interfaces are the contract.
 
@@ -713,6 +718,7 @@ remembering when you write or review a spec:
   - the interview that went best asked about the deadline's exact boundary, whether a cancelled
     slot frees up, and whether the desk may always cancel; the user raised that last one only when
     asked. Ask about policy; decide the mechanics.
+- OurOS wrote `record Ping` for a free-form payload and every field arrived as `{}` (1.1: `Json`).
 
 ## Keep this skill current
 

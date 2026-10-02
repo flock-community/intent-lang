@@ -1,0 +1,31 @@
+contract notify.noticesApi {
+  "Notices and the actions the host offers with each. The service keeps the actions as they came: the host decides their shape."
+}
+language 1.1
+
+record Notice {
+  id: Int
+  title: Text
+  actions: Json                       # what the host offers with it; the host decides the shape
+}
+
+event noticeCreated: Notice           # a notice was added, by anyone
+
+endpoint notify POST "/notices" {
+  body title: Text
+  body actions: Json
+  answers 201 Notice
+}
+
+endpoint latest GET "/notices/latest" {
+  answers 200 Notice
+  answers 404 Problem
+}
+
+example "a notice is kept with its actions" {
+  call notify with title = "Server down", actions = [{ label = "Open", type = "open" }]
+  see notify.status = 201
+  see notify.body.title = "Server down"
+  call latest
+  see latest.status = 200
+}

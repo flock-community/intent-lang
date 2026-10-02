@@ -188,7 +188,7 @@ always { … }                # what must always hold, checked after every step:
 example "name" { … }        # proof (§6): steps
 ```
 
-Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `Instant`, `List T`, `Map T`, `T or nothing`, a
+Types: `Text`, `Int`, `Decimal`, `Bool`, `Date`, `DateTime`, `Instant`, `List T`, `Map T`, `Json`, `T or nothing`, a
 record name, a choice name, and `ref X` — a field holding record `X`'s key (see the next
 paragraph). `T or nothing` is a value that may be absent, and works like Kotlin's `T?`: nothing
 is what other languages call null or none. Say so instead of using a stand-in such as `0` or `""`
@@ -218,6 +218,20 @@ Map Color = {}`); on the wire it is a JSON object. Say what a sentence does with
 colour for "primary" in @colors, or "none"`, `set the colour for @role in @colors to @color`, `the
 number of keys in @colors`); in an example, `see theme.body.primary = "#334466"` reads a key and
 `see theme.body = {}` an empty map. A screen shows what is read from a map, not the map itself.
+`Json` is a value whose shape the spec does not own: whatever JSON another system sends or
+expects there (a notification's `actions`, which the host decides; a chat's `answer`; an
+action's `payload`, whose shape belongs to another contract). An app holds it (`answer: Json or
+nothing = nothing`, a record's field, a param, a payload), passes it on (`set`, `add … to`,
+`call … with`, `publish … with`, `answer … with`) and compares it (`@a is @b`: the same JSON);
+it never reads into it: `@answer's @text`, a template hole, `sorted by` it and a sentence about
+what is inside are `TYPE`, and a screen does not show it. Any value fits a `Json` (a record of
+your own goes out as its JSON: a `List Action` where the contract says `Json`), and a `Json`
+fits only a `Json`. In JSON it is written as it is, with every object's keys in order (§9.22);
+`null` inside it is a value, and a `Json` that is `null` is JSON null, not nothing (a `Json or
+nothing` reads `null` as nothing, §9.18). In an example, `see notify.body.actions = [{ label =
+"Open", type = "open" }]` compares it as JSON, in any key order; the literal is a record or
+list literal, with a key that is not a name in quotes (`{ "x-id" = 1 }`). A spec's own record,
+choice or type named `Json` keeps its meaning.
 Literals of the time types: `2026-09-24` (a Date) and `2026-09-24 09:00`
 (a DateTime, to the minute, in the app's own local time). In JSON a Date is `"2026-09-24"` and a
 DateTime `"2026-09-24T09:00"`; an example compares them as written in the spec
@@ -1849,6 +1863,9 @@ row. A step acts only on what the screen offers: `click` a disabled button is re
 `see add is disabled`, §4). A list hidden by `visible when` counts as not on the screen: check it with
 `see list is hidden`, not with a row count.
 
+`see x = <literal>` on a `Json` (an answer's or event's field, a job's state field) compares the
+whole value as JSON, in any key order; `nothing` is null.
+
 Rows are counted from 1, in screen order. `of <list>` is needed only if the element name
 exists in more than one list.
 
@@ -2140,3 +2157,8 @@ something when it wants different behaviour.
 21. **Maps.** A `Map T` is written on the wire as a JSON object with its keys in order (by their
     text, code point by code point), whatever order they were set in. Reading a key that is not
     there gives nothing.
+22. **Json.** A `Json` is written on the wire, in stored data and in a job's state as it arrived,
+    with every object's keys in order (by their text, code point by code point) at every depth, so
+    every build writes the same bytes; nothing else changes (a number as read, `null` kept). Two
+    `Json` values are the same when that text is the same. A missing `Json` is required (§9.18);
+    `null` is a value. A `Json` cannot be drawn.
